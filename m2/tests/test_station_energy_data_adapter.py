@@ -132,6 +132,34 @@ class StationEnergyDataAdapterTests(unittest.TestCase):
         self.assertNotIn("acpv_rated_power", record)
         self.assertNotIn("emu-secret", repr(record))
 
+    def test_fetch_emu_rows_returns_validated_raw_rows(self):
+        rows = make_es02_rows()
+        calls = []
+
+        def request_json(url, token, timeout):
+            calls.append((url, token, timeout))
+            return {"data": rows}
+
+        actual = self.adapter.fetch_emu_rows(
+            {
+                "emu_url": "https://station.example/api/t_emu:list",
+                "emu_token": "secret",
+            },
+            request_json=request_json,
+        )
+
+        self.assertEqual(actual, rows)
+        self.assertEqual(len(calls), 1)
+
+    def test_get_station_config_returns_copy(self):
+        first = self.adapter.get_station_config("ES02")
+        first["cabinet_sns"] = ()
+
+        self.assertEqual(
+            len(self.adapter.get_station_config("ES02")["cabinet_sns"]),
+            6,
+        )
+
     def test_es01_ignores_nullable_pv_fields_and_maps_negative_grid_as_export(self):
         record = self.adapter.build_station_source_record(
             station_id="ES01",

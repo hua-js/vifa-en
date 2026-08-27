@@ -113,6 +113,27 @@ def _station_config(station_id):
     return station_id, STATION_CONFIGS[station_id]
 
 
+def get_station_config(station_id):
+    """返回一个可安全由调用方读取和修改的场站配置副本。"""
+    station_id, station = _station_config(station_id)
+    return {"station_id": station_id, **dict(station)}
+
+
+def fetch_emu_rows(config, request_json=None):
+    """读取并验证一次 t_emu:list 的原始设备记录。"""
+    request_json = request_json or _request_json
+    config_values = config if isinstance(config, dict) else {}
+    timeout = _number(config_values.get("timeout_seconds", 10), "timeout_seconds")
+    if timeout <= 0:
+        raise StationEnergyDataError("timeout_seconds 必须大于 0")
+    payload = request_json(
+        _config_text(config, "emu_url"),
+        _config_text(config, "emu_token"),
+        timeout,
+    )
+    return _payload_list(payload, "t_emu:list")
+
+
 def _station_rows(emu_rows, station_id, expected_emu_sns):
     if not isinstance(emu_rows, list):
         raise StationEnergyDataError("t_emu 记录必须是数组")
@@ -236,17 +257,7 @@ def build_station_source_record(*, station_id, emu_rows):
 def fetch_station_source_record(station_id, config, request_json=None):
     """读取一次 t_emu:list 并返回指定场站的三链路标准输入。"""
     _station_config(station_id)
-    timeout = config.get("timeout_seconds", 10) if isinstance(config, dict) else 10
-    timeout = _number(timeout, "timeout_seconds")
-    if timeout <= 0:
-        raise StationEnergyDataError("timeout_seconds 必须大于 0")
-    request_json = request_json or _request_json
-    payload = request_json(
-        _config_text(config, "emu_url"),
-        _config_text(config, "emu_token"),
-        timeout,
-    )
     return build_station_source_record(
         station_id=station_id,
-        emu_rows=_payload_list(payload, "t_emu:list"),
+        emu_rows=fetch_emu_rows(config, request_json=request_json),
     )
