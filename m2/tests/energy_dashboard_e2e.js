@@ -47,6 +47,28 @@ function assertClose(actual, expected, message) {
   );
   assert.strictEqual(fixture.status, 0, fixture.stderr);
   const dashboardPayload = JSON.parse(fixture.stdout);
+  dashboardPayload.data.events.push({
+    id: 103,
+    event_type: "chain_low_efficiency",
+    type: "链路低效率",
+    device: "储→用",
+    start: "2026-08-25T14:32:00+08:00",
+    end: null,
+    evidence: "储→用效率最低 80.00%，低于阈值 85.00%",
+    cause_status: "pending",
+    diagnosed_causes: [],
+    trigger_device_snapshot: {
+      battery_cabinets: [
+        {
+          device_id: "emu21",
+          temperature_c: null,
+          source_time: "2026-08-25T14:33:30+08:00",
+        },
+      ],
+    },
+    impact: ["储→用"],
+    status: "持续中",
+  });
 
   browser = await chromium.launch({ headless: true });
   const page = await browser.newPage();
@@ -520,11 +542,21 @@ function assertClose(actual, expected, message) {
   );
   assert.strictEqual(
     await page.locator("#event-table-body tr").count(),
-    2,
+    3,
   );
   assert.deepStrictEqual(
     await page.locator("#event-table-body tr").first().locator("td").allInnerTexts(),
     ["08/24 23:50", "电池温升", "1#电池簇", "5 分钟最大温升 3.50℃", "光→储、储→用", "已恢复"],
+  );
+  const chainRow = page.locator("#event-table-body tr", { hasText: "链路低效率" });
+  assert.strictEqual(await chainRow.count(), 1);
+  assert.match(await chainRow.innerText(), /原因待判断/);
+  await chainRow.locator("summary").click();
+  assert.match(await chainRow.innerText(), /emu21/);
+  assert.match(await chainRow.innerText(), /温度数据暂未提供/);
+  assert.strictEqual(
+    await page.locator("rect[data-event-type='chain_low_efficiency']").count(),
+    1,
   );
   await waitForStableDesktopOverlay();
   await chartOverlay.scrollIntoViewIfNeeded();

@@ -1264,6 +1264,34 @@ svg {
       font-weight: 500;
     }
 
+    #three-energy-flow .event-evidence {
+      display: grid;
+      gap: .35rem;
+      min-width: 14rem;
+    }
+
+    #three-energy-flow .event-cause {
+      color: var(--muted-foreground);
+    }
+
+    #three-energy-flow .event-snapshot {
+      color: var(--muted-foreground);
+      font-size: var(--font-size-tooltip);
+    }
+
+    #three-energy-flow .event-snapshot summary {
+      color: var(--foreground);
+      cursor: pointer;
+      width: fit-content;
+    }
+
+    #three-energy-flow .event-snapshot-list {
+      display: grid;
+      gap: .2rem;
+      margin: .4rem 0 0;
+      padding: 0;
+    }
+
     @keyframes energy-flow {
       from { left: 0; }
       to { left: calc(100% - .5rem); }
@@ -1582,7 +1610,7 @@ svg {
     <div class="chart-wrap" id="efficiency-chart-wrap">
       <svg class="trend-chart" id="efficiency-trend-chart" role="img" aria-labelledby="efficiency-chart-title efficiency-chart-desc">
         <title id="efficiency-chart-title">三条链路今日效率曲线</title>
-        <desc id="efficiency-chart-desc">横轴为0点至24点，纵轴为效率百分比，并标记逆变器低负载和电池温升事件。</desc>
+        <desc id="efficiency-chart-desc">横轴为0点至24点，纵轴为效率百分比，并标记逆变器低负载、电池温升和链路低效率事件。</desc>
       </svg>
       <div class="tooltip trend-tooltip" id="efficiency-tooltip" aria-hidden="true"></div>
     </div>
@@ -1800,6 +1828,74 @@ svg {
       setText("summary-pv-load", formatPercent(result?.pv_load_efficiency));
     }
 
+    function snapshotNumber(value) {
+      return hasNumericData(value) ? String(value) : "暂无";
+    }
+
+    function causeLabel(cause) {
+      const eventLabels = {
+        inverter_low_load: "逆变器低负载",
+        battery_temperature_rise: "电池温升",
+        chain_low_efficiency: "链路低效率"
+      };
+      const device = cause?.device_name || cause?.device_id || "未知设备";
+      const type = cause?.type || eventLabels[cause?.event_type] || cause?.event_type || "未知原因";
+      return String(device) + "：" + String(type);
+    }
+
+    function appendTriggerSnapshot(cell, snapshot) {
+      const inverters = Array.isArray(snapshot?.pv_inverters) ? snapshot.pv_inverters : [];
+      const cabinets = Array.isArray(snapshot?.battery_cabinets) ? snapshot.battery_cabinets : [];
+      if (!inverters.length && !cabinets.length) return;
+
+      const details = document.createElement("details");
+      details.className = "event-snapshot";
+      const summary = document.createElement("summary");
+      summary.textContent = "查看触发时设备数据";
+      const list = document.createElement("div");
+      list.className = "event-snapshot-list";
+      inverters.forEach((inverter) => {
+        const entry = document.createElement("div");
+        entry.textContent = String(inverter?.device_id || "未知逆变器") + "：" +
+          snapshotNumber(inverter?.active_power_kw) + " kW，负载率 " +
+          snapshotNumber(inverter?.load_rate_pct) + "%";
+        list.appendChild(entry);
+      });
+      cabinets.forEach((cabinet) => {
+        const entry = document.createElement("div");
+        const temperature = hasNumericData(cabinet?.temperature_c)
+          ? "最高电芯温度 " + String(cabinet.temperature_c) + "℃"
+          : "温度数据暂未提供";
+        entry.textContent = String(cabinet?.device_id || "未知电池柜") + "：" + temperature;
+        list.appendChild(entry);
+      });
+      details.append(summary, list);
+      cell.appendChild(details);
+    }
+
+    function appendEventEvidence(cell, item) {
+      const evidence = document.createElement("div");
+      evidence.className = "event-evidence";
+      const text = document.createElement("div");
+      text.textContent = item.evidence || "--";
+      evidence.appendChild(text);
+
+      if (item.event_type === "chain_low_efficiency" && item.cause_status === "pending") {
+        const cause = document.createElement("div");
+        cause.className = "event-cause";
+        cause.textContent = "链路低效率，原因待判断";
+        evidence.appendChild(cause);
+      } else if (Array.isArray(item.diagnosed_causes) && item.diagnosed_causes.length) {
+        const cause = document.createElement("div");
+        cause.className = "event-cause";
+        cause.textContent = "已诊断原因：" + item.diagnosed_causes.map(causeLabel).join("；");
+        evidence.appendChild(cause);
+      }
+
+      appendTriggerSnapshot(evidence, item.trigger_device_snapshot);
+      cell.appendChild(evidence);
+    }
+
     function renderEvents(items) {
       if (!eventTableBody) return;
       eventTableBody.replaceChildren();
@@ -1815,11 +1911,19 @@ svg {
       }
       items.forEach((item) => {
         const row = document.createElement("tr");
-        [formatTime(item.start), item.type, item.device, item.evidence, item.impact.join("、"), item.status].forEach((value, index) => {
+        [formatTime(item.start), item.type, item.device].forEach((value, index) => {
           const cell = document.createElement("td");
           cell.textContent = value || "--";
           if (index === 0 || index === 2) cell.className = "text-nowrap";
-          if (index === 5 && item.status === "持续中") cell.classList.add("status-active");
+          row.appendChild(cell);
+        });
+        const evidenceCell = document.createElement("td");
+        appendEventEvidence(evidenceCell, item);
+        row.appendChild(evidenceCell);
+        [Array.isArray(item.impact) ? item.impact.join("、") : "", item.status].forEach((value, index) => {
+          const cell = document.createElement("td");
+          cell.textContent = value || "--";
+          if (index === 1 && item.status === "持续中") cell.classList.add("status-active");
           row.appendChild(cell);
         });
         eventTableBody.appendChild(row);
@@ -1959,7 +2063,7 @@ svg {
       svg.replaceChildren();
 
       const title = make("title", { id: "efficiency-chart-title" }, "三条链路今日效率曲线");
-      const desc = make("desc", { id: "efficiency-chart-desc" }, "横轴为0点至24点，纵轴为效率百分比，并标记逆变器低负载和电池温升事件。");
+      const desc = make("desc", { id: "efficiency-chart-desc" }, "横轴为0点至24点，纵轴为效率百分比，并标记逆变器低负载、电池温升和链路低效率事件。");
       const defs = make("defs");
       const eventClip = make("clipPath", { id: "efficiency-event-clip" });
       eventClip.appendChild(make("rect", {
