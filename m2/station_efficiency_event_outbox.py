@@ -126,16 +126,20 @@ def enqueue_event(event, path):
 
 
 def discard_event(event, path):
-    """Remove a queued event after its remote idempotent upsert succeeds."""
-    identity, _payload = _event_row(event)
+    """Remove only the exact queued payload whose remote upsert succeeded."""
+    identity, payload = _event_row(event)
     with _connection(path) as connection:
         _write(
             connection,
             """
             DELETE FROM event_outbox
-            WHERE station_id = ? AND event_type = ? AND device_id = ? AND start_time = ?
+            WHERE station_id = ?
+              AND event_type = ?
+              AND device_id = ?
+              AND start_time = ?
+              AND payload_json = ?
             """,
-            identity,
+            (*identity, payload),
         )
 
 
