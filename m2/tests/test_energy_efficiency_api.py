@@ -1,4 +1,5 @@
 import importlib.util
+import copy
 from pathlib import Path
 import unittest
 
@@ -25,6 +26,68 @@ class EnergyEfficiencyApiTests(unittest.TestCase):
             with self.subTest(invalid=invalid):
                 with self.assertRaises(energy_api.EntrypointError):
                     energy_api.parse_request(invalid)
+
+    def test_runtime_and_station_rule_configs_are_isolated_between_calls(self):
+        original_rules = copy.deepcopy(energy_api.LOCAL_BOTTLENECK_RULES)
+        self.addCleanup(
+            setattr,
+            energy_api,
+            "LOCAL_BOTTLENECK_RULES",
+            original_rules,
+        )
+
+        first_runtime = energy_api.load_runtime_config(ENVIRONMENT)
+        first_station = energy_api._config_for_station(first_runtime, "ES02")
+        first_station["bottleneck_rule"]["chain_low_efficiency_threshold_pct"] = 1
+        second_runtime = energy_api.load_runtime_config(ENVIRONMENT)
+        second_station = energy_api._config_for_station(second_runtime, "ES02")
+
+        self.assertEqual(
+            first_runtime["bottleneck_rules"]["ES02"]["chain_low_efficiency_threshold_pct"],
+            85,
+        )
+        self.assertEqual(
+            second_runtime["bottleneck_rules"]["ES02"]["chain_low_efficiency_threshold_pct"],
+            85,
+        )
+        self.assertEqual(
+            second_station["bottleneck_rule"]["chain_low_efficiency_threshold_pct"],
+            85,
+        )
+
+    def test_runtime_config_rejects_non_shanghai_timezone(self):
+        with self.assertRaises(energy_api.EntrypointError):
+            energy_api.load_runtime_config({**ENVIRONMENT, "M2_TIMEZONE": "UTC"})
+
+    def test_partial_minute_sanitizes_untrusted_warning_details(self):
+        secret = "growall-token-should-not-escape"
+        endpoint = "https://secret.example/api/t_growall:list"
+        payload, exit_code = energy_api.execute(
+            ["minute", "ES02"],
+            ENVIRONMENT,
+            process_minute=lambda station_id, config: {
+                "status": "partial",
+                "warnings": [{
+                    "stage": f"upstream:{endpoint}",
+                    "code": f"upstream:{secret}",
+                    "message": f"request {endpoint} used {secret}",
+                    "exception": RuntimeError(secret),
+                }],
+                "minute_point": {"data_time": "2026-08-27T10:00:00+08:00"},
+                "saved_record": {"id": 1}, "device_points_saved": 6,
+                "event_updates": [],
+            },
+        )
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(payload["status"], "partial")
+        self.assertEqual(payload["data"]["warnings"], [{
+            "stage": "minute_job",
+            "code": "unknown_warning",
+            "message": "分钟任务部分处理失败",
+        }])
+        self.assertNotIn(secret, repr(payload))
+        self.assertNotIn(endpoint, repr(payload))
 
     def test_minute_uses_environment_config_and_official_default_rule(self):
         received_config = {}

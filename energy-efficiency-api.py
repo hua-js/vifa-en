@@ -5,6 +5,7 @@ import json
 import math
 import os
 import sys
+from copy import deepcopy
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from m2.station_efficiency_history import (
@@ -107,6 +108,22 @@ LOCAL_BOTTLENECK_RULES = getattr(
     _default_bottleneck_rules(),
 )
 
+BUSINESS_TIMEZONE = "Asia/Shanghai"
+
+_PUBLIC_WARNING_MESSAGES = {
+    "best_effort_failed": "部分瓶颈处理失败，已保留可用结果",
+    "bottleneck_rule_unavailable": "瓶颈规则不可用，已跳过事件评估",
+    "growall_unavailable": "Growall 数据不可用，已跳过逆变器设备处理",
+}
+_PUBLIC_WARNING_STAGES = {
+    "battery_point_build",
+    "inverter_point_build",
+    "device_point_save",
+    "bottleneck_rule",
+    "bottleneck_history",
+    "bottleneck_event_save",
+}
+
 
 class EntrypointError(ValueError):
     """可以安全返回给 Node-RED 的入口参数或配置错误。"""
@@ -182,11 +199,11 @@ def load_runtime_config(environ, require_nocobase=False):
         LOCAL_REQUEST_TIMEOUT_SECONDS,
     )
 
-    timezone_name = str(
-        environ.get("M2_TIMEZONE", LOCAL_TIMEZONE)
-    ).strip()
+    timezone_name = str(environ.get("M2_TIMEZONE", LOCAL_TIMEZONE)).strip()
+    if timezone_name != BUSINESS_TIMEZONE:
+        raise EntrypointError("missing_config", "服务器运行配置不正确", 3)
     try:
-        ZoneInfo(timezone_name)
+        ZoneInfo(BUSINESS_TIMEZONE)
     except (ZoneInfoNotFoundError, ValueError) as exc:
         raise EntrypointError(
             "missing_config",
@@ -211,7 +228,7 @@ def load_runtime_config(environ, require_nocobase=False):
             "M2_GROWALL_TOKEN",
             LOCAL_GROWALL_TOKEN,
         ),
-        "pv_inverter_sns_by_station": LOCAL_PV_INVERTER_SNS_BY_STATION,
+        "pv_inverter_sns_by_station": deepcopy(LOCAL_PV_INVERTER_SNS_BY_STATION),
         "pv_inverter_rated_power_kw": _runtime_number(
             environ,
             "M2_PV_INVERTER_RATED_POWER_KW",
@@ -234,7 +251,7 @@ def load_runtime_config(environ, require_nocobase=False):
         "battery_hot_cluster_field": _optional_field(
             LOCAL_BATTERY_HOT_CLUSTER_FIELD,
         ),
-        "bottleneck_rules": LOCAL_BOTTLENECK_RULES,
+        "bottleneck_rules": deepcopy(LOCAL_BOTTLENECK_RULES),
     }
     if require_nocobase:
         config.update({
@@ -253,18 +270,36 @@ def load_runtime_config(environ, require_nocobase=False):
 
 
 def _config_for_station(config, station_id):
-    station_config = dict(config)
-    rules = config.get("bottleneck_rules")
+    station_config = deepcopy(config)
+    rules = station_config.get("bottleneck_rules")
     if isinstance(rules, dict) and station_id in rules:
         station_config["bottleneck_rule"] = rules[station_id]
     return station_config
+
+
+def _public_warning(warning):
+    raw_warning = warning if isinstance(warning, dict) else {}
+    code = raw_warning.get("code")
+    if code not in _PUBLIC_WARNING_MESSAGES:
+        code = "unknown_warning"
+    stage = raw_warning.get("stage")
+    if stage not in _PUBLIC_WARNING_STAGES:
+        stage = "minute_job"
+    return {
+        "stage": stage,
+        "code": code,
+        "message": _PUBLIC_WARNING_MESSAGES.get(code, "分钟任务部分处理失败"),
+    }
 
 
 def public_minute_result(result, station_id):
     """Return only the JSON-safe minute summary expected by Node-RED."""
     minute_point = result["minute_point"]
     saved_record = result["saved_record"]
-    warnings = list(result.get("warnings") or [])
+    warnings = [
+        _public_warning(warning)
+        for warning in (result.get("warnings") or [])
+    ]
     event_updates = list(result.get("event_updates") or [])
     return {
         "operation": "minute",
