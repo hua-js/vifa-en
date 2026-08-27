@@ -10,7 +10,12 @@ from m2.station_efficiency_device_adapter import (
     build_inverter_device_points,
     fetch_growall_rows,
 )
-from m2.station_efficiency_history import build_minute_point, minute_bucket
+from m2.station_efficiency_history import (
+    HistoryError,
+    build_minute_point,
+    minute_bucket,
+    normalize_rule,
+)
 from m2.station_efficiency_nocobase import (
     StationEfficiencyStoreError,
     delete_device_points_before,
@@ -39,6 +44,11 @@ _RULE_WINDOW_FIELDS = (
     "chain_low_efficiency_trigger_minutes",
     "chain_low_efficiency_recovery_minutes",
 )
+_BOTTLENECK_RULE_WARNING = {
+    "stage": "bottleneck_rule",
+    "code": "bottleneck_rule_unavailable",
+    "message": "瓶颈规则不可用，已跳过事件评估",
+}
 
 
 def _beijing_time(value, config, field):
@@ -83,6 +93,15 @@ def _minute_chains(result):
 def _warning(stage):
     """Return a JSON-safe warning without propagating transport details or tokens."""
     return {"stage": stage, "code": "best_effort_failed"}
+
+
+def _validated_bottleneck_rule(config, warnings):
+    rule = config.get("bottleneck_rule") if isinstance(config, dict) else None
+    try:
+        return normalize_rule(rule)
+    except HistoryError:
+        warnings.append(dict(_BOTTLENECK_RULE_WARNING))
+        return None
 
 
 def _device_history_key(point):
@@ -238,7 +257,7 @@ def process_station_minute(
     device_points_saved = _save_device_points(
         device_points, config, store_request_json, warnings,
     )
-    rule = config.get("bottleneck_rule") if isinstance(config, dict) else None
+    rule = _validated_bottleneck_rule(config, warnings)
     event_updates = _evaluate_and_save_events(
         station_id, minute_point, device_points, rule, config,
         query_request_json, store_request_json, warnings,

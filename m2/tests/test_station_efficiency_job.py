@@ -1,5 +1,7 @@
+import json
 import unittest
 from datetime import datetime
+from urllib.parse import parse_qs, urlsplit
 from zoneinfo import ZoneInfo
 
 from m2.station_efficiency_job import cleanup_device_history, process_station_minute
@@ -16,7 +18,7 @@ INVERTER_SNS = (
 )
 
 
-def make_balanced_es02_rows():
+def make_balanced_es02_rows(temperature=None):
     cabinet_power = (-20, -20, -20, -20, -10, -10)
     battery_power = (-18000, -18000, -18000, -18000, -9000, -9000)
     pcs2_power = (-8, -8, -8, -8, -8, -7)
@@ -31,6 +33,7 @@ def make_balanced_es02_rows():
             "latest_grid_power": -10000 if is_master else 0,
             "input_ac_solar_power": None, "latest_solar_power": None,
             "acpv_rated_power": None,
+            "max_cell_temperature": temperature,
         })
     rows.append({
         "f_es_sn": "ES02", "emu_sn": "emu27", "last_time_iso": TIMESTAMP,
@@ -53,13 +56,13 @@ RULE = {
     "station_id": "ES02", "enabled": True,
     "inverter_min_running_power_kw": 5,
     "inverter_low_load_threshold_pct": 20,
-    "inverter_trigger_minutes": 1, "inverter_recovery_minutes": 1,
-    "temperature_rise_window_minutes": 2,
+    "inverter_trigger_minutes": 3, "inverter_recovery_minutes": 2,
+    "temperature_rise_window_minutes": 5,
     "temperature_rise_threshold_c": 3,
-    "temperature_trigger_minutes": 1, "temperature_recovery_minutes": 1,
-    "chain_low_efficiency_threshold_pct": 90,
-    "chain_low_efficiency_trigger_minutes": 1,
-    "chain_low_efficiency_recovery_minutes": 1,
+    "temperature_trigger_minutes": 2, "temperature_recovery_minutes": 2,
+    "chain_low_efficiency_threshold_pct": 85,
+    "chain_low_efficiency_trigger_minutes": 2,
+    "chain_low_efficiency_recovery_minutes": 2,
     "version": 1, "updated_at": "2026-08-26T09:00:00+08:00",
 }
 
@@ -72,6 +75,7 @@ CONFIG = {
     "nocobase_token": "store-secret",
     "timeout_seconds": 7, "timezone": "Asia/Shanghai",
     "pv_inverter_sns_by_station": {"ES02": INVERTER_SNS},
+    "battery_max_temperature_field": "max_cell_temperature",
     "bottleneck_rule": RULE,
 }
 
@@ -84,13 +88,58 @@ def historical_minute():
     }
 
 
+def timestamp(minute):
+    return f"2026-08-26T09:{minute:02d}:00+08:00"
+
+
+def formal_history_minutes():
+    return [
+        {
+            "station_id": "ES02", "data_time": timestamp(minute),
+            "pv_storage_efficiency": 90, "storage_load_efficiency": None,
+            "pv_load_efficiency": 100,
+        }
+        for minute in range(24, 30)
+    ]
+
+
+def formal_history_devices():
+    inverter = [
+        {
+            "station_id": "ES02", "device_type": "pv_inverter",
+            "device_id": "emu1", "device_name": "光伏逆变器 emu1",
+            "data_time": timestamp(minute), "source_time": timestamp(minute),
+            "active_power_kw": 10, "rated_power_kw": 60,
+            "load_rate_pct": 10 / 60 * 100, "battery_power_kw": None,
+            "temperature_c": None,
+        }
+        for minute in (28, 29)
+    ]
+    battery = [
+        {
+            "station_id": "ES02", "device_type": "battery_cabinet",
+            "device_id": "emu21", "device_name": "电池柜 emu21",
+            "subdevice_id": None, "data_time": timestamp(minute),
+            "source_time": timestamp(minute), "active_power_kw": None,
+            "rated_power_kw": None, "load_rate_pct": None,
+            "battery_power_kw": -18, "temperature_c": minute - 4,
+        }
+        for minute in range(24, 30)
+    ]
+    return inverter + battery
+
+
 class StationEfficiencyJobTests(unittest.TestCase):
-    def make_query_request(self, *, minute_rows=None, device_rows=None, active_events=None):
-        minute_rows = minute_rows or [historical_minute()]
-        device_rows = device_rows or []
-        active_events = active_events or []
+    def make_query_request(
+        self, *, minute_rows=None, device_rows=None, active_events=None, calls=None,
+    ):
+        minute_rows = formal_history_minutes() if minute_rows is None else minute_rows
+        device_rows = formal_history_devices() if device_rows is None else device_rows
+        active_events = [] if active_events is None else active_events
 
         def query_request(url, token, timeout):
+            if calls is not None:
+                calls.append(url)
             if "/t_efficiency_points:list?" in url:
                 return {"data": minute_rows}
             if "/t_efficiency_device_points:list?" in url:
@@ -103,10 +152,11 @@ class StationEfficiencyJobTests(unittest.TestCase):
 
     def test_processes_single_emu_fetch_through_device_and_event_flow(self):
         emu_calls, growall_calls, store_calls = [], [], []
+        query_calls = []
 
         def emu_request(url, token, timeout):
             emu_calls.append((url, token, timeout))
-            return {"data": make_balanced_es02_rows()}
+            return {"data": make_balanced_es02_rows(temperature=26)}
 
         def growall_request(url, token, timeout):
             growall_calls.append((url, token, timeout))
@@ -119,7 +169,7 @@ class StationEfficiencyJobTests(unittest.TestCase):
         output = process_station_minute(
             "ES02", CONFIG, source_request_json=emu_request,
             growall_request_json=growall_request,
-            query_request_json=self.make_query_request(),
+            query_request_json=self.make_query_request(calls=query_calls),
             store_request_json=store_request,
         )
 
@@ -128,13 +178,56 @@ class StationEfficiencyJobTests(unittest.TestCase):
         self.assertEqual(output["status"], "ok")
         self.assertEqual(output["device_points_saved"], 15)
         self.assertEqual(output["warnings"], [])
-        self.assertGreaterEqual(len(output["event_updates"]), 1)
+        updates = {(event["event_type"], event["device_id"]): event for event in output["event_updates"]}
+        self.assertEqual(updates[("inverter_low_load", "emu1")]["start_time"], timestamp(28))
+        self.assertEqual(updates[("battery_temperature_rise", "emu21")]["start_time"], timestamp(29))
         self.assertEqual(output["minute_point"]["station_id"], "ES02")
         self.assertEqual(output["saved_record"]["id"], 1)
         self.assertEqual(len(store_calls), 1 + 15 + len(output["event_updates"]))
         self.assertNotIn("source-secret", repr(output))
         self.assertNotIn("growall-secret", repr(output))
         self.assertNotIn("store-secret", repr(output))
+        minute_filter = json.loads(parse_qs(urlsplit(query_calls[0]).query)["filter"][0])
+        self.assertEqual(
+            minute_filter["$and"][1]["data_time"]["$gte"],
+            "2026-08-26T01:24:00+00:00",
+        )
+
+    def test_missing_bottleneck_rule_is_a_sanitized_partial_after_minute_save(self):
+        store_calls = []
+        output = process_station_minute(
+            "ES02", {key: value for key, value in CONFIG.items() if key != "bottleneck_rule"},
+            source_request_json=lambda *args: {"data": make_balanced_es02_rows()},
+            growall_request_json=lambda *args: {"data": make_growall_rows()},
+            query_request_json=lambda *args: self.fail("无规则时不应读取事件历史"),
+            store_request_json=lambda *args: store_calls.append(args) or {"data": {"id": 1}},
+        )
+
+        self.assertEqual(output["status"], "partial")
+        self.assertEqual(output["warnings"], [{
+            "stage": "bottleneck_rule", "code": "bottleneck_rule_unavailable",
+            "message": "瓶颈规则不可用，已跳过事件评估",
+        }])
+        self.assertEqual(len(store_calls), 16)
+
+    def test_invalid_bottleneck_rule_is_a_sanitized_partial_after_minute_save(self):
+        invalid_config = {**CONFIG, "bottleneck_rule": {
+            "station_id": "ES02", "enabled": True, "secret": "must-not-escape",
+        }}
+        output = process_station_minute(
+            "ES02", invalid_config,
+            source_request_json=lambda *args: {"data": make_balanced_es02_rows()},
+            growall_request_json=lambda *args: {"data": make_growall_rows()},
+            query_request_json=lambda *args: self.fail("非法规则时不应读取事件历史"),
+            store_request_json=lambda *args: {"data": {"id": 1}},
+        )
+
+        self.assertEqual(output["status"], "partial")
+        self.assertEqual(output["warnings"], [{
+            "stage": "bottleneck_rule", "code": "bottleneck_rule_unavailable",
+            "message": "瓶颈规则不可用，已跳过事件评估",
+        }])
+        self.assertNotIn("must-not-escape", repr(output))
 
     def test_growall_failure_keeps_station_and_battery_points(self):
         saved_bodies = []
