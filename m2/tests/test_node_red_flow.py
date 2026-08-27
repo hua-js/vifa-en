@@ -90,6 +90,7 @@ class NodeRedFlowTests(unittest.TestCase):
         self.assertEqual(accepted["payload"]["data"]["station_id"], "ES01")
 
         for raw_output in (
+            "",
             '{"status":"ok"}\n{"status":"ok"}',
             '{"status":"error","error":{"message":"untrusted-secret"}}',
         ):
@@ -109,19 +110,21 @@ class NodeRedFlowTests(unittest.TestCase):
 
         self.assertEqual(
             self._run_function("处理看板退出状态", {"payload": {"code": 0}}),
-            [None, None],
+            None,
         )
         dashboard_failed = self._run_function(
             "处理看板退出状态",
             {"payload": {"code": 1}},
         )
-        self.assertEqual(dashboard_failed[0]["statusCode"], 502)
-        self.assertEqual(
-            dashboard_failed[0]["payload"]["error"]["message"],
-            "Python 执行失败",
-        )
-        self.assertNotIn("code", json.dumps(dashboard_failed[0]["payload"]))
-        self.assertIn("服务器受控日志", dashboard_failed[1]["payload"]["message"])
+        self.assertNotIn("code", json.dumps(dashboard_failed))
+        self.assertIn("服务器受控日志", dashboard_failed["payload"]["message"])
+        rc_handler = self.by_name["处理看板退出状态"]
+        http_response_id = self.by_name["返回能效数据"]["id"]
+        self.assertNotIn(http_response_id, [
+            target_id
+            for wire in rc_handler["wires"]
+            for target_id in wire
+        ])
         self.assertEqual(
             self._run_function("丢弃看板stderr", {"payload": "untrusted-secret"}),
             None,

@@ -298,8 +298,8 @@
     "z": "b9c07ab9fb24cf5f",
     "g": "6a0f5b7f19c0f860",
     "name": "处理看板退出状态",
-    "func": "const rawCode = msg.payload && typeof msg.payload === 'object' ? msg.payload.code : msg.payload;\nconst code = Number(rawCode);\nif (!Number.isFinite(code) || code === 0) {\n    return [null, null];\n}\nconst response = {\n    ...msg,\n    statusCode: 502,\n    headers: { 'Content-Type': 'application/json; charset=utf-8' },\n    payload: { status: 'error', error: { message: 'Python 执行失败' } }\n};\nconst summary = { status: 'error', source: 'dashboard_exec', message: 'Python 执行失败，详见服务器受控日志' };\nreturn [response, { ...msg, payload: summary }];",
-    "outputs": 2,
+    "func": "const rawCode = msg.payload && typeof msg.payload === 'object' ? msg.payload.code : msg.payload;\nconst code = Number(rawCode);\nif (!Number.isFinite(code) || code === 0) {\n    return null;\n}\nmsg.payload = { status: 'error', source: 'dashboard_exec', message: 'Python 执行失败，详见服务器受控日志' };\nreturn msg;",
+    "outputs": 1,
     "timeout": "",
     "noerr": 0,
     "initialize": "",
@@ -308,9 +308,6 @@
     "x": 560,
     "y": 1340,
     "wires": [
-      [
-        "2a04eb75523c08af"
-      ],
       [
         "f4c337a0f23d6a11"
       ]
