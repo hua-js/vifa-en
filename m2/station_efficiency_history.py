@@ -1,6 +1,7 @@
 """Pure minute-history and bottleneck transformations for the energy dashboard."""
 
 from datetime import datetime, timedelta, timezone
+import json
 import math
 from zoneinfo import ZoneInfo
 
@@ -103,6 +104,8 @@ RULE_FIELDS = (
     "inverter_recovery_minutes", "temperature_rise_window_minutes",
     "temperature_rise_threshold_c", "temperature_trigger_minutes",
     "temperature_recovery_minutes", "version", "updated_at",
+    "chain_low_efficiency_threshold_pct", "chain_low_efficiency_trigger_minutes",
+    "chain_low_efficiency_recovery_minutes",
 )
 
 
@@ -116,14 +119,15 @@ def normalize_rule(record):
     for field in (
         "inverter_trigger_minutes", "inverter_recovery_minutes",
         "temperature_rise_window_minutes", "temperature_trigger_minutes",
-        "temperature_recovery_minutes", "version",
+        "temperature_recovery_minutes", "chain_low_efficiency_trigger_minutes",
+        "chain_low_efficiency_recovery_minutes", "version",
     ):
         value = record[field]
         if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
             raise HistoryError("invalid_rule", f"{field} 必须是正整数", {"field": field})
     for field in (
         "inverter_min_running_power_kw", "inverter_low_load_threshold_pct",
-        "temperature_rise_threshold_c",
+        "temperature_rise_threshold_c", "chain_low_efficiency_threshold_pct",
     ):
         try:
             number = _optional_non_negative(record[field], field)
@@ -134,8 +138,11 @@ def normalize_rule(record):
         normalized[field] = number
     if not isinstance(record["enabled"], bool):
         raise HistoryError("invalid_rule", "enabled 必须是布尔值", {"field": "enabled"})
-    if normalized["inverter_low_load_threshold_pct"] > 100:
-        raise HistoryError("invalid_rule", "低负载阈值不能超过 100%", {"field": "inverter_low_load_threshold_pct"})
+    for field in (
+        "inverter_low_load_threshold_pct", "chain_low_efficiency_threshold_pct",
+    ):
+        if normalized[field] > 100:
+            raise HistoryError("invalid_rule", f"{field} 不能超过 100%", {"field": field})
     normalized["station_id"] = _required_identifier(record["station_id"], "station_id", "invalid_rule")
     normalized["updated_at"] = _parse_time(record["updated_at"], "updated_at").isoformat()
     return normalized
@@ -265,6 +272,7 @@ def _validate_active_event(
     threshold_field, observed_unit = {
         "inverter_low_load": ("inverter_low_load_threshold_pct", "%"),
         "battery_temperature_rise": ("temperature_rise_threshold_c", "℃"),
+        "chain_low_efficiency": ("chain_low_efficiency_threshold_pct", "%"),
     }[expected_event_type]
     threshold = active_event.get("threshold_value")
     if isinstance(threshold, bool) or not isinstance(threshold, (int, float)) or not math.isfinite(float(threshold)):
@@ -379,6 +387,167 @@ def evaluate_inverter_low_load(samples, rule, active_event=None):
     event["last_seen_time"] = ordered[-1]["data_time"]
     if (
         len(recovery) >= snapshot["inverter_recovery_minutes"]
+        and recovery[-1]["_time"] > previous_last_seen_time
+    ):
+        event["status"] = "recovered"
+        event["end_time"] = recovery[0]["data_time"]
+    return event
+
+
+def _normalize_chain_samples(samples):
+    def normalize(sample):
+        if not isinstance(sample, dict):
+            raise HistoryError("invalid_device_samples", "设备样本必须是对象")
+        value = sample.get("efficiency_pct")
+        if value is None:
+            efficiency = None
+        else:
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)):
+                raise HistoryError("invalid_device_samples", "efficiency_pct 必须是有限数值或 null")
+            efficiency = float(value)
+            if efficiency < 0 or efficiency > 100:
+                raise HistoryError("invalid_device_samples", "efficiency_pct 必须在 0 到 100 之间")
+        time = minute_bucket(sample.get("data_time"))
+        return {
+            "device_id": _required_identifier(sample.get("device_id"), "device_id", "invalid_device_samples"),
+            "device_name": _required_identifier(sample.get("device_name"), "device_name", "invalid_device_samples"),
+            "data_time": time.isoformat(),
+            "efficiency_pct": efficiency,
+            "_time": time,
+        }
+    return _ordered_one_device(samples, normalize)
+
+
+def _json_safe_copy(value, field):
+    try:
+        return json.loads(json.dumps(value, ensure_ascii=False, allow_nan=False))
+    except (TypeError, ValueError) as exc:
+        raise HistoryError("invalid_event_evidence", f"{field} 必须只包含 JSON 安全值", {"field": field}) from exc
+
+
+def _event_copy(event):
+    return {**event, "evidence": _json_safe_copy(event["evidence"], "evidence")}
+
+
+def _chain_event_evidence(sample, minimum, rule, continuous_minutes, last_low_time, snapshot, causes):
+    return {
+        "current_efficiency_pct": sample["efficiency_pct"],
+        "minimum_efficiency_pct": minimum,
+        "low_efficiency_threshold_pct": rule["chain_low_efficiency_threshold_pct"],
+        "continuous_minutes": continuous_minutes,
+        "last_low_efficiency_time": last_low_time,
+        "cause_status": "diagnosed" if causes else "pending",
+        "diagnosed_causes": causes,
+        "trigger_device_snapshot": snapshot,
+    }
+
+
+def evaluate_chain_low_efficiency(
+    samples, rule, active_event=None, trigger_device_snapshot=None, diagnosed_causes=None,
+):
+    """Evaluate one energy-chain's minute efficiency without side effects."""
+    rule = normalize_rule(rule)
+    ordered = _normalize_chain_samples(samples)
+    event_start_time = None
+    previous_last_seen_time = None
+    snapshot_rule = None
+    if active_event is not None:
+        expected_device = ordered[0] if ordered else None
+        snapshot_rule, event_start_time, previous_last_seen_time = _validate_active_event(
+            active_event, rule["station_id"], "chain_low_efficiency",
+            expected_device["device_id"] if expected_device else None,
+            expected_device["device_name"] if expected_device else None,
+        )
+    if not ordered:
+        return _event_copy(active_event) if active_event else None
+    if not rule["enabled"] and active_event is None:
+        return None
+
+    def low_efficiency(sample, threshold):
+        return (
+            sample["efficiency_pct"] is not None
+            and sample["efficiency_pct"] < threshold
+        )
+
+    if active_event is None:
+        run = _trailing_minute_run(
+            ordered,
+            lambda sample: low_efficiency(
+                sample, rule["chain_low_efficiency_threshold_pct"],
+            ),
+        )
+        if len(run) < rule["chain_low_efficiency_trigger_minutes"]:
+            return None
+        first, last = run[0], run[-1]
+        minimum = min(sample["efficiency_pct"] for sample in run)
+        device_snapshot = _json_safe_copy(
+            trigger_device_snapshot if trigger_device_snapshot is not None else {},
+            "trigger_device_snapshot",
+        )
+        if not isinstance(device_snapshot, dict):
+            raise HistoryError("invalid_event_evidence", "trigger_device_snapshot 必须是对象", {"field": "trigger_device_snapshot"})
+        causes = _json_safe_copy(diagnosed_causes or [], "diagnosed_causes")
+        if not isinstance(causes, list):
+            raise HistoryError("invalid_event_evidence", "diagnosed_causes 必须是数组", {"field": "diagnosed_causes"})
+        return _new_event(
+            rule, "chain_low_efficiency", first, last,
+            minimum, rule["chain_low_efficiency_threshold_pct"], "%",
+            [first["device_name"]],
+            f"链路效率最低 {minimum:.2f}%，低于阈值 {rule['chain_low_efficiency_threshold_pct']:.2f}%",
+            _chain_event_evidence(
+                last, minimum, rule, len(run), last["data_time"], device_snapshot, causes,
+            ),
+        )
+
+    new_samples = [sample for sample in ordered if sample["_time"] > previous_last_seen_time]
+    if not any(sample["efficiency_pct"] is not None for sample in new_samples):
+        return _event_copy(active_event)
+
+    event = _event_copy(active_event)
+    evidence = event["evidence"]
+    low_run = _trailing_minute_run(
+        new_samples,
+        lambda sample: low_efficiency(
+            sample, snapshot_rule["chain_low_efficiency_threshold_pct"],
+        ),
+    )
+    if low_run:
+        previous_low_time = _parse_time(
+            evidence.get("last_low_efficiency_time", event["last_seen_time"]),
+            "last_low_efficiency_time",
+        )
+        new_low_run = [sample for sample in low_run if sample["_time"] > previous_low_time]
+        if new_low_run:
+            if new_low_run[0]["_time"] - previous_low_time == timedelta(minutes=1):
+                evidence["continuous_minutes"] += len(new_low_run)
+            else:
+                evidence["continuous_minutes"] = len(new_low_run)
+            evidence["last_low_efficiency_time"] = new_low_run[-1]["data_time"]
+
+    valid_new_samples = [sample for sample in new_samples if sample["efficiency_pct"] is not None]
+    event["observed_value"] = min(
+        event["observed_value"], min(sample["efficiency_pct"] for sample in valid_new_samples),
+    )
+    latest = valid_new_samples[-1]
+    evidence["current_efficiency_pct"] = latest["efficiency_pct"]
+    evidence["minimum_efficiency_pct"] = event["observed_value"]
+    evidence["low_efficiency_threshold_pct"] = snapshot_rule["chain_low_efficiency_threshold_pct"]
+    evidence["display_text"] = (
+        f"链路效率最低 {event['observed_value']:.2f}%，"
+        f"低于阈值 {snapshot_rule['chain_low_efficiency_threshold_pct']:.2f}%"
+    )
+    event["last_seen_time"] = latest["data_time"]
+
+    event_history = [sample for sample in ordered if sample["_time"] >= event_start_time]
+    recovery = _trailing_minute_run(
+        event_history,
+        lambda sample: (
+            sample["efficiency_pct"] is not None
+            and sample["efficiency_pct"] >= snapshot_rule["chain_low_efficiency_threshold_pct"]
+        ),
+    )
+    if (
+        len(recovery) >= snapshot_rule["chain_low_efficiency_recovery_minutes"]
         and recovery[-1]["_time"] > previous_last_seen_time
     ):
         event["status"] = "recovered"
@@ -566,6 +735,7 @@ def build_event_upsert(event):
 EVENT_LABELS = {
     "inverter_low_load": "逆变器低负载",
     "battery_temperature_rise": "电池温升",
+    "chain_low_efficiency": "链路低效率",
 }
 
 
@@ -663,6 +833,9 @@ def build_calendar_day_dashboard(station_id, timezone_name, as_of, realtime, poi
             "start": _public_time(event["start_time"], start.tzinfo, "start_time"),
             "end": _public_time(event["end_time"], start.tzinfo, "end_time") if event.get("end_time") else None,
             "evidence": event["evidence"]["display_text"],
+            "cause_status": event["evidence"].get("cause_status"),
+            "diagnosed_causes": list(event["evidence"].get("diagnosed_causes") or []),
+            "trigger_device_snapshot": dict(event["evidence"].get("trigger_device_snapshot") or {}),
             "impact": list(event["impact_chain"]),
             "status": "持续中" if event["status"] == "active" else "已恢复",
         })

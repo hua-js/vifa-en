@@ -7,6 +7,7 @@ from m2.station_efficiency_history import (
     build_minute_point,
     build_minute_upsert,
     evaluate_battery_temperature_rise,
+    evaluate_chain_low_efficiency,
     evaluate_inverter_low_load,
     normalize_rule,
 )
@@ -25,6 +26,9 @@ class StationEfficiencyHistoryTests(unittest.TestCase):
             "temperature_rise_threshold_c": 3,
             "temperature_trigger_minutes": 2,
             "temperature_recovery_minutes": 2,
+            "chain_low_efficiency_threshold_pct": 85,
+            "chain_low_efficiency_trigger_minutes": 2,
+            "chain_low_efficiency_recovery_minutes": 2,
             "version": 4,
             "updated_at": "2026-08-25T00:00:00+08:00",
         })
@@ -46,12 +50,44 @@ class StationEfficiencyHistoryTests(unittest.TestCase):
             "temperature_c": temperature,
         }
 
+    def chain_sample(self, minute, efficiency, chain="storage_load"):
+        return {
+            "device_id": chain,
+            "device_name": {
+                "storage_load": "储→用",
+                "pv_storage": "光→储",
+                "pv_load": "光→用",
+            }[chain],
+            "data_time": f"2026-08-27T10:{minute:02d}:00+08:00",
+            "efficiency_pct": efficiency,
+        }
+
     def test_rule_requires_every_configured_value(self):
-        record = dict(self.inverter_rule())
-        del record["inverter_trigger_minutes"]
-        with self.assertRaises(HistoryError) as caught:
-            normalize_rule(record)
-        self.assertEqual(caught.exception.code, "invalid_rule")
+        for field in (
+            "inverter_trigger_minutes",
+            "chain_low_efficiency_threshold_pct",
+            "chain_low_efficiency_trigger_minutes",
+            "chain_low_efficiency_recovery_minutes",
+        ):
+            with self.subTest(field=field):
+                record = dict(self.inverter_rule())
+                del record[field]
+                with self.assertRaises(HistoryError) as caught:
+                    normalize_rule(record)
+                self.assertEqual(caught.exception.code, "invalid_rule")
+
+    def test_chain_rule_rejects_out_of_range_threshold_and_non_positive_minutes(self):
+        for field, value in (
+            ("chain_low_efficiency_threshold_pct", -0.01),
+            ("chain_low_efficiency_threshold_pct", 100.01),
+            ("chain_low_efficiency_threshold_pct", float("nan")),
+            ("chain_low_efficiency_trigger_minutes", 0),
+            ("chain_low_efficiency_recovery_minutes", 0),
+        ):
+            with self.subTest(field=field, value=value):
+                with self.assertRaises(HistoryError) as caught:
+                    normalize_rule(dict(self.inverter_rule(), **{field: value}))
+                self.assertEqual(caught.exception.code, "invalid_rule")
 
     def test_rule_rejects_none_station_id(self):
         record = dict(self.inverter_rule(), station_id=None)
@@ -293,6 +329,66 @@ class StationEfficiencyHistoryTests(unittest.TestCase):
         samples = [self.inverter_sample(0, 10), self.inverter_sample(2, 10), self.inverter_sample(3, 10)]
         self.assertIsNone(evaluate_inverter_low_load(samples, self.inverter_rule()))
 
+    def test_chain_low_efficiency_opens_after_two_minutes_with_snapshot(self):
+        snapshot = {"battery_cabinets": [{"device_id": "emu21", "temperature_c": None}]}
+        event = evaluate_chain_low_efficiency(
+            [self.chain_sample(0, 80), self.chain_sample(1, 82)],
+            self.inverter_rule(),
+            trigger_device_snapshot=snapshot,
+            diagnosed_causes=[],
+        )
+        self.assertEqual(event["event_type"], "chain_low_efficiency")
+        self.assertEqual(event["start_time"], "2026-08-27T10:00:00+08:00")
+        self.assertEqual(event["observed_value"], 80.0)
+        self.assertEqual(event["evidence"]["cause_status"], "pending")
+        self.assertEqual(event["evidence"]["trigger_device_snapshot"], snapshot)
+
+    def test_chain_event_recovers_after_two_minutes_at_or_above_85(self):
+        active = evaluate_chain_low_efficiency(
+            [self.chain_sample(0, 80), self.chain_sample(1, 82)], self.inverter_rule(),
+            trigger_device_snapshot={}, diagnosed_causes=[],
+        )
+        recovered = evaluate_chain_low_efficiency(
+            [self.chain_sample(1, 82), self.chain_sample(2, 85), self.chain_sample(3, 86)],
+            self.inverter_rule(), active_event=active,
+        )
+        self.assertEqual(recovered["status"], "recovered")
+        self.assertEqual(recovered["end_time"], "2026-08-27T10:02:00+08:00")
+
+    def test_chain_missing_minute_does_not_complete_trigger(self):
+        self.assertIsNone(evaluate_chain_low_efficiency(
+            [self.chain_sample(0, 80), self.chain_sample(2, 82)], self.inverter_rule(),
+        ))
+
+    def test_chain_null_efficiency_does_not_complete_trigger(self):
+        self.assertIsNone(evaluate_chain_low_efficiency(
+            [self.chain_sample(0, 80), self.chain_sample(1, None)], self.inverter_rule(),
+        ))
+
+    def test_active_chain_event_with_no_valid_samples_returns_unchanged(self):
+        active = evaluate_chain_low_efficiency(
+            [self.chain_sample(0, 80), self.chain_sample(1, 82)], self.inverter_rule(),
+            trigger_device_snapshot={}, diagnosed_causes=[],
+        )
+        unchanged = evaluate_chain_low_efficiency(
+            [self.chain_sample(2, None)], self.inverter_rule(), active_event=active,
+        )
+        self.assertEqual(unchanged, active)
+        self.assertIsNot(unchanged, active)
+
+    def test_active_chain_event_does_not_overwrite_trigger_snapshot(self):
+        original = {"pv_inverters": [{"device_id": "emu1", "load_rate_pct": 10.0}]}
+        active = evaluate_chain_low_efficiency(
+            [self.chain_sample(0, 80), self.chain_sample(1, 82)], self.inverter_rule(),
+            trigger_device_snapshot=original, diagnosed_causes=[],
+        )
+        updated = evaluate_chain_low_efficiency(
+            [self.chain_sample(2, 70)], self.inverter_rule(), active_event=active,
+            trigger_device_snapshot={"pv_inverters": []},
+        )
+        self.assertEqual(updated["evidence"]["trigger_device_snapshot"], original)
+        self.assertEqual(active["evidence"]["trigger_device_snapshot"], original)
+
     def test_temperature_event_uses_window_rise_and_opens_at_first_condition(self):
         samples = [
             self.temperature_sample(0, 25.0), self.temperature_sample(1, 25.3),
@@ -533,6 +629,26 @@ class StationEfficiencyHistoryTests(unittest.TestCase):
         self.assertEqual(result["trend"], [])
         self.assertIsNone(result["summary_today"]["pv_storage_efficiency"])
         self.assertEqual(result["events"], [])
+
+    def test_calendar_day_dashboard_publishes_chain_cause_contract(self):
+        event = evaluate_chain_low_efficiency(
+            [self.chain_sample(0, 80), self.chain_sample(1, 82)],
+            self.inverter_rule(),
+            trigger_device_snapshot={
+                "battery_cabinets": [{"device_id": "emu21", "temperature_c": None}],
+            },
+            diagnosed_causes=[],
+        )
+        dashboard = build_calendar_day_dashboard(
+            "station-1", "Asia/Shanghai", "2026-08-27T14:36:20+08:00",
+            {}, [], [event],
+        )
+        self.assertEqual(dashboard["events"][0]["type"], "链路低效率")
+        self.assertEqual(dashboard["events"][0]["cause_status"], "pending")
+        self.assertEqual(
+            dashboard["events"][0]["trigger_device_snapshot"]["battery_cabinets"][0]["temperature_c"],
+            None,
+        )
 
     def test_calendar_day_dashboard_rejects_duplicates_and_excludes_future_points(self):
         point = build_minute_point(
