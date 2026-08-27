@@ -16,6 +16,7 @@ from m2.station_efficiency_history import (
 ALLOWED_COLLECTIONS = {
     "t_efficiency_points",
     "t_efficiency_bottleneck_events",
+    "t_efficiency_device_points",
 }
 
 
@@ -113,6 +114,11 @@ def _request_get_json(url, token, timeout):
         raise StationEfficiencyStoreError("NocoBase 读取失败") from exc
 
 
+def _request_post_json(url, token, timeout):
+    """执行不需要业务请求体的固定 NocoBase POST 操作。"""
+    return _request_json(url, token, timeout, {})
+
+
 def _canonical_time(value, field):
     try:
         parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
@@ -173,6 +179,125 @@ def fetch_minute_points(
     return records
 
 
+def _read_records(payload, message):
+    if not isinstance(payload, dict) or payload.get("errors"):
+        raise StationEfficiencyStoreError("NocoBase 拒绝读取")
+    records = payload.get("data")
+    if not isinstance(records, list) or not all(
+        isinstance(record, dict) for record in records
+    ):
+        raise StationEfficiencyStoreError(message)
+    return records
+
+
+def _station_id(station_id):
+    station_text = str(station_id).strip()
+    if not station_text:
+        raise StationEfficiencyStoreError("station_id 不能为空")
+    return station_text
+
+
+def _time_range(station_id, start_time, end_time):
+    station_text = _station_id(station_id)
+    start_utc = _canonical_time(start_time, "start_time")
+    end_utc = _canonical_time(end_time, "end_time")
+    if datetime.fromisoformat(end_utc) <= datetime.fromisoformat(start_utc):
+        raise StationEfficiencyStoreError("end_time 必须晚于 start_time")
+    return station_text, start_utc, end_utc
+
+
+def _list_query(filter_value, *, sort=None, page_size=None):
+    pairs = [
+        (
+            "filter",
+            json.dumps(filter_value, ensure_ascii=False, separators=(",", ":")),
+        ),
+    ]
+    if sort is not None:
+        pairs.append(("sort[]", sort))
+    if page_size is not None:
+        pairs.append(("pageSize", str(page_size)))
+    return urlencode(pairs)
+
+
+def fetch_device_points(
+    station_id,
+    start_time,
+    end_time,
+    config,
+    request_json=None,
+):
+    """读取一个场站指定时间范围内的设备分钟点。"""
+    station_text, start_utc, end_utc = _time_range(
+        station_id, start_time, end_time,
+    )
+    filter_value = {
+        "$and": [
+            {"station_id": {"$eq": station_text}},
+            {"data_time": {"$gte": start_utc, "$lt": end_utc}},
+        ]
+    }
+    request_json = request_json or _request_get_json
+    payload = request_json(
+        f"{_base_url(config)}/api/t_efficiency_device_points:list?"
+        f"{_list_query(filter_value, sort='data_time', page_size=1440)}",
+        _config_text(config, "nocobase_token"),
+        _timeout(config),
+    )
+    return _read_records(payload, "NocoBase 未返回合法设备分钟数据")
+
+
+def fetch_active_events(station_id, config, request_json=None):
+    """读取场站当前仍处于活动状态的瓶颈事件。"""
+    filter_value = {
+        "$and": [
+            {"station_id": {"$eq": _station_id(station_id)}},
+            {"status": {"$eq": "active"}},
+        ]
+    }
+    request_json = request_json or _request_get_json
+    payload = request_json(
+        f"{_base_url(config)}/api/t_efficiency_bottleneck_events:list?"
+        f"{_list_query(filter_value)}",
+        _config_text(config, "nocobase_token"),
+        _timeout(config),
+    )
+    return _read_records(payload, "NocoBase 未返回合法活动事件")
+
+
+def fetch_dashboard_events(
+    station_id,
+    start_time,
+    end_time,
+    config,
+    request_json=None,
+):
+    """读取当天活动中的事件，以及当天恢复的事件。"""
+    station_text, start_utc, end_utc = _time_range(
+        station_id, start_time, end_time,
+    )
+    filter_value = {
+        "$and": [
+            {"station_id": {"$eq": station_text}},
+            {"$or": [
+                {"status": {"$eq": "active"}},
+                {"$and": [
+                    {"status": {"$eq": "recovered"}},
+                    {"end_time": {"$gte": start_utc, "$lt": end_utc}},
+                ]},
+            ]},
+        ]
+    }
+    request_json = request_json or _request_get_json
+    payload = request_json(
+        f"{_base_url(config)}/api/t_efficiency_bottleneck_events:list?"
+        f"{_list_query(filter_value, sort='start_time')}",
+        _config_text(config, "nocobase_token"),
+        _timeout(config),
+    )
+    return _read_records(payload, "NocoBase 未返回合法看板事件")
+
+
 def _saved_record(payload):
     if not isinstance(payload, dict):
         raise StationEfficiencyStoreError("NocoBase 未返回合法结果")
@@ -231,3 +356,44 @@ def save_bottleneck_event(event, config, request_json=None):
         config,
         request_json=request_json,
     )
+
+
+def save_device_point(point, config, request_json=None):
+    """按场站、设备类型、设备和时间幂等保存设备分钟点。"""
+    if not isinstance(point, dict):
+        raise StationEfficiencyStoreError("设备分钟数据必须是对象")
+    try:
+        key = {
+            field: point[field]
+            for field in ("station_id", "device_type", "device_id", "data_time")
+        }
+    except KeyError as exc:
+        raise StationEfficiencyStoreError("设备分钟数据缺少唯一标识") from exc
+    return _save_upsert(
+        {
+            "collection": "t_efficiency_device_points",
+            "key": key,
+            "values": dict(point),
+        },
+        config,
+        request_json=request_json,
+    )
+
+
+def delete_device_points_before(cutoff, config, request_json=None):
+    """删除保留期之前的设备分钟点，返回 NocoBase 报告的删除数。"""
+    cutoff_utc = _canonical_time(cutoff, "cutoff")
+    filter_value = {"data_time": {"$lt": cutoff_utc}}
+    query = _list_query(filter_value)
+    request_json = request_json or _request_post_json
+    payload = request_json(
+        f"{_base_url(config)}/api/t_efficiency_device_points:destroy?{query}",
+        _config_text(config, "nocobase_token"),
+        _timeout(config),
+    )
+    if not isinstance(payload, dict) or payload.get("errors"):
+        raise StationEfficiencyStoreError("NocoBase 拒绝删除")
+    deleted = payload.get("data")
+    if isinstance(deleted, bool) or not isinstance(deleted, int) or deleted < 0:
+        raise StationEfficiencyStoreError("NocoBase 未返回合法删除数量")
+    return deleted

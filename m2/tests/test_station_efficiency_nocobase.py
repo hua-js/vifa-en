@@ -7,8 +7,13 @@ from urllib.parse import parse_qs, urlsplit
 
 from m2.station_efficiency_nocobase import (
     StationEfficiencyStoreError,
+    delete_device_points_before,
+    fetch_active_events,
+    fetch_dashboard_events,
+    fetch_device_points,
     fetch_minute_points,
     save_bottleneck_event,
+    save_device_point,
     save_minute_point,
 )
 
@@ -52,8 +57,93 @@ BOTTLENECK_EVENT = {
     "rule_version": 1,
 }
 
+DEVICE_POINT = {
+    "station_id": "ES02",
+    "device_type": "inverter",
+    "device_id": "pv-inverter-1",
+    "device_name": "1#逆变器",
+    "data_time": "2026-08-27T10:00:00+08:00",
+    "active_power_kw": 12.4,
+    "rated_power_kw": 100.0,
+}
+
 
 class StationEfficiencyNocoBaseTests(unittest.TestCase):
+    def test_device_save_uses_four_field_identity(self):
+        calls = []
+
+        save_device_point(
+            DEVICE_POINT,
+            CONFIG,
+            request_json=lambda *args: calls.append(args) or {"data": {"id": 7}},
+        )
+
+        parsed = urlsplit(calls[0][0])
+        self.assertEqual(parsed.path, "/api/t_efficiency_device_points:updateOrCreate")
+        self.assertEqual(
+            parse_qs(parsed.query)["filterKeys[]"],
+            ["station_id", "device_type", "device_id", "data_time"],
+        )
+
+    def test_fetch_device_points_filters_station_and_time_range(self):
+        rows = fetch_device_points(
+            "ES02",
+            "2026-08-27T09:50:00+08:00",
+            "2026-08-27T10:01:00+08:00",
+            CONFIG,
+            request_json=lambda *args: {"data": [DEVICE_POINT]},
+        )
+
+        self.assertEqual(rows, [DEVICE_POINT])
+
+    def test_fetch_active_events_queries_all_active_events_for_station(self):
+        calls = []
+
+        fetch_active_events(
+            "ES02",
+            CONFIG,
+            request_json=lambda *args: calls.append(args) or {"data": []},
+        )
+
+        query = parse_qs(urlsplit(calls[0][0]).query)
+        self.assertEqual(json.loads(query["filter"][0]), {
+            "$and": [
+                {"station_id": {"$eq": "ES02"}},
+                {"status": {"$eq": "active"}},
+            ]
+        })
+
+    def test_dashboard_events_include_active_and_recovered_in_day(self):
+        calls = []
+
+        fetch_dashboard_events(
+            "ES02",
+            "2026-08-27T00:00:00+08:00",
+            "2026-08-28T00:00:00+08:00",
+            CONFIG,
+            request_json=lambda *args: calls.append(args) or {"data": []},
+        )
+
+        filter_value = json.loads(parse_qs(urlsplit(calls[0][0]).query)["filter"][0])
+        self.assertEqual(filter_value["$and"][0], {"station_id": {"$eq": "ES02"}})
+        self.assertIn("$or", filter_value["$and"][1])
+
+    def test_cleanup_destroys_only_old_device_points(self):
+        calls = []
+
+        deleted = delete_device_points_before(
+            "2026-07-28T10:00:00+08:00",
+            CONFIG,
+            request_json=lambda *args: calls.append(args) or {"data": 123},
+        )
+
+        parsed = urlsplit(calls[0][0])
+        self.assertEqual(parsed.path, "/api/t_efficiency_device_points:destroy")
+        self.assertEqual(json.loads(parse_qs(parsed.query)["filter"][0]), {
+            "data_time": {"$lt": "2026-07-28T02:00:00+00:00"}
+        })
+        self.assertEqual(deleted, 123)
+
     def test_fetches_one_station_calendar_day_in_time_order(self):
         calls = []
 
