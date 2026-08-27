@@ -233,11 +233,16 @@ def _fetch_event_pages(filter_value, config, request_json, message, sort=None):
             _config_text(config, "nocobase_token"),
             _timeout(config),
         )
-        records.extend(_read_records(payload, message))
+        page_records = _read_records(payload, message)
+        records.extend(page_records)
         meta = payload.get("meta")
         if not isinstance(meta, dict):
             raise StationEfficiencyStoreError("NocoBase 未返回合法分页信息")
         total_pages = meta.get("totalPage")
+        if total_pages == 0:
+            if page == 1 and not page_records:
+                return records
+            raise StationEfficiencyStoreError("NocoBase 未返回合法分页信息")
         if (
             isinstance(total_pages, bool)
             or not isinstance(total_pages, int)

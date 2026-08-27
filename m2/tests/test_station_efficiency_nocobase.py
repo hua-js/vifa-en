@@ -179,6 +179,58 @@ class StationEfficiencyNocoBaseTests(unittest.TestCase):
                         request_json=lambda *args: {"data": []},
                     )
 
+    def test_empty_first_event_page_with_zero_total_pages_is_complete(self):
+        event_queries = (
+            (fetch_active_events, ("ES02", CONFIG)),
+            (
+                fetch_dashboard_events,
+                (
+                    "ES02",
+                    "2026-08-27T00:00:00+08:00",
+                    "2026-08-28T00:00:00+08:00",
+                    CONFIG,
+                ),
+            ),
+        )
+
+        for fetch_events, arguments in event_queries:
+            with self.subTest(fetch_events=fetch_events.__name__):
+                self.assertEqual(
+                    fetch_events(
+                        *arguments,
+                        request_json=lambda *args: {
+                            "data": [], "meta": {"totalPage": 0},
+                        },
+                    ),
+                    [],
+                )
+
+    def test_event_queries_reject_nonempty_zero_total_pages(self):
+        event_queries = (
+            (fetch_active_events, ("ES02", CONFIG)),
+            (
+                fetch_dashboard_events,
+                (
+                    "ES02",
+                    "2026-08-27T00:00:00+08:00",
+                    "2026-08-28T00:00:00+08:00",
+                    CONFIG,
+                ),
+            ),
+        )
+
+        for fetch_events, arguments in event_queries:
+            with self.subTest(fetch_events=fetch_events.__name__):
+                with self.assertRaisesRegex(
+                    StationEfficiencyStoreError, "NocoBase 未返回合法分页信息",
+                ):
+                    fetch_events(
+                        *arguments,
+                        request_json=lambda *args: {
+                            "data": [{"id": 1}], "meta": {"totalPage": 0},
+                        },
+                    )
+
     def test_dashboard_events_include_active_and_recovered_in_day(self):
         calls = []
 
