@@ -122,7 +122,9 @@ class StationEfficiencyNocoBaseTests(unittest.TestCase):
         fetch_active_events(
             "ES02",
             CONFIG,
-            request_json=lambda *args: calls.append(args) or {"data": []},
+            request_json=lambda *args: calls.append(args) or {
+                "data": [], "meta": {"totalPage": 1},
+            },
         )
 
         query = parse_qs(urlsplit(calls[0][0]).query)
@@ -153,6 +155,30 @@ class StationEfficiencyNocoBaseTests(unittest.TestCase):
             for url in calls
         ))
 
+    def test_event_queries_reject_missing_pagination_metadata(self):
+        event_queries = (
+            (fetch_active_events, ("ES02", CONFIG)),
+            (
+                fetch_dashboard_events,
+                (
+                    "ES02",
+                    "2026-08-27T00:00:00+08:00",
+                    "2026-08-28T00:00:00+08:00",
+                    CONFIG,
+                ),
+            ),
+        )
+
+        for fetch_events, arguments in event_queries:
+            with self.subTest(fetch_events=fetch_events.__name__):
+                with self.assertRaisesRegex(
+                    StationEfficiencyStoreError, "NocoBase 未返回合法分页信息",
+                ):
+                    fetch_events(
+                        *arguments,
+                        request_json=lambda *args: {"data": []},
+                    )
+
     def test_dashboard_events_include_active_and_recovered_in_day(self):
         calls = []
 
@@ -161,7 +187,9 @@ class StationEfficiencyNocoBaseTests(unittest.TestCase):
             "2026-08-27T00:00:00+08:00",
             "2026-08-28T00:00:00+08:00",
             CONFIG,
-            request_json=lambda *args: calls.append(args) or {"data": []},
+            request_json=lambda *args: calls.append(args) or {
+                "data": [], "meta": {"totalPage": 1},
+            },
         )
 
         filter_value = json.loads(parse_qs(urlsplit(calls[0][0]).query)["filter"][0])

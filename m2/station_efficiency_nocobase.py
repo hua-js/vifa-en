@@ -235,8 +235,6 @@ def _fetch_event_pages(filter_value, config, request_json, message, sort=None):
         )
         records.extend(_read_records(payload, message))
         meta = payload.get("meta")
-        if meta is None:
-            return records
         if not isinstance(meta, dict):
             raise StationEfficiencyStoreError("NocoBase 未返回合法分页信息")
         total_pages = meta.get("totalPage")
