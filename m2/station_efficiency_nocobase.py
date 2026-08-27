@@ -206,7 +206,7 @@ def _time_range(station_id, start_time, end_time):
     return station_text, start_utc, end_utc
 
 
-def _list_query(filter_value, *, sort=None, page_size=None):
+def _list_query(filter_value, *, sort=None, page_size=None, page=None):
     pairs = [
         (
             "filter",
@@ -217,7 +217,38 @@ def _list_query(filter_value, *, sort=None, page_size=None):
         pairs.append(("sort[]", sort))
     if page_size is not None:
         pairs.append(("pageSize", str(page_size)))
+    if page is not None:
+        pairs.append(("page", str(page)))
     return urlencode(pairs)
+
+
+def _fetch_event_pages(filter_value, config, request_json, message, sort=None):
+    """读取所有 NocoBase 事件页面，避免默认分页遗漏活动事件。"""
+    page = 1
+    records = []
+    while True:
+        payload = request_json(
+            f"{_base_url(config)}/api/t_efficiency_bottleneck_events:list?"
+            f"{_list_query(filter_value, sort=sort, page_size=100, page=page)}",
+            _config_text(config, "nocobase_token"),
+            _timeout(config),
+        )
+        records.extend(_read_records(payload, message))
+        meta = payload.get("meta")
+        if meta is None:
+            return records
+        if not isinstance(meta, dict):
+            raise StationEfficiencyStoreError("NocoBase 未返回合法分页信息")
+        total_pages = meta.get("totalPage")
+        if (
+            isinstance(total_pages, bool)
+            or not isinstance(total_pages, int)
+            or total_pages < page
+        ):
+            raise StationEfficiencyStoreError("NocoBase 未返回合法分页信息")
+        if page == total_pages:
+            return records
+        page += 1
 
 
 def fetch_device_points(
@@ -256,13 +287,12 @@ def fetch_active_events(station_id, config, request_json=None):
         ]
     }
     request_json = request_json or _request_get_json
-    payload = request_json(
-        f"{_base_url(config)}/api/t_efficiency_bottleneck_events:list?"
-        f"{_list_query(filter_value)}",
-        _config_text(config, "nocobase_token"),
-        _timeout(config),
+    return _fetch_event_pages(
+        filter_value,
+        config,
+        request_json,
+        "NocoBase 未返回合法活动事件",
     )
-    return _read_records(payload, "NocoBase 未返回合法活动事件")
 
 
 def fetch_dashboard_events(
@@ -289,13 +319,13 @@ def fetch_dashboard_events(
         ]
     }
     request_json = request_json or _request_get_json
-    payload = request_json(
-        f"{_base_url(config)}/api/t_efficiency_bottleneck_events:list?"
-        f"{_list_query(filter_value, sort='start_time')}",
-        _config_text(config, "nocobase_token"),
-        _timeout(config),
+    return _fetch_event_pages(
+        filter_value,
+        config,
+        request_json,
+        "NocoBase 未返回合法看板事件",
+        sort="start_time",
     )
-    return _read_records(payload, "NocoBase 未返回合法看板事件")
 
 
 def _saved_record(payload):
@@ -362,9 +392,11 @@ def save_device_point(point, config, request_json=None):
     """按场站、设备类型、设备和时间幂等保存设备分钟点。"""
     if not isinstance(point, dict):
         raise StationEfficiencyStoreError("设备分钟数据必须是对象")
+    values = dict(point)
     try:
+        values["data_time"] = _canonical_time(values["data_time"], "data_time")
         key = {
-            field: point[field]
+            field: values[field]
             for field in ("station_id", "device_type", "device_id", "data_time")
         }
     except KeyError as exc:
@@ -373,7 +405,7 @@ def save_device_point(point, config, request_json=None):
         {
             "collection": "t_efficiency_device_points",
             "key": key,
-            "values": dict(point),
+            "values": values,
         },
         config,
         request_json=request_json,

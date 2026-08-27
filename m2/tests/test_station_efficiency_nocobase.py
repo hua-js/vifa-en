@@ -85,6 +85,26 @@ class StationEfficiencyNocoBaseTests(unittest.TestCase):
             ["station_id", "device_type", "device_id", "data_time"],
         )
 
+    def test_device_save_canonicalizes_data_time_and_rejects_naive_time(self):
+        calls = []
+
+        save_device_point(
+            DEVICE_POINT,
+            CONFIG,
+            request_json=lambda *args: calls.append(args) or {"data": {"id": 7}},
+        )
+
+        self.assertEqual(calls[0][3]["data_time"], "2026-08-27T02:00:00+00:00")
+        naive_point = {**DEVICE_POINT, "data_time": "2026-08-27T10:00:00"}
+        with self.assertRaisesRegex(
+            StationEfficiencyStoreError, "data_time 必须包含时区",
+        ):
+            save_device_point(
+                naive_point,
+                CONFIG,
+                request_json=lambda *args: self.fail("不能请求 NocoBase"),
+            )
+
     def test_fetch_device_points_filters_station_and_time_range(self):
         rows = fetch_device_points(
             "ES02",
@@ -113,6 +133,26 @@ class StationEfficiencyNocoBaseTests(unittest.TestCase):
             ]
         })
 
+    def test_fetch_active_events_aggregates_all_pages(self):
+        calls = []
+
+        def request_json(url, *args):
+            calls.append(url)
+            page = int(parse_qs(urlsplit(url).query)["page"][0])
+            return {"data": [{"id": page}], "meta": {"totalPage": 2}}
+
+        rows = fetch_active_events("ES02", CONFIG, request_json=request_json)
+
+        self.assertEqual(rows, [{"id": 1}, {"id": 2}])
+        self.assertEqual(
+            [parse_qs(urlsplit(url).query)["page"] for url in calls],
+            [["1"], ["2"]],
+        )
+        self.assertTrue(all(
+            parse_qs(urlsplit(url).query)["pageSize"] == ["100"]
+            for url in calls
+        ))
+
     def test_dashboard_events_include_active_and_recovered_in_day(self):
         calls = []
 
@@ -127,6 +167,28 @@ class StationEfficiencyNocoBaseTests(unittest.TestCase):
         filter_value = json.loads(parse_qs(urlsplit(calls[0][0]).query)["filter"][0])
         self.assertEqual(filter_value["$and"][0], {"station_id": {"$eq": "ES02"}})
         self.assertIn("$or", filter_value["$and"][1])
+
+    def test_dashboard_events_aggregates_all_pages(self):
+        calls = []
+
+        def request_json(url, *args):
+            calls.append(url)
+            page = int(parse_qs(urlsplit(url).query)["page"][0])
+            return {"data": [{"id": page}], "meta": {"totalPage": 2}}
+
+        rows = fetch_dashboard_events(
+            "ES02",
+            "2026-08-27T00:00:00+08:00",
+            "2026-08-28T00:00:00+08:00",
+            CONFIG,
+            request_json=request_json,
+        )
+
+        self.assertEqual(rows, [{"id": 1}, {"id": 2}])
+        self.assertEqual(
+            [parse_qs(urlsplit(url).query)["page"] for url in calls],
+            [["1"], ["2"]],
+        )
 
     def test_cleanup_destroys_only_old_device_points(self):
         calls = []
