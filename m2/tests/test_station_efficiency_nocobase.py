@@ -205,6 +205,36 @@ class StationEfficiencyNocoBaseTests(unittest.TestCase):
                     [],
                 )
 
+    def test_event_queries_reject_non_integer_empty_zero_page_values(self):
+        event_queries = (
+            (fetch_active_events, ("ES02", CONFIG)),
+            (
+                fetch_dashboard_events,
+                (
+                    "ES02",
+                    "2026-08-27T00:00:00+08:00",
+                    "2026-08-28T00:00:00+08:00",
+                    CONFIG,
+                ),
+            ),
+        )
+
+        for total_pages in (False, 0.0):
+            for fetch_events, arguments in event_queries:
+                with self.subTest(
+                    total_pages=total_pages,
+                    fetch_events=fetch_events.__name__,
+                ):
+                    with self.assertRaisesRegex(
+                        StationEfficiencyStoreError, "NocoBase 未返回合法分页信息",
+                    ):
+                        fetch_events(
+                            *arguments,
+                            request_json=lambda *args: {
+                                "data": [], "meta": {"totalPage": total_pages},
+                            },
+                        )
+
     def test_event_queries_reject_nonempty_zero_total_pages(self):
         event_queries = (
             (fetch_active_events, ("ES02", CONFIG)),
@@ -230,6 +260,26 @@ class StationEfficiencyNocoBaseTests(unittest.TestCase):
                             "data": [{"id": 1}], "meta": {"totalPage": 0},
                         },
                     )
+
+    def test_event_queries_reject_zero_page_after_nonempty_first_page(self):
+        calls = []
+
+        def request_json(url, *args):
+            calls.append(url)
+            page = int(parse_qs(urlsplit(url).query)["page"][0])
+            if page == 1:
+                return {"data": [{"id": 1}], "meta": {"totalPage": 2}}
+            return {"data": [], "meta": {"totalPage": 0}}
+
+        with self.assertRaisesRegex(
+            StationEfficiencyStoreError, "NocoBase 未返回合法分页信息",
+        ):
+            fetch_active_events("ES02", CONFIG, request_json=request_json)
+
+        self.assertEqual(
+            [parse_qs(urlsplit(url).query)["page"] for url in calls],
+            [["1"], ["2"]],
+        )
 
     def test_dashboard_events_include_active_and_recovered_in_day(self):
         calls = []

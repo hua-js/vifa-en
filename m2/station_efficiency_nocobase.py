@@ -239,15 +239,13 @@ def _fetch_event_pages(filter_value, config, request_json, message, sort=None):
         if not isinstance(meta, dict):
             raise StationEfficiencyStoreError("NocoBase 未返回合法分页信息")
         total_pages = meta.get("totalPage")
+        if type(total_pages) is not int:
+            raise StationEfficiencyStoreError("NocoBase 未返回合法分页信息")
         if total_pages == 0:
             if page == 1 and not page_records:
                 return records
             raise StationEfficiencyStoreError("NocoBase 未返回合法分页信息")
-        if (
-            isinstance(total_pages, bool)
-            or not isinstance(total_pages, int)
-            or total_pages < page
-        ):
+        if total_pages < page:
             raise StationEfficiencyStoreError("NocoBase 未返回合法分页信息")
         if page == total_pages:
             return records
