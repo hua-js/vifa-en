@@ -17,6 +17,7 @@ CHAIN_COLUMNS = {
         "pv_load_efficiency", "pv_load_input_kw", "pv_load_output_kw"
     ),
 }
+SHANGHAI_TIMEZONE = ZoneInfo("Asia/Shanghai")
 
 
 class HistoryError(ValueError):
@@ -407,7 +408,7 @@ def _normalize_chain_samples(samples):
             efficiency = float(value)
             if efficiency < 0 or efficiency > 100:
                 raise HistoryError("invalid_device_samples", "efficiency_pct 必须在 0 到 100 之间")
-        time = minute_bucket(sample.get("data_time"))
+        time = minute_bucket(sample.get("data_time")).astimezone(SHANGHAI_TIMEZONE)
         return {
             "device_id": _required_identifier(sample.get("device_id"), "device_id", "invalid_device_samples"),
             "device_name": _required_identifier(sample.get("device_name"), "device_name", "invalid_device_samples"),
@@ -427,6 +428,19 @@ def _json_safe_copy(value, field):
 
 def _event_copy(event):
     return {**event, "evidence": _json_safe_copy(event["evidence"], "evidence")}
+
+
+def _chain_event_copy(event):
+    copied = _event_copy(event)
+    for field in ("start_time", "last_seen_time", "end_time"):
+        if copied.get(field) is not None:
+            copied[field] = _parse_time(copied[field], field).astimezone(SHANGHAI_TIMEZONE).isoformat()
+    for field in ("last_low_efficiency_time",):
+        if copied["evidence"].get(field) is not None:
+            copied["evidence"][field] = _parse_time(
+                copied["evidence"][field], field,
+            ).astimezone(SHANGHAI_TIMEZONE).isoformat()
+    return copied
 
 
 def _chain_event_evidence(sample, minimum, rule, continuous_minutes, last_low_time, snapshot, causes):
@@ -459,7 +473,7 @@ def evaluate_chain_low_efficiency(
             expected_device["device_name"] if expected_device else None,
         )
     if not ordered:
-        return _event_copy(active_event) if active_event else None
+        return _chain_event_copy(active_event) if active_event else None
     if not rule["enabled"] and active_event is None:
         return None
 
@@ -501,9 +515,9 @@ def evaluate_chain_low_efficiency(
 
     new_samples = [sample for sample in ordered if sample["_time"] > previous_last_seen_time]
     if not any(sample["efficiency_pct"] is not None for sample in new_samples):
-        return _event_copy(active_event)
+        return _chain_event_copy(active_event)
 
-    event = _event_copy(active_event)
+    event = _chain_event_copy(active_event)
     evidence = event["evidence"]
     low_run = _trailing_minute_run(
         new_samples,

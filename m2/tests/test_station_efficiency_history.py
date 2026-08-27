@@ -355,6 +355,28 @@ class StationEfficiencyHistoryTests(unittest.TestCase):
         self.assertEqual(recovered["status"], "recovered")
         self.assertEqual(recovered["end_time"], "2026-08-27T10:02:00+08:00")
 
+    def test_chain_event_canonicalizes_utc_samples_to_shanghai_time(self):
+        utc_samples = [
+            dict(self.chain_sample(0, 80), data_time="2026-08-27T02:00:00Z"),
+            dict(self.chain_sample(1, 82), data_time="2026-08-27T02:01:00Z"),
+        ]
+        active = evaluate_chain_low_efficiency(
+            utc_samples, self.inverter_rule(), trigger_device_snapshot={}, diagnosed_causes=[],
+        )
+        self.assertEqual(active["start_time"], "2026-08-27T10:00:00+08:00")
+        self.assertEqual(active["last_seen_time"], "2026-08-27T10:01:00+08:00")
+
+        recovered = evaluate_chain_low_efficiency(
+            [
+                dict(self.chain_sample(1, 82), data_time="2026-08-27T02:01:00Z"),
+                dict(self.chain_sample(2, 85), data_time="2026-08-27T02:02:00Z"),
+                dict(self.chain_sample(3, 86), data_time="2026-08-27T02:03:00Z"),
+            ],
+            self.inverter_rule(), active_event=active,
+        )
+        self.assertEqual(recovered["end_time"], "2026-08-27T10:02:00+08:00")
+        self.assertEqual(recovered["last_seen_time"], "2026-08-27T10:03:00+08:00")
+
     def test_chain_missing_minute_does_not_complete_trigger(self):
         self.assertIsNone(evaluate_chain_low_efficiency(
             [self.chain_sample(0, 80), self.chain_sample(2, 82)], self.inverter_rule(),
