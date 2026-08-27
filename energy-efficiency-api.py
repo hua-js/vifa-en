@@ -13,9 +13,13 @@ from m2.station_efficiency_history import (
     calendar_day_bounds,
     time_in_zone,
 )
-from m2.station_efficiency_job import process_station_minute
+from m2.station_efficiency_job import (
+    cleanup_device_history,
+    process_station_minute,
+)
 from m2.station_efficiency_nocobase import (
     StationEfficiencyStoreError,
+    fetch_dashboard_events,
     fetch_minute_points,
 )
 from m2.station_energy_backend import BackendError, calculate_bus
@@ -39,6 +43,69 @@ LOCAL_REQUEST_TIMEOUT_SECONDS = getattr(
     "REQUEST_TIMEOUT_SECONDS",
     15,
 )
+LOCAL_GROWALL_URL = getattr(local_config, "GROWALL_URL", "")
+LOCAL_GROWALL_TOKEN = getattr(local_config, "GROWALL_TOKEN", "")
+LOCAL_PV_INVERTER_SNS_BY_STATION = getattr(
+    local_config,
+    "PV_INVERTER_SNS_BY_STATION",
+    {"ES02": ("emu1", "emu2", "emu3", "emu4", "emu5", "emu21", "emu22", "emu23", "emu24")},
+)
+LOCAL_PV_INVERTER_RATED_POWER_KW = getattr(
+    local_config,
+    "PV_INVERTER_RATED_POWER_KW",
+    60,
+)
+LOCAL_DEVICE_SAMPLE_MAX_AGE_MINUTES = getattr(
+    local_config,
+    "DEVICE_SAMPLE_MAX_AGE_MINUTES",
+    2,
+)
+LOCAL_DEVICE_POINT_RETENTION_DAYS = getattr(
+    local_config,
+    "DEVICE_POINT_RETENTION_DAYS",
+    30,
+)
+LOCAL_BATTERY_MAX_TEMPERATURE_FIELD = getattr(
+    local_config,
+    "BATTERY_MAX_TEMPERATURE_FIELD",
+    "",
+)
+LOCAL_BATTERY_HOT_CLUSTER_FIELD = getattr(
+    local_config,
+    "BATTERY_HOT_CLUSTER_FIELD",
+    "",
+)
+
+
+def _default_bottleneck_rules():
+    """Return the production rule baseline for each supported station."""
+    common = {
+        "enabled": True,
+        "chain_low_efficiency_threshold_pct": 85,
+        "chain_low_efficiency_trigger_minutes": 2,
+        "chain_low_efficiency_recovery_minutes": 2,
+        "inverter_min_running_power_kw": 5,
+        "inverter_low_load_threshold_pct": 20,
+        "inverter_trigger_minutes": 3,
+        "inverter_recovery_minutes": 2,
+        "temperature_rise_window_minutes": 5,
+        "temperature_rise_threshold_c": 3,
+        "temperature_trigger_minutes": 2,
+        "temperature_recovery_minutes": 2,
+        "version": 1,
+        "updated_at": "2026-08-27T00:00:00+08:00",
+    }
+    return {
+        station_id: {"station_id": station_id, **common}
+        for station_id in ("ES01", "ES02")
+    }
+
+
+LOCAL_BOTTLENECK_RULES = getattr(
+    local_config,
+    "BOTTLENECK_RULES",
+    _default_bottleneck_rules(),
+)
 
 
 class EntrypointError(ValueError):
@@ -52,8 +119,10 @@ class EntrypointError(ValueError):
 
 
 def parse_request(argv):
-    """只接受 dashboard/minute 加 ES01/ES02。"""
+    """只接受 dashboard/minute 加场站，或无场站的 cleanup。"""
     values = list(argv)
+    if values == ["cleanup"]:
+        return "cleanup", None
     if (
         len(values) != 2
         or values[0] not in {"dashboard", "minute"}
@@ -70,6 +139,34 @@ def _required_config_text(environ, field, local_value):
     return value.strip()
 
 
+def _optional_config_text(environ, field, local_value):
+    value = environ.get(field, local_value)
+    return value.strip() if isinstance(value, str) and value.strip() else ""
+
+
+def _optional_config_text_alias(environ, primary_field, fallback_field, local_value):
+    if primary_field in environ:
+        return _optional_config_text(environ, primary_field, local_value)
+    return _optional_config_text(environ, fallback_field, local_value)
+
+
+def _runtime_number(environ, field, local_value, *, integer=False):
+    value = environ.get(field, local_value)
+    try:
+        number = int(value) if integer else float(value)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise EntrypointError("missing_config", "服务器运行配置不正确", 3) from exc
+    if isinstance(value, bool) or not math.isfinite(number) or number <= 0:
+        raise EntrypointError("missing_config", "服务器运行配置不正确", 3)
+    if integer and str(value).strip() != str(number):
+        raise EntrypointError("missing_config", "服务器运行配置不正确", 3)
+    return number
+
+
+def _optional_field(value):
+    return value.strip() if isinstance(value, str) else ""
+
+
 def load_runtime_config(environ, require_nocobase=False):
     """优先读取环境变量，未配置时使用同目录临时配置。"""
     url = _required_config_text(environ, "VIFA_EMU_URL", LOCAL_EMU_URL)
@@ -79,25 +176,11 @@ def load_runtime_config(environ, require_nocobase=False):
         LOCAL_EMU_TOKEN,
     )
 
-    try:
-        timeout = float(
-            environ.get(
-                "M2_REQUEST_TIMEOUT_SECONDS",
-                LOCAL_REQUEST_TIMEOUT_SECONDS,
-            )
-        )
-    except (TypeError, ValueError, OverflowError) as exc:
-        raise EntrypointError(
-            "missing_config",
-            "服务器运行配置不正确",
-            3,
-        ) from exc
-    if not math.isfinite(timeout) or timeout <= 0:
-        raise EntrypointError(
-            "missing_config",
-            "服务器运行配置不正确",
-            3,
-        )
+    timeout = _runtime_number(
+        environ,
+        "M2_REQUEST_TIMEOUT_SECONDS",
+        LOCAL_REQUEST_TIMEOUT_SECONDS,
+    )
 
     timezone_name = str(
         environ.get("M2_TIMEZONE", LOCAL_TIMEZONE)
@@ -116,6 +199,42 @@ def load_runtime_config(environ, require_nocobase=False):
         "emu_token": token,
         "timeout_seconds": timeout,
         "timezone": timezone_name,
+        "growall_url": _optional_config_text_alias(
+            environ,
+            "VIFA_GROWALL_URL",
+            "M2_GROWALL_URL",
+            LOCAL_GROWALL_URL,
+        ),
+        "growall_token": _optional_config_text_alias(
+            environ,
+            "VIFA_GROWALL_TOKEN",
+            "M2_GROWALL_TOKEN",
+            LOCAL_GROWALL_TOKEN,
+        ),
+        "pv_inverter_sns_by_station": LOCAL_PV_INVERTER_SNS_BY_STATION,
+        "pv_inverter_rated_power_kw": _runtime_number(
+            environ,
+            "M2_PV_INVERTER_RATED_POWER_KW",
+            LOCAL_PV_INVERTER_RATED_POWER_KW,
+        ),
+        "device_sample_max_age_minutes": _runtime_number(
+            environ,
+            "M2_DEVICE_SAMPLE_MAX_AGE_MINUTES",
+            LOCAL_DEVICE_SAMPLE_MAX_AGE_MINUTES,
+        ),
+        "device_point_retention_days": _runtime_number(
+            environ,
+            "M2_DEVICE_POINT_RETENTION_DAYS",
+            LOCAL_DEVICE_POINT_RETENTION_DAYS,
+            integer=True,
+        ),
+        "battery_max_temperature_field": _optional_field(
+            LOCAL_BATTERY_MAX_TEMPERATURE_FIELD,
+        ),
+        "battery_hot_cluster_field": _optional_field(
+            LOCAL_BATTERY_HOT_CLUSTER_FIELD,
+        ),
+        "bottleneck_rules": LOCAL_BOTTLENECK_RULES,
     }
     if require_nocobase:
         config.update({
@@ -131,6 +250,33 @@ def load_runtime_config(environ, require_nocobase=False):
             ),
         })
     return config
+
+
+def _config_for_station(config, station_id):
+    station_config = dict(config)
+    rules = config.get("bottleneck_rules")
+    if isinstance(rules, dict) and station_id in rules:
+        station_config["bottleneck_rule"] = rules[station_id]
+    return station_config
+
+
+def public_minute_result(result, station_id):
+    """Return only the JSON-safe minute summary expected by Node-RED."""
+    minute_point = result["minute_point"]
+    saved_record = result["saved_record"]
+    warnings = list(result.get("warnings") or [])
+    event_updates = list(result.get("event_updates") or [])
+    return {
+        "operation": "minute",
+        "station_id": station_id,
+        "data_time": minute_point["data_time"],
+        "minute_point": dict(minute_point),
+        "saved_id": saved_record.get("id"),
+        "device_points_saved": result.get("device_points_saved", 0),
+        "event_update_count": len(event_updates),
+        "warning_count": len(warnings),
+        "warnings": warnings,
+    }
 
 
 def _error_payload(code, message):
@@ -177,24 +323,28 @@ def execute(
     calculate=calculate_bus,
     build_dashboard=build_calendar_day_dashboard,
     fetch_points=fetch_minute_points,
+    fetch_events=fetch_dashboard_events,
     process_minute=process_station_minute,
+    cleanup_history=cleanup_device_history,
 ):
     """执行一次看板读取或分钟保存并返回结果和退出码。"""
     try:
         operation, station_id = parse_request(argv)
         config = load_runtime_config(environ, require_nocobase=True)
-        if operation == "minute":
-            minute_output = process_minute(station_id, config)
-            minute_point = minute_output["minute_point"]
-            saved_record = minute_output["saved_record"]
+        if operation == "cleanup":
+            result = cleanup_history(config)
             return {
                 "status": "ok",
-                "data": {
-                    "operation": "minute",
-                    "station_id": station_id,
-                    "data_time": minute_point["data_time"],
-                    "saved_id": saved_record.get("id"),
-                },
+                "data": {"operation": "cleanup", **result},
+            }, 0
+        if operation == "minute":
+            minute_output = process_minute(
+                station_id,
+                _config_for_station(config, station_id),
+            )
+            return {
+                "status": minute_output["status"],
+                "data": public_minute_result(minute_output, station_id),
             }, 0
 
         source = fetch_station(station_id, config)
@@ -209,13 +359,19 @@ def execute(
             end_time,
             config,
         )
+        events = fetch_events(
+            station_id,
+            start_time,
+            end_time,
+            config,
+        )
         dashboard = build_dashboard(
             station_id,
             config["timezone"],
             source["data_time"],
             _public_realtime(source, calculation, config["timezone"]),
             points,
-            [],
+            events,
         )
         return {"status": "ok", "data": dashboard}, 0
     except EntrypointError as exc:

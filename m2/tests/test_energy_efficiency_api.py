@@ -19,14 +19,105 @@ ENVIRONMENT = {
 
 
 class EnergyEfficiencyApiTests(unittest.TestCase):
-    def test_minute_command_saves_one_station_and_returns_small_json_result(self):
+    def test_parse_request_accepts_cleanup_only_without_station(self):
+        self.assertEqual(energy_api.parse_request(["cleanup"]), ("cleanup", None))
+        for invalid in (["cleanup", "ES02"], ["minute"], ["dashboard", "ES03"]):
+            with self.subTest(invalid=invalid):
+                with self.assertRaises(energy_api.EntrypointError):
+                    energy_api.parse_request(invalid)
+
+    def test_minute_uses_environment_config_and_official_default_rule(self):
+        received_config = {}
+        growall_token = "test-growall-token"
+
+        def process_minute(station_id, config):
+            received_config.update(config)
+            return {
+                "status": "ok", "warnings": [],
+                "minute_point": {"data_time": "2026-08-27T10:00:00+08:00"},
+                "saved_record": {"id": 81}, "device_points_saved": 0,
+                "event_updates": [],
+            }
+
+        payload, exit_code = energy_api.execute(
+            ["minute", "ES02"],
+            {
+                **ENVIRONMENT,
+                "VIFA_GROWALL_URL": "https://station.example/api/t_growall:list",
+                "VIFA_GROWALL_TOKEN": growall_token,
+                "M2_DEVICE_POINT_RETENTION_DAYS": "31",
+            },
+            process_minute=process_minute,
+        )
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(payload["status"], "ok")
+        self.assertEqual(
+            received_config["growall_url"],
+            "https://station.example/api/t_growall:list",
+        )
+        self.assertEqual(received_config["device_point_retention_days"], 31)
+        self.assertEqual(received_config["bottleneck_rule"], {
+            "station_id": "ES02", "enabled": True,
+            "chain_low_efficiency_threshold_pct": 85,
+            "chain_low_efficiency_trigger_minutes": 2,
+            "chain_low_efficiency_recovery_minutes": 2,
+            "inverter_min_running_power_kw": 5,
+            "inverter_low_load_threshold_pct": 20,
+            "inverter_trigger_minutes": 3,
+            "inverter_recovery_minutes": 2,
+            "temperature_rise_window_minutes": 5,
+            "temperature_rise_threshold_c": 3,
+            "temperature_trigger_minutes": 2,
+            "temperature_recovery_minutes": 2,
+            "version": 1,
+            "updated_at": "2026-08-27T00:00:00+08:00",
+        })
+        self.assertNotIn(ENVIRONMENT["VIFA_EMU_TOKEN"], repr(payload))
+        self.assertNotIn(ENVIRONMENT["M2_NOCOBASE_TOKEN"], repr(payload))
+        self.assertNotIn(growall_token, repr(payload))
+
+    def test_partial_minute_returns_exit_zero_and_warning_counts(self):
+        payload, exit_code = energy_api.execute(
+            ["minute", "ES02"], ENVIRONMENT,
+            process_minute=lambda station_id, config: {
+                "status": "partial", "warnings": [{"code": "growall_unavailable"}],
+                "minute_point": {"data_time": "2026-08-27T10:00:00+08:00"},
+                "saved_record": {"id": 1}, "device_points_saved": 6,
+                "event_updates": [],
+            },
+        )
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(payload["status"], "partial")
+        self.assertEqual(payload["data"]["device_points_saved"], 6)
+        self.assertEqual(payload["data"]["warning_count"], 1)
+        self.assertEqual(payload["data"]["event_update_count"], 0)
+
+    def test_cleanup_returns_deleted_count(self):
+        payload, exit_code = energy_api.execute(
+            ["cleanup"], ENVIRONMENT,
+            cleanup_history=lambda config: {
+                "cutoff": "2026-07-28T10:00:00+08:00", "deleted_count": 12,
+            },
+        )
+
+        self.assertEqual((payload["status"], exit_code), ("ok", 0))
+        self.assertEqual(payload["data"]["operation"], "cleanup")
+        self.assertEqual(payload["data"]["deleted_count"], 12)
+
+    def test_minute_command_saves_one_station_and_returns_public_json_result(self):
         def process_minute(station_id, config):
             return {
+                "status": "ok",
+                "warnings": [],
                 "minute_point": {
                     "station_id": station_id,
                     "data_time": "2026-08-26T09:30:00+08:00",
                 },
                 "saved_record": {"id": 81},
+                "device_points_saved": 2,
+                "event_updates": [{"event_type": "chain_low_efficiency"}],
             }
 
         payload, exit_code = energy_api.execute(
@@ -44,7 +135,15 @@ class EnergyEfficiencyApiTests(unittest.TestCase):
                     "operation": "minute",
                     "station_id": "ES01",
                     "data_time": "2026-08-26T09:30:00+08:00",
+                    "minute_point": {
+                        "station_id": "ES01",
+                        "data_time": "2026-08-26T09:30:00+08:00",
+                    },
                     "saved_id": 81,
+                    "device_points_saved": 2,
+                    "event_update_count": 1,
+                    "warning_count": 0,
+                    "warnings": [],
                 },
             },
         )
@@ -96,12 +195,43 @@ class EnergyEfficiencyApiTests(unittest.TestCase):
                 return [point]
             return []
 
+        active_event = {
+            "id": 101, "station_id": "ES02",
+            "event_type": "chain_low_efficiency", "device_id": "pv_storage",
+            "device_name": "光→储", "start_time": "2026-08-25T23:58:00+08:00",
+            "end_time": None, "last_seen_time": "2026-08-26T09:30:00+08:00",
+            "status": "active", "observed_value": 80, "threshold_value": 85,
+            "observed_unit": "%", "impact_chain": ["光→储"],
+            "evidence": {
+                "display_text": "光→储效率最低 80.00%，低于阈值 85.00%",
+                "cause_status": "pending", "diagnosed_causes": [],
+                "trigger_device_snapshot": {"pv_inverters": []},
+            },
+        }
+        recovered_event = {
+            **active_event, "id": 102, "event_type": "battery_temperature_rise",
+            "device_id": "emu21", "device_name": "电池柜 emu21",
+            "start_time": "2026-08-26T08:20:00+08:00",
+            "end_time": "2026-08-26T09:20:00+08:00", "status": "recovered",
+            "impact_chain": ["光→储", "储→用"],
+            "evidence": {
+                "display_text": "5 分钟最大温升 4.00℃",
+                "trigger_device_snapshot": {"battery_cabinets": [{"device_id": "emu21", "temperature_c": None}]},
+            },
+        }
+        fetch_event_calls = []
+
+        def fetch_events(station_id, start_time, end_time, config):
+            fetch_event_calls.append((station_id, start_time, end_time))
+            return [active_event, recovered_event]
+
         payload, exit_code = energy_api.execute(
             ["dashboard", "ES02"],
             ENVIRONMENT,
             fetch_station=fetch_station,
             calculate=calculate,
             fetch_points=fetch_points,
+            fetch_events=fetch_events,
         )
 
         self.assertEqual(exit_code, 0)
@@ -126,6 +256,15 @@ class EnergyEfficiencyApiTests(unittest.TestCase):
                 "storageLoad": None,
                 "pvLoad": 100.0,
             }],
+        )
+        self.assertEqual(fetch_event_calls, [(
+            "ES02", "2026-08-26T00:00:00+08:00", "2026-08-27T00:00:00+08:00",
+        )])
+        self.assertEqual([event["id"] for event in payload["data"]["events"]], [101, 102])
+        self.assertEqual(payload["data"]["events"][0]["cause_status"], "pending")
+        self.assertEqual(
+            payload["data"]["events"][1]["trigger_device_snapshot"],
+            {"battery_cabinets": [{"device_id": "emu21", "temperature_c": None}]},
         )
 
 
