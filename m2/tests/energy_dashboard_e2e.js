@@ -57,6 +57,8 @@ function assertClose(actual, expected, message) {
   let delayInitialApi = false;
   let apiShouldFail = false;
   let useEmptyPayload = false;
+  let useNoSurplusPayload = false;
+  let usePartialCardPayload = false;
   let useGapBoundaryPayload = false;
   let holdNextApiResponse = false;
   let heldApiResponseStartedResolve = null;
@@ -74,6 +76,40 @@ function assertClose(actual, expected, message) {
   page.on("pageerror", (error) => pageErrors.push(error.message));
   await page.route("**/energy-efficiency-api*", async (route) => {
     apiRequests.push(route.request().url());
+    if (usePartialCardPayload) {
+      const partialCardPayload = structuredClone(dashboardPayload);
+      const partialCardTime = "2026-08-25T14:38:00+08:00";
+      partialCardPayload.data.range.latest_time = partialCardTime;
+      partialCardPayload.data.summary_today.end_time = partialCardTime;
+      partialCardPayload.data.realtime.inputs.data_time = partialCardTime;
+      partialCardPayload.data.realtime.inputs.pcs_charge_power = null;
+      partialCardPayload.data.realtime.result.data_time = partialCardTime;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json; charset=utf-8",
+        body: JSON.stringify(partialCardPayload),
+      });
+      return;
+    }
+    if (useNoSurplusPayload) {
+      const noSurplusPayload = structuredClone(dashboardPayload);
+      const noSurplusTime = "2026-08-25T14:37:00+08:00";
+      noSurplusPayload.data.range.latest_time = noSurplusTime;
+      noSurplusPayload.data.summary_today.end_time = noSurplusTime;
+      noSurplusPayload.data.realtime.inputs.data_time = noSurplusTime;
+      noSurplusPayload.data.realtime.inputs.pv_ac_power = 60;
+      noSurplusPayload.data.realtime.inputs.load_power = 80;
+      noSurplusPayload.data.realtime.result.data_time = noSurplusTime;
+      noSurplusPayload.data.realtime.result.pv_to_storage_power = 0;
+      noSurplusPayload.data.realtime.result.pv_storage_efficiency = null;
+      noSurplusPayload.data.realtime.result.pv_storage_dc_efficiency = null;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json; charset=utf-8",
+        body: JSON.stringify(noSurplusPayload),
+      });
+      return;
+    }
     if (useEmptyPayload) {
       const emptyPayload = structuredClone(dashboardPayload);
       emptyPayload.data.range.latest_time = null;
@@ -222,7 +258,7 @@ function assertClose(actual, expected, message) {
         );
         const trendSection = document.querySelector(".trend-section");
         const desktopTrack = document.querySelector(
-          "#lane-pv-storage .flow-track",
+          "#pv-storage-branch .flow-track",
         );
         if (overlay && trendSection && desktopTrack) {
           const overlayRect = overlay.getBoundingClientRect();
@@ -278,7 +314,7 @@ function assertClose(actual, expected, message) {
   let navigationError = null;
   const navigationPromise = page
     .goto(
-      `http://127.0.0.1:${testPort}/${fileName}?token=example-token&api=${encodeURIComponent("https://example.invalid/leak")}`,
+      `http://127.0.0.1:${testPort}/${fileName}`,
       { waitUntil: "networkidle" },
     )
     .catch((error) => {
@@ -319,6 +355,13 @@ function assertClose(actual, expected, message) {
     throw error;
   }
 
+  const station1Tab = page.getByRole("tab", { name: "电站1" });
+  const station2Tab = page.getByRole("tab", { name: "电站2" });
+  assert.strictEqual(await station1Tab.count(), 1);
+  assert.strictEqual(await station2Tab.count(), 1);
+  assert.strictEqual(await station1Tab.getAttribute("aria-selected"), "false");
+  assert.strictEqual(await station2Tab.getAttribute("aria-selected"), "true");
+
   assert.strictEqual(await page.locator("#pv-storage-efficiency").innerText(), "88.83%");
   assert.strictEqual(await page.locator("#storage-load-efficiency").innerText(), "无运行数据");
   assert.strictEqual(await page.locator("#pv-load-efficiency").innerText(), "100.00%");
@@ -326,39 +369,82 @@ function assertClose(actual, expected, message) {
   assert.strictEqual(await page.locator("#pv-ac-power").innerText(), "183");
   assert.strictEqual(
     await page.locator("#pv-inverter-loss").innerText(),
-    "逆变损耗7 kW",
+    "光伏逆变器 · 损耗7 kW",
   );
   assert.strictEqual(
     await page.locator("#pv-storage-formula").innerText(),
     "95 ÷ 106.94",
   );
   assert.deepStrictEqual(
-    await page.locator("#lane-pv-storage .node-title").allInnerTexts(),
-    ["光伏总输入", "光伏总输出", "混合供能", "柜内电表", "PCS", "BMS电池"],
+    await page.locator("#pv-shared-path .node-title").allInnerTexts(),
+    ["光伏总输入", "光伏总输出"],
+  );
+  assert.deepStrictEqual(
+    await page.locator("#three-energy-flow .flow-legend .legend-item").allInnerTexts(),
+    ["光→储", "储→用", "光→用"],
+  );
+  assert.strictEqual(
+    await page.locator("#pv-load-branch .branch-label > span").first().innerText(),
+    "光→用",
+  );
+  assert.strictEqual(
+    await page.locator("#pv-storage-branch .branch-label > span").first().innerText(),
+    "光→储",
+  );
+  assert.deepStrictEqual(
+    await page.locator("#pv-load-branch .node-title").allInnerTexts(),
+    ["场站负载"],
   );
   assert.deepStrictEqual(
     await page.locator("#lane-storage-load .node-title").allInnerTexts(),
     ["BMS电池", "PCS", "柜内电表", "场站负载"],
   );
   assert.deepStrictEqual(
-    await page.locator("#lane-pv-load .node-title").allInnerTexts(),
-    ["光伏逆变器", "场站负载"],
+    await page.locator("#pv-storage-branch .node-title").allInnerTexts(),
+    ["光伏余量", "混合供能", "柜内电表", "PCS", "BMS电池"],
+  );
+  assert.strictEqual(
+    await page.locator("#grid-storage-share").innerText(),
+    "0.00%",
+  );
+  assert.ok(
+    (await page.locator("#grid-storage-share").locator("xpath=..").innerText())
+      .includes("市电入储（推算）"),
+  );
+  assert.strictEqual(
+    await page.locator("#pv-storage-branch").getAttribute("data-state"),
+    "active",
   );
   await page.setViewportSize({ width: 700, height: 900 });
-  const mobileColumnCounts = await page.evaluate(() =>
-    ["lane-pv-storage", "lane-storage-load", "lane-pv-load"].map((id) =>
-      getComputedStyle(
-        document.querySelector(`#${id} .flow-track`),
-      ).gridTemplateColumns.trim().split(/\s+/).length,
-    ),
-  );
-  assert.deepStrictEqual(mobileColumnCounts, [1, 1, 1]);
+  const mobileColumnCounts = await page.evaluate(() => [
+    "#pv-shared-path",
+    "#pv-load-branch",
+    "#pv-storage-branch",
+    "#pv-storage-branch .flow-track",
+    "#lane-storage-load .flow-track",
+  ].map((selector) => getComputedStyle(document.querySelector(selector))
+    .gridTemplateColumns.trim().split(/\s+/).length));
+  assert.deepStrictEqual(mobileColumnCounts, [1, 1, 1, 1, 1]);
   await page.setViewportSize({ width: 1280, height: 720 });
   await waitForStableDesktopOverlay();
-  assert.strictEqual(await page.locator("#trend-title").innerText(), "今日链路效率");
-  assert.strictEqual(await page.locator("#summary-pv-storage").innerText(), "88.06%");
-  assert.strictEqual(await page.locator("#summary-storage-load").innerText(), "90.00%");
-  assert.strictEqual(await page.locator("#summary-pv-load").innerText(), "95.00%");
+  assert.strictEqual(await page.locator("#current-efficiency-title").count(), 1);
+  assert.strictEqual(await page.locator("#current-efficiency-title").innerText(), "当前链路效率");
+  assert.strictEqual(await page.locator("#trend-title").innerText(), "今日24小时效率曲线");
+  assert.strictEqual(await page.locator("#summary-pv-storage").innerText(), "88.83%");
+  assert.strictEqual(await page.locator("#summary-storage-load").innerText(), "无运行数据");
+  assert.strictEqual(await page.locator("#summary-pv-load").innerText(), "100.00%");
+  assert.deepStrictEqual(
+    await page.locator("#summary-card-pv-storage").innerText(),
+    "光储链路\n88.83%",
+  );
+  assert.deepStrictEqual(
+    await page.locator("#summary-card-storage-load").innerText(),
+    "储用链路\n无运行数据",
+  );
+  assert.deepStrictEqual(
+    await page.locator("#summary-card-pv-load").innerText(),
+    "光用链路\n100.00%",
+  );
   assert.strictEqual(
     (await page.locator("#efficiency-readout").innerText()).replace(/　/g, " "),
     "14:36 光储88.83% 储用无运行数据 光用100.00%",
@@ -501,7 +587,45 @@ function assertClose(actual, expected, message) {
   });
   assert.strictEqual(apiRequests.length, requestsBeforeLockCheck + 1);
   assert.strictEqual(apiRequests.length, 2);
-  assert.ok(apiRequests[0].includes("token=example-token"));
+  const initialApiUrl = new URL(apiRequests[0]);
+  assert.strictEqual(initialApiUrl.searchParams.get("station_id"), "ES02");
+  assert.strictEqual(initialApiUrl.searchParams.has("token"), false);
+
+  await Promise.all([
+    page.waitForRequest(
+      (request) =>
+        new URL(request.url()).pathname === "/energy-efficiency-api" &&
+        new URL(request.url()).searchParams.get("station_id") === "ES01",
+      { timeout: 3000 },
+    ),
+    station1Tab.click(),
+  ]);
+  await page.waitForFunction(() => {
+    const dashboardRoot = document.getElementById("three-energy-flow");
+    return dashboardRoot?.dataset.stationId === "ES01" &&
+      dashboardRoot?.dataset.dashboardState === "ready";
+  });
+  assert.strictEqual(await station1Tab.getAttribute("aria-selected"), "true");
+  assert.strictEqual(await station2Tab.getAttribute("aria-selected"), "false");
+  assert.strictEqual(new URL(page.url()).searchParams.get("station_id"), "ES01");
+
+  await Promise.all([
+    page.waitForRequest(
+      (request) =>
+        new URL(request.url()).pathname === "/energy-efficiency-api" &&
+        new URL(request.url()).searchParams.get("station_id") === "ES02",
+      { timeout: 3000 },
+    ),
+    station2Tab.click(),
+  ]);
+  await page.waitForFunction(() => {
+    const dashboardRoot = document.getElementById("three-energy-flow");
+    return dashboardRoot?.dataset.stationId === "ES02" &&
+      dashboardRoot?.dataset.dashboardState === "ready";
+  });
+  assert.strictEqual(await station1Tab.getAttribute("aria-selected"), "false");
+  assert.strictEqual(await station2Tab.getAttribute("aria-selected"), "true");
+  assert.strictEqual(new URL(page.url()).searchParams.get("station_id"), "ES02");
   assert.deepStrictEqual(externalRequests, []);
   assert.deepStrictEqual(consoleErrors, []);
   assert.deepStrictEqual(pageErrors, []);
@@ -580,15 +704,28 @@ function assertClose(actual, expected, message) {
   assert.deepStrictEqual(consoleErrors, []);
   assert.deepStrictEqual(pageErrors, []);
 
+  useNoSurplusPayload = true;
+  await refreshDashboard("2026-08-25T14:37:00+08:00");
+  assert.strictEqual(
+    await page.locator("#pv-storage-branch").getAttribute("data-state"),
+    "inactive",
+  );
+  useNoSurplusPayload = false;
+  await refreshDashboard("2026-08-25T14:36:00+08:00");
+
+  usePartialCardPayload = true;
+  await refreshDashboard("2026-08-25T14:38:00+08:00");
+  const partialCardOpacity = await page.evaluate(() => ({
+    pcs: Number(getComputedStyle(document.getElementById("pcs-charge-power").closest(".card")).opacity),
+    cabinet: Number(getComputedStyle(document.getElementById("cabinet-charge-power").closest(".card")).opacity),
+  }));
+  assert.ok(partialCardOpacity.pcs <= 0.5);
+  assert.strictEqual(partialCardOpacity.cabinet, 1);
+  usePartialCardPayload = false;
+  await refreshDashboard("2026-08-25T14:36:00+08:00");
+
   useEmptyPayload = true;
-  await page.evaluate(() => {
-    document
-      .getElementById("three-energy-flow")
-      .dispatchEvent(new Event("energy-dashboard-refresh"));
-  });
-  await page
-    .locator("#three-energy-flow[data-dashboard-state='ready']")
-    .waitFor({ timeout: 3000 });
+  await refreshDashboard("");
   assert.strictEqual(
     await page.locator("path[data-series='pvStorage']").getAttribute("d"),
     "",
@@ -601,9 +738,21 @@ function assertClose(actual, expected, message) {
     await page.locator("path[data-series='pvLoad']").getAttribute("d"),
     "",
   );
-  assert.strictEqual(await page.locator("#summary-pv-storage").innerText(), "无运行数据");
-  assert.strictEqual(await page.locator("#summary-storage-load").innerText(), "无运行数据");
-  assert.strictEqual(await page.locator("#summary-pv-load").innerText(), "无运行数据");
+  assert.strictEqual(await page.locator("#summary-card-pv-storage").isVisible(), true);
+  assert.strictEqual(await page.locator("#summary-card-storage-load").isVisible(), true);
+  assert.strictEqual(await page.locator("#summary-card-pv-load").isVisible(), true);
+  assert.deepStrictEqual(
+    await page.locator("#summary-card-pv-storage").innerText(),
+    "光储链路\n88.83%",
+  );
+  assert.deepStrictEqual(
+    await page.locator("#summary-card-storage-load").innerText(),
+    "储用链路\n无运行数据",
+  );
+  assert.deepStrictEqual(
+    await page.locator("#summary-card-pv-load").innerText(),
+    "光用链路\n100.00%",
+  );
   assert.strictEqual(
     await page.locator("#event-table-body").innerText(),
     "当前时间范围内无瓶颈事件",

@@ -608,7 +608,7 @@ class StationEfficiencyHistoryTests(unittest.TestCase):
             "2026-08-25T14:36:02+08:00",
         )
         envelope = build_minute_upsert(point)
-        self.assertEqual(envelope["collection"], "station_efficiency_points")
+        self.assertEqual(envelope["collection"], "t_efficiency_points")
         self.assertEqual(
             envelope["key"],
             {"station_id": "station-1", "data_time": "2026-08-25T06:36:00+00:00"},

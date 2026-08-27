@@ -3,4 +3,4 @@
 __pycache__/
 *.py[cod]
 .superpowers/
-
+/energy_efficiency_local_config.py

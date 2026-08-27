@@ -840,12 +840,64 @@ svg {
       flex-wrap: wrap;
     }
 
+    #three-energy-flow .station-meta,
+    #three-energy-flow .station-tabs {
+      display: flex;
+      align-items: center;
+    }
+
+    #three-energy-flow .station-meta {
+      gap: .65rem;
+      flex-wrap: wrap;
+    }
+
+    #three-energy-flow .station-tabs {
+      gap: .25rem;
+      padding: .2rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      background: var(--card);
+    }
+
+    #three-energy-flow .station-tab {
+      min-width: 5rem;
+      border-color: transparent;
+      background: transparent;
+    }
+
+    #three-energy-flow .station-tab[aria-selected="true"] {
+      color: var(--primary-foreground);
+      background: var(--primary);
+    }
+
+    #three-energy-flow .station-tab:focus-visible {
+      outline: 2px solid var(--ring);
+      outline-offset: 2px;
+    }
+
     #three-energy-flow .dashboard-status[data-state="error"] {
       color: var(--destructive);
     }
 
     #three-energy-flow .lane.is-inactive .flow-track {
       opacity: .5;
+    }
+
+    #three-energy-flow .lane[data-flow-active="true"] .card {
+      border-color: var(--lane-color);
+      box-shadow: 0 0 0 1px var(--lane-color);
+    }
+
+    #three-energy-flow .lane[data-flow-active="false"] .flow-pulse {
+      animation: none;
+      display: none;
+    }
+
+    #three-energy-flow .lane .card.is-no-data {
+      border-color: var(--border) !important;
+      box-shadow: none !important;
+      filter: grayscale(1);
+      opacity: .45;
     }
 
     #three-energy-flow .flow-legend {
@@ -890,10 +942,6 @@ svg {
 
     #three-energy-flow .lane-storage-load {
       --lane-color: var(--flow-2);
-    }
-
-    #three-energy-flow .lane-pv-load {
-      --lane-color: var(--flow-3);
     }
 
     #three-energy-flow .lane-title {
@@ -950,6 +998,101 @@ svg {
 
     #three-energy-flow .source-row.grid-source .node-mark {
       background: var(--viz-series-4);
+    }
+
+    #three-energy-flow .lane-pv-combined {
+      grid-template-columns: 6rem minmax(0, 1fr);
+      align-items: start;
+    }
+
+    #three-energy-flow .pv-topology {
+      display: grid;
+      grid-template-columns: minmax(18rem, .8fr) minmax(0, 2.2fr);
+      gap: .75rem;
+      min-width: 0;
+    }
+
+    #three-energy-flow .pv-shared-path {
+      --lane-color: var(--flow-1);
+      display: grid;
+      grid-template-columns: minmax(7rem, 1fr) minmax(2rem, .4fr) minmax(7rem, 1fr);
+      align-items: stretch;
+      gap: .3rem;
+      min-width: 0;
+    }
+
+    #three-energy-flow .pv-branch-stack {
+      display: grid;
+      gap: .75rem;
+      min-width: 0;
+    }
+
+    #three-energy-flow .pv-branch {
+      display: grid;
+      grid-template-columns: 4.5rem minmax(0, 1fr) 6.5rem;
+      align-items: center;
+      gap: .6rem;
+      min-width: 0;
+    }
+
+    #three-energy-flow .pv-load-branch {
+      --lane-color: var(--flow-3);
+    }
+
+    #three-energy-flow .pv-storage-branch {
+      --lane-color: var(--flow-1);
+    }
+
+    #three-energy-flow .branch-label {
+      color: var(--foreground);
+      display: grid;
+      gap: .25rem;
+      font-weight: 500;
+    }
+
+    #three-energy-flow .pv-load-track {
+      display: grid;
+      grid-template-columns: minmax(2rem, .5fr) minmax(8rem, 1fr);
+      align-items: stretch;
+      gap: .3rem;
+      min-width: 0;
+    }
+
+    #three-energy-flow .pv-shared-path,
+    #three-energy-flow .pv-branch {
+      transition: opacity 160ms ease;
+    }
+
+    #three-energy-flow .pv-shared-path.is-inactive,
+    #three-energy-flow .pv-branch.is-inactive {
+      opacity: .38;
+    }
+
+    #three-energy-flow .pv-shared-path .flow-line,
+    #three-energy-flow .pv-branch .flow-line {
+      background: var(--lane-color);
+    }
+
+    #three-energy-flow .pv-shared-path.is-inactive .flow-line,
+    #three-energy-flow .pv-branch.is-inactive .flow-line {
+      background: var(--border);
+    }
+
+    #three-energy-flow .pv-shared-path.is-inactive .flow-line::after,
+    #three-energy-flow .pv-branch.is-inactive .flow-line::after {
+      border-left-color: var(--border);
+    }
+
+    #three-energy-flow .pv-shared-path.is-inactive .flow-pulse,
+    #three-energy-flow .pv-branch.is-inactive .flow-pulse {
+      animation: none;
+      opacity: 0;
+    }
+
+    #three-energy-flow .pv-shared-path .card,
+    #three-energy-flow .pv-branch:not(.is-inactive) .card {
+      border-color: var(--lane-color);
+      box-shadow: 0 0 0 1px var(--lane-color);
     }
 
     #three-energy-flow .node-title {
@@ -1065,6 +1208,11 @@ svg {
       flex-wrap: wrap;
     }
 
+    #three-energy-flow .trend-heading-main {
+      display: grid;
+      gap: .5rem;
+    }
+
     #three-energy-flow .chart-wrap {
       min-height: 20rem;
       position: relative;
@@ -1128,8 +1276,21 @@ svg {
       }
     }
 
+    @media (max-width: 1120px) {
+      #three-energy-flow .pv-topology {
+        grid-template-columns: 1fr;
+      }
+    }
+
     @media (max-width: 800px) {
       #three-energy-flow .lane {
+        grid-template-columns: 1fr;
+      }
+
+      #three-energy-flow .pv-topology,
+      #three-energy-flow .pv-shared-path,
+      #three-energy-flow .pv-branch,
+      #three-energy-flow .pv-load-track {
         grid-template-columns: 1fr;
       }
 
@@ -1186,7 +1347,13 @@ svg {
   </style>
 
   <div class="flow-meta">
-    <span class="viz-badge dashboard-status" id="dashboard-status" data-state="loading">正在加载后端数据</span>
+    <div class="station-meta">
+      <div class="station-tabs" role="tablist" aria-label="选择电站">
+        <button type="button" class="btn station-tab" role="tab" data-station-id="ES01" aria-selected="false">电站1</button>
+        <button type="button" class="btn station-tab" role="tab" data-station-id="ES02" aria-selected="true">电站2</button>
+      </div>
+      <span class="viz-badge dashboard-status" id="dashboard-status" data-state="loading">正在加载后端数据</span>
+    </div>
     <div class="flow-legend text-small" aria-label="三条链路图例">
       <span class="legend-item" style="--lane-color: var(--flow-1)"><span class="legend-swatch"></span>光→储</span>
       <span class="legend-item" style="--lane-color: var(--flow-2)"><span class="legend-swatch"></span>储→用</span>
@@ -1194,87 +1361,132 @@ svg {
     </div>
   </div>
 
-  <section class="lane lane-pv-storage" id="lane-pv-storage" aria-label="光伏到储能链路">
-    <div class="lane-title"><i data-lucide="sun" aria-hidden="true"></i><span>光→储</span></div>
-    <div class="flow-track six-nodes">
-      <div class="card">
-        <div class="node-content">
-          <div class="node-title"><span class="node-mark"></span>光伏总输入</div>
-          <div class="node-value"><span id="pv-dc-power">--</span>&nbsp;<span class="text-muted text-small">kW</span></div>
-          <div class="text-muted text-small">全部光伏DC汇总</div>
+  <section class="lane lane-pv-combined" id="lane-pv-combined" aria-label="光伏输入输出及光用、光储分支">
+    <div class="lane-title"><i data-lucide="sun" aria-hidden="true"></i><span>光伏</span></div>
+    <div class="pv-topology" id="pv-topology">
+      <div class="pv-shared-path is-inactive" id="pv-shared-path" data-state="inactive">
+        <div class="card">
+          <div class="node-content">
+            <div class="node-title"><span class="node-mark"></span>光伏总输入</div>
+            <div class="node-value"><span id="pv-dc-power">--</span>&nbsp;<span class="text-muted text-small">kW</span></div>
+            <div class="text-muted text-small">全部光伏DC汇总</div>
+          </div>
+        </div>
+        <div class="flow-link">
+          <div class="flow-line"><span class="flow-pulse"></span></div>
+          <span class="text-muted text-small" id="pv-inverter-loss">光伏逆变器 · 损耗-- kW</span>
+        </div>
+        <div class="card">
+          <div class="node-content">
+            <div class="node-title"><span class="node-mark"></span>光伏总输出</div>
+            <div class="node-value"><span id="pv-ac-power">--</span>&nbsp;<span class="text-muted text-small">kW</span></div>
+            <div class="text-muted text-small">全部逆变器AC汇总</div>
+          </div>
         </div>
       </div>
-      <div class="flow-link">
-        <div class="flow-line"><span class="flow-pulse"></span></div>
-        <span class="text-muted text-small" id="pv-inverter-loss">逆变损耗-- kW</span>
-      </div>
-      <div class="card">
-        <div class="node-content">
-          <div class="node-title"><span class="node-mark"></span>光伏总输出</div>
-          <div class="node-value"><span id="pv-ac-power">--</span>&nbsp;<span class="text-muted text-small">kW</span></div>
-          <div class="text-muted text-small">全部逆变器AC汇总</div>
-        </div>
-      </div>
-      <div class="flow-link">
-        <div class="flow-line"><span class="flow-pulse"></span></div>
-        <span class="text-muted text-small" id="pv-surplus-label">负载-- · 余量-- kW</span>
-      </div>
-      <div class="card">
-        <div class="node-content">
-          <div class="node-title"><span class="node-mark"></span>混合供能</div>
-          <div class="source-stack text-small">
-            <div class="source-row">
-              <span class="node-mark"></span>
-              <span id="pv-storage-share">光伏余量 --</span>
-              <span id="pv-storage-source-power">-- kW</span>
+
+      <div class="pv-branch-stack">
+        <div class="pv-branch pv-load-branch is-inactive" id="pv-load-branch" data-state="inactive">
+          <div class="branch-label">
+            <span>光→用</span>
+            <span class="text-muted text-small">光伏直供</span>
+          </div>
+          <div class="pv-load-track">
+            <div class="flow-link">
+              <div class="flow-line"><span class="flow-pulse"></span></div>
+              <span class="text-muted text-small" id="pv-load-line-loss">线损-- kW</span>
             </div>
-            <div class="source-row grid-source">
-              <span class="node-mark"></span>
-              <span id="grid-storage-share">电网 --</span>
-              <span id="grid-storage-source-power">-- kW</span>
+            <div class="card">
+              <div class="node-content">
+                <div class="node-title"><span class="node-mark"></span>场站负载</div>
+                <div class="node-value"><span id="pv-load-power">--</span>&nbsp;<span class="text-muted text-small">kW</span></div>
+                <div class="text-muted text-small">光伏归属功率</div>
+              </div>
             </div>
           </div>
-          <span class="viz-badge">EMS统计口径</span>
+          <div class="efficiency">
+            <span class="text-muted text-small">光用链路效率</span>
+            <span class="eff-value" id="pv-load-efficiency">无运行数据</span>
+            <span class="text-muted text-small" id="pv-load-formula">-- ÷ --</span>
+          </div>
+        </div>
+
+        <div class="pv-branch pv-storage-branch is-inactive" id="pv-storage-branch" data-state="inactive">
+          <div class="branch-label">
+            <span>光→储</span>
+            <span class="text-muted text-small">光伏余量</span>
+          </div>
+          <div class="flow-track">
+            <div class="card">
+              <div class="node-content">
+                <div class="node-title"><span class="node-mark"></span>光伏余量</div>
+                <div class="node-value"><span id="pv-surplus-power">--</span>&nbsp;<span class="text-muted text-small">kW</span></div>
+                <div class="text-muted text-small">扣除场站负载及辅电</div>
+              </div>
+            </div>
+            <div class="flow-link">
+              <div class="flow-line"><span class="flow-pulse"></span></div>
+              <span class="text-muted text-small">进入混合供能</span>
+            </div>
+            <div class="card">
+              <div class="node-content">
+                <div class="node-title"><span class="node-mark"></span>混合供能</div>
+                <div class="source-stack text-small">
+                  <div class="source-row">
+                    <span class="node-mark"></span>
+                    <span>光伏余量 <span id="pv-storage-share">--</span></span>
+                    <span id="pv-storage-source-power">-- kW</span>
+                  </div>
+                  <div class="source-row grid-source">
+                    <span class="node-mark"></span>
+                    <span>市电入储（推算） <span id="grid-storage-share">--</span></span>
+                    <span id="grid-storage-source-power">-- kW</span>
+                  </div>
+                </div>
+                <span class="viz-badge">EMS统计口径</span>
+              </div>
+            </div>
+            <div class="flow-link">
+              <div class="flow-line"><span class="flow-pulse"></span></div>
+              <span class="text-muted text-small" id="cabinet-charge-label">入储-- kW</span>
+            </div>
+            <div class="card">
+              <div class="node-content">
+                <div class="node-title"><span class="node-mark"></span>柜内电表</div>
+                <div class="node-value"><span id="cabinet-charge-power">--</span>&nbsp;<span class="text-muted text-small">kW</span></div>
+                <div class="text-muted text-small">全部柜汇总</div>
+              </div>
+            </div>
+            <div class="flow-link">
+              <div class="flow-line"><span class="flow-pulse"></span></div>
+              <span class="text-muted text-small" id="cabinet-charge-loss">自耗-- kW</span>
+            </div>
+            <div class="card">
+              <div class="node-content">
+                <div class="node-title"><span class="node-mark"></span>PCS</div>
+                <div class="node-value"><span id="pcs-charge-power">--</span>&nbsp;<span class="text-muted text-small">kW</span></div>
+                <div class="text-muted text-small">交流充电</div>
+              </div>
+            </div>
+            <div class="flow-link">
+              <div class="flow-line"><span class="flow-pulse"></span></div>
+              <span class="text-muted text-small" id="pcs-charge-loss">损耗-- kW</span>
+            </div>
+            <div class="card">
+              <div class="node-content">
+                <div class="node-title"><span class="node-mark"></span>BMS电池</div>
+                <div class="node-value"><span id="bms-charge-power">--</span>&nbsp;<span class="text-muted text-small">kW</span></div>
+                <div class="text-muted text-small" id="bms-pv-attribution">总充电 · 光伏归属-- kW</div>
+              </div>
+            </div>
+          </div>
+          <div class="efficiency">
+            <span class="text-muted text-small">光储链路效率（含逆变）</span>
+            <span class="eff-value" id="pv-storage-efficiency">无运行数据</span>
+            <span class="text-muted text-small" id="pv-storage-formula">-- ÷ --</span>
+          </div>
         </div>
       </div>
-      <div class="flow-link">
-        <div class="flow-line"><span class="flow-pulse"></span></div>
-        <span class="text-muted text-small" id="cabinet-charge-label">入储-- kW</span>
-      </div>
-      <div class="card">
-        <div class="node-content">
-          <div class="node-title"><span class="node-mark"></span>柜内电表</div>
-          <div class="node-value"><span id="cabinet-charge-power">--</span>&nbsp;<span class="text-muted text-small">kW</span></div>
-          <div class="text-muted text-small">全部柜汇总</div>
-        </div>
-      </div>
-      <div class="flow-link">
-        <div class="flow-line"><span class="flow-pulse"></span></div>
-        <span class="text-muted text-small" id="cabinet-charge-loss">自耗-- kW</span>
-      </div>
-      <div class="card">
-        <div class="node-content">
-          <div class="node-title"><span class="node-mark"></span>PCS</div>
-          <div class="node-value"><span id="pcs-charge-power">--</span>&nbsp;<span class="text-muted text-small">kW</span></div>
-          <div class="text-muted text-small">交流充电</div>
-        </div>
-      </div>
-      <div class="flow-link">
-        <div class="flow-line"><span class="flow-pulse"></span></div>
-        <span class="text-muted text-small" id="pcs-charge-loss">损耗-- kW</span>
-      </div>
-      <div class="card">
-        <div class="node-content">
-          <div class="node-title"><span class="node-mark"></span>BMS电池</div>
-          <div class="node-value"><span id="bms-charge-power">--</span>&nbsp;<span class="text-muted text-small">kW</span></div>
-          <div class="text-muted text-small" id="bms-pv-attribution">总充电 · 光伏归属-- kW</div>
-        </div>
-      </div>
-    </div>
-    <div class="efficiency">
-      <span class="text-muted text-small">光储链路效率（含逆变）</span>
-      <span class="eff-value" id="pv-storage-efficiency">无运行数据</span>
-      <span class="text-muted text-small" id="pv-storage-formula">-- ÷ --</span>
     </div>
   </section>
 
@@ -1329,72 +1541,42 @@ svg {
     </div>
   </section>
 
-  <section class="lane lane-pv-load" id="lane-pv-load" aria-label="光伏到负载链路">
-    <div class="lane-title"><i data-lucide="factory" aria-hidden="true"></i><span>光→用</span></div>
-    <div class="flow-track two-nodes">
-      <div class="card">
-        <div class="node-content">
-          <div class="node-title"><span class="node-mark"></span>光伏逆变器</div>
-          <div class="node-value"><span id="pv-load-input-power">--</span>&nbsp;<span class="text-muted text-small">kW</span></div>
-          <div class="text-muted text-small">AC分配到负载</div>
-        </div>
-      </div>
-      <div class="flow-link">
-        <div class="flow-line"><span class="flow-pulse"></span></div>
-        <span class="text-muted text-small" id="pv-load-line-loss">线损-- kW</span>
-      </div>
-      <div class="card">
-        <div class="node-content">
-          <div class="node-title"><span class="node-mark"></span>场站负载</div>
-          <div class="node-value"><span id="pv-load-power">--</span>&nbsp;<span class="text-muted text-small">kW</span></div>
-          <div class="text-muted text-small">光伏归属功率</div>
-        </div>
-      </div>
-    </div>
-    <div class="efficiency">
-      <span class="text-muted text-small">光用链路效率</span>
-      <span class="eff-value" id="pv-load-efficiency">无运行数据</span>
-      <span class="text-muted text-small" id="pv-load-formula">-- ÷ --</span>
-    </div>
-  </section>
-
   <div class="boundary-note text-small" aria-label="计算边界说明">
     <span class="boundary-item"><i data-lucide="gauge" aria-hidden="true"></i>关口表用于校验购电和上网</span>
     <span class="boundary-item"><i data-lucide="server" aria-hidden="true"></i>来源占比由后端按EMS统计口径返回</span>
     <span class="boundary-item"><i data-lucide="clock-3" aria-hidden="true"></i>所有功率采用同一时间窗口</span>
   </div>
 
-  <section class="trend-section" aria-labelledby="trend-title">
+  <section class="trend-section" aria-labelledby="current-efficiency-title trend-title">
     <div class="section-heading">
-      <h3 id="trend-title">今日链路效率</h3>
-      <span class="text-muted text-small">无有效运行数据时曲线断开，不按0%展示</span>
+      <h3 id="current-efficiency-title">当前链路效率</h3>
     </div>
 
-    <div class="viz-grid" aria-label="今日累计效率">
-      <div class="card viz-stat">
+    <div class="viz-grid" aria-label="当前效率概览">
+      <div class="card viz-stat" id="summary-card-pv-storage">
         <div class="text-muted">光储链路</div>
         <div class="viz-stat-value" id="summary-pv-storage">无运行数据</div>
-        <div class="text-small text-muted">光伏DC输入、BMS输出电量累计</div>
       </div>
-      <div class="card viz-stat">
+      <div class="card viz-stat" id="summary-card-storage-load">
         <div class="text-muted">储用链路</div>
         <div class="viz-stat-value" id="summary-storage-load">无运行数据</div>
-        <div class="text-small text-muted">今日输入、输出电量累计</div>
       </div>
-      <div class="card viz-stat">
+      <div class="card viz-stat" id="summary-card-pv-load">
         <div class="text-muted">光用链路</div>
         <div class="viz-stat-value" id="summary-pv-load">无运行数据</div>
-        <div class="text-small text-muted">今日输入、输出电量累计</div>
       </div>
     </div>
 
     <div class="section-heading">
-      <div class="trend-legend text-small" aria-label="效率曲线图例">
-        <span class="legend-item" style="--lane-color: var(--flow-1)"><span class="legend-swatch"></span>光储链路</span>
-        <span class="legend-item" style="--lane-color: var(--flow-2)"><span class="legend-swatch"></span>储用链路</span>
-        <span class="legend-item" style="--lane-color: var(--flow-3)"><span class="legend-swatch"></span>光用链路</span>
+      <div class="trend-heading-main">
+        <h3 id="trend-title">今日24小时效率曲线</h3>
+        <div class="trend-legend text-small" aria-label="效率曲线图例">
+          <span class="legend-item" style="--lane-color: var(--flow-1)"><span class="legend-swatch"></span>光储链路</span>
+          <span class="legend-item" style="--lane-color: var(--flow-2)"><span class="legend-swatch"></span>储用链路</span>
+          <span class="legend-item" style="--lane-color: var(--flow-3)"><span class="legend-swatch"></span>光用链路</span>
+        </div>
       </div>
-      <span class="viz-badge">后端趋势数据</span>
+      <span class="text-muted text-small">无有效运行数据时曲线断开，不按0%展示</span>
     </div>
 
     <div class="chart-wrap" id="efficiency-chart-wrap">
@@ -1454,11 +1636,35 @@ svg {
     ];
 
     const pageParams = new URLSearchParams(window.location.search);
-    const token = pageParams.get("token");
+    const supportedStationIds = new Set(["ES01", "ES02"]);
+    const requestedStationId = String(pageParams.get("station_id") || "").toUpperCase();
+    let activeStationId = supportedStationIds.has(requestedStationId) ? requestedStationId : "ES02";
     const apiUrl = "/energy-efficiency-api";
     const statusNode = document.getElementById("dashboard-status");
     const eventTableBody = document.getElementById("event-table-body");
+    const stationTabs = Array.from(root.querySelectorAll("[data-station-id]"));
     let fetchInFlight = false;
+    let activeController = null;
+
+    function syncStationUi() {
+      root.dataset.stationId = activeStationId;
+      stationTabs.forEach((tab) => {
+        const selected = tab.dataset.stationId === activeStationId;
+        tab.setAttribute("aria-selected", String(selected));
+        tab.tabIndex = selected ? 0 : -1;
+      });
+      const pageUrl = new URL(window.location.href);
+      pageUrl.searchParams.set("station_id", activeStationId);
+      pageUrl.searchParams.delete("token");
+      window.history.replaceState(null, "", pageUrl);
+    }
+
+    function selectStation(stationId) {
+      if (!supportedStationIds.has(stationId) || stationId === activeStationId) return;
+      activeStationId = stationId;
+      syncStationUi();
+      fetchData(true);
+    }
 
     function setText(id, value) {
       const node = document.getElementById(id);
@@ -1503,7 +1709,28 @@ svg {
     }
 
     function setLaneActivity(id, active) {
-      document.getElementById(id)?.classList.toggle("is-inactive", !active);
+      const lane = document.getElementById(id);
+      if (!lane) return;
+      lane.dataset.flowActive = String(Boolean(active));
+      lane.classList.toggle("is-inactive", !active);
+    }
+
+    function setPathActivity(id, active) {
+      const path = document.getElementById(id);
+      if (!path) return;
+      path.classList.toggle("is-inactive", !active);
+      path.dataset.state = active ? "active" : "inactive";
+    }
+
+    function hasNumericData(value) {
+      return value !== null && value !== undefined && value !== "" && Number.isFinite(Number(value));
+    }
+
+    function setCardDataState(valueId, hasData) {
+      const card = document.getElementById(valueId)?.closest(".card");
+      if (!card) return;
+      card.classList.toggle("is-no-data", !hasData);
+      card.dataset.hasData = String(Boolean(hasData));
     }
 
     function renderRealtime(realtime) {
@@ -1516,12 +1743,12 @@ svg {
       const gridShare = cabinetCharge > 0 ? (result.grid_to_storage_power || 0) / cabinetCharge * 100 : null;
 
       setText("pv-dc-power", formatPower(input.pv_dc_power));
-      setText("pv-inverter-loss", "逆变损耗" + formatPower(Math.max((input.pv_dc_power || 0) - (input.pv_ac_power || 0), 0)) + " kW");
+      setText("pv-inverter-loss", "光伏逆变器 · 损耗" + formatPower(Math.max((input.pv_dc_power || 0) - (input.pv_ac_power || 0), 0)) + " kW");
       setText("pv-ac-power", formatPower(input.pv_ac_power));
-      setText("pv-surplus-label", "负载" + formatPower(input.load_power) + " · 余量" + formatPower(pvSurplus) + " kW");
-      setText("pv-storage-share", "光伏余量 " + formatPercent(pvShare));
+      setText("pv-surplus-power", formatPower(pvSurplus));
+      setText("pv-storage-share", formatPercent(pvShare));
       setText("pv-storage-source-power", formatPower(result.pv_to_storage_power) + " kW");
-      setText("grid-storage-share", "电网 " + formatPercent(gridShare));
+      setText("grid-storage-share", formatPercent(gridShare));
       setText("grid-storage-source-power", formatPower(result.grid_to_storage_power) + " kW");
       setText("cabinet-charge-label", "入储" + formatPower(cabinetCharge) + " kW");
       setText("cabinet-charge-power", formatPower(cabinetCharge));
@@ -1542,21 +1769,35 @@ svg {
       setText("storage-load-efficiency", formatPercent(result.storage_load_efficiency));
       setText("storage-load-formula", formatPower(intermediate.storage_load_efficiency?.numerator_kw) + " ÷ " + formatPower(intermediate.storage_load_efficiency?.denominator_kw));
 
-      setText("pv-load-input-power", formatPower(result.pv_to_load_input_power));
       setText("pv-load-line-loss", "线损" + formatPower(Math.max((result.pv_to_load_input_power || 0) - (result.pv_to_load_power || 0), 0)) + " kW");
       setText("pv-load-power", formatPower(result.pv_to_load_power));
       setText("pv-load-efficiency", formatPercent(result.pv_load_efficiency));
       setText("pv-load-formula", formatPower(intermediate.pv_load_efficiency?.numerator_kw) + " ÷ " + formatPower(intermediate.pv_load_efficiency?.denominator_kw));
 
-      setLaneActivity("lane-pv-storage", result.pv_storage_dc_efficiency !== null);
+      setCardDataState("pv-dc-power", hasNumericData(input.pv_dc_power));
+      setCardDataState("pv-ac-power", hasNumericData(input.pv_ac_power));
+      setCardDataState("pv-surplus-power", hasNumericData(input.pv_ac_power) && hasNumericData(input.load_power));
+      setCardDataState("pv-storage-source-power", hasNumericData(result.pv_to_storage_power) || hasNumericData(result.grid_to_storage_power));
+      setCardDataState("cabinet-charge-power", hasNumericData(input.cabinet_charge_power));
+      setCardDataState("pcs-charge-power", hasNumericData(input.pcs_charge_power));
+      setCardDataState("bms-charge-power", hasNumericData(input.bms_charge_power));
+      setCardDataState("bms-discharge-power", hasNumericData(input.bms_discharge_power));
+      setCardDataState("pcs-discharge-power", hasNumericData(input.pcs_discharge_power));
+      setCardDataState("cabinet-discharge-power", hasNumericData(input.cabinet_discharge_power));
+      setCardDataState("storage-load-power", hasNumericData(result.storage_to_load_power));
+      setCardDataState("pv-load-power", hasNumericData(result.pv_to_load_power));
+
+      const sharedActive = Number(input.pv_dc_power) > 0 || Number(input.pv_ac_power) > 0;
+      setPathActivity("pv-shared-path", sharedActive);
+      setPathActivity("pv-load-branch", sharedActive && Number(result.pv_to_load_power) > 0);
+      setPathActivity("pv-storage-branch", sharedActive && pvSurplus > 0);
       setLaneActivity("lane-storage-load", result.storage_load_efficiency !== null);
-      setLaneActivity("lane-pv-load", result.pv_load_efficiency !== null);
     }
 
-    function renderSummary(summary) {
-      setText("summary-pv-storage", formatPercent(summary?.pv_storage_efficiency));
-      setText("summary-storage-load", formatPercent(summary?.storage_load_efficiency));
-      setText("summary-pv-load", formatPercent(summary?.pv_load_efficiency));
+    function renderCurrentEfficiency(result) {
+      setText("summary-pv-storage", formatPercent(result?.pv_storage_dc_efficiency));
+      setText("summary-storage-load", formatPercent(result?.storage_load_efficiency));
+      setText("summary-pv-load", formatPercent(result?.pv_load_efficiency));
     }
 
     function renderEvents(items) {
@@ -1603,7 +1844,7 @@ svg {
 
     function renderDashboard(data) {
       renderRealtime(data.realtime || {});
-      renderSummary(data.summary_today || {});
+      renderCurrentEfficiency(data.realtime?.result || {});
       rows = Array.isArray(data.trend) ? data.trend : [];
       range = data.range || null;
       const currentTime = String(data.realtime?.inputs?.data_time || "").match(/T(\d{2}:\d{2})/)?.[1] || "--:--";
@@ -1628,17 +1869,20 @@ svg {
       render();
     }
 
-    async function fetchData() {
-      if (fetchInFlight) return;
+    async function fetchData(force = false) {
+      if (fetchInFlight && !force) return;
+      if (force && activeController) activeController.abort();
+      const stationId = activeStationId;
+      const controller = new AbortController();
+      activeController = controller;
       fetchInFlight = true;
       root.dataset.dashboardState = "loading";
       statusNode.dataset.state = "loading";
       statusNode.textContent = "正在加载后端数据";
-      const controller = new AbortController();
       const timeout = window.setTimeout(() => controller.abort(), 15000);
       try {
         const endpoint = new URL(apiUrl, window.location.href);
-        if (token) endpoint.searchParams.set("token", token);
+        endpoint.searchParams.set("station_id", stationId);
         const response = await fetch(endpoint, {
           headers: { Accept: "application/json" },
           signal: controller.signal
@@ -1648,12 +1892,14 @@ svg {
         if (payload.status !== "ok" || payload.data?.operation !== "dashboard") {
           throw new Error(payload.error?.message || "后端返回格式不正确");
         }
+        if (controller !== activeController || stationId !== activeStationId) return;
         renderDashboard(payload.data);
         root.dataset.dashboardState = "ready";
         statusNode.dataset.state = "ready";
         const mode = payload.data.realtime?.result?.calculation_mode === "estimated" ? "估算" : "实测";
         statusNode.textContent = "后端实时数据 · " + mode + " · " + formatTime(payload.data.realtime?.inputs?.data_time);
       } catch (error) {
+        if (controller !== activeController) return;
         root.dataset.dashboardState = "error";
         statusNode.dataset.state = "error";
         statusNode.textContent = error.name === "AbortError" ? "后端请求超时" : "后端数据加载失败";
@@ -1661,7 +1907,10 @@ svg {
         console.error("Energy dashboard load failed:", error);
       } finally {
         window.clearTimeout(timeout);
-        fetchInFlight = false;
+        if (controller === activeController) {
+          activeController = null;
+          fetchInFlight = false;
+        }
       }
     }
 
@@ -1855,9 +2104,13 @@ svg {
 
     renderIcons();
     render();
+    syncStationUi();
+    stationTabs.forEach((tab) => {
+      tab.addEventListener("click", () => selectStation(tab.dataset.stationId));
+    });
     const observer = new ResizeObserver(render);
     observer.observe(wrap);
-    root.addEventListener("energy-dashboard-refresh", fetchData);
+    root.addEventListener("energy-dashboard-refresh", () => fetchData());
     let refreshTimer = window.setInterval(fetchData, 60000);
     document.addEventListener("visibilitychange", () => {
       if (document.hidden && refreshTimer) {

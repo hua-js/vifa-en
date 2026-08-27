@@ -88,7 +88,7 @@ def build_minute_point(station_id, data_time, chains, formula_version, calculate
 
 def build_minute_upsert(point):
     return {
-        "collection": "station_efficiency_points",
+        "collection": "t_efficiency_points",
         "key": {
             "station_id": point["station_id"],
             "data_time": _canonical_minute(point["data_time"]).isoformat(),
@@ -552,7 +552,7 @@ def evaluate_battery_temperature_rise(samples, rule, active_event=None):
 
 def build_event_upsert(event):
     return {
-        "collection": "efficiency_bottleneck_events",
+        "collection": "t_efficiency_bottleneck_events",
         "key": {
             "station_id": event["station_id"],
             "event_type": event["event_type"],
@@ -589,6 +589,25 @@ def _day_bounds(as_of, timezone_name):
     local = _parse_time(as_of, "as_of").astimezone(zone)
     start = local.replace(hour=0, minute=0, second=0, microsecond=0)
     return start, start + timedelta(days=1)
+
+
+def calendar_day_bounds(as_of, timezone_name):
+    """返回指定时刻所在场站自然日的带时区起止时间。"""
+    start, end = _day_bounds(as_of, timezone_name)
+    return start.isoformat(), end.isoformat()
+
+
+def time_in_zone(value, timezone_name, field="data_time"):
+    """将带时区的时间转换为场站配置时区。"""
+    try:
+        zone = ZoneInfo(timezone_name)
+    except Exception as exc:
+        raise HistoryError(
+            "invalid_timezone",
+            "场站时区无效",
+            {"timezone": timezone_name},
+        ) from exc
+    return _parse_time(value, field).astimezone(zone).isoformat()
 
 
 def _summary_efficiency(points, input_column, output_column):

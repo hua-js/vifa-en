@@ -1,0 +1,166 @@
+import io
+import json
+import unittest
+from unittest.mock import patch
+from urllib.error import URLError
+from urllib.parse import parse_qs, urlsplit
+
+from m2.station_efficiency_nocobase import (
+    StationEfficiencyStoreError,
+    fetch_minute_points,
+    save_bottleneck_event,
+    save_minute_point,
+)
+
+
+CONFIG = {
+    "nocobase_base_url": "https://vifa.hlszh.com",
+    "nocobase_token": "test-secret",
+    "timeout_seconds": 7,
+}
+
+MINUTE_POINT = {
+    "station_id": "ES02",
+    "data_time": "2026-08-26T09:30:00+08:00",
+    "pv_storage_efficiency": 88.5,
+    "storage_load_efficiency": None,
+    "pv_load_efficiency": 95.2,
+    "pv_storage_input_kw": 100.0,
+    "pv_storage_output_kw": 88.5,
+    "storage_load_input_kw": None,
+    "storage_load_output_kw": None,
+    "pv_load_input_kw": 80.0,
+    "pv_load_output_kw": 76.16,
+    "formula_version": "energy-chain-v1",
+    "calculated_at": "2026-08-26T09:30:03+08:00",
+}
+
+BOTTLENECK_EVENT = {
+    "station_id": "ES02",
+    "event_type": "inverter_low_load",
+    "device_id": "pv-inverter-1",
+    "device_name": "1#逆变器",
+    "start_time": "2026-08-26T09:25:00+08:00",
+    "end_time": None,
+    "last_seen_time": "2026-08-26T09:30:00+08:00",
+    "status": "active",
+    "observed_value": 12.4,
+    "threshold_value": 20.0,
+    "observed_unit": "%",
+    "evidence": {"display_text": "负载率最低 12.40%", "rule": {"version": 1}},
+    "impact_chain": ["pv_storage", "pv_load"],
+    "rule_version": 1,
+}
+
+
+class StationEfficiencyNocoBaseTests(unittest.TestCase):
+    def test_fetches_one_station_calendar_day_in_time_order(self):
+        calls = []
+
+        def request_json(url, token, timeout):
+            calls.append((url, token, timeout))
+            return {"data": [MINUTE_POINT]}
+
+        rows = fetch_minute_points(
+            "ES02",
+            "2026-08-26T00:00:00+08:00",
+            "2026-08-27T00:00:00+08:00",
+            CONFIG,
+            request_json=request_json,
+        )
+
+        self.assertEqual(rows, [MINUTE_POINT])
+        self.assertEqual(calls[0][1:], ("test-secret", 7.0))
+        parsed = urlsplit(calls[0][0])
+        self.assertEqual(parsed.path, "/api/t_efficiency_points:list")
+        query = parse_qs(parsed.query)
+        self.assertEqual(query["sort[]"], ["data_time"])
+        self.assertEqual(query["pageSize"], ["1440"])
+        self.assertEqual(
+            json.loads(query["filter"][0]),
+            {
+                "$and": [
+                    {"station_id": {"$eq": "ES02"}},
+                    {
+                        "data_time": {
+                            "$gte": "2026-08-25T16:00:00+00:00",
+                            "$lt": "2026-08-26T16:00:00+00:00",
+                        }
+                    },
+                ]
+            },
+        )
+
+    def test_minute_save_uses_fixed_update_or_create_request(self):
+        response = io.BytesIO(json.dumps({"data": {"id": 11}}).encode("utf-8"))
+
+        with patch(
+            "m2.station_efficiency_nocobase.urlopen",
+            return_value=response,
+        ) as mocked_urlopen:
+            saved = save_minute_point(MINUTE_POINT, CONFIG)
+
+        request = mocked_urlopen.call_args.args[0]
+        parsed_url = urlsplit(request.full_url)
+        self.assertEqual(parsed_url.scheme, "https")
+        self.assertEqual(parsed_url.netloc, "vifa.hlszh.com")
+        self.assertEqual(
+            parsed_url.path,
+            "/api/t_efficiency_points:updateOrCreate",
+        )
+        self.assertEqual(request.get_method(), "POST")
+        self.assertEqual(request.get_header("Authorization"), "Bearer test-secret")
+        self.assertEqual(mocked_urlopen.call_args.kwargs, {"timeout": 7.0})
+        self.assertEqual(
+            json.loads(request.data.decode("utf-8")),
+            MINUTE_POINT,
+        )
+        self.assertEqual(
+            parse_qs(parsed_url.query)["filterKeys[]"],
+            ["station_id", "data_time"],
+        )
+        self.assertEqual(saved, {"id": 11})
+        self.assertNotIn("test-secret", request.full_url)
+        self.assertNotIn(b"test-secret", request.data)
+
+    def test_event_save_uses_event_identity_as_update_key(self):
+        calls = []
+
+        def request_json(url, token, timeout, body):
+            calls.append((url, token, timeout, body))
+            return {"data": {"id": 21, **body}}
+
+        saved = save_bottleneck_event(
+            BOTTLENECK_EVENT,
+            CONFIG,
+            request_json=request_json,
+        )
+
+        self.assertEqual(calls[0][0], (
+            "https://vifa.hlszh.com/api/"
+            "t_efficiency_bottleneck_events:updateOrCreate"
+            "?filterKeys%5B%5D=station_id"
+            "&filterKeys%5B%5D=event_type"
+            "&filterKeys%5B%5D=device_id"
+            "&filterKeys%5B%5D=start_time"
+        ))
+        self.assertEqual(
+            calls[0][3],
+            BOTTLENECK_EVENT,
+        )
+        self.assertEqual(saved["id"], 21)
+
+    def test_network_error_does_not_expose_token(self):
+        with patch(
+            "m2.station_efficiency_nocobase.urlopen",
+            side_effect=URLError("connection failed with test-secret"),
+        ):
+            with self.assertRaises(StationEfficiencyStoreError) as caught:
+                save_minute_point(MINUTE_POINT, CONFIG)
+
+        self.assertNotIn("test-secret", str(caught.exception))
+        self.assertEqual(str(caught.exception), "NocoBase 写入失败")
+
+
+if __name__ == "__main__":
+    unittest.main()

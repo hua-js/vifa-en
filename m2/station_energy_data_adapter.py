@@ -12,6 +12,7 @@ STATION_CONFIGS = {
     "ES01": {
         "master_emu_sn": "emu11",
         "cabinet_sns": ("emu11", "emu12"),
+        "pv_emu_sn": None,
         "has_pv": False,
     },
     "ES02": {
@@ -24,6 +25,7 @@ STATION_CONFIGS = {
             "emu25",
             "emu26",
         ),
+        "pv_emu_sn": "emu27",
         "has_pv": True,
     },
 }
@@ -111,7 +113,7 @@ def _station_config(station_id):
     return station_id, STATION_CONFIGS[station_id]
 
 
-def _station_rows(emu_rows, station_id, cabinet_sns):
+def _station_rows(emu_rows, station_id, expected_emu_sns):
     if not isinstance(emu_rows, list):
         raise StationEnergyDataError("t_emu 记录必须是数组")
     if any(not isinstance(row, dict) for row in emu_rows):
@@ -131,13 +133,13 @@ def _station_rows(emu_rows, station_id, cabinet_sns):
             raise StationEnergyDataError(f"场站 {station_id} 的 {emu_sn} 记录重复")
         rows_by_sn[emu_sn] = row
 
-    expected = set(cabinet_sns)
+    expected = set(expected_emu_sns)
     actual = set(rows_by_sn)
     if actual != expected:
         missing = sorted(expected - actual)
         unexpected = sorted(actual - expected)
         raise StationEnergyDataError(
-            f"场站 {station_id} 储能柜集合不匹配；"
+            f"场站 {station_id} 设备集合不匹配；"
             f"缺少 {missing}；多出 {unexpected}"
         )
     return rows_by_sn
@@ -147,7 +149,9 @@ def build_station_source_record(*, station_id, emu_rows):
     """将 t_emu:list 全量记录转换为指定场站的三链路标准输入。"""
     station_id, station = _station_config(station_id)
     cabinet_sns = station["cabinet_sns"]
-    rows_by_sn = _station_rows(emu_rows, station_id, cabinet_sns)
+    pv_emu_sn = station["pv_emu_sn"]
+    expected_emu_sns = cabinet_sns + ((pv_emu_sn,) if pv_emu_sn else ())
+    rows_by_sn = _station_rows(emu_rows, station_id, expected_emu_sns)
     master_emu_sn = station["master_emu_sn"]
     master_row = rows_by_sn[master_emu_sn]
 
@@ -165,6 +169,7 @@ def build_station_source_record(*, station_id, emu_rows):
         )
         battery_values.append(
             _number(row.get("battery_power"), f"t_emu:{cabinet_sn}.battery_power")
+            / 1000.0
         )
         pcs_values.extend((
             _number(row.get("pcs1_power"), f"t_emu:{cabinet_sn}.pcs1_power"),
@@ -182,17 +187,28 @@ def build_station_source_record(*, station_id, emu_rows):
     grid_export, grid_import = _split_signed([grid_kw])
 
     if station["has_pv"]:
+        pv_row = rows_by_sn[pv_emu_sn]
+        source_times[f"emu:{pv_emu_sn}"] = _timestamp(
+            pv_row, "last_time_iso", f"t_emu:{pv_emu_sn}"
+        )
         pv_dc_power = _number(
-            master_row.get("input_ac_solar_power"),
-            f"t_emu:{master_emu_sn}.input_ac_solar_power",
+            pv_row.get("input_ac_solar_power"),
+            f"t_emu:{pv_emu_sn}.input_ac_solar_power",
         )
         pv_ac_power = _number(
-            master_row.get("latest_solar_power"),
-            f"t_emu:{master_emu_sn}.latest_solar_power",
+            pv_row.get("latest_solar_power"),
+            f"t_emu:{pv_emu_sn}.latest_solar_power",
         )
     else:
         pv_dc_power = 0.0
         pv_ac_power = 0.0
+
+    storage_net_power = sum(cabinet_values)
+    load_power = grid_kw + storage_net_power + pv_ac_power
+    if load_power <= 0:
+        raise StationEnergyDataError(
+            f"场站 {station_id} 推算出的负载功率必须大于 0"
+        )
 
     record = {
         "bus_id": station_id,
@@ -201,9 +217,7 @@ def build_station_source_record(*, station_id, emu_rows):
         ),
         "pv_dc_power": pv_dc_power,
         "pv_ac_power": pv_ac_power,
-        "load_power": _number(
-            master_row.get("load_power"), f"t_emu:{master_emu_sn}.load_power"
-        ),
+        "load_power": load_power,
         "cabinet_charge_power": cabinet_charge,
         "cabinet_discharge_power": cabinet_discharge,
         "pcs_charge_power": pcs_charge,

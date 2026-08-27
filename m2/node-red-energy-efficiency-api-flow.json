@@ -1,0 +1,282 @@
+[
+  {
+    "id": "6a0f5b7f19c0f860",
+    "type": "group",
+    "z": "b9c07ab9fb24cf5f",
+    "name": "能效分析API",
+    "style": {
+      "label": true,
+      "fill": "#ffefbf"
+    },
+    "nodes": [
+      "5927e77be5d06acc",
+      "678b53a09fd26194",
+      "97ae2158edeb02b3",
+      "bc9135f77a7e306c",
+      "2a04eb75523c08af",
+      "f4c337a0f23d6a11",
+      "7bc21f0faeb14356",
+      "62c97027509675f0",
+      "e8e2c80491702667",
+      "28ed724416392e5a",
+      "59a0b309f1852b53",
+      "06ead490a31a7ae1"
+    ],
+    "x": 54,
+    "y": 1219,
+    "w": 1012,
+    "h": 309.5
+  },
+  {
+    "id": "5927e77be5d06acc",
+    "type": "http in",
+    "z": "b9c07ab9fb24cf5f",
+    "g": "6a0f5b7f19c0f860",
+    "name": "能效看板API",
+    "url": "/energy-efficiency-api",
+    "method": "get",
+    "upload": false,
+    "skipBodyParsing": false,
+    "swaggerDoc": "",
+    "x": 150,
+    "y": 1280,
+    "wires": [
+      [
+        "678b53a09fd26194"
+      ]
+    ]
+  },
+  {
+    "id": "678b53a09fd26194",
+    "type": "function",
+    "z": "b9c07ab9fb24cf5f",
+    "g": "6a0f5b7f19c0f860",
+    "name": "检查场站",
+    "func": "const query = msg.req.query || {};\nconst stationId = String(query.station_id || 'ES02').trim().toUpperCase();\n\nif (!['ES01', 'ES02'].includes(stationId)) {\n    msg.statusCode = 400;\n    msg.headers = { 'Content-Type': 'application/json; charset=utf-8' };\n    msg.payload = {\n        status: 'error',\n        error: {\n            message: 'station_id 只能是 ES01 或 ES02'\n        }\n    };\n    return [null, msg];\n}\n\nmsg.payload = stationId;\nreturn [msg, null];",
+    "outputs": 2,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 310,
+    "y": 1280,
+    "wires": [
+      [
+        "97ae2158edeb02b3"
+      ],
+      [
+        "2a04eb75523c08af"
+      ]
+    ]
+  },
+  {
+    "id": "97ae2158edeb02b3",
+    "type": "exec",
+    "z": "b9c07ab9fb24cf5f",
+    "g": "6a0f5b7f19c0f860",
+    "command": "python3 /userdata/holo/pyfiles/energy-efficiency-api.py dashboard",
+    "addpay": "payload",
+    "append": "",
+    "useSpawn": "false",
+    "timer": "20",
+    "winHide": false,
+    "oldrc": "false",
+    "name": "执行能效计算脚本",
+    "x": 520,
+    "y": 1260,
+    "wires": [
+      [
+        "bc9135f77a7e306c"
+      ],
+      [
+        "f4c337a0f23d6a11"
+      ],
+      [
+        "7bc21f0faeb14356"
+      ]
+    ]
+  },
+  {
+    "id": "bc9135f77a7e306c",
+    "type": "function",
+    "z": "b9c07ab9fb24cf5f",
+    "g": "6a0f5b7f19c0f860",
+    "name": "包装JSON结果",
+    "func": "try {\n    const output = String(msg.payload || '').trim();\n    const result = JSON.parse(output);\n\n    msg.statusCode = result.status === 'ok' ? 200 : 502;\n    msg.payload = result;\n} catch (error) {\n    msg.statusCode = 500;\n    msg.payload = {\n        status: 'error',\n        error: {\n            message: 'Python 没有返回正确的 JSON'\n        }\n    };\n}\n\nmsg.headers = {\n    'Content-Type': 'application/json; charset=utf-8'\n};\n\nreturn msg;",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 750,
+    "y": 1260,
+    "wires": [
+      [
+        "2a04eb75523c08af"
+      ]
+    ]
+  },
+  {
+    "id": "2a04eb75523c08af",
+    "type": "http response",
+    "z": "b9c07ab9fb24cf5f",
+    "g": "6a0f5b7f19c0f860",
+    "name": "返回能效数据",
+    "statusCode": "",
+    "headers": {},
+    "x": 960,
+    "y": 1260,
+    "wires": []
+  },
+  {
+    "id": "f4c337a0f23d6a11",
+    "type": "debug",
+    "z": "b9c07ab9fb24cf5f",
+    "g": "6a0f5b7f19c0f860",
+    "name": "Python错误",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "payload",
+    "targetType": "msg",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 740,
+    "y": 1320,
+    "wires": []
+  },
+  {
+    "id": "7bc21f0faeb14356",
+    "type": "debug",
+    "z": "b9c07ab9fb24cf5f",
+    "g": "6a0f5b7f19c0f860",
+    "name": "Python退出码",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "payload",
+    "targetType": "msg",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 750,
+    "y": 1360,
+    "wires": []
+  },
+  {
+    "id": "62c97027509675f0",
+    "type": "inject",
+    "z": "b9c07ab9fb24cf5f",
+    "g": "6a0f5b7f19c0f860",
+    "name": "每分钟触发",
+    "props": [
+      {
+        "p": "payload"
+      },
+      {
+        "p": "topic",
+        "vt": "str"
+      }
+    ],
+    "repeat": "60",
+    "crontab": "",
+    "once": true,
+    "onceDelay": "5",
+    "topic": "",
+    "payload": "",
+    "payloadType": "date",
+    "x": 150,
+    "y": 1440,
+    "wires": [
+      [
+        "e8e2c80491702667"
+      ]
+    ]
+  },
+  {
+    "id": "e8e2c80491702667",
+    "type": "function",
+    "z": "b9c07ab9fb24cf5f",
+    "g": "6a0f5b7f19c0f860",
+    "name": "构造双电站分钟命令",
+    "func": "const command = 'python3 /userdata/holo/pyfiles/energy-efficiency-api.py minute '; const es01 = { ...msg, payload: command + 'ES01' }; const es02 = { ...msg, payload: command + 'ES02' }; return [[es01, es02]];",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 370,
+    "y": 1440,
+    "wires": [
+      [
+        "28ed724416392e5a"
+      ]
+    ]
+  },
+  {
+    "id": "28ed724416392e5a",
+    "type": "exec",
+    "z": "b9c07ab9fb24cf5f",
+    "g": "6a0f5b7f19c0f860",
+    "command": "",
+    "addpay": true,
+    "useSpawn": "false",
+    "timer": "20",
+    "winHide": false,
+    "oldrc": "false",
+    "name": "写入双电站分钟效率",
+    "x": 620,
+    "y": 1440,
+    "wires": [
+      [
+        "59a0b309f1852b53"
+      ],
+      [
+        "06ead490a31a7ae1"
+      ],
+      [
+        "06ead490a31a7ae1"
+      ]
+    ]
+  },
+  {
+    "id": "59a0b309f1852b53",
+    "type": "debug",
+    "z": "b9c07ab9fb24cf5f",
+    "g": "6a0f5b7f19c0f860",
+    "name": "分钟写入结果",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "payload",
+    "targetType": "msg",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 850,
+    "y": 1420,
+    "wires": []
+  },
+  {
+    "id": "06ead490a31a7ae1",
+    "type": "debug",
+    "z": "b9c07ab9fb24cf5f",
+    "g": "6a0f5b7f19c0f860",
+    "name": "分钟写入错误",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "payload",
+    "targetType": "msg",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 850,
+    "y": 1460,
+    "wires": []
+  }
+]

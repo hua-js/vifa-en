@@ -256,12 +256,27 @@ class StationEnergyBackendTests(unittest.TestCase):
                 load_power=94,
                 source_times={
                     "pv": "2026-08-24T12:00:00+08:00",
-                    "load": "2026-08-24T12:00:31+08:00",
+                    "load": "2026-08-24T12:02:01+08:00",
                 },
             )
         )
         self.assertIn("time_misaligned", result["quality_codes"])
         self.assertIsNone(result["pv_load_efficiency"])
+
+    def test_default_time_tolerance_accepts_90_second_source_gap(self):
+        result = calculate_bus(
+            make_sample(
+                pv_dc_power=100,
+                pv_ac_power=96,
+                load_power=94,
+                source_times={
+                    "pv": "2026-08-24T12:00:00+08:00",
+                    "load": "2026-08-24T12:01:30+08:00",
+                },
+            )
+        )
+        self.assertNotIn("time_misaligned", result["quality_codes"])
+        self.assertIsNotNone(result["pv_load_efficiency"])
 
     def test_storage_direction_conflict_does_not_hide_pv_inverter_efficiency(self):
         result = calculate_bus(

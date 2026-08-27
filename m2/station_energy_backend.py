@@ -8,7 +8,7 @@ DEFAULT_CONFIG = {
     "min_power_kw": 1.0,
     "balance_error_limit_percent": 5.0,
     "max_efficiency_percent": 105.0,
-    "time_tolerance_seconds": 30.0,
+    "time_tolerance_seconds": 120.0,
 }
 
 POWER_FIELDS = (
