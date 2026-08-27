@@ -1,12 +1,18 @@
 import json
+import tempfile
 import unittest
-from datetime import datetime
+from datetime import datetime, timedelta
+from pathlib import Path
+from unittest.mock import patch
 from urllib.parse import parse_qs, urlsplit
 from zoneinfo import ZoneInfo
 
 from m2.station_efficiency_job import cleanup_device_history, process_station_minute
 from m2.station_efficiency_device_adapter import StationEfficiencyDeviceDataError
 from m2.station_efficiency_nocobase import StationEfficiencyStoreError
+from m2.station_efficiency_event_outbox import enqueue_event, pending_event_count
+from m2.station_efficiency_history import evaluate_inverter_low_load
+from m2.station_energy_backend import calculate_bus as calculate_bus_real
 from m2.station_energy_data_adapter import StationEnergyDataError
 
 
@@ -130,6 +136,31 @@ def formal_history_devices():
 
 
 class StationEfficiencyJobTests(unittest.TestCase):
+    def setUp(self):
+        self.temporary_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary_directory.cleanup)
+        CONFIG["event_outbox_path"] = str(
+            Path(self.temporary_directory.name) / "events.sqlite3"
+        )
+        self.addCleanup(CONFIG.pop, "event_outbox_path", None)
+
+        def deterministic_calculation(source, calculation_config):
+            result = calculate_bus_real(source, calculation_config)
+            source_time = datetime.fromisoformat(
+                result["data_time"].replace("Z", "+00:00")
+            )
+            result["calculated_at"] = (
+                source_time + timedelta(seconds=50)
+            ).isoformat()
+            return result
+
+        calculation_patch = patch(
+            "m2.station_efficiency_job.calculate_bus",
+            side_effect=deterministic_calculation,
+        )
+        calculation_patch.start()
+        self.addCleanup(calculation_patch.stop)
+
     def make_query_request(
         self, *, minute_rows=None, device_rows=None, active_events=None, calls=None,
     ):
@@ -304,6 +335,178 @@ class StationEfficiencyJobTests(unittest.TestCase):
         self.assertEqual(saved_device_count, 15)
         self.assertEqual(output["device_points_saved"], 15)
         self.assertGreaterEqual(len(output["event_updates"]), 1)
+
+    def test_failed_open_event_is_flushed_before_next_changed_condition_evaluation(self):
+        remote_active_events = []
+        fail_event_save = True
+        operation_order = []
+        history_devices = [
+            point for point in formal_history_devices()
+            if point["device_type"] == "pv_inverter"
+        ]
+
+        def query_request(url, token, timeout):
+            if "/t_efficiency_points:list?" in url:
+                return {"data": formal_history_minutes()}
+            if "/t_efficiency_device_points:list?" in url:
+                return {"data": history_devices}
+            if "/t_efficiency_bottleneck_events:list?" in url:
+                operation_order.append("query_events")
+                return {"data": list(remote_active_events), "meta": {"totalPage": 1}}
+            self.fail(f"unexpected query URL: {url}")
+
+        def store_request(url, token, timeout, body):
+            if "event_type" in body:
+                operation_order.append(f"save_event_{body['status']}")
+                if fail_event_save:
+                    raise StationEfficiencyStoreError("remote detail must stay private")
+                remote_active_events[:] = [body] if body["status"] == "active" else []
+            return {"data": {"id": 1, **body}}
+
+        first = process_station_minute(
+            "ES02", CONFIG,
+            source_request_json=lambda *args: {"data": make_balanced_es02_rows()},
+            growall_request_json=lambda *args: {"data": make_growall_rows()},
+            query_request_json=query_request,
+            store_request_json=store_request,
+        )
+
+        self.assertEqual(first["event_persistence"], {
+            "attempted": 1, "saved": 0, "failed": 1, "outbox_pending": 1,
+        })
+        self.assertEqual(pending_event_count("ES02", CONFIG["event_outbox_path"]), 1)
+
+        fail_event_save = False
+        operation_order.clear()
+        changed_rows = [dict(row, a35=30) for row in make_growall_rows()]
+        second = process_station_minute(
+            "ES02", CONFIG,
+            source_request_json=lambda *args: {"data": make_balanced_es02_rows()},
+            growall_request_json=lambda *args: {"data": changed_rows},
+            query_request_json=query_request,
+            store_request_json=store_request,
+        )
+
+        self.assertEqual(operation_order[:2], ["save_event_active", "query_events"])
+        self.assertEqual(second["event_persistence"], {
+            "attempted": 1, "saved": 1, "failed": 0, "outbox_pending": 0,
+        })
+        self.assertEqual(remote_active_events[0]["event_type"], "inverter_low_load")
+        self.assertEqual(pending_event_count("ES02", CONFIG["event_outbox_path"]), 0)
+
+    def test_failed_recovery_event_is_flushed_before_next_evaluation(self):
+        active = evaluate_inverter_low_load(
+            [
+                {
+                    "device_id": "emu1",
+                    "device_name": "光伏逆变器 emu1",
+                    "data_time": timestamp(minute),
+                    "active_power_kw": 10,
+                    "rated_power_kw": 60,
+                }
+                for minute in (26, 27, 28)
+            ],
+            RULE,
+        )
+        remote_active_events = [active]
+        fail_event_save = True
+        operation_order = []
+        recovery_history = [{
+            "station_id": "ES02", "device_type": "pv_inverter",
+            "device_id": "emu1", "device_name": "光伏逆变器 emu1",
+            "data_time": timestamp(29), "source_time": timestamp(29),
+            "active_power_kw": 30, "rated_power_kw": 60,
+            "load_rate_pct": 50, "battery_power_kw": None,
+            "temperature_c": None,
+        }]
+
+        def query_request(url, token, timeout):
+            if "/t_efficiency_points:list?" in url:
+                return {"data": formal_history_minutes()}
+            if "/t_efficiency_device_points:list?" in url:
+                return {"data": recovery_history}
+            if "/t_efficiency_bottleneck_events:list?" in url:
+                operation_order.append("query_events")
+                return {"data": list(remote_active_events), "meta": {"totalPage": 1}}
+            self.fail(f"unexpected query URL: {url}")
+
+        def store_request(url, token, timeout, body):
+            if "event_type" in body:
+                operation_order.append(f"save_event_{body['status']}")
+                if fail_event_save:
+                    raise StationEfficiencyStoreError("remote detail must stay private")
+                remote_active_events[:] = [body] if body["status"] == "active" else []
+            return {"data": {"id": 1, **body}}
+
+        high_power_rows = [dict(row, a35=30) for row in make_growall_rows()]
+        first = process_station_minute(
+            "ES02", CONFIG,
+            source_request_json=lambda *args: {"data": make_balanced_es02_rows()},
+            growall_request_json=lambda *args: {"data": high_power_rows},
+            query_request_json=query_request,
+            store_request_json=store_request,
+        )
+
+        recovered = next(
+            event for event in first["event_updates"]
+            if event["event_type"] == "inverter_low_load"
+        )
+        self.assertEqual(recovered["status"], "recovered")
+        self.assertEqual(first["event_persistence"], {
+            "attempted": 1, "saved": 0, "failed": 1, "outbox_pending": 1,
+        })
+
+        fail_event_save = False
+        operation_order.clear()
+        second = process_station_minute(
+            "ES02", CONFIG,
+            source_request_json=lambda *args: {"data": make_balanced_es02_rows()},
+            growall_request_json=lambda *args: {"data": high_power_rows},
+            query_request_json=query_request,
+            store_request_json=store_request,
+        )
+
+        self.assertEqual(operation_order[:2], ["save_event_recovered", "query_events"])
+        self.assertEqual(second["event_persistence"], {
+            "attempted": 1, "saved": 1, "failed": 0, "outbox_pending": 0,
+        })
+        self.assertEqual(remote_active_events, [])
+
+    def test_outbox_flush_failure_stays_partial_and_retains_pending_event(self):
+        queued = evaluate_inverter_low_load(
+            [
+                {
+                    "device_id": "emu1",
+                    "device_name": "光伏逆变器 emu1",
+                    "data_time": timestamp(minute),
+                    "active_power_kw": 10,
+                    "rated_power_kw": 60,
+                }
+                for minute in (26, 27, 28)
+            ],
+            RULE,
+        )
+        enqueue_event(queued, CONFIG["event_outbox_path"])
+
+        output = process_station_minute(
+            "ES02", CONFIG,
+            source_request_json=lambda *args: {"data": make_balanced_es02_rows()},
+            growall_request_json=lambda *args: {
+                "data": [dict(row, a35=30) for row in make_growall_rows()]
+            },
+            query_request_json=self.make_query_request(device_rows=[]),
+            store_request_json=lambda url, token, timeout, body: (
+                (_ for _ in ()).throw(StationEfficiencyStoreError("private remote detail"))
+                if "event_type" in body else {"data": {"id": 1, **body}}
+            ),
+        )
+
+        self.assertEqual(output["status"], "partial")
+        self.assertEqual(output["event_persistence"], {
+            "attempted": 1, "saved": 0, "failed": 1, "outbox_pending": 1,
+        })
+        self.assertEqual(pending_event_count("ES02", CONFIG["event_outbox_path"]), 1)
+        self.assertNotIn("private remote detail", repr(output))
 
     def test_empty_battery_temperatures_are_not_configuration_errors(self):
         output = process_station_minute(

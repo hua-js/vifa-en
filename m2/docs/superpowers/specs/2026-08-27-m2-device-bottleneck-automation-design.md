@@ -102,6 +102,7 @@ DEVICE_SAMPLE_MAX_AGE_MINUTES = 2
 DEVICE_POINT_RETENTION_DAYS = 30
 BATTERY_MAX_TEMPERATURE_FIELD = ""
 BATTERY_HOT_CLUSTER_FIELD = ""
+EVENT_OUTBOX_PATH
 BOTTLENECK_RULES
 ```
 
@@ -231,6 +232,8 @@ temperature_rise_c = 当前分钟最高电芯温度 - 5 分钟前最高电芯温
 
 事件持续期间更新 `last_seen_time` 和最不利观测值。达到恢复条件时写入 `end_time` 并把 `status` 改为 `recovered`。恢复事件永久保留。
 
+NocoBase 事件 Upsert 失败时，按同一事件幂等键把最新完整 payload 写入本机 SQLite outbox；同键的 recovered payload 覆盖旧 active payload。每次同站 minute 在评估当前事件前先补写该站 outbox，成功后删除，仍失败则保留。SQLite 使用短事务和 busy timeout，使 ES01、ES02 并发进程共享同一文件时不互相破坏。
+
 ## 9. 每分钟自动流程
 
 Node-RED 每分钟分别执行：
@@ -249,11 +252,12 @@ python3 energy-efficiency-api.py minute ES02
 5. Upsert 有效的 `t_efficiency_device_points`；
 6. 按设备和链路读取规则所需的最近有效分钟；
 7. 查询现有活动事件；
-8. 独立执行三类规则；
-9. 打开、更新或恢复 `t_efficiency_bottleneck_events`；
-10. 输出一行 JSON 供 Node-RED 处理。
+8. 补写该站本机事件 outbox；
+9. 独立执行三类规则；
+10. 打开、更新或恢复 `t_efficiency_bottleneck_events`，失败时写入 outbox；
+11. 输出一行 JSON 供 Node-RED 处理。
 
-JSON 结果至少区分 `ok`、`partial` 和 `error`，并返回分钟点、设备点数量、事件变更数量和不含密钥的警告信息。
+JSON 结果至少区分 `ok`、`partial` 和 `error`，并返回分钟点、设备点数量、事件计算更新数量、`event_persistence.attempted/saved/failed/outbox_pending` 和不含密钥的警告信息。计算更新数量不能称为成功保存数量。
 
 ## 10. 看板读取
 
@@ -282,7 +286,8 @@ python3 energy-efficiency-api.py cleanup
 - `t_growall` 失败：三条链路效率照常保存，逆变器设备点和该分钟逆变器判断跳过，返回 `partial`；
 - 温度字段未配置或为空：效率和其他规则照常运行，温升判断跳过；
 - 单台设备记录过期或无效：只跳过该设备；
-- 设备点写入或事件写入部分失败：保留已经成功的幂等写入，返回 `partial`，下一分钟重新评估并补写；
+- 设备点写入部分失败：保留已经成功的幂等写入，返回 `partial`；
+- 事件写入失败：最新 payload 留在本机 SQLite outbox，返回 `partial`，下一次同站 minute 先补写；
 - 重复执行：所有分钟点和事件通过幂等键更新，不产生重复记录；
 - 标准输出：最后一行必须始终是合法 JSON，日志不得包含 Token、密码或完整授权头。
 
@@ -327,5 +332,7 @@ python3 energy-efficiency-api.py cleanup
 1. 在 NocoBase 创建 `t_efficiency_device_points` 的上述字段；
 2. 建立 `(station_id, device_type, device_id, data_time)` 组合唯一约束；
 3. 如果瓶颈事件表的 `event_type` 是下拉选项或数据库枚举，把 `chain_low_efficiency` 加入允许值。
+
+第一次执行任何真实 `minute` 前，必须现场核对第 2、3 项，并确认 Node-RED 运行用户可写 outbox 目录且该文件已进入备份方案。只读 dashboard 即使事件为空且返回成功，也不能证明事件允许值或设备点唯一键可写。
 
 电池最高温字段可以稍后加入 `t_emu`；这不会阻塞逆变器低负载、链路低效率和看板事件读取的实施。

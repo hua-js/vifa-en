@@ -1,6 +1,7 @@
 """Pure station-level coordination for device and chain bottleneck rules."""
 
 import json
+from datetime import timedelta
 
 from m2.station_efficiency_history import (
     HistoryError,
@@ -139,11 +140,43 @@ def _cause_summary(event):
     }
 
 
-def _diagnosed_causes(device_events):
-    active_causes = [
-        event for event in device_events
-        if event["status"] == "active"
-    ]
+def _event_confirmation_minute(event):
+    evidence = event.get("evidence") if isinstance(event, dict) else None
+    if isinstance(evidence, dict) and evidence.get("confirmation_time") is not None:
+        return minute_bucket(evidence["confirmation_time"])
+    rule = evidence.get("rule") if isinstance(evidence, dict) else None
+    trigger_field = {
+        "inverter_low_load": "inverter_trigger_minutes",
+        "battery_temperature_rise": "temperature_trigger_minutes",
+    }.get(event.get("event_type"))
+    trigger_minutes = rule.get(trigger_field) if isinstance(rule, dict) and trigger_field else None
+    if isinstance(trigger_minutes, bool) or not isinstance(trigger_minutes, int) or trigger_minutes <= 0:
+        raise HistoryError(
+            "invalid_active_event", "设备事件缺少确认时间", {"field": "evidence.confirmation_time"},
+        )
+    return minute_bucket(event.get("start_time")) + timedelta(minutes=trigger_minutes - 1)
+
+
+def _diagnosed_causes(device_events, confirmation_time=None):
+    if confirmation_time is None:
+        active_causes = [
+            event for event in device_events
+            if event["status"] == "active"
+        ]
+    else:
+        confirmation_minute = minute_bucket(confirmation_time)
+        active_causes = []
+        for event in device_events:
+            event_confirmation = _event_confirmation_minute(event)
+            end_time = (
+                minute_bucket(event["end_time"])
+                if event.get("end_time") is not None else None
+            )
+            if (
+                event_confirmation <= confirmation_minute
+                and (end_time is None or confirmation_minute < end_time)
+            ):
+                active_causes.append(event)
     causes_by_chain = {chain_name: [] for chain_name in CHAIN_META}
     for event in sorted(active_causes, key=lambda item: (item["event_type"], item["device_id"])):
         event_type = event["event_type"]
@@ -200,26 +233,32 @@ def _chain_samples(minute_points, chain_name):
 
 
 def _chain_events(minute_points, grouped, active_by_identity, device_events, rule):
-    causes_by_chain = _diagnosed_causes(device_events)
+    current_causes_by_chain = _diagnosed_causes(device_events)
     events = []
     for chain_name, (_label, _column, device_types) in CHAIN_META.items():
         active_event = active_by_identity.get(("chain_low_efficiency", chain_name))
         samples = _chain_samples(minute_points, chain_name)
-        confirmation_time = (
-            max(samples, key=lambda sample: minute_bucket(sample["data_time"]))["data_time"]
-            if samples else None
-        )
-        snapshot = (
-            _trigger_snapshot(grouped, device_types, confirmation_time)
-            if confirmation_time is not None else {}
-        )
         event = evaluate_chain_low_efficiency(
             samples,
             rule,
             active_event=active_event,
-            trigger_device_snapshot=snapshot,
-            diagnosed_causes=causes_by_chain[chain_name],
+            trigger_device_snapshot={},
+            diagnosed_causes=(
+                current_causes_by_chain[chain_name] if active_event is not None else []
+            ),
         )
+        if event is not None and active_event is None:
+            confirmation_time = event["evidence"]["confirmation_time"]
+            confirmation_causes = _diagnosed_causes(
+                device_events, confirmation_time,
+            )[chain_name]
+            event["evidence"]["trigger_device_snapshot"] = _trigger_snapshot(
+                grouped, device_types, confirmation_time,
+            )
+            event["evidence"]["diagnosed_causes"] = confirmation_causes
+            event["evidence"]["cause_status"] = (
+                "diagnosed" if confirmation_causes else "pending"
+            )
         if event is not None:
             events.append(event)
     return events

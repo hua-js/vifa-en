@@ -4,3 +4,4 @@ __pycache__/
 *.py[cod]
 .superpowers/
 /energy_efficiency_local_config.py
+/energy_efficiency_event_outbox.sqlite3*

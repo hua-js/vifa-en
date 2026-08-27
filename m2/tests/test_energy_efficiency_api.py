@@ -59,6 +59,24 @@ class EnergyEfficiencyApiTests(unittest.TestCase):
         with self.assertRaises(energy_api.EntrypointError):
             energy_api.load_runtime_config({**ENVIRONMENT, "M2_TIMEZONE": "UTC"})
 
+    def test_runtime_config_accepts_only_fixed_60_kw_inverter_rating(self):
+        self.assertEqual(
+            energy_api.load_runtime_config({
+                **ENVIRONMENT,
+                "M2_PV_INVERTER_RATED_POWER_KW": "60.0",
+            })["pv_inverter_rated_power_kw"],
+            60.0,
+        )
+        for invalid in ("59.9", "61", "not-a-number"):
+            with self.subTest(invalid=invalid):
+                with self.assertRaises(energy_api.EntrypointError) as caught:
+                    energy_api.load_runtime_config({
+                        **ENVIRONMENT,
+                        "M2_PV_INVERTER_RATED_POWER_KW": invalid,
+                    })
+                self.assertEqual(caught.exception.code, "missing_config")
+                self.assertNotIn(invalid, str(caught.exception))
+
     def test_partial_minute_sanitizes_untrusted_warning_details(self):
         secret = "growall-token-should-not-escape"
         endpoint = "https://secret.example/api/t_growall:list"
@@ -76,6 +94,10 @@ class EnergyEfficiencyApiTests(unittest.TestCase):
                 "minute_point": {"data_time": "2026-08-27T10:00:00+08:00"},
                 "saved_record": {"id": 1}, "device_points_saved": 6,
                 "event_updates": [],
+                "event_persistence": {
+                    "attempted": 3, "saved": 2, "failed": 1,
+                    "outbox_pending": 1,
+                },
             },
         )
 
@@ -120,6 +142,14 @@ class EnergyEfficiencyApiTests(unittest.TestCase):
             "https://station.example/api/t_growall:list",
         )
         self.assertEqual(received_config["device_point_retention_days"], 31)
+        self.assertEqual(
+            received_config["event_outbox_path"],
+            energy_api.DEFAULT_EVENT_OUTBOX_PATH,
+        )
+        self.assertEqual(
+            Path(received_config["event_outbox_path"]).parent,
+            ENTRYPOINT_PATH.parent,
+        )
         self.assertEqual(received_config["bottleneck_rule"], {
             "station_id": "ES02", "enabled": True,
             "chain_low_efficiency_threshold_pct": 85,
@@ -148,6 +178,10 @@ class EnergyEfficiencyApiTests(unittest.TestCase):
                 "minute_point": {"data_time": "2026-08-27T10:00:00+08:00"},
                 "saved_record": {"id": 1}, "device_points_saved": 6,
                 "event_updates": [],
+                "event_persistence": {
+                    "attempted": 3, "saved": 2, "failed": 1,
+                    "outbox_pending": 1,
+                },
             },
         )
 
@@ -156,6 +190,9 @@ class EnergyEfficiencyApiTests(unittest.TestCase):
         self.assertEqual(payload["data"]["device_points_saved"], 6)
         self.assertEqual(payload["data"]["warning_count"], 1)
         self.assertEqual(payload["data"]["event_update_count"], 0)
+        self.assertEqual(payload["data"]["event_persistence"], {
+            "attempted": 3, "saved": 2, "failed": 1, "outbox_pending": 1,
+        })
 
     def test_cleanup_returns_deleted_count(self):
         payload, exit_code = energy_api.execute(
@@ -181,6 +218,10 @@ class EnergyEfficiencyApiTests(unittest.TestCase):
                 "saved_record": {"id": 81},
                 "device_points_saved": 2,
                 "event_updates": [{"event_type": "chain_low_efficiency"}],
+                "event_persistence": {
+                    "attempted": 1, "saved": 1, "failed": 0,
+                    "outbox_pending": 0,
+                },
             }
 
         payload, exit_code = energy_api.execute(
@@ -205,6 +246,12 @@ class EnergyEfficiencyApiTests(unittest.TestCase):
                     "saved_id": 81,
                     "device_points_saved": 2,
                     "event_update_count": 1,
+                    "event_persistence": {
+                        "attempted": 1,
+                        "saved": 1,
+                        "failed": 0,
+                        "outbox_pending": 0,
+                    },
                     "warning_count": 0,
                     "warnings": [],
                 },

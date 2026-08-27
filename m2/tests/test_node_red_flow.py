@@ -178,9 +178,12 @@ class NodeRedFlowTests(unittest.TestCase):
     def test_desensitized_minute_and_cleanup_handlers_cover_json_stderr_and_exit_code(self):
         minute_ok = self._run_function(
             "脱敏分钟写入结果",
-            {"payload": '{"status":"partial","data":{"operation":"minute","station_id":"ES02","data_time":"2026-08-27T10:00:00+08:00","device_points_saved":2,"event_update_count":1,"warning_count":1}}'},
+            {"payload": '{"status":"partial","data":{"operation":"minute","station_id":"ES02","data_time":"2026-08-27T10:00:00+08:00","device_points_saved":2,"event_update_count":1,"event_persistence":{"attempted":3,"saved":2,"failed":1,"outbox_pending":1},"warning_count":1}}'},
         )
         self.assertEqual(minute_ok[0]["payload"]["station_id"], "ES02")
+        self.assertEqual(minute_ok[0]["payload"]["event_persistence"], {
+            "attempted": 3, "saved": 2, "failed": 1, "outbox_pending": 1,
+        })
         self.assertIsNone(minute_ok[1])
 
         minute_non_json = self._run_function(

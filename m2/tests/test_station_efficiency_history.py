@@ -119,7 +119,44 @@ class StationEfficiencyHistoryTests(unittest.TestCase):
         self.assertEqual(event["evidence"]["rated_power_kw"], 100.0)
         self.assertEqual(event["evidence"]["low_load_threshold_pct"], 20.0)
         self.assertEqual(event["evidence"]["continuous_minutes"], 3)
+        self.assertEqual(
+            event["evidence"]["confirmation_time"],
+            "2026-08-25T10:02:00+08:00",
+        )
         self.assertEqual(event["evidence"]["rule"]["version"], 4)
+
+    def test_legacy_inverter_snapshot_without_chain_fields_stays_active_and_recovers(self):
+        active = evaluate_inverter_low_load(
+            [self.inverter_sample(0, 15), self.inverter_sample(1, 10), self.inverter_sample(2, 12)],
+            self.inverter_rule(),
+        )
+        legacy_rule = {
+            key: value for key, value in active["evidence"]["rule"].items()
+            if not key.startswith("chain_low_efficiency_")
+            and not key.startswith("temperature_")
+        }
+        legacy = {**active, "evidence": {**active["evidence"], "rule": legacy_rule}}
+        changed_current_rule = dict(
+            self.inverter_rule(),
+            inverter_low_load_threshold_pct=5,
+            inverter_recovery_minutes=9,
+            version=5,
+        )
+
+        continued = evaluate_inverter_low_load(
+            [self.inverter_sample(3, 10)], changed_current_rule, legacy,
+        )
+        self.assertEqual(continued["status"], "active")
+        self.assertEqual(continued["evidence"]["continuous_minutes"], 4)
+        self.assertEqual(continued["evidence"]["rule"], legacy_rule)
+
+        recovered = evaluate_inverter_low_load(
+            [self.inverter_sample(4, 0), self.inverter_sample(5, 0)],
+            changed_current_rule,
+            continued,
+        )
+        self.assertEqual(recovered["status"], "recovered")
+        self.assertEqual(recovered["end_time"], "2026-08-25T10:04:00+08:00")
 
     def test_active_inverter_event_updates_low_load_evidence_without_counting_recovery(self):
         active = evaluate_inverter_low_load(
@@ -342,6 +379,10 @@ class StationEfficiencyHistoryTests(unittest.TestCase):
         self.assertEqual(event["observed_value"], 80.0)
         self.assertEqual(event["evidence"]["cause_status"], "pending")
         self.assertEqual(event["evidence"]["trigger_device_snapshot"], snapshot)
+        self.assertEqual(
+            event["evidence"]["confirmation_time"],
+            "2026-08-27T10:01:00+08:00",
+        )
 
     def test_chain_event_recovers_after_two_minutes_at_or_above_85(self):
         active = evaluate_chain_low_efficiency(
@@ -442,8 +483,61 @@ class StationEfficiencyHistoryTests(unittest.TestCase):
         self.assertEqual(evidence["window_minutes"], 5)
         self.assertEqual(evidence["threshold_c"], 3.0)
         self.assertEqual(evidence["continuous_minutes"], 2)
+        self.assertEqual(
+            evidence["confirmation_time"],
+            "2026-08-25T11:06:00+08:00",
+        )
         self.assertEqual(evidence["rule"]["version"], 4)
         self.assertEqual(evidence["display_text"], "5 分钟最大温升 3.20℃")
+
+    def test_legacy_battery_snapshot_without_chain_fields_stays_active_and_recovers(self):
+        active = evaluate_battery_temperature_rise(
+            [
+                self.temperature_sample(0, 25.0), self.temperature_sample(1, 25.3),
+                self.temperature_sample(2, 25.6), self.temperature_sample(3, 26.0),
+                self.temperature_sample(4, 26.5), self.temperature_sample(5, 28.1),
+                self.temperature_sample(6, 28.5),
+            ],
+            self.inverter_rule(),
+        )
+        legacy_rule = {
+            key: value for key, value in active["evidence"]["rule"].items()
+            if not key.startswith("chain_low_efficiency_")
+            and not key.startswith("inverter_")
+        }
+        legacy = {**active, "evidence": {**active["evidence"], "rule": legacy_rule}}
+        changed_current_rule = dict(
+            self.inverter_rule(),
+            temperature_rise_threshold_c=100,
+            temperature_recovery_minutes=9,
+            version=5,
+        )
+
+        continued = evaluate_battery_temperature_rise(
+            [
+                self.temperature_sample(2, 25.6), self.temperature_sample(3, 26.0),
+                self.temperature_sample(4, 26.5), self.temperature_sample(5, 28.1),
+                self.temperature_sample(6, 28.5), self.temperature_sample(7, 29.0),
+            ],
+            changed_current_rule,
+            legacy,
+        )
+        self.assertEqual(continued["status"], "active")
+        self.assertEqual(continued["evidence"]["continuous_minutes"], 3)
+        self.assertEqual(continued["evidence"]["rule"], legacy_rule)
+
+        recovered = evaluate_battery_temperature_rise(
+            [
+                self.temperature_sample(2, 25.6), self.temperature_sample(3, 26.0),
+                self.temperature_sample(4, 26.5), self.temperature_sample(5, 28.1),
+                self.temperature_sample(6, 28.5), self.temperature_sample(7, 28.0),
+                self.temperature_sample(8, 28.2),
+            ],
+            changed_current_rule,
+            legacy,
+        )
+        self.assertEqual(recovered["status"], "recovered")
+        self.assertEqual(recovered["end_time"], "2026-08-25T11:07:00+08:00")
 
     def test_temperature_event_recovers_after_consecutive_below_threshold_windows(self):
         active = evaluate_battery_temperature_rise(

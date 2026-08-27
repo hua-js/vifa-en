@@ -6,6 +6,7 @@ import math
 import os
 import sys
 from copy import deepcopy
+from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from m2.station_efficiency_history import (
@@ -76,6 +77,14 @@ LOCAL_BATTERY_HOT_CLUSTER_FIELD = getattr(
     "BATTERY_HOT_CLUSTER_FIELD",
     "",
 )
+DEFAULT_EVENT_OUTBOX_PATH = str(
+    Path(__file__).resolve().with_name("energy_efficiency_event_outbox.sqlite3")
+)
+LOCAL_EVENT_OUTBOX_PATH = getattr(
+    local_config,
+    "EVENT_OUTBOX_PATH",
+    DEFAULT_EVENT_OUTBOX_PATH,
+)
 
 
 def _default_bottleneck_rules():
@@ -122,6 +131,7 @@ _PUBLIC_WARNING_STAGES = {
     "bottleneck_rule",
     "bottleneck_history",
     "bottleneck_event_save",
+    "event_outbox",
 }
 
 
@@ -180,6 +190,17 @@ def _runtime_number(environ, field, local_value, *, integer=False):
     return number
 
 
+def _fixed_inverter_rated_power(environ):
+    rated_power_kw = _runtime_number(
+        environ,
+        "M2_PV_INVERTER_RATED_POWER_KW",
+        LOCAL_PV_INVERTER_RATED_POWER_KW,
+    )
+    if rated_power_kw != 60.0:
+        raise EntrypointError("missing_config", "服务器运行配置不正确", 3)
+    return rated_power_kw
+
+
 def _optional_field(value):
     return value.strip() if isinstance(value, str) else ""
 
@@ -229,11 +250,7 @@ def load_runtime_config(environ, require_nocobase=False):
             LOCAL_GROWALL_TOKEN,
         ),
         "pv_inverter_sns_by_station": deepcopy(LOCAL_PV_INVERTER_SNS_BY_STATION),
-        "pv_inverter_rated_power_kw": _runtime_number(
-            environ,
-            "M2_PV_INVERTER_RATED_POWER_KW",
-            LOCAL_PV_INVERTER_RATED_POWER_KW,
-        ),
+        "pv_inverter_rated_power_kw": _fixed_inverter_rated_power(environ),
         "device_sample_max_age_minutes": _runtime_number(
             environ,
             "M2_DEVICE_SAMPLE_MAX_AGE_MINUTES",
@@ -250,6 +267,11 @@ def load_runtime_config(environ, require_nocobase=False):
         ),
         "battery_hot_cluster_field": _optional_field(
             LOCAL_BATTERY_HOT_CLUSTER_FIELD,
+        ),
+        "event_outbox_path": _required_config_text(
+            environ,
+            "M2_EVENT_OUTBOX_PATH",
+            LOCAL_EVENT_OUTBOX_PATH,
         ),
         "bottleneck_rules": deepcopy(LOCAL_BOTTLENECK_RULES),
     }
@@ -301,6 +323,14 @@ def public_minute_result(result, station_id):
         for warning in (result.get("warnings") or [])
     ]
     event_updates = list(result.get("event_updates") or [])
+    event_persistence = result.get("event_persistence")
+    if not isinstance(event_persistence, dict):
+        event_persistence = {
+            "attempted": 0,
+            "saved": 0,
+            "failed": 0,
+            "outbox_pending": 0,
+        }
     return {
         "operation": "minute",
         "station_id": station_id,
@@ -309,6 +339,10 @@ def public_minute_result(result, station_id):
         "saved_id": saved_record.get("id"),
         "device_points_saved": result.get("device_points_saved", 0),
         "event_update_count": len(event_updates),
+        "event_persistence": {
+            field: event_persistence.get(field)
+            for field in ("attempted", "saved", "failed", "outbox_pending")
+        },
         "warning_count": len(warnings),
         "warnings": warnings,
     }

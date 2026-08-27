@@ -153,12 +153,12 @@ def _max_sample_age(config):
     return timedelta(minutes=minutes)
 
 
-def _valid_source_time(value, data_time, max_age):
+def _valid_source_time(value, calculation_time, max_age):
     try:
         source_time = _shanghai_time(value, "source_time")
     except StationEfficiencyDeviceDataError:
         return None
-    age = data_time - source_time
+    age = calculation_time - source_time
     if age < timedelta(0) or age > max_age:
         return None
     return source_time
@@ -192,18 +192,34 @@ def _empty_device_point():
     return {field: None for field in DEVICE_POINT_FIELDS}
 
 
-def _inverter_point(station_id, device_id, data_time, source_time, active_power_kw):
+def _fixed_inverter_rated_power(config):
+    configured = (
+        config.get("pv_inverter_rated_power_kw", INVERTER_RATED_POWER_KW)
+        if isinstance(config, dict) else INVERTER_RATED_POWER_KW
+    )
+    rated_power_kw = _number(configured)
+    if rated_power_kw != INVERTER_RATED_POWER_KW:
+        raise StationEfficiencyDeviceDataError(
+            "pv_inverter_rated_power_kw 必须固定为 60"
+        )
+    return rated_power_kw
+
+
+def _inverter_point(
+    station_id, device_id, minute_bucket_time, source_time, active_power_kw,
+    rated_power_kw,
+):
     point = _empty_device_point()
     point.update({
         "station_id": station_id,
         "device_type": "pv_inverter",
         "device_id": device_id,
         "device_name": f"光伏逆变器 {device_id}",
-        "data_time": data_time.isoformat(),
+        "data_time": minute_bucket_time.isoformat(),
         "source_time": source_time.isoformat(),
         "active_power_kw": active_power_kw,
-        "rated_power_kw": INVERTER_RATED_POWER_KW,
-        "load_rate_pct": active_power_kw / INVERTER_RATED_POWER_KW * 100.0,
+        "rated_power_kw": rated_power_kw,
+        "load_rate_pct": active_power_kw / rated_power_kw * 100.0,
     })
     return point
 
@@ -211,7 +227,7 @@ def _inverter_point(station_id, device_id, data_time, source_time, active_power_
 def _battery_point(
     station_id,
     device_id,
-    data_time,
+    minute_bucket_time,
     source_time,
     battery_power_kw,
     temperature_c,
@@ -224,7 +240,7 @@ def _battery_point(
         "device_id": device_id,
         "device_name": f"电池柜 {device_id}",
         "subdevice_id": subdevice_id,
-        "data_time": data_time.isoformat(),
+        "data_time": minute_bucket_time.isoformat(),
         "source_time": source_time.isoformat(),
         "battery_power_kw": battery_power_kw,
         "temperature_c": temperature_c,
@@ -232,7 +248,9 @@ def _battery_point(
     return point
 
 
-def build_inverter_device_points(*, station_id, growall_rows, data_time, config):
+def build_inverter_device_points(
+    *, station_id, growall_rows, minute_bucket_time, calculation_time, config,
+):
     """为 ES02 的九台光伏逆变器选择当前分钟的最新有效采样。"""
     station = _station_config(station_id)
     station_id = station["station_id"]
@@ -241,8 +259,10 @@ def build_inverter_device_points(*, station_id, growall_rows, data_time, config)
         return []
     if not isinstance(growall_rows, list):
         raise StationEfficiencyDeviceDataError("t_growall 记录必须是数组")
-    bucket_time = _shanghai_time(data_time, "data_time")
+    bucket_time = _shanghai_time(minute_bucket_time, "minute_bucket_time")
+    exact_calculation_time = _shanghai_time(calculation_time, "calculation_time")
     max_age = _max_sample_age(config)
+    rated_power_kw = _fixed_inverter_rated_power(config)
     selected = {}
     for row in growall_rows:
         if not isinstance(row, dict):
@@ -250,7 +270,9 @@ def build_inverter_device_points(*, station_id, growall_rows, data_time, config)
         device_id = str(row.get("sn", "")).strip()
         if device_id not in inverter_sns:
             continue
-        source_time = _valid_source_time(row.get("timestamp"), bucket_time, max_age)
+        source_time = _valid_source_time(
+            row.get("timestamp"), exact_calculation_time, max_age,
+        )
         active_power_kw = _number(row.get("a35"))
         if source_time is None or active_power_kw is None or active_power_kw < 0:
             continue
@@ -264,6 +286,7 @@ def build_inverter_device_points(*, station_id, growall_rows, data_time, config)
             bucket_time,
             selected[device_id][0],
             selected[device_id][1],
+            rated_power_kw,
         )
         for device_id in inverter_sns
         if device_id in selected
@@ -286,13 +309,16 @@ def _optional_subdevice_id(row, field):
     return value or None
 
 
-def build_battery_device_points(*, station_id, emu_rows, data_time, config):
+def build_battery_device_points(
+    *, station_id, emu_rows, minute_bucket_time, calculation_time, config,
+):
     """从 t_emu 的已配置电池柜读取当前分钟的有效功率与可选温度。"""
     station = _station_config(station_id)
     station_id = station["station_id"]
     if not isinstance(emu_rows, list):
         raise StationEfficiencyDeviceDataError("t_emu 记录必须是数组")
-    bucket_time = _shanghai_time(data_time, "data_time")
+    bucket_time = _shanghai_time(minute_bucket_time, "minute_bucket_time")
+    exact_calculation_time = _shanghai_time(calculation_time, "calculation_time")
     max_age = _max_sample_age(config)
     temperature_field = (
         config.get("battery_max_temperature_field", "")
@@ -316,7 +342,9 @@ def build_battery_device_points(*, station_id, emu_rows, data_time, config):
         device_id = str(row.get("emu_sn", "")).strip()
         if device_id not in cabinets:
             continue
-        source_time = _valid_source_time(row.get("last_time_iso"), bucket_time, max_age)
+        source_time = _valid_source_time(
+            row.get("last_time_iso"), exact_calculation_time, max_age,
+        )
         battery_power_w = _number(row.get("battery_power"))
         if source_time is None or battery_power_w is None:
             continue

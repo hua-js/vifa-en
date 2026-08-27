@@ -43,7 +43,8 @@ class StationEfficiencyDeviceAdapterTests(unittest.TestCase):
         points = self.adapter.build_inverter_device_points(
             station_id="ES02",
             growall_rows=rows,
-            data_time="2026-08-27T10:01:00+08:00",
+            minute_bucket_time="2026-08-27T10:01:00+08:00",
+            calculation_time="2026-08-27T10:01:00+08:00",
             config=CONFIG,
         )
 
@@ -59,20 +60,30 @@ class StationEfficiencyDeviceAdapterTests(unittest.TestCase):
             self.adapter.DEVICE_POINT_FIELDS,
         )
 
-    def test_rejects_future_and_more_than_two_minute_old_inverter_samples(self):
+    def test_inverter_samples_use_exact_calculation_time_for_age_boundaries(self):
         rows = [
-            inverter_row("emu1", "2026-08-27T10:01:01+08:00", 10.0),
-            inverter_row("emu2", "2026-08-27T09:58:59+08:00", 10.0),
+            inverter_row("emu1", "2026-08-27T10:01:30+08:00", 10.0),
+            inverter_row("emu2", "2026-08-27T10:01:51+08:00", 10.0),
+            inverter_row("emu3", "2026-08-27T09:59:50+08:00", 10.0),
+            inverter_row("emu4", "2026-08-27T09:59:49+08:00", 10.0),
         ]
 
         points = self.adapter.build_inverter_device_points(
             station_id="ES02",
             growall_rows=rows,
-            data_time="2026-08-27T10:01:00+08:00",
+            minute_bucket_time="2026-08-27T10:01:00+08:00",
+            calculation_time="2026-08-27T10:01:50+08:00",
             config=CONFIG,
         )
 
-        self.assertEqual(points, [])
+        self.assertEqual(
+            [(point["device_id"], point["source_time"]) for point in points],
+            [
+                ("emu1", "2026-08-27T10:01:30+08:00"),
+                ("emu3", "2026-08-27T09:59:50+08:00"),
+            ],
+        )
+        self.assertTrue(all(point["data_time"] == "2026-08-27T10:01:00+08:00" for point in points))
 
     def test_builds_battery_points_from_t_emu_and_keeps_missing_temperature_null(self):
         rows = make_es01_rows()
@@ -82,7 +93,8 @@ class StationEfficiencyDeviceAdapterTests(unittest.TestCase):
         points = self.adapter.build_battery_device_points(
             station_id="ES01",
             emu_rows=rows,
-            data_time=TIMESTAMP,
+            minute_bucket_time=TIMESTAMP,
+            calculation_time=TIMESTAMP,
             config={
                 **CONFIG,
                 "battery_max_temperature_field": "max_cell_temperature",
@@ -100,7 +112,8 @@ class StationEfficiencyDeviceAdapterTests(unittest.TestCase):
         points = self.adapter.build_inverter_device_points(
             station_id="ES01",
             growall_rows=[inverter_row("emu1", TIMESTAMP, 12)],
-            data_time=TIMESTAMP,
+            minute_bucket_time=TIMESTAMP,
+            calculation_time=TIMESTAMP,
             config=CONFIG,
         )
 
@@ -127,6 +140,32 @@ class StationEfficiencyDeviceAdapterTests(unittest.TestCase):
                 request_json=lambda *args: {"data": {}},
             )
         self.assertNotIn("do-not-expose-me", str(error.exception))
+
+    def test_battery_samples_use_exact_calculation_time_for_age_boundaries(self):
+        emu11, emu12 = make_es01_rows()
+        rows = [
+            dict(emu11, last_time_iso="2026-08-26T09:30:30+08:00"),
+            dict(emu11, last_time_iso="2026-08-26T09:30:51+08:00"),
+            dict(emu12, last_time_iso="2026-08-26T09:28:50+08:00"),
+            dict(emu12, last_time_iso="2026-08-26T09:28:49+08:00"),
+        ]
+
+        points = self.adapter.build_battery_device_points(
+            station_id="ES01",
+            emu_rows=rows,
+            minute_bucket_time="2026-08-26T09:30:00+08:00",
+            calculation_time="2026-08-26T09:30:50+08:00",
+            config=CONFIG,
+        )
+
+        self.assertEqual(
+            [point["source_time"] for point in points],
+            [
+                "2026-08-26T09:30:30+08:00",
+                "2026-08-26T09:28:50+08:00",
+            ],
+        )
+        self.assertTrue(all(point["data_time"] == "2026-08-26T09:30:00+08:00" for point in points))
 
 
 if __name__ == "__main__":

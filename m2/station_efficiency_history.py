@@ -108,28 +108,59 @@ RULE_FIELDS = (
     "chain_low_efficiency_threshold_pct", "chain_low_efficiency_trigger_minutes",
     "chain_low_efficiency_recovery_minutes",
 )
+_COMMON_SNAPSHOT_RULE_FIELDS = (
+    "station_id", "enabled", "version", "updated_at",
+)
+_SNAPSHOT_RULE_FIELDS_BY_EVENT_TYPE = {
+    "inverter_low_load": _COMMON_SNAPSHOT_RULE_FIELDS + (
+        "inverter_min_running_power_kw",
+        "inverter_low_load_threshold_pct",
+        "inverter_trigger_minutes",
+        "inverter_recovery_minutes",
+    ),
+    "battery_temperature_rise": _COMMON_SNAPSHOT_RULE_FIELDS + (
+        "temperature_rise_window_minutes",
+        "temperature_rise_threshold_c",
+        "temperature_trigger_minutes",
+        "temperature_recovery_minutes",
+    ),
+    "chain_low_efficiency": _COMMON_SNAPSHOT_RULE_FIELDS + (
+        "chain_low_efficiency_threshold_pct",
+        "chain_low_efficiency_trigger_minutes",
+        "chain_low_efficiency_recovery_minutes",
+    ),
+}
+_INTEGER_RULE_FIELDS = (
+    "inverter_trigger_minutes", "inverter_recovery_minutes",
+    "temperature_rise_window_minutes", "temperature_trigger_minutes",
+    "temperature_recovery_minutes", "chain_low_efficiency_trigger_minutes",
+    "chain_low_efficiency_recovery_minutes", "version",
+)
+_NUMBER_RULE_FIELDS = (
+    "inverter_min_running_power_kw", "inverter_low_load_threshold_pct",
+    "temperature_rise_threshold_c", "chain_low_efficiency_threshold_pct",
+)
+_PERCENT_RULE_FIELDS = (
+    "inverter_low_load_threshold_pct", "chain_low_efficiency_threshold_pct",
+)
 
 
-def normalize_rule(record):
+def _normalize_rule_record(record, required_fields):
     if not isinstance(record, dict):
         raise HistoryError("invalid_rule", "瓶颈规则必须是对象")
-    missing = [field for field in RULE_FIELDS if field not in record]
+    missing = [field for field in required_fields if field not in record]
     if missing:
         raise HistoryError("invalid_rule", "瓶颈规则缺少字段", {"fields": missing})
     normalized = dict(record)
-    for field in (
-        "inverter_trigger_minutes", "inverter_recovery_minutes",
-        "temperature_rise_window_minutes", "temperature_trigger_minutes",
-        "temperature_recovery_minutes", "chain_low_efficiency_trigger_minutes",
-        "chain_low_efficiency_recovery_minutes", "version",
-    ):
+    for field in _INTEGER_RULE_FIELDS:
+        if field not in required_fields:
+            continue
         value = record[field]
         if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
             raise HistoryError("invalid_rule", f"{field} 必须是正整数", {"field": field})
-    for field in (
-        "inverter_min_running_power_kw", "inverter_low_load_threshold_pct",
-        "temperature_rise_threshold_c", "chain_low_efficiency_threshold_pct",
-    ):
+    for field in _NUMBER_RULE_FIELDS:
+        if field not in required_fields:
+            continue
         try:
             number = _optional_non_negative(record[field], field)
         except HistoryError as exc:
@@ -139,14 +170,23 @@ def normalize_rule(record):
         normalized[field] = number
     if not isinstance(record["enabled"], bool):
         raise HistoryError("invalid_rule", "enabled 必须是布尔值", {"field": "enabled"})
-    for field in (
-        "inverter_low_load_threshold_pct", "chain_low_efficiency_threshold_pct",
-    ):
+    for field in _PERCENT_RULE_FIELDS:
+        if field not in required_fields:
+            continue
         if normalized[field] > 100:
             raise HistoryError("invalid_rule", f"{field} 不能超过 100%", {"field": field})
     normalized["station_id"] = _required_identifier(record["station_id"], "station_id", "invalid_rule")
     normalized["updated_at"] = _parse_time(record["updated_at"], "updated_at").isoformat()
     return normalized
+
+
+def normalize_rule(record):
+    return _normalize_rule_record(record, RULE_FIELDS)
+
+
+def _normalize_active_rule_snapshot(record, event_type):
+    required_fields = _SNAPSHOT_RULE_FIELDS_BY_EVENT_TYPE[event_type]
+    return _normalize_rule_record(record, required_fields)
 
 
 def _ordered_one_device(samples, normalizer):
@@ -257,7 +297,9 @@ def _validate_active_event(
     if not isinstance(evidence, dict):
         raise HistoryError("invalid_active_event", "活动事件证据必须是对象", {"field": "evidence"})
     try:
-        snapshot = normalize_rule(evidence.get("rule"))
+        snapshot = _normalize_active_rule_snapshot(
+            evidence.get("rule"), expected_event_type,
+        )
     except HistoryError as exc:
         raise HistoryError(
             "invalid_active_event", "活动事件规则快照无效", {"field": "evidence.rule"},
@@ -332,6 +374,9 @@ def evaluate_inverter_low_load(samples, rule, active_event=None):
                 "low_load_threshold_pct": rule["inverter_low_load_threshold_pct"],
                 "continuous_minutes": len(run),
                 "last_low_load_time": last["data_time"],
+                "confirmation_time": run[
+                    rule["inverter_trigger_minutes"] - 1
+                ]["data_time"],
             },
         )
 
@@ -450,6 +495,7 @@ def _chain_event_evidence(sample, minimum, rule, continuous_minutes, last_low_ti
         "low_efficiency_threshold_pct": rule["chain_low_efficiency_threshold_pct"],
         "continuous_minutes": continuous_minutes,
         "last_low_efficiency_time": last_low_time,
+        "confirmation_time": None,
         "cause_status": "diagnosed" if causes else "pending",
         "diagnosed_causes": causes,
         "trigger_device_snapshot": snapshot,
@@ -507,6 +553,7 @@ def evaluate_chain_low_efficiency(
         if len(run) < rule["chain_low_efficiency_trigger_minutes"]:
             return None
         first, last = run[0], run[-1]
+        confirmation = run[rule["chain_low_efficiency_trigger_minutes"] - 1]
         minimum = min(sample["efficiency_pct"] for sample in run)
         device_snapshot = _json_safe_copy(
             trigger_device_snapshot if trigger_device_snapshot is not None else {},
@@ -517,7 +564,7 @@ def evaluate_chain_low_efficiency(
         causes = _json_safe_copy(diagnosed_causes or [], "diagnosed_causes")
         if not isinstance(causes, list):
             raise HistoryError("invalid_event_evidence", "diagnosed_causes 必须是数组", {"field": "diagnosed_causes"})
-        return _new_event(
+        event = _new_event(
             rule, "chain_low_efficiency", first, last,
             minimum, rule["chain_low_efficiency_threshold_pct"], "%",
             [first["device_name"]],
@@ -526,6 +573,8 @@ def evaluate_chain_low_efficiency(
                 last, minimum, rule, len(run), last["data_time"], device_snapshot, causes,
             ),
         )
+        event["evidence"]["confirmation_time"] = confirmation["data_time"]
+        return event
 
     new_samples = [sample for sample in ordered if sample["_time"] > previous_last_seen_time]
     if not any(sample["efficiency_pct"] is not None for sample in new_samples):
@@ -632,7 +681,10 @@ def _trailing_observation_run(observations, predicate):
     )
 
 
-def _temperature_evidence(observation, maximum, rule, continuous_minutes, last_condition_time):
+def _temperature_evidence(
+    observation, maximum, rule, continuous_minutes, last_condition_time,
+    confirmation_time=None,
+):
     return {
         "current_temperature_c": observation["sample"]["temperature_c"],
         "window_start_temperature_c": observation["window_start_sample"]["temperature_c"],
@@ -642,6 +694,7 @@ def _temperature_evidence(observation, maximum, rule, continuous_minutes, last_c
         "threshold_c": rule["temperature_rise_threshold_c"],
         "continuous_minutes": continuous_minutes,
         "last_condition_time": last_condition_time,
+        **({"confirmation_time": confirmation_time} if confirmation_time is not None else {}),
     }
 
 
@@ -684,7 +737,10 @@ def evaluate_battery_temperature_rise(samples, rule, active_event=None):
             maximum, rule["temperature_rise_threshold_c"], "℃",
             ["光→储", "储→用"],
             f"{rule['temperature_rise_window_minutes']} 分钟最大温升 {maximum:.2f}℃",
-            _temperature_evidence(run[-1], maximum, rule, len(run), last["data_time"]),
+            _temperature_evidence(
+                run[-1], maximum, rule, len(run), last["data_time"],
+                run[rule["temperature_trigger_minutes"] - 1]["sample"]["data_time"],
+            ),
         )
 
     event = {**active_event, "evidence": dict(active_event["evidence"])}

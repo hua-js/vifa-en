@@ -10,6 +10,13 @@ from m2.station_efficiency_device_adapter import (
     build_inverter_device_points,
     fetch_growall_rows,
 )
+from m2.station_efficiency_event_outbox import (
+    EventOutboxError,
+    discard_event,
+    enqueue_event,
+    flush_station_events,
+    pending_event_count,
+)
 from m2.station_efficiency_history import (
     HistoryError,
     build_minute_point,
@@ -155,6 +162,96 @@ def _save_device_points(points, config, request_json, warnings):
     return saved
 
 
+def _event_outbox_path(config):
+    path = config.get("event_outbox_path") if isinstance(config, dict) else None
+    if not isinstance(path, str) or not path.strip():
+        raise EventOutboxError("本机事件补偿队列不可用")
+    return path.strip()
+
+
+def _outbox_pending(station_id, path, warnings):
+    try:
+        return pending_event_count(station_id, path)
+    except EventOutboxError:
+        warnings.append(_warning("event_outbox"))
+        return None
+
+
+def _flush_event_outbox(
+    station_id, config, store_request_json, warnings,
+):
+    try:
+        path = _event_outbox_path(config)
+        result = flush_station_events(
+            station_id,
+            path,
+            save_event=lambda event: save_bottleneck_event(
+                event, config, request_json=store_request_json,
+            ),
+        )
+        if result["failed"]:
+            warnings.append(_warning("bottleneck_event_save"))
+        return result
+    except EventOutboxError:
+        warnings.append(_warning("event_outbox"))
+        return {
+            "attempted": 0,
+            "saved": 0,
+            "failed": 0,
+            "outbox_pending": None,
+        }
+
+
+def _save_current_events(
+    station_id, updates, config, store_request_json, warnings,
+):
+    attempted = 0
+    saved = 0
+    failed = 0
+    try:
+        path = _event_outbox_path(config)
+    except EventOutboxError:
+        path = None
+        warnings.append(_warning("event_outbox"))
+    for event in updates:
+        attempted += 1
+        try:
+            save_bottleneck_event(event, config, request_json=store_request_json)
+        except StationEfficiencyStoreError:
+            failed += 1
+            warnings.append(_warning("bottleneck_event_save"))
+            if path is not None:
+                try:
+                    enqueue_event(event, path)
+                except EventOutboxError:
+                    warnings.append(_warning("event_outbox"))
+        else:
+            saved += 1
+            if path is not None:
+                try:
+                    discard_event(event, path)
+                except EventOutboxError:
+                    warnings.append(_warning("event_outbox"))
+    return {
+        "attempted": attempted,
+        "saved": saved,
+        "failed": failed,
+        "outbox_pending": (
+            _outbox_pending(station_id, path, warnings)
+            if path is not None else None
+        ),
+    }
+
+
+def _combine_event_persistence(flushed, current):
+    return {
+        "attempted": flushed["attempted"] + current["attempted"],
+        "saved": flushed["saved"] + current["saved"],
+        "failed": flushed["failed"] + current["failed"],
+        "outbox_pending": current["outbox_pending"],
+    }
+
+
 def _evaluate_and_save_events(
     station_id,
     minute_point,
@@ -167,7 +264,12 @@ def _evaluate_and_save_events(
 ):
     history_start = _history_start(minute_point, rule)
     if history_start is None:
-        return []
+        return [], {
+            "attempted": 0, "saved": 0, "failed": 0,
+            "outbox_pending": _outbox_pending(
+                station_id, _event_outbox_path(config), warnings,
+            ),
+        }
     end_time = minute_bucket(minute_point["data_time"]) + timedelta(minutes=1)
     try:
         minute_history = fetch_minute_points(
@@ -183,7 +285,12 @@ def _evaluate_and_save_events(
         )
     except StationEfficiencyStoreError:
         warnings.append(_warning("bottleneck_history"))
-        return []
+        return [], {
+            "attempted": 0, "saved": 0, "failed": 0,
+            "outbox_pending": _outbox_pending(
+                station_id, _event_outbox_path(config), warnings,
+            ),
+        }
 
     updates = evaluate_station_bottlenecks(
         station_id=station_id,
@@ -192,12 +299,10 @@ def _evaluate_and_save_events(
         active_events=active_events,
         rule=rule,
     )
-    for event in updates:
-        try:
-            save_bottleneck_event(event, config, request_json=store_request_json)
-        except StationEfficiencyStoreError:
-            warnings.append(_warning("bottleneck_event_save"))
-    return updates
+    persistence = _save_current_events(
+        station_id, updates, config, store_request_json, warnings,
+    )
+    return updates, persistence
 
 
 def process_station_minute(
@@ -234,7 +339,8 @@ def process_station_minute(
         device_points.extend(build_battery_device_points(
             station_id=station_id,
             emu_rows=emu_rows,
-            data_time=minute_point["data_time"],
+            minute_bucket_time=minute_point["data_time"],
+            calculation_time=minute_point["calculated_at"],
             config=config,
         ))
     except StationEfficiencyDeviceDataError:
@@ -248,7 +354,8 @@ def process_station_minute(
             device_points.extend(build_inverter_device_points(
                 station_id=station_id,
                 growall_rows=growall_rows,
-                data_time=minute_point["data_time"],
+                minute_bucket_time=minute_point["data_time"],
+                calculation_time=minute_point["calculated_at"],
                 config=config,
             ))
         except StationEfficiencyDeviceDataError:
@@ -257,10 +364,16 @@ def process_station_minute(
     device_points_saved = _save_device_points(
         device_points, config, store_request_json, warnings,
     )
+    flushed_events = _flush_event_outbox(
+        station_id, config, store_request_json, warnings,
+    )
     rule = _validated_bottleneck_rule(config, warnings)
-    event_updates = _evaluate_and_save_events(
+    event_updates, current_events = _evaluate_and_save_events(
         station_id, minute_point, device_points, rule, config,
         query_request_json, store_request_json, warnings,
+    )
+    event_persistence = _combine_event_persistence(
+        flushed_events, current_events,
     )
     return {
         "status": "partial" if warnings else "ok",
@@ -269,6 +382,7 @@ def process_station_minute(
         "saved_record": saved_record,
         "device_points_saved": device_points_saved,
         "event_updates": event_updates,
+        "event_persistence": event_persistence,
     }
 
 

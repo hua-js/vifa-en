@@ -290,10 +290,18 @@ class StationEfficiencyBottleneckTests(unittest.TestCase):
         self.assertEqual(snapshot["data_time"], "2026-08-27T10:01:00+08:00")
         self.assertEqual(snapshot["source_time"], "2026-08-27T10:01:30+08:00")
 
-    def test_uses_latest_minute_as_snapshot_confirmation_when_inputs_are_unsorted(self):
+    def test_delayed_open_uses_rule_confirmation_minute_not_latest_history(self):
         updates = self.evaluate_bottlenecks(
-            minute_points=[minute_point(1, pv_load=81), minute_point(0, pv_load=80)],
-            device_points=[inverter_point("emu1", 0, 10), inverter_point("emu1", 1, 11)],
+            minute_points=[
+                minute_point(2, pv_load=82),
+                minute_point(0, pv_load=80),
+                minute_point(1, pv_load=81),
+            ],
+            device_points=[
+                inverter_point("emu1", 0, 10),
+                inverter_point("emu1", 1, 11),
+                inverter_point("emu1", 2, 12),
+            ],
         )
         chain = next(event for event in updates if event["device_id"] == "pv_load")
 
@@ -301,6 +309,32 @@ class StationEfficiencyBottleneckTests(unittest.TestCase):
             chain["evidence"]["trigger_device_snapshot"]["pv_inverters"][0]["data_time"],
             timestamp(1),
         )
+        self.assertEqual(chain["evidence"]["confirmation_time"], timestamp(1))
+        self.assertEqual(chain["last_seen_time"], timestamp(2))
+        self.assertEqual(chain["evidence"]["diagnosed_causes"], [])
+
+    def test_device_cause_confirmed_after_chain_confirmation_is_not_initial_diagnosis(self):
+        updates = self.evaluate_bottlenecks(
+            minute_points=[
+                minute_point(0, pv_load=80),
+                minute_point(1, pv_load=81),
+                minute_point(2, pv_load=82),
+            ],
+            device_points=[
+                inverter_point("emu1", 0, 10),
+                inverter_point("emu1", 1, 10),
+                inverter_point("emu1", 2, 10),
+            ],
+        )
+        chain = next(event for event in updates if event["device_id"] == "pv_load")
+        inverter = next(
+            event for event in updates if event["event_type"] == "inverter_low_load"
+        )
+
+        self.assertEqual(inverter["evidence"]["confirmation_time"], timestamp(2))
+        self.assertEqual(chain["evidence"]["confirmation_time"], timestamp(1))
+        self.assertEqual(chain["evidence"]["cause_status"], "pending")
+        self.assertEqual(chain["evidence"]["diagnosed_causes"], [])
 
 
 if __name__ == "__main__":
