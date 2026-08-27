@@ -29,7 +29,10 @@
       "d55c1e0a8d4f9016",
       "d55c1e0a8d4f9017",
       "d55c1e0a8d4f9018",
-      "d55c1e0a8d4f9019"
+      "d55c1e0a8d4f9019",
+      "d55c1e0a8d4f9020",
+      "d55c1e0a8d4f9021",
+      "d55c1e0a8d4f9022"
     ],
     "x": 54,
     "y": 1219,
@@ -61,7 +64,7 @@
     "z": "b9c07ab9fb24cf5f",
     "g": "6a0f5b7f19c0f860",
     "name": "检查场站",
-    "func": "const query = msg.req.query || {};\nconst stationId = String(query.station_id || 'ES02').trim().toUpperCase();\n\nif (!['ES01', 'ES02'].includes(stationId)) {\n    msg.statusCode = 400;\n    msg.headers = { 'Content-Type': 'application/json; charset=utf-8' };\n    msg.payload = {\n        status: 'error',\n        error: {\n            message: 'station_id 只能是 ES01 或 ES02'\n        }\n    };\n    return [null, msg];\n}\n\nmsg.payload = stationId;\nreturn [msg, null];",
+    "func": "const query = msg.req.query || {};\nconst rawStationId = query.station_id;\nconst stationId = typeof rawStationId === 'string' ? rawStationId.trim().toUpperCase() : '';\n\nif (!['ES01', 'ES02'].includes(stationId)) {\n    msg.statusCode = 400;\n    msg.headers = { 'Content-Type': 'application/json; charset=utf-8' };\n    msg.payload = {\n        status: 'error',\n        error: {\n            message: 'station_id 只能是 ES01 或 ES02'\n        }\n    };\n    return [null, msg];\n}\n\nmsg.payload = stationId;\nreturn [msg, null];",
     "outputs": 2,
     "timeout": "",
     "noerr": 0,
@@ -86,7 +89,7 @@
     "g": "6a0f5b7f19c0f860",
     "command": "python3 /userdata/holo/pyfiles/energy-efficiency-api.py dashboard",
     "addpay": "payload",
-    "append": "",
+    "append": " 2>&1",
     "useSpawn": "false",
     "timer": "20",
     "winHide": false,
@@ -99,7 +102,7 @@
         "bc9135f77a7e306c"
       ],
       [
-        "d55c1e0a8d4f9011"
+        "d55c1e0a8d4f9022"
       ],
       [
         "d55c1e0a8d4f9011"
@@ -192,8 +195,9 @@
     ],
     "repeat": "",
     "crontab": "* * * * *",
-    "once": true,
+    "once": false,
     "onceDelay": "5",
+    "d": true,
     "topic": "",
     "payload": "",
     "payloadType": "date",
@@ -248,7 +252,7 @@
         "d55c1e0a8d4f9013"
       ],
       [
-        "d55c1e0a8d4f9013"
+        "d55c1e0a8d4f9020"
       ]
     ]
   },
@@ -293,8 +297,8 @@
     "type": "function",
     "z": "b9c07ab9fb24cf5f",
     "g": "6a0f5b7f19c0f860",
-    "name": "脱敏看板执行错误",
-    "func": "const summary = { status: 'error', source: 'dashboard_exec', message: 'Python 执行失败，详见服务器受控日志' };\nreturn [{ ...msg, payload: summary }, { ...msg, payload: summary }];",
+    "name": "处理看板退出状态",
+    "func": "const rawCode = msg.payload && typeof msg.payload === 'object' ? msg.payload.code : msg.payload;\nconst code = Number(rawCode);\nif (!Number.isFinite(code) || code === 0) {\n    return [null, null];\n}\nconst response = {\n    ...msg,\n    statusCode: 502,\n    headers: { 'Content-Type': 'application/json; charset=utf-8' },\n    payload: { status: 'error', error: { message: 'Python 执行失败' } }\n};\nconst summary = { status: 'error', source: 'dashboard_exec', message: 'Python 执行失败，详见服务器受控日志' };\nreturn [response, { ...msg, payload: summary }];",
     "outputs": 2,
     "timeout": "",
     "noerr": 0,
@@ -305,10 +309,10 @@
     "y": 1340,
     "wires": [
       [
-        "f4c337a0f23d6a11"
+        "2a04eb75523c08af"
       ],
       [
-        "7bc21f0faeb14356"
+        "f4c337a0f23d6a11"
       ]
     ]
   },
@@ -341,21 +345,17 @@
     "type": "function",
     "z": "b9c07ab9fb24cf5f",
     "g": "6a0f5b7f19c0f860",
-    "name": "脱敏分钟执行错误",
-    "func": "msg.payload = { status: 'error', source: 'minute_job', message: '分钟任务执行失败，详见服务器受控日志' };\nreturn msg;",
+    "name": "丢弃分钟stderr",
+    "func": "return null;",
     "outputs": 1,
     "timeout": "",
     "noerr": 0,
     "initialize": "",
     "finalize": "",
     "libs": [],
-    "x": 680,
+    "x": 650,
     "y": 1480,
-    "wires": [
-      [
-        "06ead490a31a7ae1"
-      ]
-    ]
+    "wires": []
   },
   {
     "id": "d55c1e0a8d4f9014",
@@ -372,6 +372,7 @@
     "crontab": "10 2 * * *",
     "once": false,
     "onceDelay": "",
+    "d": true,
     "topic": "",
     "payload": "",
     "payloadType": "date",
@@ -406,7 +407,7 @@
         "d55c1e0a8d4f9017"
       ],
       [
-        "d55c1e0a8d4f9017"
+        "d55c1e0a8d4f9021"
       ]
     ]
   },
@@ -439,21 +440,17 @@
     "type": "function",
     "z": "b9c07ab9fb24cf5f",
     "g": "6a0f5b7f19c0f860",
-    "name": "脱敏清理执行错误",
-    "func": "msg.payload = { status: 'error', source: 'cleanup', message: '清理任务执行失败，详见服务器受控日志' };\nreturn msg;",
+    "name": "丢弃清理stderr",
+    "func": "return null;",
     "outputs": 1,
     "timeout": "",
     "noerr": 0,
     "initialize": "",
     "finalize": "",
     "libs": [],
-    "x": 690,
+    "x": 650,
     "y": 1640,
-    "wires": [
-      [
-        "d55c1e0a8d4f9019"
-      ]
-    ]
+    "wires": []
   },
   {
     "id": "d55c1e0a8d4f9018",
@@ -489,6 +486,65 @@
     "statusType": "auto",
     "x": 950,
     "y": 1640,
+    "wires": []
+  },
+  {
+    "id": "d55c1e0a8d4f9020",
+    "type": "function",
+    "z": "b9c07ab9fb24cf5f",
+    "g": "6a0f5b7f19c0f860",
+    "name": "处理分钟退出状态",
+    "func": "const rawCode = msg.payload && typeof msg.payload === 'object' ? msg.payload.code : msg.payload;\nconst code = Number(rawCode);\nif (!Number.isFinite(code) || code === 0) {\n    return null;\n}\nmsg.payload = { status: 'error', source: 'minute_job', message: '分钟任务执行失败，详见服务器受控日志' };\nreturn msg;",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 700,
+    "y": 1500,
+    "wires": [
+      [
+        "06ead490a31a7ae1"
+      ]
+    ]
+  },
+  {
+    "id": "d55c1e0a8d4f9021",
+    "type": "function",
+    "z": "b9c07ab9fb24cf5f",
+    "g": "6a0f5b7f19c0f860",
+    "name": "处理清理退出状态",
+    "func": "const rawCode = msg.payload && typeof msg.payload === 'object' ? msg.payload.code : msg.payload;\nconst code = Number(rawCode);\nif (!Number.isFinite(code) || code === 0) {\n    return null;\n}\nmsg.payload = { status: 'error', source: 'cleanup', message: '清理任务执行失败，详见服务器受控日志' };\nreturn msg;",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 700,
+    "y": 1680,
+    "wires": [
+      [
+        "d55c1e0a8d4f9019"
+      ]
+    ]
+  },
+  {
+    "id": "d55c1e0a8d4f9022",
+    "type": "function",
+    "z": "b9c07ab9fb24cf5f",
+    "g": "6a0f5b7f19c0f860",
+    "name": "丢弃看板stderr",
+    "func": "return null;",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 600,
+    "y": 1380,
     "wires": []
   }
 ]
