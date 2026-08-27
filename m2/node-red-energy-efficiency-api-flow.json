@@ -20,12 +20,21 @@
       "e8e2c80491702667",
       "28ed724416392e5a",
       "59a0b309f1852b53",
-      "06ead490a31a7ae1"
+      "06ead490a31a7ae1",
+      "d55c1e0a8d4f9011",
+      "d55c1e0a8d4f9012",
+      "d55c1e0a8d4f9013",
+      "d55c1e0a8d4f9014",
+      "d55c1e0a8d4f9015",
+      "d55c1e0a8d4f9016",
+      "d55c1e0a8d4f9017",
+      "d55c1e0a8d4f9018",
+      "d55c1e0a8d4f9019"
     ],
     "x": 54,
     "y": 1219,
     "w": 1012,
-    "h": 309.5
+    "h": 509.5
   },
   {
     "id": "5927e77be5d06acc",
@@ -90,10 +99,10 @@
         "bc9135f77a7e306c"
       ],
       [
-        "f4c337a0f23d6a11"
+        "d55c1e0a8d4f9011"
       ],
       [
-        "7bc21f0faeb14356"
+        "d55c1e0a8d4f9011"
       ]
     ]
   },
@@ -103,7 +112,7 @@
     "z": "b9c07ab9fb24cf5f",
     "g": "6a0f5b7f19c0f860",
     "name": "包装JSON结果",
-    "func": "try {\n    const output = String(msg.payload || '').trim();\n    const result = JSON.parse(output);\n\n    msg.statusCode = result.status === 'ok' ? 200 : 502;\n    msg.payload = result;\n} catch (error) {\n    msg.statusCode = 500;\n    msg.payload = {\n        status: 'error',\n        error: {\n            message: 'Python 没有返回正确的 JSON'\n        }\n    };\n}\n\nmsg.headers = {\n    'Content-Type': 'application/json; charset=utf-8'\n};\n\nreturn msg;",
+    "func": "try {\n    const output = String(msg.payload || '').trim();\n    if (!output || /[\\r\\n]/.test(output)) {\n        throw new Error('not one JSON line');\n    }\n    const result = JSON.parse(output);\n    if (!result || typeof result !== 'object' || Array.isArray(result) || result.status !== 'ok') {\n        throw new Error('not a public success result');\n    }\n\n    msg.statusCode = 200;\n    msg.payload = result;\n} catch (error) {\n    msg.statusCode = 500;\n    msg.payload = {\n        status: 'error',\n        error: {\n            message: 'Python 没有返回正确的 JSON'\n        }\n    };\n}\n\nmsg.headers = {\n    'Content-Type': 'application/json; charset=utf-8'\n};\n\nreturn msg;",
     "outputs": 1,
     "timeout": "",
     "noerr": 0,
@@ -135,7 +144,7 @@
     "type": "debug",
     "z": "b9c07ab9fb24cf5f",
     "g": "6a0f5b7f19c0f860",
-    "name": "Python错误",
+    "name": "Python执行错误（脱敏）",
     "active": true,
     "tosidebar": true,
     "console": false,
@@ -153,7 +162,7 @@
     "type": "debug",
     "z": "b9c07ab9fb24cf5f",
     "g": "6a0f5b7f19c0f860",
-    "name": "Python退出码",
+    "name": "Python执行状态（脱敏）",
     "active": true,
     "tosidebar": true,
     "console": false,
@@ -181,8 +190,8 @@
         "vt": "str"
       }
     ],
-    "repeat": "60",
-    "crontab": "",
+    "repeat": "",
+    "crontab": "* * * * *",
     "once": true,
     "onceDelay": "5",
     "topic": "",
@@ -233,13 +242,13 @@
     "y": 1440,
     "wires": [
       [
-        "59a0b309f1852b53"
+        "d55c1e0a8d4f9012"
       ],
       [
-        "06ead490a31a7ae1"
+        "d55c1e0a8d4f9013"
       ],
       [
-        "06ead490a31a7ae1"
+        "d55c1e0a8d4f9013"
       ]
     ]
   },
@@ -277,6 +286,209 @@
     "statusType": "auto",
     "x": 850,
     "y": 1460,
+    "wires": []
+  },
+  {
+    "id": "d55c1e0a8d4f9011",
+    "type": "function",
+    "z": "b9c07ab9fb24cf5f",
+    "g": "6a0f5b7f19c0f860",
+    "name": "脱敏看板执行错误",
+    "func": "const summary = { status: 'error', source: 'dashboard_exec', message: 'Python 执行失败，详见服务器受控日志' };\nreturn [{ ...msg, payload: summary }, { ...msg, payload: summary }];",
+    "outputs": 2,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 560,
+    "y": 1340,
+    "wires": [
+      [
+        "f4c337a0f23d6a11"
+      ],
+      [
+        "7bc21f0faeb14356"
+      ]
+    ]
+  },
+  {
+    "id": "d55c1e0a8d4f9012",
+    "type": "function",
+    "z": "b9c07ab9fb24cf5f",
+    "g": "6a0f5b7f19c0f860",
+    "name": "脱敏分钟写入结果",
+    "func": "try {\n    const output = String(msg.payload || '').trim();\n    if (!output || /[\\r\\n]/.test(output)) {\n        throw new Error('not one JSON line');\n    }\n    const result = JSON.parse(output);\n    const data = result && result.data;\n    if (!data || !['ok', 'partial'].includes(result.status) || data.operation !== 'minute' || !['ES01', 'ES02'].includes(data.station_id)) {\n        throw new Error('not a minute result');\n    }\n    msg.payload = {\n        status: result.status,\n        operation: 'minute',\n        station_id: data.station_id,\n        data_time: data.data_time || null,\n        device_points_saved: Number(data.device_points_saved || 0),\n        event_update_count: Number(data.event_update_count || 0),\n        warning_count: Number(data.warning_count || 0)\n    };\n    return [msg, null];\n} catch (error) {\n    return [null, { ...msg, payload: { status: 'error', source: 'minute_job', message: '分钟任务没有返回可用结果' } }];\n}",
+    "outputs": 2,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 710,
+    "y": 1420,
+    "wires": [
+      [
+        "59a0b309f1852b53"
+      ],
+      [
+        "06ead490a31a7ae1"
+      ]
+    ]
+  },
+  {
+    "id": "d55c1e0a8d4f9013",
+    "type": "function",
+    "z": "b9c07ab9fb24cf5f",
+    "g": "6a0f5b7f19c0f860",
+    "name": "脱敏分钟执行错误",
+    "func": "msg.payload = { status: 'error', source: 'minute_job', message: '分钟任务执行失败，详见服务器受控日志' };\nreturn msg;",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 680,
+    "y": 1480,
+    "wires": [
+      [
+        "06ead490a31a7ae1"
+      ]
+    ]
+  },
+  {
+    "id": "d55c1e0a8d4f9014",
+    "type": "inject",
+    "z": "b9c07ab9fb24cf5f",
+    "g": "6a0f5b7f19c0f860",
+    "name": "每日清理30天前设备点",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "",
+    "crontab": "10 2 * * *",
+    "once": false,
+    "onceDelay": "",
+    "topic": "",
+    "payload": "",
+    "payloadType": "date",
+    "x": 180,
+    "y": 1600,
+    "wires": [
+      [
+        "d55c1e0a8d4f9015"
+      ]
+    ]
+  },
+  {
+    "id": "d55c1e0a8d4f9015",
+    "type": "exec",
+    "z": "b9c07ab9fb24cf5f",
+    "g": "6a0f5b7f19c0f860",
+    "command": "python3 /userdata/holo/pyfiles/energy-efficiency-api.py cleanup",
+    "addpay": false,
+    "append": "",
+    "useSpawn": "false",
+    "timer": "20",
+    "winHide": false,
+    "oldrc": "false",
+    "name": "执行设备点清理",
+    "x": 460,
+    "y": 1600,
+    "wires": [
+      [
+        "d55c1e0a8d4f9016"
+      ],
+      [
+        "d55c1e0a8d4f9017"
+      ],
+      [
+        "d55c1e0a8d4f9017"
+      ]
+    ]
+  },
+  {
+    "id": "d55c1e0a8d4f9016",
+    "type": "function",
+    "z": "b9c07ab9fb24cf5f",
+    "g": "6a0f5b7f19c0f860",
+    "name": "脱敏清理结果",
+    "func": "try {\n    const output = String(msg.payload || '').trim();\n    if (!output || /[\\r\\n]/.test(output)) {\n        throw new Error('not one JSON line');\n    }\n    const result = JSON.parse(output);\n    const data = result && result.data;\n    if (!data || result.status !== 'ok' || data.operation !== 'cleanup') {\n        throw new Error('not a cleanup result');\n    }\n    msg.payload = { status: 'ok', operation: 'cleanup', cutoff: data.cutoff || null, deleted_count: Number(data.deleted_count || 0) };\n    return [msg, null];\n} catch (error) {\n    return [null, { ...msg, payload: { status: 'error', source: 'cleanup', message: '清理任务没有返回可用结果' } }];\n}",
+    "outputs": 2,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 680,
+    "y": 1580,
+    "wires": [
+      [
+        "d55c1e0a8d4f9018"
+      ],
+      [
+        "d55c1e0a8d4f9019"
+      ]
+    ]
+  },
+  {
+    "id": "d55c1e0a8d4f9017",
+    "type": "function",
+    "z": "b9c07ab9fb24cf5f",
+    "g": "6a0f5b7f19c0f860",
+    "name": "脱敏清理执行错误",
+    "func": "msg.payload = { status: 'error', source: 'cleanup', message: '清理任务执行失败，详见服务器受控日志' };\nreturn msg;",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 690,
+    "y": 1640,
+    "wires": [
+      [
+        "d55c1e0a8d4f9019"
+      ]
+    ]
+  },
+  {
+    "id": "d55c1e0a8d4f9018",
+    "type": "debug",
+    "z": "b9c07ab9fb24cf5f",
+    "g": "6a0f5b7f19c0f860",
+    "name": "设备点清理结果",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "payload",
+    "targetType": "msg",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 930,
+    "y": 1580,
+    "wires": []
+  },
+  {
+    "id": "d55c1e0a8d4f9019",
+    "type": "debug",
+    "z": "b9c07ab9fb24cf5f",
+    "g": "6a0f5b7f19c0f860",
+    "name": "设备点清理错误（脱敏）",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "payload",
+    "targetType": "msg",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 950,
+    "y": 1640,
     "wires": []
   }
 ]
