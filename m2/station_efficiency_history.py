@@ -456,6 +456,17 @@ def _chain_event_evidence(sample, minimum, rule, continuous_minutes, last_low_ti
     }
 
 
+def _sync_chain_diagnosed_causes(event, diagnosed_causes):
+    if diagnosed_causes is None:
+        return event
+    causes = _json_safe_copy(diagnosed_causes, "diagnosed_causes")
+    if not isinstance(causes, list):
+        raise HistoryError("invalid_event_evidence", "diagnosed_causes 必须是数组", {"field": "diagnosed_causes"})
+    event["evidence"]["cause_status"] = "diagnosed" if causes else "pending"
+    event["evidence"]["diagnosed_causes"] = causes
+    return event
+
+
 def evaluate_chain_low_efficiency(
     samples, rule, active_event=None, trigger_device_snapshot=None, diagnosed_causes=None,
 ):
@@ -473,7 +484,10 @@ def evaluate_chain_low_efficiency(
             expected_device["device_name"] if expected_device else None,
         )
     if not ordered:
-        return _chain_event_copy(active_event) if active_event else None
+        return (
+            _sync_chain_diagnosed_causes(_chain_event_copy(active_event), diagnosed_causes)
+            if active_event else None
+        )
     if not rule["enabled"] and active_event is None:
         return None
 
@@ -515,9 +529,12 @@ def evaluate_chain_low_efficiency(
 
     new_samples = [sample for sample in ordered if sample["_time"] > previous_last_seen_time]
     if not any(sample["efficiency_pct"] is not None for sample in new_samples):
-        return _chain_event_copy(active_event)
+        return _sync_chain_diagnosed_causes(
+            _chain_event_copy(active_event), diagnosed_causes,
+        )
 
     event = _chain_event_copy(active_event)
+    _sync_chain_diagnosed_causes(event, diagnosed_causes)
     evidence = event["evidence"]
     low_run = _trailing_minute_run(
         new_samples,

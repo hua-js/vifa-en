@@ -171,6 +171,75 @@ class StationEfficiencyBottleneckTests(unittest.TestCase):
             [],
         )
 
+    def test_active_pending_chain_becomes_diagnosed_without_replacing_snapshot(self):
+        active_chain = self.evaluate_bottlenecks(
+            minute_points=[minute_point(0, pv_storage=80), minute_point(1, pv_storage=81)],
+            device_points=[battery_point("cab-1", 1, None)],
+        )[0]
+        original_snapshot = active_chain["evidence"]["trigger_device_snapshot"]
+
+        updates = self.evaluate_bottlenecks(
+            minute_points=[minute_point(2, pv_storage=None)],
+            device_points=[
+                inverter_point("emu1", 0, 10),
+                inverter_point("emu1", 1, 10),
+                inverter_point("emu1", 2, 10),
+            ],
+            active_events=[active_chain],
+        )
+        chain = next(event for event in updates if event["event_type"] == "chain_low_efficiency")
+
+        self.assertEqual(chain["evidence"]["cause_status"], "diagnosed")
+        self.assertEqual(chain["evidence"]["diagnosed_causes"], [{
+            "event_type": "inverter_low_load",
+            "device_id": "emu1",
+            "device_name": "逆变器 emu1",
+        }])
+        self.assertEqual(chain["evidence"]["trigger_device_snapshot"], original_snapshot)
+
+    def test_active_diagnosed_chain_returns_to_pending_when_cause_recovers(self):
+        active_chain = self.evaluate_bottlenecks(
+            minute_points=[minute_point(0, pv_storage=80), minute_point(1, pv_storage=81)],
+            device_points=[battery_point("cab-1", 1, None)],
+        )[0]
+        diagnosis_updates = self.evaluate_bottlenecks(
+            minute_points=[minute_point(2, pv_storage=None)],
+            device_points=[
+                inverter_point("emu1", 0, 10),
+                inverter_point("emu1", 1, 10),
+                inverter_point("emu1", 2, 10),
+            ],
+            active_events=[active_chain],
+        )
+        active_inverter = next(
+            event for event in diagnosis_updates if event["event_type"] == "inverter_low_load"
+        )
+        diagnosed_chain = {
+            **active_chain,
+            "evidence": {
+                **active_chain["evidence"],
+                "cause_status": "diagnosed",
+                "diagnosed_causes": [{
+                    "event_type": "inverter_low_load",
+                    "device_id": "emu1",
+                    "device_name": "逆变器 emu1",
+                }],
+            },
+        }
+        original_snapshot = diagnosed_chain["evidence"]["trigger_device_snapshot"]
+
+        updates = self.evaluate_bottlenecks(
+            minute_points=[minute_point(3, pv_storage=None)],
+            device_points=[inverter_point("emu1", 3, 0), inverter_point("emu1", 4, 0)],
+            active_events=[diagnosed_chain, active_inverter],
+        )
+        chain = next(event for event in updates if event["event_type"] == "chain_low_efficiency")
+
+        self.assertEqual(chain["status"], "active")
+        self.assertEqual(chain["evidence"]["cause_status"], "pending")
+        self.assertEqual(chain["evidence"]["diagnosed_causes"], [])
+        self.assertEqual(chain["evidence"]["trigger_device_snapshot"], original_snapshot)
+
     def test_rejects_duplicate_active_event_identities(self):
         active = self.evaluate_bottlenecks(
             minute_points=[minute_point(0, storage_load=80), minute_point(1, storage_load=81)],
