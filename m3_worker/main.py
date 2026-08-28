@@ -116,7 +116,7 @@ class WorkerResources:
             pass
 
     def recover(self) -> bool:
-        """Recover every station independently, then reconcile global writing batches once."""
+        """Recover forecast and acceptance state independently for every station."""
 
         raw_now = self.clock()
         try:
@@ -155,14 +155,12 @@ class WorkerResources:
                     failed = True
                     self._alert(station_id, "startup_recovery", error, recovery_at)
         if getattr(self.settings, "acceptance_enabled", True):
-            try:
-                self.acceptance_service.reconcile_writing_batches()
-                self.acceptance_service.reconcile_run_summaries(
-                    self.settings.station_ids
-                )
-            except Exception as error:
-                failed = True
-                for station_id in self.settings.station_ids:
+            for station_id in self.settings.station_ids:
+                try:
+                    self.acceptance_service.reconcile_writing_batches(station_id)
+                    self.acceptance_service.reconcile_run_summary(station_id)
+                except Exception as error:
+                    failed = True
                     self._alert(
                         station_id, "acceptance_reconcile", error, recovery_at
                     )

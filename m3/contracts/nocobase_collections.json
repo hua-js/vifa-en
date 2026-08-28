@@ -636,8 +636,8 @@
         "denied_actions": ["destroy", "delete", "export", "import"],
         "fields_by_action": {
           "list": {
-            "read": ["id", "station_id", "acceptance_run_id", "issued_at", "forecast_start_time", "forecast_end_time", "status", "model_manifest", "content_hash", "point_templates"],
-            "filter": ["write_state"],
+            "read": ["id", "station_id", "acceptance_run_id", "issued_at", "forecast_start_time", "forecast_end_time", "status", "write_state", "model_manifest", "content_hash", "point_templates"],
+            "filter": ["station_id", "acceptance_run_id", "write_state"],
             "sort": ["issued_at"],
             "write": [],
             "record_key": []
@@ -688,9 +688,16 @@
         "protected_fields": ["batch_id", "unique_id", "data_time", "target_time", "horizon_step", "model_name", "raw_forecast", "forecast_value", "is_clipped"]
       },
       "energy_forecast_evaluations": {
-        "allowed_actions": ["updateOrCreate"],
+        "allowed_actions": ["list", "updateOrCreate"],
         "denied_actions": ["destroy", "delete", "export", "import"],
         "fields_by_action": {
+          "list": {
+            "read": ["station_id", "acceptance_run_id", "evaluation_key", "window_start", "window_end", "outcome", "calculated_at"],
+            "filter": ["station_id", "acceptance_run_id"],
+            "sort": [],
+            "write": [],
+            "record_key": []
+          },
           "updateOrCreate": {
             "read": ["id", "station_id", "acceptance_run_id", "evaluation_key", "window_start", "window_end", "expected_count", "valid_count", "zero_actual_count", "mape_percent", "mae", "smape_percent", "wape_percent", "median_ape_percent", "p90_ape_percent", "outcome", "calculated_at"],
             "filter": ["station_id", "acceptance_run_id", "evaluation_key"],

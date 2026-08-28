@@ -70,6 +70,7 @@ WRITING_BATCH_FIELDS = (
     "forecast_start_time",
     "forecast_end_time",
     "status",
+    "write_state",
     "model_manifest",
     "content_hash",
     "point_templates",
@@ -976,12 +977,12 @@ class AcceptanceService:
             context = self._context(station_id, require_active=True)
             return self._recalculate_locked(station_id, acceptance_run_id, context)
 
-    def reconcile_writing_batches(self) -> int:
-        """Resume persisted writing batches without asking the forecast model to run."""
+    def reconcile_writing_batches(self, station_id: str) -> int:
+        """Resume one station's writing batches without rerunning its model."""
 
         batches = self._api.list_records(
             "energy_forecast_batches",
-            filter={"write_state": "writing"},
+            filter={"station_id": station_id, "write_state": "writing"},
             fields=list(WRITING_BATCH_FIELDS),
             sort=["issued_at"],
         )
@@ -996,10 +997,11 @@ class AcceptanceService:
                 type(batch["id"]) is not int
                 or batch["id"] < 1
                 or not isinstance(batch["station_id"], str)
-                or not batch["station_id"]
+                or batch["station_id"] != station_id
                 or not isinstance(batch["acceptance_run_id"], str)
                 or not batch["acceptance_run_id"]
                 or batch["status"] not in {"ok", "degraded"}
+                or batch["write_state"] != "writing"
                 or not isinstance(batch["model_manifest"], dict)
                 or not isinstance(batch["point_templates"], list)
                 or len(batch["point_templates"]) != EXPECTED_DAILY_POINTS
@@ -1107,7 +1109,7 @@ class AcceptanceService:
                 raise M3Error(
                     "idempotency_conflict", "Writing batch content hash mismatch"
                 )
-            with self._station_lock(batch["station_id"]):
+            with self._station_lock(station_id):
                 response = self._sink.reconcile_acceptance(batch)
                 if (
                     not isinstance(response, dict)
@@ -1127,10 +1129,6 @@ class AcceptanceService:
                 recovered += 1
         return recovered
 
-    def reconcile_run_summaries(self, station_ids) -> int:
-        reconciled = 0
-        for station_id in station_ids:
-            with self._station_lock(station_id):
-                if self._runs.reconcile_active(station_id) is not None:
-                    reconciled += 1
-        return reconciled
+    def reconcile_run_summary(self, station_id: str) -> bool:
+        with self._station_lock(station_id):
+            return self._runs.reconcile_active(station_id) is not None

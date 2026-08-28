@@ -84,7 +84,14 @@ NocoBase 集合与 PostgreSQL 物理表均命名为 `energy_forecast_acceptance_
 
 ### 4.2 Worker 角色
 
-Worker Key 对任务表只允许：
+Worker 只使用一个专用 `M3_NOCOBASE_API_KEY`。该 Key 绑定一个合并后的最小权限角色，同时承载既有明细写入、新增的限定读取和任务摘要更新；不得为验收任务表另配第二个 Worker Key。
+
+合并角色的限定读取为：
+
+- `energy_forecast_batches.list`：只读 `id`、任务身份、批次窗口、状态、`write_state`、模型清单、内容哈希和点模板；只按 `station_id`、`acceptance_run_id`、`write_state` 过滤，只按 `issued_at` 排序。这一字段并集恰好覆盖按站恢复 `writing` 批次和计算完整日数的两个固定调用。
+- `energy_forecast_evaluations.list`：只读 `station_id`、`acceptance_run_id`、`evaluation_key`、`window_start`、`window_end`、`outcome`、`calculated_at`；只按 `station_id`、`acceptance_run_id` 过滤。
+
+同一角色保留四个明细集合现有的限定写动作，并对任务表只允许：
 
 - `list`：读取 `id`、任务身份、窗口、控制状态和结果摘要；按 `station_id`、`acceptance_run_id`、`control_state` 过滤。
 - `update`：以 `id` 为记录键，只写 `completed_days`、`result_state`、`calculated_at`。
@@ -112,7 +119,7 @@ Dashboard 继续从批次和评估表构建详细七日验收区域。第一版�
 - 超过 1 行、字段缺失、额外字段、非法时间或非法状态：抛出 `acceptance_context_invalid`，不选择任意一行。
 - NocoBase 401/403、非成功状态、重定向、超时或超限响应：沿用固定 Sink 错误，不泄露 API Key 或上游响应正文。
 
-旧 Node-RED 验收上下文客户端不再参与 `AcceptanceService` 装配。`M3_SOURCE_BASE_URL` 和 `M3_SOURCE_API_TOKEN` 仍供现有运行告警客户端使用，不作为验收任务来源。
+旧 Node-RED 验收上下文客户端不再参与 `AcceptanceService` 装配。NocoBase 是唯一验收任务控制源；`M3_SOURCE_BASE_URL` 和 `M3_SOURCE_API_TOKEN` 只供现有运行告警客户端使用。
 
 ## 6. Worker 行为
 
@@ -128,23 +135,25 @@ Dashboard 继续从批次和评估表构建详细七日验收区域。第一版�
 - 1–7 批：`completed_days` 等于去重后的完整日批次数，`result_state=in_progress`。
 - 超过 7 批、重复日期、批次落在窗口外或任务身份不一致：拒绝摘要更新并告警。
 
-摘要更新前重新读取任务行并验证控制字段没有变化，再以主键 `id` 更新三个 Worker 字段。更新响应必须回显相同主键和期望值。
+摘要更新入口和发出更新请求前都必须重新读取任务行，要求任务身份、主键、窗口不变且 `control_state` 仍为 `active`，再以主键 `id` 更新三个 Worker 字段。更新响应必须回显相同主键、仍为 `active` 的控制状态和期望摘要值。
+
+当前固定 NocoBase `update` 接口只接受 `filterByTk=id`，没有可用的控制状态 CAS 条件。因此取消会阻止后续调度，并在摘要更新请求发出前立即被检查；若取消与已经发出的更新请求并发，该请求仍可能完成三个摘要字段的写入，但绝不修改 `control_state`。这是无 CAS 条件下保留的单个在途竞态。
 
 ### 6.3 实绩回填与最终结果
 
 普通预测任务继续每十五分钟回填已经完成的正式点。七日窗口结束且最后实绩可用后，Worker 计算两条序列及整体结果，并先写 `energy_forecast_evaluations`。
 
-三条评估记录全部成功并经过回读验证后，Worker 才将任务摘要更新为：
+三条评估记录 `station_total_load`、`storage_soc`、`overall` 全部成功并经过回读验证后，Worker 才将任务摘要更新为：
 
 - `completed_days=7`
 - `result_state=overall.outcome`
 - `calculated_at=评估计算时间`
 
-评估写入失败或不完整时，任务保持 `in_progress`，不得先显示最终摘要。
+终态恢复必须按同一 `station_id + acceptance_run_id` 一次列出评估，并严格要求上述三个键各一行：不得缺失、重复或出现额外键；每行身份和七日窗口必须匹配任务，三个 `calculated_at` 必须一致且不早于 `window_end`，`overall.outcome` 必须等于两条序列结果按现有合并规则得到的结果。评估写入失败、不完整或不一致时，任务不得先显示最终摘要。
 
 ### 6.4 恢复与迟到修订
 
-Worker 启动恢复以及后续活动任务处理会从完整批次和最终评估重新计算摘要。任务主表不是详细结果的事实源；摘要与明细冲突时，以经过严格验证的批次和评估为准，并通过限定字段更新修复摘要。
+Worker 启动恢复以及后续活动任务处理会从完整批次和严格验证的三行最终评估重新计算摘要。启动时每个电站先独立恢复该站 `writing` 批次，再恢复该站任务摘要；某站失败只告警该站，其他站继续恢复，但任一站失败都会使启动 readiness 保持 `false`。任务主表不是详细结果的事实源；摘要与明细冲突时，以经过严格验证的批次和评估为准，并通过限定字段更新修复摘要。
 
 任务在最终结果出现前必须保持 `active`，以允许迟到实绩继续回填。授权人员看到 Dashboard 的 7/7 最终结果后再将 `control_state` 改为 `completed`。
 
@@ -161,7 +170,7 @@ Worker 启动恢复以及后续活动任务处理会从完整批次和最终评�
   control_state = completed
 ```
 
-管理员可在最终结果前将任务改为 `cancelled`。取消后 Worker 的活动任务查询返回空结果，不再创建新基线或回填该任务；已经写入的证据不删除。
+管理员可在最终结果前将任务改为 `cancelled`。取消后 Worker 的活动任务查询返回空结果，不再创建新基线或回填该任务；每个摘要写边界也要求任务仍为 `active`。已经写入的证据不删除；受限于无 CAS 的固定更新接口，仅已经发出的摘要更新请求可能与取消并发完成，且该请求不能改变控制状态。
 
 ## 8. 失败处理与告警
 
@@ -173,7 +182,7 @@ Worker 启动恢复以及后续活动任务处理会从完整批次和最终评�
 - `acceptance_run_update_incomplete`：任务摘要更新未完整落库或回显不一致。
 - `sink_unauthorized`：Worker 对 NocoBase 的任务表权限不足。
 
-非活动任务是正常状态，不触发告警。任务合同错误、活动任务基线失败、进度不可达和最终结果写入失败需要按站告警，另一电站继续运行。
+非活动任务是正常状态，不触发告警。任务合同错误、活动任务基线失败、进度不可达、恢复失败和最终结果写入失败都按站告警，另一电站继续运行；启动恢复中任一站失败都会保持 readiness 为 `false`。
 
 ## 9. 代码与交付范围
 
@@ -195,17 +204,17 @@ Worker 启动恢复以及后续活动任务处理会从完整批次和最终评�
 
 ## 10. 验证与上线顺序
 
-遵循当前交付约束，不新增或执行自动化测试。实现阶段执行：
+遵循当前交付约束，不新增、修改或执行自动化测试；仍引用 `context_source` / `SourceApiClient` 的旧测试接口在本次范围内明确保持未解决。实现阶段执行：
 
 - JSON 语法和精确合同静态检查。
 - Python 语法/导入检查。
-- Compose 配置检查。
+- 仅在所需受保护 env 已存在时执行 Compose 配置检查，不为验证创建或修改 env。
 - Git diff whitespace 检查。
 
 生产启用顺序：
 
 1. 确认任务表字段、约束和角色权限已安装。
-2. 使用 Worker Key 对任务表执行只读权限探测，确认无活动任务时返回空列表。
+2. 使用同一个 Worker Key 对任务表、批次和评估表执行固定字段/过滤只读权限探测，并在角色 UI 核验既有明细写动作和任务摘要更新字段；确认无活动任务时任务查询返回空列表。
 3. 部署新 Worker 镜像，保持 `M3_ACCEPTANCE_ENABLED=false`。
 4. 在 NocoBase 创建首个活动任务，窗口从计划首日上海时间 01:00 开始。
 5. 使用相同 Worker Key 验证该站可读取唯一活动任务，另一站仍返回空列表。

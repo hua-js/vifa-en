@@ -106,7 +106,7 @@ M3_ACCEPTANCE_ENABLED=false
 M3_TIMEZONE=Asia/Shanghai
 ```
 
-填写两个真实完整电站 ID、四个结果/明细集合写入 Key 和验收任务最小权限 Key。`M3_SOURCE_API_TOKEN` 与
+填写两个真实完整电站 ID 和一个专用 `M3_NOCOBASE_API_KEY`。该 Worker Key 的单一角色合并四个结果/明细集合既有权限、批次/评估限定读取及验收任务汇总更新权限，不另配验收任务 Key。`M3_SOURCE_API_TOKEN` 与
 `M3_ADMIN_API_TOKEN` 当前可分别使用 `openssl rand -hex 32` 生成不同随机值，以满足启动合同。
 
 ## 6. Dashboard 配置
@@ -215,7 +215,7 @@ Header：不配置
 
 四个既有结果/明细集合为 `energy_forecast_latest`、`energy_forecast_batches`、`energy_forecast_points`、`energy_forecast_evaluations`。第五个集合 `energy_forecast_acceptance_runs` 是控制/汇总表，不重复 metrics；详细证据仍保留在 batches、points、evaluations。
 
-操作员创建并拥有任务身份、窗口和控制字段；Worker 列出任务行，且只能更新 `completed_days`、`result_state` 和 `calculated_at` 三个汇总字段。以下是示例，不是生产 ID：
+操作员创建并拥有任务身份、窗口和控制字段；Worker 列出任务行，且只能更新 `completed_days`、`result_state` 和 `calculated_at` 三个汇总字段。同一个专用 Worker Key 承担既有明细写入、新增批次/评估限定读取和任务汇总更新。以下是示例，不是生产 ID：
 
 ```text
 station_id:          ES01-FULL-ID-EXAMPLE
@@ -230,20 +230,43 @@ calculated_at:       留空
 
 日期仅为示例。每个真实任务从上海时间 01:00 开始，恰好七天后结束，并必须在首日 01:02 调度槽之前创建。
 
-在 NocoBase 角色 UI 中核验更新权限，不得以修改生产任务作部署探针。以下读取探针只过滤指定站和 `control_state=active`，并只请求获准字段：
+以下探针用同一个 Worker Key 覆盖任务、完整批次、`writing` 恢复批次和评估的固定读取合同。Authorization 头从 stdin 传给 curl，不出现在 curl argv。不得用生产记录测试写入；在 NocoBase 角色 UI 中核验同一 Key 只有：latest `list/updateOrCreate`、batches `list/update/firstOrCreate`、points `list/update/firstOrCreate`、evaluations `list/updateOrCreate`、acceptance runs `list/update`，并逐项核对机器合同中的字段/过滤/排序/写入/记录键。
 
 ```bash
 read -rsp 'Worker NocoBase token: ' M3_PROBE_TOKEN
 echo
 read -rp 'Full station ID: ' M3_STATION_ID
-curl --fail --silent --show-error \
-  -H "Authorization: Bearer ${M3_PROBE_TOKEN}" \
+read -rp 'Acceptance run ID: ' M3_ACCEPTANCE_RUN_ID
+printf 'Authorization: Bearer %s\n' "${M3_PROBE_TOKEN}" | curl --fail --silent --show-error \
+  --header @- \
   --get 'https://vifa.hlszh.com/api/energy_forecast_acceptance_runs:list' \
   --data-urlencode "filter={\"station_id\":\"${M3_STATION_ID}\",\"control_state\":\"active\"}" \
   --data-urlencode 'fields=id,station_id,acceptance_run_id,window_start,window_end,control_state,completed_days,result_state,calculated_at' \
   --data-urlencode 'page=1' \
   --data-urlencode 'pageSize=1000'
-unset M3_PROBE_TOKEN M3_STATION_ID
+printf 'Authorization: Bearer %s\n' "${M3_PROBE_TOKEN}" | curl --fail --silent --show-error \
+  --header @- \
+  --get 'https://vifa.hlszh.com/api/energy_forecast_batches:list' \
+  --data-urlencode "filter={\"station_id\":\"${M3_STATION_ID}\",\"acceptance_run_id\":\"${M3_ACCEPTANCE_RUN_ID}\",\"write_state\":\"complete\"}" \
+  --data-urlencode 'fields=station_id,acceptance_run_id,issued_at,forecast_start_time,forecast_end_time,write_state' \
+  --data-urlencode 'page=1' \
+  --data-urlencode 'pageSize=1000'
+printf 'Authorization: Bearer %s\n' "${M3_PROBE_TOKEN}" | curl --fail --silent --show-error \
+  --header @- \
+  --get 'https://vifa.hlszh.com/api/energy_forecast_batches:list' \
+  --data-urlencode "filter={\"station_id\":\"${M3_STATION_ID}\",\"write_state\":\"writing\"}" \
+  --data-urlencode 'fields=id,station_id,acceptance_run_id,issued_at,forecast_start_time,forecast_end_time,status,write_state,model_manifest,content_hash,point_templates' \
+  --data-urlencode 'sort=issued_at' \
+  --data-urlencode 'page=1' \
+  --data-urlencode 'pageSize=1000'
+printf 'Authorization: Bearer %s\n' "${M3_PROBE_TOKEN}" | curl --fail --silent --show-error \
+  --header @- \
+  --get 'https://vifa.hlszh.com/api/energy_forecast_evaluations:list' \
+  --data-urlencode "filter={\"station_id\":\"${M3_STATION_ID}\",\"acceptance_run_id\":\"${M3_ACCEPTANCE_RUN_ID}\"}" \
+  --data-urlencode 'fields=station_id,acceptance_run_id,evaluation_key,window_start,window_end,outcome,calculated_at' \
+  --data-urlencode 'page=1' \
+  --data-urlencode 'pageSize=1000'
+unset M3_PROBE_TOKEN M3_STATION_ID M3_ACCEPTANCE_RUN_ID
 ```
 
 按此顺序启用：
@@ -260,5 +283,4 @@ unset M3_PROBE_TOKEN M3_STATION_ID
 
 ## 14. 验证范围
 
-本地交付只执行静态 JSON、Compose 和脚本检查；没有启动生产容器，也没有执行自动化或端到端
-测试。上线后的 Socket、公开路由、iframe 页面和两站数据由人工确认。
+本地交付只执行静态 JSON、Python、ripgrep 和 Git 检查；仅在受保护 env 已存在时才允许执行 Compose 配置检查。没有启动生产容器，也没有执行自动化或端到端测试。上线后的 Socket、公开路由、iframe 页面和两站数据由人工确认。

@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 import re
 from typing import Literal
 
-from m3_worker.contracts import validate_shanghai_timestamp
+from m3_worker.contracts import SERIES_IDS, validate_shanghai_timestamp
 from m3_worker.errors import M3Error
 
 
@@ -40,9 +40,13 @@ EVALUATION_FIELDS = (
     "station_id",
     "acceptance_run_id",
     "evaluation_key",
+    "window_start",
+    "window_end",
     "outcome",
     "calculated_at",
 )
+EVALUATION_KEYS = (*SERIES_IDS, "overall")
+EVALUATION_KEY_SET = frozenset(EVALUATION_KEYS)
 
 
 @dataclass(frozen=True)
@@ -66,6 +70,14 @@ def _context_error() -> M3Error:
 
 def _summary_error() -> M3Error:
     return M3Error("acceptance_summary_invalid", "Acceptance run summary is invalid")
+
+
+def _require_active(run: AcceptanceRunRecord) -> None:
+    if run.control_state != "active":
+        raise M3Error(
+            "acceptance_run_update_incomplete",
+            "Acceptance run is no longer active",
+        )
 
 
 def _timestamp(
@@ -299,11 +311,13 @@ class AcceptanceRunService:
         result_state: str,
         calculated_at: datetime | None,
     ) -> AcceptanceRunRecord:
+        _require_active(run)
         current = self._identity_run(run.station_id, run.acceptance_run_id)
         if (
-            current.window_start != run.window_start
+            current.id != run.id
+            or current.window_start != run.window_start
             or current.window_end != run.window_end
-            or current.control_state != run.control_state
+            or current.control_state != "active"
         ):
             raise M3Error(
                 "acceptance_run_update_incomplete",
@@ -345,6 +359,7 @@ class AcceptanceRunService:
         self, station_id: str, acceptance_run_id: str
     ) -> AcceptanceRunRecord:
         run = self._identity_run(station_id, acceptance_run_id)
+        _require_active(run)
         days = self.completed_days(run)
         state = "pending" if days == 0 else "in_progress"
         return self._update_summary(
@@ -362,6 +377,7 @@ class AcceptanceRunService:
         calculated_at: datetime,
     ) -> AcceptanceRunRecord:
         run = self._identity_run(station_id, acceptance_run_id)
+        _require_active(run)
         if outcome not in TERMINAL_RESULTS or type(calculated_at) is not datetime:
             raise _summary_error()
         try:
@@ -392,11 +408,10 @@ class AcceptanceRunService:
             filter={
                 "station_id": run.station_id,
                 "acceptance_run_id": run.acceptance_run_id,
-                "evaluation_key": "overall",
             },
             fields=list(EVALUATION_FIELDS),
         )
-        if type(rows) is not list or len(rows) > 1:
+        if type(rows) is not list:
             raise _summary_error()
         if not rows:
             return self._update_summary(
@@ -405,30 +420,69 @@ class AcceptanceRunService:
                 result_state="pending" if days == 0 else "in_progress",
                 calculated_at=None,
             )
-        raw = rows[0]
-        if type(raw) is not dict or set(raw) != set(EVALUATION_FIELDS):
+        if len(rows) != len(EVALUATION_KEYS):
             raise _summary_error()
-        row: dict[str, object] = raw
-        if (
-            type(row["station_id"]) is not str
-            or type(row["acceptance_run_id"]) is not str
-            or type(row["evaluation_key"]) is not str
-            or type(row["outcome"]) is not str
-            or row["station_id"] != run.station_id
-            or row["acceptance_run_id"] != run.acceptance_run_id
-            or row["evaluation_key"] != "overall"
-            or row["outcome"] not in TERMINAL_RESULTS
-        ):
+        outcomes: dict[str, str] = {}
+        calculated_at: datetime | None = None
+        for raw in rows:
+            if type(raw) is not dict or set(raw) != set(EVALUATION_FIELDS):
+                raise _summary_error()
+            row: dict[str, object] = raw
+            key = row["evaluation_key"]
+            outcome = row["outcome"]
+            if (
+                type(row["station_id"]) is not str
+                or type(row["acceptance_run_id"]) is not str
+                or type(key) is not str
+                or type(outcome) is not str
+                or row["station_id"] != run.station_id
+                or row["acceptance_run_id"] != run.acceptance_run_id
+                or key not in EVALUATION_KEY_SET
+                or key in outcomes
+                or outcome not in TERMINAL_RESULTS
+            ):
+                raise _summary_error()
+            window_start = _timestamp(
+                row["window_start"],
+                "window_start",
+                quarter_hour=True,
+                error_factory=_summary_error,
+            )
+            window_end = _timestamp(
+                row["window_end"],
+                "window_end",
+                quarter_hour=True,
+                error_factory=_summary_error,
+            )
+            row_calculated_at = _timestamp(
+                row["calculated_at"],
+                "calculated_at",
+                quarter_hour=False,
+                error_factory=_summary_error,
+            )
+            if (
+                window_start != run.window_start
+                or window_end != run.window_end
+                or row_calculated_at < run.window_end
+                or calculated_at is not None
+                and row_calculated_at != calculated_at
+            ):
+                raise _summary_error()
+            calculated_at = row_calculated_at
+            outcomes[key] = outcome
+        if set(outcomes) != EVALUATION_KEY_SET or calculated_at is None:
             raise _summary_error()
-        calculated_at = _timestamp(
-            row["calculated_at"],
-            "calculated_at",
-            quarter_hour=False,
-            error_factory=_summary_error,
+        series_outcomes = [outcomes[key] for key in SERIES_IDS]
+        expected_overall = (
+            "insufficient_data"
+            if "insufficient_data" in series_outcomes
+            else "failed" if "failed" in series_outcomes else "passed"
         )
+        if outcomes["overall"] != expected_overall:
+            raise _summary_error()
         return self.sync_result(
             run.station_id,
             run.acceptance_run_id,
-            row["outcome"],
+            outcomes["overall"],
             calculated_at,
         )

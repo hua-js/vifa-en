@@ -15,11 +15,11 @@
 - Production remains AMD64 Docker with separate Worker and Dashboard containers.
 - `energy_forecast_acceptance_runs` already exists in production with the approved fields, PostgreSQL checks, unique constraint, and one-active-run partial unique index.
 - Operators alone write `station_id`, `acceptance_run_id`, `window_start`, `window_end`, and `control_state` in NocoBase.
-- Worker may list task rows and update only `completed_days`, `result_state`, and `calculated_at` by numeric `id`.
+- Worker uses one dedicated `M3_NOCOBASE_API_KEY` whose single role combines the existing detail writes, the exact batch/evaluation list permissions, and task-summary update permission. It may update only `completed_days`, `result_state`, and `calculated_at` on task rows by numeric `id`.
 - Existing four detail collections and the public Dashboard JSON contract do not change.
 - `m3_production_gateway_flow.json` and all other Node-RED flows do not change.
 - `M3_ACCEPTANCE_ENABLED` remains `false` in templates and is enabled in production only after the new image and an active run are ready.
-- Per the user's explicit instruction, do not add or run automated tests. Use only JSON, Python import/compile, Compose, and Git static verification.
+- Per the user's explicit instruction, do not add, modify, or run automated tests. The stale `context_source` / `SourceApiClient` test interface remains explicitly unresolved. Use only JSON assertions, Python import/compile/AST where dependencies permit, ripgrep, and Git static verification; run Compose config only if it does not require unavailable protected env.
 
 ---
 
@@ -201,9 +201,29 @@ Add `energy_forecast_acceptance_runs` with these exact fields:
 
 Add `energy_forecast_acceptance_runs` to `optional_station_relation.when_configured.affected_collections` because it owns a `station_id` identity.
 
-- [ ] **Step 4: Grant the Worker least privilege on the new collection**
+- [ ] **Step 4: Grant one Worker role the exact list and task-summary permissions**
 
-Add this entry under `worker_role.collections`:
+Extend `energy_forecast_batches.list` so its read fields are exactly the union needed by station-scoped `writing` recovery and complete-day counting:
+
+```json
+"read": ["id", "station_id", "acceptance_run_id", "issued_at", "forecast_start_time", "forecast_end_time", "status", "write_state", "model_manifest", "content_hash", "point_templates"],
+"filter": ["station_id", "acceptance_run_id", "write_state"],
+"sort": ["issued_at"]
+```
+
+Add `list` to `energy_forecast_evaluations.allowed_actions` with this exact action contract while preserving the existing `updateOrCreate` action:
+
+```json
+"list": {
+  "read": ["station_id", "acceptance_run_id", "evaluation_key", "window_start", "window_end", "outcome", "calculated_at"],
+  "filter": ["station_id", "acceptance_run_id"],
+  "sort": [],
+  "write": [],
+  "record_key": []
+}
+```
+
+Add this task-table entry under the same `worker_role.collections` object:
 
 ```json
 "energy_forecast_acceptance_runs": {
@@ -250,6 +270,11 @@ assert worker["allowed_actions"] == ["list", "update"]
 assert set(worker["fields_by_action"]["update"]["write"]) == {
     "completed_days", "result_state", "calculated_at"
 }
+batch_list = contract["worker_role"]["collections"]["energy_forecast_batches"]["fields_by_action"]["list"]
+assert set(batch_list["filter"]) == {"station_id", "acceptance_run_id", "write_state"}
+assert "write_state" in batch_list["read"]
+evaluation_list = contract["worker_role"]["collections"]["energy_forecast_evaluations"]["fields_by_action"]["list"]
+assert evaluation_list["filter"] == ["station_id", "acceptance_run_id"]
 assert "energy_forecast_acceptance_runs" not in contract["dashboard_role"]["collections"]
 PY
 git diff --check
@@ -412,7 +437,7 @@ Raise `acceptance_summary_invalid` for malformed or impossible batch topology.
 
 - [ ] **Step 5: Implement limited summary updates**
 
-Implement one private method that re-reads the row by identity, rejects a changed identity/window/control state, writes only the three summary fields by numeric `id`, and strictly validates the update response:
+Implement one private method that requires the input row to be `active`, re-reads the row by identity immediately before mutation, and rejects a changed primary key, identity, window, or any control state other than `active`. It writes only the three summary fields by numeric `id` and strictly validates the update response:
 
 ```python
 def _update_summary(
@@ -438,7 +463,9 @@ values = {
 }
 ```
 
-Require the `update_record()` response to have exactly the `RUN_FIELDS` set, parse it through `_run_record()`, and compare identity, window, control state, and every requested summary value. Raise `acceptance_run_update_incomplete` for mismatch.
+Require the `update_record()` response to have exactly the `RUN_FIELDS` set, parse it through `_run_record()`, and compare identity, window, `control_state=active`, and every requested summary value. Raise `acceptance_run_update_incomplete` for mismatch. Both `sync_progress()` and `sync_result()` also require the first identity read to be active before deriving evidence.
+
+The fixed NocoBase update action supports `filterByTk=id` but no conditional/CAS predicate. Document the residual race exactly: cancellation prevents later scheduling and is checked immediately before the summary request; a request already issued at the same instant may still update only the three summary fields and cannot change `control_state`.
 
 - [ ] **Step 6: Implement progress, final result, and recovery entry points**
 
@@ -471,16 +498,17 @@ def reconcile_active(self, station_id: str) -> AcceptanceRunRecord | None:
     ...
 ```
 
-`sync_result()` must require a terminal outcome, exactly seven complete days, an explicit Shanghai timestamp not before `window_end`, and then update the terminal summary.
+`sync_result()` must require the run to remain active, a terminal outcome, exactly seven complete days, an explicit Shanghai timestamp not before `window_end`, and then update the terminal summary.
 
 `reconcile_active()` must:
 
 1. Return `None` when no active row exists.
 2. Compute complete days.
-3. Query `energy_forecast_evaluations` for `evaluation_key=overall`, matching station/run, reading `station_id`, `acceptance_run_id`, `evaluation_key`, `outcome`, `calculated_at`.
-4. Reject more than one overall row.
-5. With no overall row, synchronize pending/in-progress progress.
-6. With one exact terminal overall row, call `sync_result()`.
+3. Query all `energy_forecast_evaluations` rows matching station/run, reading exactly `station_id`, `acceptance_run_id`, `evaluation_key`, `window_start`, `window_end`, `outcome`, `calculated_at`.
+4. With zero evaluation rows, synchronize pending/in-progress progress.
+5. With any evaluation rows present, require exactly the three schema-valid keys `station_total_load`, `storage_soc`, and `overall`, each once. Reject missing, duplicate, extra, or identity-mismatched rows.
+6. Require every row window to match the task, all three `calculated_at` values to be identical and not before `window_end`, every outcome to be terminal, and `overall.outcome` to equal the existing two-series combination rule.
+7. Only after all checks call `sync_result()`.
 
 - [ ] **Step 7: Perform Python static validation**
 
@@ -492,9 +520,11 @@ python3 - <<'PY'
 from m3_worker.services.acceptance_run_service import (
     AcceptanceRunRecord,
     AcceptanceRunService,
+    EVALUATION_KEY_SET,
     RUN_FIELDS,
 )
 assert len(RUN_FIELDS) == 9
+assert EVALUATION_KEY_SET == {"station_total_load", "storage_soc", "overall"}
 assert AcceptanceRunRecord.__dataclass_params__.frozen
 assert callable(AcceptanceRunService.active_run)
 assert callable(AcceptanceRunService.sync_progress)
@@ -585,21 +615,17 @@ self._runs.sync_result(
 
 The call must occur before returning `results`, so the public operation cannot report successful reconciliation while the task summary is stale.
 
-- [ ] **Step 5: Add active-run summary recovery**
+- [ ] **Step 5: Add station-isolated writing and summary recovery**
 
-Add:
+Require `reconcile_writing_batches(station_id)` to filter by that exact station and `write_state=writing`, project and validate `write_state`, reject any cross-station row, and recover only while holding that station's lock. Add:
 
 ```python
-def reconcile_run_summaries(self, station_ids) -> int:
-    reconciled = 0
-    for station_id in station_ids:
-        with self._station_lock(station_id):
-            if self._runs.reconcile_active(station_id) is not None:
-                reconciled += 1
-    return reconciled
+def reconcile_run_summary(self, station_id: str) -> bool:
+    with self._station_lock(station_id):
+        return self._runs.reconcile_active(station_id) is not None
 ```
 
-Call this only after `reconcile_writing_batches()` completes, so `writing` batches recover before progress is counted.
+For each station, call summary recovery only after that station's writing recovery succeeds, so `writing` batches recover before progress is counted.
 
 - [ ] **Step 6: Wire the repository in Worker resource construction**
 
@@ -609,13 +635,19 @@ In `m3_worker/main.py`:
 - Stop constructing `SourceApiClient` as `context_source`; do not remove `NodeRedAlertClient` or its existing `M3_SOURCE_*` settings.
 - Construct `run_service = AcceptanceRunService(api)` immediately after `NocoBaseApiClient`.
 - Pass `run_service=run_service` into `AcceptanceService`.
-- In `WorkerResources.recover()`, after `reconcile_writing_batches()`, call:
+- In `WorkerResources.recover()`, loop over configured stations and isolate the acceptance recovery exception boundary per station:
 
 ```python
-self.acceptance_service.reconcile_run_summaries(self.settings.station_ids)
+for station_id in self.settings.station_ids:
+    try:
+        self.acceptance_service.reconcile_writing_batches(station_id)
+        self.acceptance_service.reconcile_run_summary(station_id)
+    except Exception as error:
+        failed = True
+        self._alert(station_id, "acceptance_reconcile", error, recovery_at)
 ```
 
-Keep the entire recovery block behind `acceptance_enabled`; a summary permission/configuration failure must leave startup health unready and emit the existing `acceptance_reconcile` alert.
+Keep the entire recovery block behind `acceptance_enabled`. Continue to the next station after a station-local failure, alert only the failing station, and leave startup readiness false if any station failed.
 
 - [ ] **Step 7: Perform static integration validation**
 
@@ -633,7 +665,7 @@ from m3_worker.services.acceptance_service import AcceptanceService
 parameters = inspect.signature(AcceptanceService).parameters
 assert "run_service" in parameters
 assert "context_source" not in parameters
-assert hasattr(AcceptanceService, "reconcile_run_summaries")
+assert hasattr(AcceptanceService, "reconcile_run_summary")
 PY
 python3 -m json.tool m3/contracts/nocobase_collections.json >/dev/null
 git diff --check
@@ -694,7 +726,7 @@ Explain that the dates are an example; every real run starts at Shanghai 01:00, 
 
 - [ ] **Step 4: Document least-privilege probes without exposing credentials**
 
-Provide commands that prompt for a token and query only permitted fields. The read probe must filter by station and `control_state=active`; the update permission must be verified through the NocoBase role UI rather than mutating a production task during deployment.
+State that one dedicated Worker key and role combines all permissions; there is no separate acceptance-task key. Provide commands that prompt for the token once and exercise the exact task, complete-batch, writing-batch, and evaluation list projections/filters. Every Authorization header must reach curl through stdin so the bearer is absent from curl argv. All writes must be verified through the NocoBase role UI rather than by mutating production records.
 
 Include:
 
@@ -702,15 +734,40 @@ Include:
 read -rsp 'Worker NocoBase token: ' M3_PROBE_TOKEN
 echo
 read -rp 'Full station ID: ' M3_STATION_ID
-curl --fail --silent --show-error \
-  -H "Authorization: Bearer ${M3_PROBE_TOKEN}" \
+read -rp 'Acceptance run ID: ' M3_ACCEPTANCE_RUN_ID
+printf 'Authorization: Bearer %s\n' "${M3_PROBE_TOKEN}" | curl --fail --silent --show-error \
+  --header @- \
   --get 'https://vifa.hlszh.com/api/energy_forecast_acceptance_runs:list' \
   --data-urlencode "filter={\"station_id\":\"${M3_STATION_ID}\",\"control_state\":\"active\"}" \
   --data-urlencode 'fields=id,station_id,acceptance_run_id,window_start,window_end,control_state,completed_days,result_state,calculated_at' \
   --data-urlencode 'page=1' \
   --data-urlencode 'pageSize=1000'
-unset M3_PROBE_TOKEN M3_STATION_ID
+printf 'Authorization: Bearer %s\n' "${M3_PROBE_TOKEN}" | curl --fail --silent --show-error \
+  --header @- \
+  --get 'https://vifa.hlszh.com/api/energy_forecast_batches:list' \
+  --data-urlencode "filter={\"station_id\":\"${M3_STATION_ID}\",\"acceptance_run_id\":\"${M3_ACCEPTANCE_RUN_ID}\",\"write_state\":\"complete\"}" \
+  --data-urlencode 'fields=station_id,acceptance_run_id,issued_at,forecast_start_time,forecast_end_time,write_state' \
+  --data-urlencode 'page=1' \
+  --data-urlencode 'pageSize=1000'
+printf 'Authorization: Bearer %s\n' "${M3_PROBE_TOKEN}" | curl --fail --silent --show-error \
+  --header @- \
+  --get 'https://vifa.hlszh.com/api/energy_forecast_batches:list' \
+  --data-urlencode "filter={\"station_id\":\"${M3_STATION_ID}\",\"write_state\":\"writing\"}" \
+  --data-urlencode 'fields=id,station_id,acceptance_run_id,issued_at,forecast_start_time,forecast_end_time,status,write_state,model_manifest,content_hash,point_templates' \
+  --data-urlencode 'sort=issued_at' \
+  --data-urlencode 'page=1' \
+  --data-urlencode 'pageSize=1000'
+printf 'Authorization: Bearer %s\n' "${M3_PROBE_TOKEN}" | curl --fail --silent --show-error \
+  --header @- \
+  --get 'https://vifa.hlszh.com/api/energy_forecast_evaluations:list' \
+  --data-urlencode "filter={\"station_id\":\"${M3_STATION_ID}\",\"acceptance_run_id\":\"${M3_ACCEPTANCE_RUN_ID}\"}" \
+  --data-urlencode 'fields=station_id,acceptance_run_id,evaluation_key,window_start,window_end,outcome,calculated_at' \
+  --data-urlencode 'page=1' \
+  --data-urlencode 'pageSize=1000'
+unset M3_PROBE_TOKEN M3_STATION_ID M3_ACCEPTANCE_RUN_ID
 ```
+
+In the role UI, verify the same key has only this action matrix: latest `list/updateOrCreate`; batches `list/update/firstOrCreate`; points `list/update/firstOrCreate`; evaluations `list/updateOrCreate`; acceptance runs `list/update`. Verify each action's exact field/filter/sort/write/record-key matrix from the machine contract.
 
 - [ ] **Step 5: Document deployment and activation order**
 
@@ -763,7 +820,7 @@ git commit -m "docs(m3): 增加七日验收启用流程"
 
 **Interfaces:**
 - Consumes: all previous task outputs.
-- Produces: evidence that static contracts parse, Python imports, Compose configuration, and Git scope are clean; plus exact production activation commands.
+- Produces: evidence that static contracts parse, Python imports/AST checks succeed where dependencies permit, and Git scope is clean; plus exact production activation commands. Compose config is optional only when all required protected env already exists.
 
 - [ ] **Step 1: Verify JSON and Python syntax/imports**
 
@@ -778,24 +835,24 @@ from m3_worker.services.acceptance_run_service import AcceptanceRunService
 from m3_worker.services.acceptance_service import AcceptanceService
 assert callable(build_resources)
 assert callable(AcceptanceRunService.active_run)
-assert hasattr(AcceptanceService, "reconcile_run_summaries")
+assert hasattr(AcceptanceService, "reconcile_run_summary")
 PY
 ```
 
 Expected: exit 0 with no errors.
 
-- [ ] **Step 2: Verify Compose and release scope**
+- [ ] **Step 2: Verify release scope without protected-env mutation**
 
 Run:
 
 ```bash
-docker compose config -q
 git diff --check
 git status --short
 git log -7 --oneline
+git diff --name-only b87779fcff3ae44c8c7b6da06667dee560a2205c..HEAD -- m3/node_red tests
 ```
 
-Expected: Compose exits 0, no whitespace errors, and no unintended files are modified.
+Expected: no whitespace errors, no unintended files, and no Node-RED/test paths. Run `docker compose config -q` only if the required protected env files are already available; do not create or alter them for verification.
 
 - [ ] **Step 3: Review requirements line by line**
 
@@ -805,12 +862,15 @@ Confirm all of the following against the actual diff:
 - Dashboard has no task-table permission.
 - One inactive station is a normal no-op.
 - Daily complete batches update progress.
-- Final validated evaluations update terminal summary.
-- Startup recovery reconciles task summaries.
+- Exactly three schema-valid, identity/window/timestamp/outcome-consistent evaluations update terminal summary.
+- Startup recovery reconciles writing batches and task summaries per station, alerts only a failing station, continues other stations, and leaves readiness false on any failure.
+- Every summary boundary requires `control_state=active`; the no-CAS in-flight race is documented.
+- One Worker key combines all exact read/write permissions, and probe headers use stdin rather than curl argv.
 - Node-RED files are unchanged.
 - Templates still default to acceptance disabled.
 - Production docs require table/permission probes before activation.
 - No automated test files were added or changed.
+- Existing stale `context_source` / `SourceApiClient` automated tests remain explicitly unresolved and were not run.
 
 - [ ] **Step 4: Produce the production commands in the handoff**
 
