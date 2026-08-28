@@ -1,0 +1,1057 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>运营监控告警看板</title>
+<style>
+:root, [data-theme="dark"] {
+  --surface-0: #0b0d14;
+  --surface-1: #121520;
+  --surface-2: #191d2a;
+  --surface-3: #202536;
+  --surface-4: #282e40;
+  --text-primary: #f0f1f5;
+  --text-secondary: #9ca0af;
+  --text-tertiary: #5e6372;
+  --accent: #22c55e;
+  --accent-dim: #1b4332;
+  --accent-glow: rgba(34,197,94,0.14);
+  --danger: #ef4444;
+  --danger-dim: #3f1414;
+  --danger-glow: rgba(239,68,68,0.14);
+  --warn: #f59e0b;
+  --warn-dim: #3f240a;
+  --warn-glow: rgba(245,158,11,0.12);
+  --l3: #facc15;
+  --l3-dim: rgba(250,204,21,0.12);
+  --info: #3b82f6;
+  --info-dim: #0f1f42;
+  --neutral: #6b7280;
+  --border: rgba(255,255,255,0.06);
+  --border-hover: rgba(255,255,255,0.12);
+  --shadow-soft: 0 4px 24px rgba(0,0,0,0.35), 0 1px 2px rgba(0,0,0,0.4);
+  --shadow-card: 0 8px 32px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.04);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --radius-full: 9999px;
+  --font-mono: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', system-ui, sans-serif;
+}
+[data-theme="light"] {
+  --surface-0: #f3f4f8;
+  --surface-1: #ffffff;
+  --surface-2: #f7f8fb;
+  --surface-3: #eef0f5;
+  --surface-4: #e3e5ec;
+  --text-primary: #1a1d2b;
+  --text-secondary: #6b7280;
+  --text-tertiary: #9ca3af;
+  --accent: #16a34a;
+  --accent-dim: #dcfce7;
+  --accent-glow: rgba(22,163,74,0.12);
+  --danger: #dc2626;
+  --danger-dim: #fee2e2;
+  --danger-glow: rgba(220,38,38,0.1);
+  --warn: #d97706;
+  --warn-dim: #fef3c7;
+  --warn-glow: rgba(217,119,6,0.1);
+  --l3: #ca8a04;
+  --l3-dim: rgba(202,138,4,0.12);
+  --info: #2563eb;
+  --info-dim: #dbeafe;
+  --border: rgba(0,0,0,0.06);
+  --border-hover: rgba(0,0,0,0.12);
+  --shadow-soft: 0 4px 24px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06);
+  --shadow-card: 0 12px 40px rgba(0,0,0,0.1), 0 0 0 1px rgba(0,0,0,0.04);
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html { font-size: 13px; height: 100%; }
+body {
+  font-family: var(--font-sans); background: var(--surface-0); color: var(--text-primary);
+  line-height: 1.5; -webkit-font-smoothing: antialiased;
+  height: 100vh; overflow: hidden; display: flex; flex-direction: column;
+}
+
+/* Inline SVG icons */
+.ico { width: 1em; height: 1em; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.ico svg { width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.ico-fill svg { fill: currentColor; stroke: none; }
+.ico-sm { width: 14px; height: 14px; }
+.ico-md { width: 18px; height: 18px; }
+.ico-lg { width: 22px; height: 22px; }
+.ico-xl { width: 26px; height: 26px; }
+
+/* Header */
+.header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 12px 24px; flex-shrink: 0;
+}
+.header-left { display: flex; align-items: center; gap: 10px; }
+.header-logo {
+  width: 34px; height: 34px; border-radius: var(--radius-md);
+  background: linear-gradient(135deg, var(--accent), #16a34a);
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; box-shadow: 0 4px 14px rgba(34,197,94,0.25);
+}
+.header h1 { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
+.header-right { display: flex; align-items: center; gap: 8px; }
+.refresh-info { color: var(--text-tertiary); font-size: 12px; margin-right: 8px; }
+.header-btn {
+  width: 32px; height: 32px; border-radius: var(--radius-full);
+  border: 1px solid var(--border); background: var(--surface-1);
+  color: var(--text-secondary); cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.2s var(--ease-out); box-shadow: var(--shadow-soft);
+}
+.header-btn:hover { transform: translateY(-1px); border-color: var(--border-hover); color: var(--text-primary); box-shadow: var(--shadow-card); }
+
+/* KPI Bar */
+.kpi-bar {
+  display: flex; flex-wrap: wrap; gap: 12px; padding: 4px 24px 18px;
+  flex-shrink: 0;
+}
+.kpi-bar::-webkit-scrollbar { height: 4px; }
+.kpi-bar::-webkit-scrollbar-thumb { background: var(--surface-3); border-radius: 2px; }
+.kpi-card {
+  background: var(--surface-1); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 14px 16px;
+  box-shadow: var(--shadow-soft); min-width: calc(14.28% - 12px); flex: 1 1 calc(14.28% - 12px);
+  cursor: pointer; transition: all 0.25s var(--ease-out);
+  display: flex; align-items: center; gap: 12px;
+}
+.kpi-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-card); border-color: var(--border-hover); }
+.kpi-card.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent-glow), var(--shadow-card); }
+.kpi-icon {
+  width: 40px; height: 40px; border-radius: var(--radius-md);
+  display: flex; align-items: center; justify-content: center;
+  background: var(--surface-2); color: var(--text-secondary);
+  transition: all 0.2s var(--ease-out);
+}
+.kpi-card:hover .kpi-icon { background: var(--surface-3); }
+.kpi-label { font-size: 11px; color: var(--text-secondary); margin-bottom: 3px; font-weight: 500; }
+.kpi-value { font-size: 24px; font-weight: 700; font-family: var(--font-mono); letter-spacing: -0.02em; }
+.kpi-value.pv { color: var(--warn); }
+.kpi-value.ess { color: var(--info); }
+.kpi-value.load { color: var(--danger); }
+.kpi-value.online { color: var(--accent); }
+.kpi-value.offline { color: var(--text-tertiary); }
+
+/* Main */
+.main {
+  flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 380px);
+  gap: 18px; padding: 0 24px 24px;
+  min-height: 0; overflow: hidden;
+}
+
+/* Sites panel */
+.sites-panel {
+  background: var(--surface-1); border: 1px solid var(--border);
+  border-radius: var(--radius-xl); overflow-y: auto; overflow-x: hidden;
+  padding: 20px; min-height: 0; scroll-behavior: smooth; box-shadow: var(--shadow-soft);
+}
+.sites-panel::-webkit-scrollbar { width: 6px; }
+.sites-panel::-webkit-scrollbar-track { background: transparent; }
+.sites-panel::-webkit-scrollbar-thumb { background: var(--surface-3); border-radius: 3px; }
+
+/* Growatt PV card timestamp */
+.pv-inverter-time { margin-top: 8px; font-size: 10px; color: var(--text-tertiary); text-align: right; }
+
+/* Site card */
+.site-card {
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); margin-bottom: 14px;
+  box-shadow: var(--shadow-soft); transition: all 0.25s var(--ease-out); overflow: hidden;
+}
+.site-card:hover { border-color: var(--border-hover); box-shadow: var(--shadow-card); }
+.site-card.has-anomaly { border-left: 3px solid var(--warn); }
+.site-card.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent-glow), var(--shadow-card); }
+.site-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 14px 16px; cursor: pointer; user-select: none;
+}
+.site-header-left { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
+.site-icon { color: var(--accent); flex-shrink: 0; }
+.site-name-wrap { min-width: 0; display: flex; align-items: center; gap: 6px; }
+.site-name { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.site-ems-link {
+  width: 24px; height: 24px; border-radius: var(--radius-full);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--info); background: var(--info-dim); flex-shrink: 0;
+  transition: all 0.15s var(--ease-out); text-decoration: none;
+}
+.site-ems-link:hover { transform: scale(1.1); background: rgba(59,130,246,0.25); }
+.site-status {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 11px; color: var(--text-secondary); margin-top: 3px;
+}
+.site-status-dot { width: 6px; height: 6px; border-radius: 50%; }
+.site-status-dot.online { background: var(--accent); box-shadow: 0 0 6px var(--accent); }
+.site-status-dot.offline { background: var(--neutral); }
+.site-header-right { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.site-alert-pill {
+  display: flex; align-items: center; gap: 4px;
+  padding: 5px 11px; border-radius: var(--radius-full);
+  font-size: 12px; font-weight: 600; font-family: var(--font-mono);
+  transition: all 0.15s var(--ease-out);
+}
+.site-alert-pill:hover { transform: scale(1.06); }
+.site-alert-pill.pv { background: var(--warn-dim); color: var(--warn); }
+.site-alert-pill.ess { background: var(--info-dim); color: var(--info); }
+.site-alert-pill.load { background: var(--danger-dim); color: var(--danger); }
+.site-alert-pill.zero { background: var(--surface-3); color: var(--text-tertiary); opacity: 0.5; }
+
+.site-body { padding: 0 16px 16px; }
+
+/* ES card */
+.es-section { margin-bottom: 12px; }
+.es-section:last-child { margin-bottom: 0; }
+.es-header {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 14px; background: var(--surface-3);
+  border-radius: var(--radius-md); margin-bottom: 10px;
+  font-size: 12px; font-weight: 600; color: var(--text-primary);
+  border: 1px solid var(--border); cursor: pointer;
+  transition: all 0.15s var(--ease-out);
+}
+.es-header:hover { border-color: var(--border-hover); }
+.es-header.selected { border-color: var(--accent); }
+.es-icon { color: var(--accent); }
+.es-meta { margin-left: auto; font-size: 11px; color: var(--text-tertiary); font-weight: 400; display: flex; gap: 12px; }
+.es-meta span { display: flex; align-items: center; gap: 4px; }
+
+/* Node groups */
+.node-groups { display: flex; flex-direction: column; gap: 10px; }
+.node-group {
+  background: var(--surface-3); border: 1px solid var(--border);
+  border-radius: var(--radius-md); padding: 12px;
+}
+.node-group-title {
+  font-size: 11px; font-weight: 600; color: var(--text-secondary);
+  margin-bottom: 10px; display: flex; align-items: center; gap: 6px;
+}
+.node-group-title::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--accent); }
+.node-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+
+/* Node card */
+.node-card {
+  background: var(--surface-4); border: 1px solid var(--border);
+  border-radius: var(--radius-md); padding: 12px;
+  transition: all 0.2s var(--ease-out); cursor: pointer;
+}
+.node-card:hover { border-color: var(--border-hover); transform: translateY(-2px); box-shadow: var(--shadow-soft); }
+.node-card.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent-glow); }
+.node-card.energy-alert { border-color: var(--danger); box-shadow: 0 0 0 1px var(--danger-glow); }
+.node-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.node-name { font-size: 12px; font-weight: 600; }
+.node-status-pill {
+  padding: 3px 10px; border-radius: var(--radius-full); font-size: 10px; font-weight: 500;
+}
+.node-status-pill.work { background: var(--accent-glow); color: var(--accent); }
+.node-status-pill.discharge { background: rgba(59,130,246,0.15); color: var(--info); }
+.node-status-pill.charge { background: var(--warn-glow); color: var(--warn); }
+.node-status-pill.standby { background: var(--surface-3); color: var(--text-secondary); }
+.node-status-pill.fault { background: var(--danger-dim); color: var(--danger); }
+.node-status-pill.offline { background: var(--surface-3); color: var(--text-tertiary); }
+.node-metric { display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: var(--text-secondary); }
+.node-metric-value { font-family: var(--font-mono); color: var(--text-primary); font-weight: 600; }
+.optional-metric { margin-top: 8px; }
+.optional-metric.metric-alert, .optional-metric.metric-alert .node-metric-value { color: var(--danger); }
+.soc-bar-bg { height: 5px; background: var(--surface-2); border-radius: var(--radius-full); overflow: hidden; margin: 6px 0; }
+.soc-bar-fill { height: 100%; border-radius: var(--radius-full); background: linear-gradient(90deg, var(--accent), #4ade80); transition: width 0.6s var(--ease-spring); }
+.node-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; font-size: 10px; color: var(--text-tertiary); }
+.node-online { color: var(--accent); }
+.node-offline { color: var(--danger); }
+
+/* Alert panel */
+.alert-panel {
+  background: var(--surface-1); border: 1px solid var(--border);
+  border-radius: var(--radius-xl); display: flex; flex-direction: column;
+  min-height: 0; overflow: hidden; box-shadow: var(--shadow-soft);
+}
+.alert-panel-header { padding: 20px 20px 10px; flex-shrink: 0; }
+.alert-panel-title { font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.alert-panel-sub { font-size: 11px; color: var(--text-tertiary); margin-top: 3px; }
+.alert-search { padding: 0 20px 10px; position: relative; flex-shrink: 0; }
+.alert-search input {
+  width: 100%; background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--radius-full); padding: 8px 14px 8px 32px;
+  color: var(--text-primary); font-size: 12px; outline: none;
+  transition: all 0.2s var(--ease-out);
+}
+.alert-search input:focus { border-color: var(--accent); background: var(--surface-3); }
+.alert-search-icon { position: absolute; left: 30px; top: 50%; transform: translateY(-50%); color: var(--text-tertiary); pointer-events: none; }
+.alert-tabs { display: flex; gap: 6px; padding: 4px 20px 12px; border-bottom: 1px solid var(--border); flex-shrink: 0; flex-wrap: wrap; }
+.alert-tabs.no-border { border-bottom: none; padding-bottom: 4px; }
+.alert-tab { padding: 5px 11px; border-radius: var(--radius-full); font-size: 11px; cursor: pointer; color: var(--text-secondary); transition: all 0.15s var(--ease-out); user-select: none; }
+.alert-tab:hover { background: var(--surface-2); color: var(--text-primary); }
+.alert-tab.active { background: var(--accent-glow); color: var(--accent); }
+.alert-list { flex: 1; overflow-y: auto; padding: 8px 14px 20px; }
+.alert-list::-webkit-scrollbar { width: 4px; }
+.alert-list::-webkit-scrollbar-thumb { background: var(--surface-3); border-radius: 2px; }
+
+.alert-item {
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--radius-md); padding: 12px; margin-bottom: 8px; cursor: pointer;
+  transition: all 0.15s var(--ease-out);
+}
+.alert-item:hover { border-color: var(--border-hover); background: var(--surface-3); }
+.alert-item.pv { border-left: 2px solid var(--warn); }
+.alert-item.ess { border-left: 2px solid var(--info); }
+.alert-item.load { border-left: 2px solid var(--danger); }
+.alert-item-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.alert-item-title { font-size: 12px; font-weight: 600; }
+.alert-category-tag { font-size: 10px; padding: 2px 8px; border-radius: var(--radius-full); font-weight: 600; white-space: nowrap; }
+.alert-category-tag.pv { background: var(--warn-dim); color: var(--warn); }
+.alert-category-tag.ess { background: var(--info-dim); color: var(--info); }
+.alert-category-tag.load { background: var(--danger-dim); color: var(--danger); }
+.alert-item-meta { font-size: 11px; color: var(--text-secondary); }
+.alert-item-time { font-size: 11px; color: var(--text-tertiary); margin-top: 5px; font-family: var(--font-mono); }
+
+.empty-state { padding: 40px 16px; text-align: center; color: var(--text-tertiary); font-size: 12px; }
+.empty-state-title { color: var(--text-primary); font-size: 13px; font-weight: 600; margin-bottom: 7px; }
+.empty-state-copy { max-width: 320px; margin: 0 auto; line-height: 1.65; }
+
+/* Toast */
+.toast {
+  position: fixed; bottom: 24px; right: 24px; background: var(--surface-3); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 12px 18px; box-shadow: var(--shadow-card); font-size: 12px; z-index: 1000;
+  transform: translateY(20px); opacity: 0; transition: all 0.3s var(--ease-out); pointer-events: none;
+}
+.toast.show { transform: translateY(0); opacity: 1; }
+.toast.error { border-color: var(--danger); color: var(--danger); }
+
+/* Token warning */
+.token-warning { position: fixed; inset: 0; background: rgba(11,13,20,0.95); display: flex; align-items: center; justify-content: center; z-index: 2000; }
+.token-warning-box { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-xl); padding: 40px; max-width: 420px; text-align: center; box-shadow: var(--shadow-card); }
+.token-warning-box h3 { margin-bottom: 14px; color: var(--danger); }
+.token-warning-box p { color: var(--text-secondary); font-size: 13px; line-height: 1.6; }
+.token-warning-box code { background: var(--surface-3); padding: 3px 8px; border-radius: 6px; font-size: 12px; }
+
+@media (max-width: 1200px) {
+  .main { grid-template-columns: minmax(0, 1fr) minmax(300px, 340px); gap: 14px; padding: 0 16px 16px; }
+}
+
+/* Tablet: sites / alerts stacked */
+@media (max-width: 900px) {
+  .main { grid-template-columns: 1fr; grid-template-rows: minmax(320px, 1fr) minmax(280px, .65fr); gap: 14px; padding: 0 16px 16px; }
+  .alert-panel { min-height: 280px; }
+  .kpi-bar { padding: 4px 16px 14px; }
+}
+
+/* Mobile: single column with compact UI */
+@media (max-width: 640px) {
+  html { height: auto; }
+  body { height: auto; min-height: 100vh; overflow: visible; display: block; }
+
+  .header { padding: 10px 12px; position: sticky; top: 0; z-index: 100; background: var(--surface-0); }
+  .header h1 { font-size: 15px; }
+  .header-logo { width: 28px; height: 28px; }
+  .header-btn { width: 32px; height: 32px; }
+  .refresh-info { display: none; }
+
+  .kpi-bar { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; padding: 4px 12px 12px; }
+  .kpi-card { padding: 10px 12px; border-radius: var(--radius-md); min-width: 0; }
+  .kpi-icon { width: 32px; height: 32px; }
+  .kpi-icon svg { width: 18px; height: 18px; }
+  .kpi-value { font-size: 18px; }
+  .kpi-label { font-size: 10px; }
+
+  .main { display: flex; flex-direction: column; gap: 10px; padding: 0 12px 12px; min-height: auto; overflow: visible; }
+
+  .sites-panel { padding: 12px; border-radius: var(--radius-lg); min-height: 300px; flex: 1 1 auto; overflow: visible; }
+  .site-header { flex-wrap: wrap; gap: 8px; padding: 12px; }
+  .site-header-right { width: 100%; justify-content: flex-start; }
+  .site-alert-pill { padding: 4px 8px; font-size: 11px; flex: 1; justify-content: center; max-width: 100px; }
+  .site-name { font-size: 14px; }
+  .site-status { font-size: 11px; }
+
+  .es-header { flex-wrap: wrap; gap: 6px; padding: 8px 10px; font-size: 11px; }
+  .es-meta { width: 100%; margin-left: 0; justify-content: space-between; }
+  .node-grid { grid-template-columns: repeat(2, 1fr); }
+  .node-card { padding: 10px; }
+  .node-name { font-size: 12px; }
+  .node-metric { font-size: 11px; }
+
+  .alert-panel { min-height: 280px; border-radius: var(--radius-lg); flex-shrink: 0; }
+  .alert-panel-header { padding: 12px 12px 8px; }
+  .alert-search { padding: 0 12px 8px; }
+  .alert-tabs { padding: 4px 12px 10px; gap: 4px; }
+  .alert-tab { padding: 4px 8px; font-size: 10px; }
+  .alert-list { flex: 0 0 auto; max-height: 360px; padding: 0 12px 12px; }
+  .alert-item { padding: 10px; gap: 8px; }
+  .alert-title { font-size: 12px; }
+  .alert-meta { font-size: 10px; }
+
+  .token-warning-box { padding: 24px; margin: 20px; }
+}
+
+/* Small phones */
+@media (max-width: 380px) {
+  .kpi-bar { grid-template-columns: repeat(2, 1fr); }
+  .node-grid { grid-template-columns: 1fr; }
+  .site-alert-pill { font-size: 10px; padding: 3px 6px; }
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-left">
+    <div class="header-logo"><svg viewBox="0 0 24 24" fill="currentColor" stroke="none" style="width:18px;height:18px;color:#fff"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg></div>
+    <h1>运营监控告警看板</h1>
+  </div>
+  <div class="header-right">
+    <span class="refresh-info" id="refreshInfo">加载中...</span>
+    <button class="header-btn" id="themeBtn" title="切换模式"><span class="ico ico-md"><svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg></span></button>
+    <button class="header-btn" id="fullscreenBtn" title="全屏"><span class="ico ico-md"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg></span></button>
+  </div>
+</div>
+
+<div class="kpi-bar" id="kpiBar"></div>
+
+<div class="main">
+  <div class="sites-panel" id="sitesPanel">
+    <div class="empty-state">加载中...</div>
+  </div>
+
+  <div class="alert-panel">
+    <div class="alert-panel-header">
+      <div class="alert-panel-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:18px;height:18px"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> 异常检测与告警</div>
+      <div class="alert-panel-sub" id="alertPanelSub">全部异常</div>
+    </div>
+    <div class="alert-search">
+      <input type="text" id="alertSearch" placeholder="搜索告警内容...">
+      <span class="alert-search-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;color:var(--text-tertiary)"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg></span>
+    </div>
+    <div class="alert-tabs no-border" id="alertTabs">
+      <div class="alert-tab active" data-tab="all">全部异常</div>
+      <div class="alert-tab" data-tab="pv_efficiency">光伏转换效率下降</div>
+      <div class="alert-tab" data-tab="ess_self_loss">储能自损耗</div>
+      <div class="alert-tab" data-tab="load_spike">负载功率突增</div>
+    </div>
+    <div class="alert-list" id="alertList">
+      <div class="empty-state">暂无告警</div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const QUERY_PARAMS = new URLSearchParams(window.location.search);
+const TOKEN = QUERY_PARAMS.get('token');
+const API_URL = '/dashboard_energy_api';
+const REFRESH_INTERVAL_MS = 20000;
+const STALE_AFTER_MS = 60000;
+const ANOMALY_CATEGORIES = Object.freeze(['pv_efficiency', 'ess_self_loss', 'load_spike']);
+const ANOMALY_CATEGORY_META = Object.freeze({
+  pv_efficiency: {label:'光伏转换效率下降', short:'光伏效率', cls:'pv'},
+  ess_self_loss: {label:'储能自损耗', short:'储能自损耗', cls:'ess'},
+  load_spike: {label:'负载功率突增', short:'负载突增', cls:'load'},
+});
+const DEMO_MODE = QUERY_PARAMS.get('demo') === '1' || window.location.protocol === 'file:';
+const DEMO_DATA_URL = QUERY_PARAMS.get('data') || 'result.json';
+const TARGET_TOPOLOGY = Object.freeze({
+  siteId: '363738052231168',
+  stationNames: Object.freeze({ES01:'电站1', ES02:'电站2'}),
+  inverterSns: Object.freeze(['emu1','emu2','emu3','emu4','emu5','emu21','emu22','emu23','emu24']),
+});
+let allData = null;
+let lastSuccessfulData = null;
+let fetchInFlight = false;
+let currentFilter = 'all';
+let currentAlertTab = 'all';
+let selectedSiteId = null;
+let selectedEsId = null;
+let selectedNodeId = null;
+let alertSearchText = '';
+let refreshTimer = null;
+
+// SVG icons (inline, no symbol/use)
+const ICONS = {
+  bolt: '<svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>',
+  moon: '<svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>',
+  sun: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><path d="M12 1v2m0 18v2M4.22 4.22l1.42 1.42m12.72 12.72 1.42 1.42M1 12h2m18 0h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>',
+  maximize: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>',
+  search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>',
+  alert: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
+  site: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>',
+  station: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg>',
+  node: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>',
+  grid: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2v20M2 12h20M5 5l14 14M19 5 5 19"/></svg>',
+  load: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 20V6a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v14"/><path d="M2 20h20"/><path d="M14 12v-2a2 2 0 0 0-2-2 2 2 0 0 0-2 2v2"/></svg>',
+  online: '<svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4" fill="var(--surface-1)"/></svg>',
+  offline: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.72 0"/><line x1="12" y1="2" x2="12" y2="8"/></svg>',
+  fault: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>',
+  link: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>',
+  earth: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>',
+  close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>'
+};
+
+function icon(name, cls) {
+  const s = ICONS[name] || '';
+  return '<span class="ico '+(cls||'')+'">'+s+'</span>';
+}
+
+// Theme
+(function initTheme() {
+  const saved = localStorage.getItem('dashboard-theme') || 'light';
+  document.documentElement.setAttribute('data-theme', saved);
+  const btn = document.getElementById('themeBtn');
+  btn.innerHTML = saved === 'light' ? icon('sun','ico-md') : icon('moon','ico-md');
+  btn.addEventListener('click', () => {
+    const cur = document.documentElement.getAttribute('data-theme');
+    const next = cur === 'light' ? 'dark' : 'light';
+    document.documentElement.setAttribute('data-theme', next);
+    btn.innerHTML = next === 'light' ? icon('sun','ico-md') : icon('moon','ico-md');
+    localStorage.setItem('dashboard-theme', next);
+  });
+})();
+
+// Fullscreen
+(function initFullscreen() {
+  const btn = document.getElementById('fullscreenBtn');
+  btn.addEventListener('click', () => {
+    document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen().catch(()=>{});
+  });
+  document.addEventListener('fullscreenchange', () => { btn.style.opacity = document.fullscreenElement ? '0.6' : '1'; });
+})();
+
+// Utility
+function showToast(msg, isError) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.className = 'toast show' + (isError ? ' error' : '');
+  setTimeout(() => t.classList.remove('show'), 3000);
+}
+function fmtTime(iso) {
+  if (!iso) return '-'; const d = new Date(iso);
+  return isNaN(d) ? iso : d.toLocaleString('zh-CN', {timeZone:'Asia/Shanghai',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+}
+function fmtNum(n) {
+  if (n == null || n === '') return '--'; const num = parseFloat(n);
+  return isNaN(num) ? n : num.toLocaleString('zh-CN', {maximumFractionDigits: 2});
+}
+function esc(s) { return s ? String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])) : ''; }
+// Status enums from NocoBase:
+// en table: standby(待机/green), stop(停机/volcano), offline(离线/default), fault(故障/red),
+//            debug(调试/purple), charge(充电/cyan), discharge(放电/blue), generate(发电/gold)
+// en_realtime table: wait(待机/green), stop(停机/volcano), offline(离线/default), alert(待确定/red),
+//            debug(调试/purple), charge(充电/cyan), discharge(放电/blue), generate(发电/gold),
+//            dc_charge(直流充电/lime), work(工作/green), reverse(逆流/orange), exception(异常/red)
+const STATUS_MAP = {
+  // en table
+  standby:   { cls:'standby',   label:'待机' },
+  stop:      { cls:'fault',     label:'停机' },
+  offline:   { cls:'offline',   label:'离线' },
+  fault:     { cls:'fault',     label:'故障' },
+  debug:     { cls:'standby',   label:'调试' },
+  charge:    { cls:'charge',    label:'充电' },
+  discharge: { cls:'discharge', label:'放电' },
+  generate:  { cls:'work',      label:'发电' },
+  // en_realtime table
+  wait:      { cls:'standby',   label:'待机' },
+  alert:     { cls:'fault',     label:'待确定' },
+  dc_charge: { cls:'charge',    label:'直流充电' },
+  work:      { cls:'work',      label:'工作' },
+  reverse:   { cls:'fault',     label:'逆流' },
+  exception: { cls:'fault',     label:'异常' },
+};
+function statusClass(s) {
+  const key = String(s||'').toLowerCase();
+  return (STATUS_MAP[key]||{cls:'offline'}).cls;
+}
+function statusLabel(s) {
+  const key = String(s||'').toLowerCase();
+  return STATUS_MAP[key] ? STATUS_MAP[key].label : (s||'离线');
+}
+function tsRecent(ts, min) {
+  if (!ts) return false; const d = new Date(ts);
+  return isNaN(d) ? false : (Date.now()-d.getTime()) < min*60*1000;
+}
+function nodeOnline(rt) {
+  if (!rt || rt.data_quality === 'missing' || rt.data_quality === 'stale') return false;
+  return tsRecent(rt.timestamp, STALE_AFTER_MS / 60000);
+}
+
+// Site online: any node under site has fresh realtime data.
+function siteOnline(siteId, nodes, rtMap) {
+  const siteNodes = nodes.filter(n => String(n.fk_site_id) === String(siteId));
+  return siteNodes.some(n => nodeOnline(rtMap[n.id]));
+}
+
+function matchAlertTab(alert, tab) {
+  const category = String((alert||{}).category||'');
+  return tab === 'all' || category === tab;
+}
+
+function isAnomalyAlert(alert) {
+  return ANOMALY_CATEGORIES.includes(String((alert||{}).category||''));
+}
+
+function anomalyCategoryCounts(alerts) {
+  const counts = {pv_efficiency:0, ess_self_loss:0, load_spike:0};
+  (alerts||[]).forEach(alert => {
+    if (!isAnomalyAlert(alert)) return;
+    counts[String(alert.category)] += 1;
+  });
+  return counts;
+}
+
+function anomalySiteAlertCounts(alerts) {
+  const counts = {};
+  (alerts||[]).forEach(alert => {
+    if (!isAnomalyAlert(alert)) return;
+    const siteId = String(alert.fk_site_id||'');
+    const category = String(alert.category||'');
+    if (!siteId || !ANOMALY_CATEGORIES.includes(category)) return;
+    if (!counts[siteId]) counts[siteId] = {pv_efficiency:0, ess_self_loss:0, load_spike:0};
+    counts[siteId][category] += 1;
+  });
+  return counts;
+}
+
+function setAlertTab(tab) {
+  currentAlertTab = ANOMALY_CATEGORIES.includes(tab) ? tab : 'all';
+  document.querySelectorAll('#alertTabs .alert-tab').forEach(item => {
+    item.classList.toggle('active', item.dataset.tab === currentAlertTab);
+  });
+}
+
+function stationCode(station) {
+  const explicit = String((station||{}).station_code||'').trim().toUpperCase();
+  if (explicit === 'ES01' || explicit === 'ES02') return explicit;
+  const sn = String((station||{}).sn||'').trim().toUpperCase();
+  if (sn.endsWith('ES01')) return 'ES01';
+  if (sn.endsWith('ES02')) return 'ES02';
+  const name = String((station||{}).name||'').replace(/\s+/g,'');
+  if (name.endsWith('电站1')) return 'ES01';
+  if (name.endsWith('电站2')) return 'ES02';
+  return '';
+}
+
+function isolateCustomerData(data) {
+  const source = data && typeof data === 'object' ? data : {};
+  const sites = (source.sites||[]).filter(site => String(site.id) === TARGET_TOPOLOGY.siteId).slice(0,1);
+  const stationsByCode = {};
+  (source.es_list||[]).forEach(station => {
+    if (String(station.fk_site) !== TARGET_TOPOLOGY.siteId) return;
+    const code = stationCode(station);
+    if (code && !stationsByCode[code]) stationsByCode[code] = station;
+  });
+  const esList = ['ES01','ES02'].filter(code => stationsByCode[code]).map(code => ({
+    ...stationsByCode[code],
+    station_code: code,
+    name: TARGET_TOPOLOGY.stationNames[code],
+  }));
+  const esIds = new Set(esList.map(station => String(station.id)));
+  const nodes = (source.nodes||[]).filter(node => esIds.has(String(node.fk_es)));
+  const nodeIds = new Set(nodes.map(node => String(node.id)));
+  const realtime = (source.realtime||[]).filter(item => nodeIds.has(String(item.fk_en)));
+  const alerts = (source.alerts||[]).filter(alert => {
+    if (!isAnomalyAlert(alert)) return false;
+    return String(alert.fk_site_id||'') === TARGET_TOPOLOGY.siteId;
+  });
+  const pvInvertersBySn = {};
+  (source.pv_inverters||[]).forEach(inverter => {
+    const sn = String((inverter||{}).sn||'');
+    if (TARGET_TOPOLOGY.inverterSns.includes(sn) && !pvInvertersBySn[sn]) pvInvertersBySn[sn] = inverter;
+  });
+  const pvInverters = TARGET_TOPOLOGY.inverterSns.filter(sn => pvInvertersBySn[sn]).map(sn => pvInvertersBySn[sn]);
+  return {
+    ...source,
+    sites,
+    es_list: esList,
+    nodes,
+    realtime,
+    alerts,
+    pv_inverters: pvInverters,
+    stats: {
+      ...(source.stats||{}),
+      total_sites: sites.length,
+      total_es: esList.length,
+      total_nodes: nodes.length,
+      total_alerts: alerts.length,
+    },
+  };
+}
+
+function renderDataUnavailable(title, detail) {
+  const state = '<div class="empty-state"><div class="empty-state-title">'+esc(title)+'</div><div class="empty-state-copy">'+esc(detail)+'</div></div>';
+  document.getElementById('kpiBar').innerHTML = '';
+  document.getElementById('sitesPanel').innerHTML = state;
+  document.getElementById('alertList').innerHTML = state;
+  document.getElementById('alertPanelSub').textContent = '数据暂不可用';
+}
+
+// Fetch
+async function fetchData() {
+  if (fetchInFlight) return;
+  fetchInFlight = true;
+  try {
+    const tokenQuery = TOKEN ? '?token=' + encodeURIComponent(TOKEN) : '';
+    const requestUrl = DEMO_MODE ? DEMO_DATA_URL : API_URL + tokenQuery;
+    const resp = await fetch(requestUrl, {cache:'no-store'});
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    if (data.status !== 'ok' || !data.data) throw new Error(data.message||'API 数据格式错误');
+    allData = isolateCustomerData(data.data);
+    lastSuccessfulData = allData;
+    render();
+    document.getElementById('refreshInfo').textContent = '\u21BB ' + new Date().toLocaleTimeString('zh-CN') + ' · 20s';
+  } catch(e) {
+    if (lastSuccessfulData) allData = lastSuccessfulData;
+    else renderDataUnavailable('数据源未连接', DEMO_MODE ? '请通过看板服务地址访问，或提供可读取的 result.json 数据文件。' : '请更新 NocoBase 访问凭据后重试。');
+    console.error(e); showToast('\u2716 ' + e.message, true);
+    document.getElementById('refreshInfo').textContent = '\u2716 刷新失败';
+  } finally {
+    fetchInFlight = false;
+  }
+}
+
+// Main render
+function render() {
+  if (!allData) return;
+  const sites = allData.sites || [];
+  const nodes = allData.nodes || [];
+  const realtime = allData.realtime || [];
+  const stats = allData.stats || {};
+  if (!sites.length && !nodes.length) {
+    renderDataUnavailable('暂无基础数据', '当前响应中没有可展示的场站或设备，请检查 NocoBase 数据源连接。');
+    document.getElementById('refreshInfo').textContent = '\u26A0 数据为空';
+    return;
+  }
+  const rtMap = {}; (realtime||[]).forEach(r => rtMap[r.fk_en] = r);
+  const anomalyCounts = anomalyCategoryCounts(allData.alerts || []);
+
+  // KPI bar
+  const kpiBar = document.getElementById('kpiBar');
+  const onlineSites = sites.filter(s => siteOnline(s.id, nodes, rtMap)).length;
+  const offlineSites = sites.length - onlineSites;
+  const items = [
+    {l:'场站', v:stats.total_sites, cls:'', icon:'site', filter:'all'},
+    {l:'电站', v:stats.total_es, cls:'', icon:'station', filter:'all'},
+    {l:'光伏效率', v:anomalyCounts.pv_efficiency, cls:'pv', icon:'alert', category:'pv_efficiency'},
+    {l:'储能自损耗', v:anomalyCounts.ess_self_loss, cls:'ess', icon:'alert', category:'ess_self_loss'},
+    {l:'负载突增', v:anomalyCounts.load_spike, cls:'load', icon:'alert', category:'load_spike'},
+    {l:'在线', v:onlineSites, cls:'online', icon:'online', filter:'online'},
+    {l:'离线', v:offlineSites, cls:'offline', icon:'offline', filter:'offline'},
+  ];
+  kpiBar.innerHTML = items.map(k => '<div class="kpi-card" data-filter="'+(k.filter||'')+'" data-category="'+(k.category||'')+'"><div class="kpi-icon">'+icon(k.icon,'ico-lg')+'</div><div><div class="kpi-label">'+k.l+'</div><div class="kpi-value '+k.cls+'">'+k.v+'</div></div></div>').join('');
+
+  kpiBar.querySelectorAll('.kpi-card').forEach(card => {
+    card.addEventListener('click', () => {
+      const category = card.dataset.category;
+      const filter = card.dataset.filter;
+      if (category) {
+        currentFilter = 'all';
+        setAlertTab(currentAlertTab === category ? 'all' : category);
+      } else {
+        currentFilter = currentFilter === filter ? 'all' : (filter || 'all');
+        setAlertTab('all');
+      }
+      updateFilterUI(); renderSites();
+      renderAlerts();
+    });
+  });
+
+  updateFilterUI();
+  renderSites();
+  renderAlerts();
+}
+
+function updateFilterUI() {
+  document.querySelectorAll('.kpi-card').forEach(card => {
+    const categorySelected = card.dataset.category && card.dataset.category === currentAlertTab;
+    const filterSelected = currentFilter !== 'all' && card.dataset.filter === currentFilter;
+    card.classList.toggle('selected', Boolean(categorySelected || filterSelected));
+  });
+}
+
+function renderSites() {
+  if (!allData) return;
+  const sites = allData.sites || [];
+  const es_list = allData.es_list || [];
+  const nodes = allData.nodes || [];
+  const realtime = allData.realtime || [];
+  const rtMap = {}; (realtime||[]).forEach(r => rtMap[r.fk_en] = r);
+  const sa = anomalySiteAlertCounts(allData.alerts || []);
+  const anomalyTotal = counts => ANOMALY_CATEGORIES.reduce((total, category) => total + (counts[category]||0), 0);
+  const ordered = [...sites].sort((a,b) => {
+    const countDelta = anomalyTotal(sa[b.id]||{}) - anomalyTotal(sa[a.id]||{});
+    return countDelta || String(a.name||'').localeCompare(String(b.name||''), 'zh-CN');
+  });
+
+  const filtered = ordered.filter(site => {
+    const sac = sa[site.id]||{pv_efficiency:0, ess_self_loss:0, load_spike:0};
+    if (currentAlertTab!=='all' && sac[currentAlertTab]===0) return false;
+    if (currentFilter==='online' || currentFilter==='offline') {
+      const isOnline = siteOnline(site.id, nodes, rtMap);
+      if (currentFilter==='online' && !isOnline) return false;
+      if (currentFilter==='offline' && isOnline) return false;
+    }
+    return true;
+  });
+
+  const panel = document.getElementById('sitesPanel');
+  if (filtered.length===0) { panel.innerHTML = '<div class="empty-state">\u2205 无匹配场站</div>'; return; }
+
+  panel.innerHTML = filtered.map(site => {
+    const sac = sa[site.id]||{pv_efficiency:0, ess_self_loss:0, load_spike:0};
+    const hasAnomaly = anomalyTotal(sac)>0;
+    const online = siteOnline(site.id, nodes, rtMap);
+    const siteUrl = site.site || '';
+
+    let esHtml = '';
+    const ses = es_list.filter(e=>String(e.fk_site)===String(site.id));
+    ses.forEach(es => {
+        const esNodes = nodes.filter(n =>
+          String(n.fk_es) === String(es.id) && String(n.name||'').trim() !== '光伏工控机'
+        );
+        const gridNodes = esNodes.filter(n => (n.node_type==='grid'||n.name.includes('电网')) && n.is_aggregate);
+        const loadNodes = esNodes.filter(n => (n.node_type==='load'||n.name.includes('负载')) && n.is_aggregate);
+        let gridInfo = '', loadInfo = '';
+        gridNodes.forEach(g => {
+          const rt = rtMap[g.id]; const pwr = rt&&rt.power!=null ? fmtNum(rt.power)+' kW' : '';
+          gridInfo += (gridInfo?', ':'') + esc(g.name) + (pwr?' '+pwr:'');
+        });
+        loadNodes.forEach(ln => {
+          const rt = rtMap[ln.id]; const pwr = rt&&rt.power!=null ? fmtNum(rt.power)+' kW' : '';
+          loadInfo += (loadInfo?', ':'') + esc(ln.name) + (pwr?' '+pwr:'');
+        });
+        if (!gridInfo && es.sn) gridInfo = esc(es.sn);
+        const displayNodes = esNodes.filter(n => !gridNodes.includes(n) && !loadNodes.includes(n));
+
+        const aggregateNodes = displayNodes.filter(n => n.is_aggregate);
+        const childNodes = displayNodes.filter(n => !n.is_aggregate);
+        let nodeHtml = '';
+        if (aggregateNodes.length>0) {
+          nodeHtml = aggregateNodes.map(aggr => {
+            const children = childNodes.filter(n => String(n.parentId)===String(aggr.id));
+            const useParentRt = aggr.node_type==='pv_grid_ac' && children.length===1;
+            const childCards = children.map(n=>renderNodeCard(n,rtMap[n.id]||(useParentRt?rtMap[aggr.id]:null),aggr.node_type,es)).join('');
+            return '<div class="node-group"><div class="node-group-title">'+esc(aggr.name||aggr.sn||'聚合节点')+'</div><div class="node-grid">'+(childCards||'<div style="font-size:11px;color:var(--text-tertiary);padding:8px">无子节点</div>')+'</div></div>';
+          }).join('');
+          const orphans = childNodes.filter(n => !n.parentId||!aggregateNodes.some(a=>String(a.id)===String(n.parentId)));
+          if (orphans.length>0) nodeHtml += '<div class="node-group"><div class="node-group-title">其他</div><div class="node-grid">'+orphans.map(n=>renderNodeCard(n,rtMap[n.id],null,es)).join('')+'</div></div>';
+        } else if (displayNodes.length>0) {
+          nodeHtml = '<div class="node-group"><div class="node-grid">'+displayNodes.map(n=>renderNodeCard(n,rtMap[n.id],null,es)).join('')+'</div></div>';
+        }
+
+        esHtml += '<div class="es-section"><div class="es-header'+(String(selectedEsId)===String(es.id)?' selected':'')+'" data-es-id="'+es.id+'"><span class="es-icon">'+icon('station','ico-sm')+'</span><span>'+esc(es.name||'未命名电站')+'</span><span class="es-meta">'+(gridInfo?'<span>'+icon('grid','ico-sm')+' '+gridInfo+'</span>':'')+(loadInfo?'<span>'+icon('load','ico-sm')+' '+loadInfo+'</span>':'')+'</span></div><div class="node-groups">'+nodeHtml+'</div></div>';
+    });
+
+    return '<div class="site-card '+((hasAnomaly?'has-anomaly ':'')+(String(selectedSiteId)===String(site.id)?'selected ':''))+'" data-site-id="'+site.id+'">'+
+      '<div class="site-header">'+
+        '<div class="site-header-left">'+
+          '<span class="site-icon">'+icon('site','ico-md')+'</span>'+
+          '<div style="min-width:0">'+
+            '<div class="site-name-wrap"><span class="site-name">'+esc(site.name||site.site||'未命名')+'</span>'+(siteUrl?'<a class="site-ems-link" href="'+esc(siteUrl)+'" target="_blank" title="打开边缘端EMS" onclick="event.stopPropagation()">'+icon('link','ico-sm')+'</a>':'')+'</div>'+
+            '<div class="site-status"><span class="site-status-dot '+(online?'online':'offline')+'"></span>'+(online?'在线':'离线')+'</div>'+
+          '</div>'+
+        '</div>'+
+        '<div class="site-header-right">'+
+          '<span class="site-alert-pill pv '+(sac.pv_efficiency===0?'zero':'')+'" data-category="pv_efficiency">光伏 '+sac.pv_efficiency+'</span>'+
+          '<span class="site-alert-pill ess '+(sac.ess_self_loss===0?'zero':'')+'" data-category="ess_self_loss">储能 '+sac.ess_self_loss+'</span>'+
+          '<span class="site-alert-pill load '+(sac.load_spike===0?'zero':'')+'" data-category="load_spike">负载 '+sac.load_spike+'</span>'+
+        '</div>'+
+      '</div>'+
+      '<div class="site-body">'+esHtml+'</div>'+
+    '</div>';
+  }).join('');
+}
+
+function optionalMetric(label, value, suffix, alert) {
+  const shown = value==null ? '--' : fmtNum(value)+(suffix||'');
+  return '<div class="node-metric optional-metric '+(alert?'metric-alert':'')+'"><span>'+label+'</span><span class="node-metric-value">'+shown+'</span></div>';
+}
+
+function summarizePvInverters(inverters) {
+  const rows = Array.isArray(inverters) ? inverters : [];
+  const validRows = rows.filter(inverter => {
+    if (!inverter || !inverter.online || inverter.data_quality!=='good') return false;
+    const input = inverter.input_power_kw;
+    const output = inverter.output_power_kw;
+    return input!==null && input!=='' && output!==null && output!=='' &&
+      Number.isFinite(Number(input)) && Number.isFinite(Number(output));
+  });
+  if (validRows.length===0) {
+    return {inputPowerKw:null, outputPowerKw:null, conversionEfficiency:null, validCount:0, totalCount:9};
+  }
+  const inputPowerKw = validRows.reduce((total,inverter)=>total+Number(inverter.input_power_kw),0);
+  const outputPowerKw = validRows.reduce((total,inverter)=>total+Number(inverter.output_power_kw),0);
+  return {
+    inputPowerKw,
+    outputPowerKw,
+    conversionEfficiency: inputPowerKw>0 ? outputPowerKw/inputPowerKw*100 : null,
+    validCount: validRows.length,
+    totalCount: 9,
+  };
+}
+
+function renderNodeCard(node, rt, parentType, station) {
+  const soc = rt&&rt.soc!=null ? rt.soc : null;
+  const isPvSummaryMeter = node&&node.node_type==='meter' && parentType==='pv_grid_ac' &&
+    stationCode(station)==='ES02';
+  const pvSummary = isPvSummaryMeter ? summarizePvInverters((allData&&allData.pv_inverters)||[]) : null;
+  const pvInput = pvSummary ? pvSummary.inputPowerKw : (rt&&rt.pv_input_power_kw!=null ? rt.pv_input_power_kw : null);
+  const pvOutput = pvSummary ? pvSummary.outputPowerKw : (rt&&rt.pv_output_power_kw!=null ? rt.pv_output_power_kw : null);
+  const power = rt&&rt.power!=null ? rt.power : pvOutput;
+  const temperature = rt&&rt.temperature_c!=null ? rt.temperature_c : null;
+  const efficiency = pvSummary ? pvSummary.conversionEfficiency : (rt&&rt.conversion_efficiency!=null ? rt.conversion_efficiency : null);
+  const online = pvSummary ? pvSummary.validCount>0 : nodeOnline(rt);
+  const status = rt&&rt.run_status ? rt.run_status : node.run_status;
+  const effectiveType = node.node_type==='meter'&&parentType==='pv_grid_ac' ? parentType : node.node_type;
+  const isEss = effectiveType==='ess';
+  const isPv = effectiveType==='pv_grid_ac'||effectiveType==='pv_dc';
+  const dataQuality = rt&&rt.data_quality ? rt.data_quality : (online?'good':'stale');
+  const efficiencyThreshold = ((allData||{}).thresholds||{}).pv_efficiency_min_pct ?? 85;
+  const efficiencyAlert = isPv && dataQuality==='good' && efficiency!=null && efficiency<efficiencyThreshold;
+  const statusCls = efficiencyAlert ? 'fault' : statusClass(status);
+  const statusText = efficiencyAlert ? '效率低' : statusLabel(status);
+  const displayName = isPvSummaryMeter ? '光伏计量表' : (node.name||node.sn||'未命名');
+  const footerIdentity = isPvSummaryMeter ? '9 台逆变器汇总' : (node.sn||'');
+  return '<div class="node-card '+(String(selectedNodeId)===String(node.id)?'selected ':'')+(efficiencyAlert?'energy-alert':'')+'" data-node-id="'+node.id+'" data-site-id="'+node.fk_site_id+'" data-node-type="'+esc(effectiveType||'')+'" data-quality="'+esc(dataQuality)+'">'+
+    '<div class="node-card-header"><span class="node-name">'+esc(displayName)+'</span><span class="node-status-pill '+statusCls+'">'+esc(statusText)+'</span></div>'+
+    (isPvSummaryMeter?'':
+      '<div class="node-metric"><span>SOC</span><span class="node-metric-value">'+(soc!=null?soc.toFixed(1)+'%':'--')+'</span></div>'+
+      '<div class="soc-bar-bg"><div class="soc-bar-fill" style="width:'+(soc!=null?Math.max(0,Math.min(100,soc)):0)+'%"></div></div>')+
+    '<div class="node-metric" style="margin-top:8px"><span>'+(isPv?'交流输出':'功率')+'</span><span class="node-metric-value">'+((pvSummary?pvOutput:power)!=null?fmtNum(pvSummary?pvOutput:power)+' kW':'--')+'</span></div>'+
+    (isEss?optionalMetric('温度',temperature,' ℃',false):'')+
+    (isPv?optionalMetric('直流输入',pvInput,' kW',false):'')+
+    (isPv?optionalMetric('转换效率',efficiency,'%',efficiencyAlert):'')+
+    (pvSummary?'<div class="node-metric optional-metric"><span>有效设备</span><span class="node-metric-value">'+pvSummary.validCount+'/'+pvSummary.totalCount+'</span></div>':'')+
+    '<div class="node-footer"><span>'+esc(footerIdentity)+'</span><span class="'+(online?'node-online':'node-offline')+'">'+(online?'\u25CF 在线':'\u25CB 离线')+'</span></div>'+
+    '</div>';
+}
+
+function renderAlerts() {
+  if (!allData) return;
+  const alerts = (allData.alerts||[]).filter(isAnomalyAlert);
+  const filtered = alerts.filter(a => {
+    if (selectedSiteId && String(a.fk_site_id)!==String(selectedSiteId)) return false;
+    if (selectedNodeId && String(a.fk_en_id)!==String(selectedNodeId)) return false;
+    if (currentAlertTab!=='all' && !matchAlertTab(a, currentAlertTab)) return false;
+    if (alertSearchText) {
+      const s = alertSearchText.toLowerCase();
+      if (!(a.txt||'').toLowerCase().includes(s) && !(a.device_sn||'').toLowerCase().includes(s)) return false;
+    }
+    return true;
+  }).sort((a,b)=>new Date(b.start_time||0)-new Date(a.start_time||0));
+
+  const list = document.getElementById('alertList');
+  const sub = document.getElementById('alertPanelSub');
+  if (selectedSiteId && allData.sites) {
+    const s = allData.sites.find(s=>String(s.id)===String(selectedSiteId));
+    sub.textContent = (s?s.name:'未知') + ' \u2022 ' + filtered.length + ' 条';
+  } else if (selectedNodeId && allData.nodes) {
+    const n = allData.nodes.find(n=>String(n.id)===String(selectedNodeId));
+    sub.textContent = (n?n.name:'未知') + ' \u2022 ' + filtered.length + ' 条';
+  } else {
+    sub.textContent = '全部异常 \u2022 ' + filtered.length + ' 条';
+  }
+
+  if (filtered.length===0) { list.innerHTML = '<div class="empty-state">\u2714 暂无告警</div>'; return; }
+  list.innerHTML = filtered.map(a => {
+    const category = String(a.category||'');
+    const meta = ANOMALY_CATEGORY_META[category] || {label:'异常', short:'异常', cls:''};
+    const metric = a.value!=null&&a.threshold!=null ? '<div class="alert-item-meta">实际: '+fmtNum(a.value)+esc(a.unit||'')+' / 阈值: '+fmtNum(a.threshold)+esc(a.unit||'')+'</div>' : '';
+    return '<div class="alert-item '+meta.cls+'" data-category="'+esc(category)+'" data-site-id="'+(a.fk_site_id||'')+'" data-node-id="'+(a.fk_en_id||'')+'"><div class="alert-item-header"><span class="alert-item-title">'+esc(a.txt||meta.label)+'</span><span class="alert-category-tag '+meta.cls+'">'+meta.short+'</span></div><div class="alert-item-meta">设备: '+esc(a.device_sn||'--')+'</div>'+metric+'<div class="alert-item-time">'+fmtTime(a.start_time)+'</div></div>';
+  }).join('');
+}
+
+// Events
+document.getElementById('sitesPanel').addEventListener('click', e => {
+  const siteCard = e.target.closest('.site-card');
+  const siteHeader = e.target.closest('.site-header');
+  const nodeCard = e.target.closest('.node-card');
+  const esHeader = e.target.closest('.es-header');
+  const pill = e.target.closest('.site-alert-pill');
+  const emsLink = e.target.closest('.site-ems-link');
+
+  if (emsLink) return;
+
+  if (pill) {
+    e.stopPropagation();
+    selectedSiteId = pill.closest('.site-card')?.dataset.siteId || null;
+    selectedNodeId = null;
+    currentFilter = 'all';
+    setAlertTab(pill.dataset.category);
+    updateFilterUI(); renderSites(); renderAlerts();
+    return;
+  }
+
+  if (nodeCard) {
+    e.stopPropagation();
+    selectedNodeId = nodeCard.dataset.nodeId;
+    selectedSiteId = null; selectedEsId = null;
+    renderSites(); renderAlerts();
+    showToast('\u2192 已筛选该节点告警');
+    return;
+  }
+
+  if (esHeader) {
+    e.stopPropagation();
+    selectedEsId = esHeader.dataset.esId;
+    selectedSiteId = esHeader.closest('.site-card')?.dataset.siteId || null;
+    selectedNodeId = null;
+    renderSites(); renderAlerts();
+    return;
+  }
+
+  if (siteCard && siteHeader) {
+    const sid = siteCard.dataset.siteId;
+    if (String(selectedSiteId) === String(sid) && !selectedEsId && !selectedNodeId) {
+      selectedSiteId = null;
+    } else {
+      selectedSiteId = sid;
+    }
+    selectedEsId = null;
+    selectedNodeId = null;
+    renderSites(); renderAlerts();
+    return;
+  }
+
+  if (siteCard && !siteHeader) {
+    selectedSiteId = siteCard.dataset.siteId;
+    renderSites(); renderAlerts();
+  }
+});
+
+document.getElementById('alertList').addEventListener('click', e => {
+  const item = e.target.closest('.alert-item');
+  if (item) {
+    selectedSiteId = item.dataset.siteId||null;
+    selectedNodeId = item.dataset.nodeId||null;
+    renderSites(); renderAlerts();
+  }
+});
+
+document.getElementById('alertTabs').addEventListener('click', e => {
+  const tab = e.target.closest('.alert-tab');
+  if (!tab) return;
+  currentFilter = 'all';
+  setAlertTab(tab.dataset.tab);
+  updateFilterUI(); renderSites(); renderAlerts();
+});
+
+document.getElementById('alertSearch').addEventListener('input', function() {
+  alertSearchText = this.value.trim();
+  renderAlerts();
+});
+
+// Auto refresh
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { if(refreshTimer){clearInterval(refreshTimer);refreshTimer=null;} }
+  else if(!refreshTimer) { refreshTimer=setInterval(fetchData,REFRESH_INTERVAL_MS); fetchData(); }
+});
+
+fetchData();
+refreshTimer = setInterval(fetchData, REFRESH_INTERVAL_MS);
+</script>
+</body>
+</html>

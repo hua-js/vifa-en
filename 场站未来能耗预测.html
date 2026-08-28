@@ -2021,18 +2021,6 @@ svg {
       setText("summary-pv-load", formatPercent(result?.pv_load_efficiency));
     }
 
-    function eventDeviceLabel(item) {
-      if (item?.event_type !== "chain_low_efficiency") {
-        return item?.device || "--";
-      }
-      const names = Array.isArray(item.diagnosed_causes)
-        ? item.diagnosed_causes
-          .map((cause) => cause?.device_name || cause?.device_id)
-          .filter((name, index, items) => name && items.indexOf(name) === index)
-        : [];
-      return names.length ? names.join("、") : "原因待判断";
-    }
-
     function renderEvents(items) {
       if (!eventTableBody) return;
       eventTableBody.replaceChildren();
@@ -2048,7 +2036,7 @@ svg {
       }
       items.forEach((item) => {
         const row = document.createElement("tr");
-        [formatTime(item.start), item.type, eventDeviceLabel(item), item.evidence, item.impact.join("、"), item.status].forEach((value, index) => {
+        [formatTime(item.start), item.type, item.device, item.evidence, item.impact.join("、"), item.status].forEach((value, index) => {
           const cell = document.createElement("td");
           cell.textContent = value || "--";
           if (index === 0 || index === 2) cell.className = "text-nowrap";

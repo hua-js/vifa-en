@@ -1,0 +1,34 @@
+{
+  "filter": {
+    "station_id": "m3-contract-smoke"
+  },
+  "values": {
+    "station_id": "m3-contract-smoke",
+    "as_of": "2026-08-25T01:17:00+08:00",
+    "generated_at": "2026-08-25T01:17:05+08:00",
+    "source_data_end": "2026-08-25T01:00:00+08:00",
+    "status": "degraded",
+    "series_payload": [
+      {
+        "unique_id": "station_total_load",
+        "unit": "kW",
+        "model_name": "none",
+        "status": "error",
+        "points": [],
+        "fallback_reason": "contract_smoke"
+      },
+      {
+        "unique_id": "storage_soc",
+        "unit": "%",
+        "model_name": "none",
+        "status": "error",
+        "points": [],
+        "fallback_reason": "contract_smoke"
+      }
+    ],
+    "model_manifest": {
+      "statsforecast_version": "2.1.1"
+    },
+    "content_hash": "a8de9b50f4fcaa16c6e4df5317e596b21ffa0c3992790f7278f62424fba7a5c4"
+  }
+}

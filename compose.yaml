@@ -1,0 +1,70 @@
+name: vifa-m3
+
+x-m3-service: &m3-service
+  image: vifa-m3:0.1.0
+  platform: linux/amd64
+  build:
+    context: .
+    dockerfile: Dockerfile
+    network: host
+  user: "10001:10001"
+  network_mode: host
+  restart: unless-stopped
+  init: true
+  read_only: true
+  tmpfs:
+    - /tmp:rw,nosuid,nodev,size=512m
+    - /dev/mqueue:rw,nosuid,nodev,noexec,size=1m
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+  volumes:
+    - type: bind
+      source: ./run
+      target: /run/vifa-m3
+      bind:
+        create_host_path: false
+    - type: bind
+      source: /etc/vifa-m3/raw-source.token
+      target: /run/secrets/raw-source.token
+      read_only: true
+      bind:
+        create_host_path: false
+
+services:
+  vifa-m3-worker:
+    <<: *m3-service
+    command:
+      - worker
+    env_file:
+      - /etc/vifa-m3/m3.env
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          /usr/bin/curl --fail --silent --show-error --connect-timeout 2
+          --max-time 10 --unix-socket /run/vifa-m3/worker.sock
+          http://localhost/health >/dev/null
+      interval: 30s
+      timeout: 12s
+      retries: 3
+      start_period: 10m
+
+  vifa-m3-dashboard:
+    <<: *m3-service
+    command:
+      - dashboard
+    env_file:
+      - /etc/vifa-m3/dashboard.env
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          /usr/bin/curl --fail --silent --show-error --connect-timeout 2
+          --max-time 10 --unix-socket /run/vifa-m3/dashboard.sock
+          http://localhost/health >/dev/null
+      interval: 30s
+      timeout: 12s
+      retries: 3
+      start_period: 30s

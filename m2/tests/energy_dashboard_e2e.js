@@ -555,9 +555,6 @@ function assertClose(actual, expected, message) {
     "原因待判断",
   );
   assert.match(await chainRow.innerText(), /原因待判断/);
-  await chainRow.locator("summary").click();
-  assert.match(await chainRow.innerText(), /emu21/);
-  assert.match(await chainRow.innerText(), /温度数据暂未提供/);
   assert.strictEqual(
     await page.locator("rect[data-event-type='chain_low_efficiency']").count(),
     1,

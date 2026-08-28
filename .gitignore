@@ -5,3 +5,12 @@ __pycache__/
 .superpowers/
 /energy_efficiency_local_config.py
 /energy_efficiency_event_outbox.sqlite3*
+
+# Local credentials and deployment state
+.env
+*.env
+*.token
+/m3/deploy/production-env/*.env
+/m3/node_red/本地机器.txt
+/m3_worker/密钥.txt
+/run/

@@ -1,0 +1,15 @@
+.git
+.venv
+__pycache__
+*.py[cod]
+.pytest_cache
+.ruff_cache
+*.env
+*.token
+m3_worker/密钥.txt
+tests
+vifa
+m2
+场站未来能耗预测.html
+docs
+run

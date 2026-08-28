@@ -1,0 +1,104 @@
+{
+  "kind": "vifa-m3-nocobase-iframe-manifest",
+  "version": 2,
+  "nocobase_native_import": {
+    "importable": false,
+    "reason": "NocoBase 页面配置没有通用 JSON 导入格式；本文件是人工配置和验收清单"
+  },
+  "target": {
+    "nocobase_origin": "https://ems.lvkpower.com",
+    "node_red_origin": "https://opdash.lvkpower.com",
+    "data_origin": "https://vifa.hlszh.com",
+    "iframe_url": "https://opdash.lvkpower.com/ett"
+  },
+  "access": {
+    "audience": "public_read_url",
+    "station_scope": "all_configured_stations",
+    "description": "任何能访问 OPDash /ett 或 /energy-forecast-api 的用户均可查看两个已配置电站"
+  },
+  "block": {
+    "type": "iframe_html",
+    "title": "场站未来能耗预测",
+    "iframe_url": "https://opdash.lvkpower.com/ett",
+    "authentication": "none_public_read"
+  },
+  "security": {
+    "token_source": "server-side Dashboard read-only key",
+    "token_transport": "not exposed to browser",
+    "token_in_url": false,
+    "fixed_token_fallback": false,
+    "public_read": true,
+    "public_exposure_accepted": true,
+    "description": "OPDash /ett 与 /energy-forecast-api 对任何可访问该域名的人公开；Dashboard 四表只读 Key 只保存在容器环境中，不进入浏览器"
+  },
+  "preflight": [
+    {
+      "id": "public_read_acceptance",
+      "action": "确认业务接受任何能访问 OPDash 地址的人查看两个电站预测数据",
+      "expected": "无需 NocoBase 登录即可直接访问 /ett 与 /energy-forecast-api",
+      "blocking": true
+    },
+    {
+      "id": "node_red_route",
+      "action": "从最终用户浏览器请求 https://opdash.lvkpower.com/ett",
+      "expected": "命中 Node-RED 的 GET /ett 节点，而不是 NocoBase 404 或其他页面",
+      "blocking": true
+    },
+    {
+      "id": "unique_routes",
+      "action": "在 Node-RED 中搜索全部 http in 节点",
+      "expected": "启用状态下仅有一个 /ett 和一个 /energy-forecast-api",
+      "blocking": true
+    }
+  ],
+  "installation": [
+    {
+      "step": 1,
+      "action": "在 https://ems.lvkpower.com 的目标页面进入界面配置模式"
+    },
+    {
+      "step": 2,
+      "action": "新增普通 iframe/HTML 区块，标题设置为场站未来能耗预测"
+    },
+    {
+      "step": 3,
+      "action": "URL 固定填写 https://opdash.lvkpower.com/ett"
+    },
+    {
+      "step": 4,
+      "action": "不配置 Header、query Token或固定管理员 Token"
+    },
+    {
+      "step": 5,
+      "action": "保存并使用普通已登录用户重新打开页面"
+    }
+  ],
+  "verification": [
+    {
+      "id": "dashboard",
+      "expected": "页面展示两个电站的最近24小时实绩、未来24小时预测和模型状态"
+    },
+    {
+      "id": "public_read",
+      "expected": "预测 API 无需浏览器 Token，直接通过 Dashboard Socket 返回公开只读结果"
+    },
+    {
+      "id": "server_side_key_only",
+      "expected": "iframe 配置、Node-RED Flow 和 URL 均不包含 Dashboard 四表只读 Key"
+    }
+  ],
+  "rollback": [
+    {
+      "step": 1,
+      "action": "停用或删除场站未来能耗预测 iframe 区块"
+    },
+    {
+      "step": 2,
+      "action": "在 Node-RED 停用 M3 /ett、/energy-forecast-api 和健康检查组"
+    },
+    {
+      "step": 3,
+      "action": "不删除 M3 四表或历史预测数据，不修改 M1/M2"
+    }
+  ]
+}
