@@ -508,6 +508,45 @@ class StationEfficiencyJobTests(unittest.TestCase):
         self.assertEqual(pending_event_count("ES02", CONFIG["event_outbox_path"]), 1)
         self.assertNotIn("private remote detail", repr(output))
 
+    def test_pending_replacement_after_successful_flush_keeps_status_partial(self):
+        queued = evaluate_inverter_low_load(
+            [
+                {
+                    "device_id": "emu1",
+                    "device_name": "光伏逆变器 emu1",
+                    "data_time": timestamp(minute),
+                    "active_power_kw": 10,
+                    "rated_power_kw": 60,
+                }
+                for minute in (26, 27, 28)
+            ],
+            RULE,
+        )
+        enqueue_event(queued, CONFIG["event_outbox_path"])
+        replacement = dict(queued, observed_value=15)
+
+        def store_request(url, token, timeout, body):
+            if "event_type" in body:
+                enqueue_event(replacement, CONFIG["event_outbox_path"])
+            return {"data": {"id": 1, **body}}
+
+        output = process_station_minute(
+            "ES02", {**CONFIG, "bottleneck_rule": {**RULE, "enabled": False}},
+            source_request_json=lambda *args: {"data": make_balanced_es02_rows()},
+            growall_request_json=lambda *args: {"data": make_growall_rows()},
+            query_request_json=self.make_query_request(
+                minute_rows=[], device_rows=[], active_events=[],
+            ),
+            store_request_json=store_request,
+        )
+
+        self.assertEqual(output["status"], "partial")
+        self.assertEqual(output["warnings"], [])
+        self.assertEqual(output["event_persistence"], {
+            "attempted": 1, "saved": 1, "failed": 0, "outbox_pending": 1,
+        })
+        self.assertEqual(pending_event_count("ES02", CONFIG["event_outbox_path"]), 1)
+
     def test_empty_battery_temperatures_are_not_configuration_errors(self):
         output = process_station_minute(
             "ES02", CONFIG,

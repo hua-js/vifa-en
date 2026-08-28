@@ -2,6 +2,7 @@ import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from unittest.mock import patch
 
 from m2.station_efficiency_event_outbox import (
     EventOutboxError,
@@ -86,6 +87,28 @@ class StationEfficiencyEventOutboxTests(unittest.TestCase):
         })
         self.assertEqual(load_station_events("ES01", self.path), [queued_event])
         self.assertNotIn("transport-secret", repr(result))
+
+    def test_remote_success_is_counted_when_local_discard_fails(self):
+        queued_event = event()
+        enqueue_event(queued_event, self.path)
+
+        with patch(
+            "m2.station_efficiency_event_outbox.discard_event",
+            side_effect=EventOutboxError("本机事件补偿队列不可用"),
+        ):
+            result = flush_station_events(
+                "ES01",
+                self.path,
+                save_event=lambda payload: None,
+            )
+
+        self.assertEqual(result, {
+            "attempted": 1,
+            "saved": 1,
+            "failed": 0,
+            "outbox_pending": 1,
+            "outbox_failed": True,
+        })
 
     def test_two_stations_can_enqueue_concurrently_without_losing_rows(self):
         with ThreadPoolExecutor(max_workers=2) as executor:

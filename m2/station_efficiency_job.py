@@ -191,6 +191,8 @@ def _flush_event_outbox(
         )
         if result["failed"]:
             warnings.append(_warning("bottleneck_event_save"))
+        if result.pop("outbox_failed", False):
+            warnings.append(_warning("event_outbox"))
         return result
     except EventOutboxError:
         warnings.append(_warning("event_outbox"))
@@ -375,8 +377,13 @@ def process_station_minute(
     event_persistence = _combine_event_persistence(
         flushed_events, current_events,
     )
+    has_pending_events = (
+        isinstance(event_persistence["outbox_pending"], int)
+        and not isinstance(event_persistence["outbox_pending"], bool)
+        and event_persistence["outbox_pending"] > 0
+    )
     return {
-        "status": "partial" if warnings else "ok",
+        "status": "partial" if warnings or has_pending_events else "ok",
         "warnings": warnings,
         "minute_point": minute_point,
         "saved_record": saved_record,

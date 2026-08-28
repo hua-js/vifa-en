@@ -182,17 +182,29 @@ def flush_station_events(station_id, path, save_event):
     queued = load_station_events(station_id, path)
     saved = 0
     failed = 0
+    outbox_failed = False
     for event in queued:
         try:
             save_event(event)
         except Exception:
             failed += 1
         else:
-            discard_event(event, path)
             saved += 1
-    return {
+            try:
+                discard_event(event, path)
+            except EventOutboxError:
+                outbox_failed = True
+    try:
+        outbox_pending = pending_event_count(station_id, path)
+    except EventOutboxError:
+        outbox_pending = None
+        outbox_failed = True
+    result = {
         "attempted": len(queued),
         "saved": saved,
         "failed": failed,
-        "outbox_pending": pending_event_count(station_id, path),
+        "outbox_pending": outbox_pending,
     }
+    if outbox_failed:
+        result["outbox_failed"] = True
+    return result
