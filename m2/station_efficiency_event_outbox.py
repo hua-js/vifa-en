@@ -3,11 +3,13 @@
 import json
 import os
 import sqlite3
+import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
 
 
 BUSY_TIMEOUT_MILLISECONDS = 5000
+BUSY_RETRY_INTERVAL_SECONDS = 0.02
 _ERROR_MESSAGE = "本机事件补偿队列不可用"
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS event_outbox (
@@ -36,6 +38,26 @@ def _database_path(path):
     return value
 
 
+def _ensure_wal_mode(connection):
+    """Enable WAL once, retrying only while another process initializes it."""
+    deadline = time.monotonic() + BUSY_TIMEOUT_MILLISECONDS / 1000.0
+    while True:
+        try:
+            row = connection.execute("PRAGMA journal_mode").fetchone()
+            if row and str(row[0]).lower() == "wal":
+                return
+            connection.execute("PRAGMA journal_mode=WAL")
+            return
+        except sqlite3.OperationalError as exc:
+            message = str(exc).lower()
+            if "locked" not in message and "busy" not in message:
+                raise
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise
+            time.sleep(min(BUSY_RETRY_INTERVAL_SECONDS, remaining))
+
+
 @contextmanager
 def _connection(path):
     connection = None
@@ -46,7 +68,7 @@ def _connection(path):
             isolation_level=None,
         )
         connection.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MILLISECONDS}")
-        connection.execute("PRAGMA journal_mode=WAL")
+        _ensure_wal_mode(connection)
         connection.execute("PRAGMA synchronous=NORMAL")
         connection.execute(_SCHEMA)
         yield connection
