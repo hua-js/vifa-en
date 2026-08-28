@@ -215,7 +215,7 @@ Header：不配置
 
 四个既有结果/明细集合为 `energy_forecast_latest`、`energy_forecast_batches`、`energy_forecast_points`、`energy_forecast_evaluations`。第五个集合 `energy_forecast_acceptance_runs` 是控制/汇总表，不重复 metrics；详细证据仍保留在 batches、points、evaluations。
 
-操作员创建任务身份、窗口和控制字段，Worker 仅更新汇总字段。以下是示例，不是生产 ID：
+操作员创建并拥有任务身份、窗口和控制字段；Worker 列出任务行，且只能更新 `completed_days`、`result_state` 和 `calculated_at` 三个汇总字段。以下是示例，不是生产 ID：
 
 ```text
 station_id:          ES01-FULL-ID-EXAMPLE
