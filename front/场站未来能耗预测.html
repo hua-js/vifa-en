@@ -119,6 +119,7 @@
     .station-section[data-station="station_2"] { --station-accent: var(--blue); }
     .station-head { display: flex; justify-content: space-between; align-items: center; gap: 18px; }
     .station-head h2 { margin: 0; font-size: 23px; letter-spacing: -.02em; }
+    .station-status-group { display: flex; flex: 0 0 auto; flex-direction: column; align-items: flex-end; gap: 4px; }
     .station-status {
       flex: 0 0 auto;
       padding: 6px 11px;
@@ -128,6 +129,9 @@
       font-size: 12px;
       font-weight: 760;
     }
+    .readiness-hint { color: var(--station-accent); font-size: 12px; font-weight: 720; }
+    .readiness-meta { color: var(--muted); font-size: 11px; }
+    .readiness-hint[hidden], .readiness-meta[hidden] { display: none; }
     .station-window {
       display: flex;
       flex-wrap: wrap;
@@ -198,6 +202,8 @@
       .series-grid, .chart-grid { grid-template-columns: minmax(0,1fr); gap: 12px; }
       .series-values { grid-template-columns: minmax(0,1fr); }
       .station-head { align-items: start; }
+      .station-status-group { max-width: 58%; }
+      .readiness-hint, .readiness-meta { text-align: right; }
       .chart-panel { padding: 11px 8px; }
       .forecast-chart { width: 800px; min-width: 800px; }
       .chart-head { align-items: start; flex-direction: column; }
@@ -226,7 +232,7 @@
     <p id="error-state" role="alert" hidden>预测数据暂不可用</p>
 
     <section class="station-section" data-station="station_1" data-state="loading" aria-labelledby="station-1-title">
-      <header class="station-head"><h2 id="station-1-title">1# 电站</h2><span class="station-status">—</span></header>
+      <header class="station-head"><h2 id="station-1-title">1# 电站</h2><div class="station-status-group" aria-live="polite"><span class="station-status">—</span><span class="readiness-hint" hidden>—</span><span class="readiness-meta" hidden>—</span></div></header>
       <p class="station-window"><span>历史 <strong class="history-window">—</strong></span><span>预测起点 <strong class="forecast-start">—</strong></span><span>最新实绩 <strong class="actual-latest">—</strong></span></p>
       <div class="series-grid">
         <article class="series-card" data-series="station_total_load">
@@ -248,7 +254,7 @@
     </section>
 
     <section class="station-section" data-station="station_2" data-state="loading" aria-labelledby="station-2-title">
-      <header class="station-head"><h2 id="station-2-title">2# 电站</h2><span class="station-status">—</span></header>
+      <header class="station-head"><h2 id="station-2-title">2# 电站</h2><div class="station-status-group" aria-live="polite"><span class="station-status">—</span><span class="readiness-hint" hidden>—</span><span class="readiness-meta" hidden>—</span></div></header>
       <p class="station-window"><span>历史 <strong class="history-window">—</strong></span><span>预测起点 <strong class="forecast-start">—</strong></span><span>最新实绩 <strong class="actual-latest">—</strong></span></p>
       <div class="series-grid">
         <article class="series-card" data-series="station_total_load">
@@ -468,19 +474,32 @@
         value.results.forEach(validateAcceptanceResult);
       }
 
+      function validateReadiness(value) {
+        if (value === null) return;
+        exactObject(value, ["required_days", "available_days", "remaining_days"], "readiness");
+        assert(value.required_days === 28, "readiness required days invalid");
+        assert(finite(value.available_days) && value.available_days >= 0 && value.available_days <= 28, "readiness available days invalid");
+        assert(finite(value.remaining_days) && value.remaining_days >= 0 && value.remaining_days <= 28, "readiness remaining days invalid");
+        assert(Number.isInteger(value.available_days * 10) && Number.isInteger(value.remaining_days * 10), "readiness precision invalid");
+        const expectedRemaining = Math.round(Math.max(0, 28 - value.available_days) * 10) / 10;
+        assert(value.remaining_days === expectedRemaining, "readiness progress invalid");
+      }
+
       function validateStation(value, index) {
-        exactObject(value, ["station_key", "station_name", "range", "system", "series", "acceptance"], "station");
+        exactObject(value, ["station_key", "station_name", "range", "system", "series", "acceptance", "readiness"], "station");
         assert(value.station_key === STATION_KEYS[index] && value.station_name === STATION_NAMES[index], "public station identity invalid");
         const empty = validateRange(value.range);
         validateStationSystem(value.system);
         assert(Array.isArray(value.series) && value.series.length === 2, "station series count invalid");
         value.series.forEach((series, seriesIndex) => validateSeries(series, seriesIndex, value.range));
         validateAcceptance(value.acceptance);
+        validateReadiness(value.readiness);
         if (empty) {
-          assert(["initializing", "error"].includes(value.system.state) && value.system.generated_at === null && value.acceptance === null, "empty station invalid");
+          assert(["initializing", "error"].includes(value.system.state) && value.system.generated_at === null && value.acceptance === null && value.readiness === null, "empty station invalid");
           assert(value.series.every((series) => series.status === value.system.state && series.model_name === null && !series.actual.length && !series.forecast.length), "empty station series invalid");
         } else {
           assert(value.system.generated_at !== null && value.system.state !== "error", "full station system invalid");
+          assert(value.system.state !== "ready" || value.readiness === null || value.readiness.remaining_days === 0, "ready station readiness invalid");
           const times = value.series.flatMap((series) => series.actual.map((point) => point.data_time));
           const latest = times.length ? times.reduce((left, right) => milliseconds(left) > milliseconds(right) ? left : right) : null;
           assert(value.range.actual_latest === latest, "actual latest mismatch");
@@ -518,6 +537,11 @@
       function clearSection(section) {
         section.dataset.state = "error";
         text(section.querySelector(".station-status"), "—");
+        [".readiness-hint", ".readiness-meta"].forEach((selector) => {
+          const node = section.querySelector(selector);
+          text(node, "—");
+          node.hidden = true;
+        });
         [".history-window", ".forecast-start", ".actual-latest"].forEach((selector) => text(section.querySelector(selector), "—"));
         section.querySelectorAll(".series-card").forEach((card) => {
           card.removeAttribute("data-status");
@@ -611,10 +635,33 @@
         });
       }
 
+      function renderReadiness(section, station) {
+        const hint = section.querySelector(".readiness-hint");
+        const meta = section.querySelector(".readiness-meta");
+        const visible = station.readiness !== null && ["ready", "initializing"].includes(station.system.state);
+        if (!visible) {
+          text(hint, "—");
+          text(meta, "—");
+          hint.hidden = true;
+          meta.hidden = true;
+          return;
+        }
+        text(
+          hint,
+          station.system.state === "ready"
+            ? "已达到 Ready 条件"
+            : `距离 Ready 约 ${station.readiness.remaining_days.toFixed(1)} 天`,
+        );
+        text(meta, `有效历史 ${station.readiness.available_days.toFixed(1)} / ${station.readiness.required_days} 天`);
+        hint.hidden = false;
+        meta.hidden = false;
+      }
+
       function renderStation(station) {
         const section = root.querySelector(`.station-section[data-station="${station.station_key}"]`);
         section.dataset.state = station.system.state;
         text(section.querySelector(".station-status"), STATE_LABELS[station.system.state]);
+        renderReadiness(section, station);
         text(section.querySelector(".history-window"), station.range.history_start ? `${dateTime(station.range.history_start)} — ${dateTime(station.range.history_end)}` : "—");
         text(section.querySelector(".forecast-start"), dateTime(station.range.forecast_start));
         text(section.querySelector(".actual-latest"), dateTime(station.range.actual_latest));

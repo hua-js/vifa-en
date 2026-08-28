@@ -278,6 +278,25 @@ class DashboardAcceptance(ApiModel):
         return self
 
 
+class DashboardReadiness(ApiModel):
+    required_days: Literal[28] = 28
+    available_days: float = Field(ge=0, le=28, strict=True)
+    remaining_days: float = Field(ge=0, le=28, strict=True)
+
+    @model_validator(mode="after")
+    def validate_progress(self) -> "DashboardReadiness":
+        if round(self.available_days, 1) != self.available_days:
+            raise ValueError("available_days must use one decimal place")
+        if round(self.remaining_days, 1) != self.remaining_days:
+            raise ValueError("remaining_days must use one decimal place")
+        expected_remaining = round(
+            max(0.0, self.required_days - self.available_days), 1
+        )
+        if self.remaining_days != expected_remaining:
+            raise ValueError("remaining_days must match available history")
+        return self
+
+
 class DashboardStation(ApiModel):
     station_key: Literal["station_1", "station_2"]
     station_name: str
@@ -285,6 +304,7 @@ class DashboardStation(ApiModel):
     system: DashboardStationSystem
     series: tuple[DashboardSeries, DashboardSeries]
     acceptance: DashboardAcceptance | None = None
+    readiness: DashboardReadiness | None = None
 
     @model_validator(mode="after")
     def validate_station(self) -> "DashboardStation":
@@ -307,11 +327,19 @@ class DashboardStation(ApiModel):
                 raise ValueError("empty station cannot invent model or point data")
             if self.acceptance is not None:
                 raise ValueError("empty station cannot invent acceptance data")
+            if self.readiness is not None:
+                raise ValueError("empty station cannot invent readiness data")
             return self
         if self.system.generated_at is None:
             raise ValueError("non-empty station requires generated_at")
         if self.system.state == "error":
             raise ValueError("error station must use an empty range")
+        if (
+            self.system.state == "ready"
+            and self.readiness is not None
+            and self.readiness.remaining_days != 0
+        ):
+            raise ValueError("ready station cannot have remaining history days")
         history_start = self.range.history_start
         history_end = self.range.history_end
         forecast_start = self.range.forecast_start

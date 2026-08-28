@@ -29,6 +29,7 @@ from m3_worker.dashboard_contracts import (
     DashboardEnvelope,
     DashboardForecastPoint,
     DashboardRange,
+    DashboardReadiness,
     DashboardSeries,
     DashboardStation,
     DashboardStationSystem,
@@ -270,6 +271,7 @@ class DashboardStationResult:
     actual: list[ObservationPoint]
     forecasts: list[ForecastSeries]
     acceptance: DashboardAcceptance | None = None
+    readiness: DashboardReadiness | None = None
     degraded: bool = False
 
 
@@ -475,6 +477,7 @@ def _station_from_result(result: DashboardStationResult) -> DashboardStation:
         ),
         series=public_series,
         acceptance=getattr(result, "acceptance", None),
+        readiness=getattr(result, "readiness", None),
     )
 
 
@@ -537,6 +540,7 @@ def _empty_station(
             for unique_id in SERIES_IDS
         ),
         acceptance=None,
+        readiness=None,
     )
 
 

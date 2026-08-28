@@ -384,8 +384,8 @@ class ForecastServiceTests(unittest.TestCase):
         self.assertEqual(state.last_source_at, BOOTSTRAP_AT)
         self.assertEqual(state.last_error_code, None)
 
-    def test_model_selection_uses_latest_fifteen_days_from_the_ninety_day_cache(self):
-        """Passing the full cache into selection would defeat the 15-day trial window."""
+    def test_model_selection_uses_latest_twenty_eight_days_from_ninety_day_cache(self):
+        """Selection expands to the Ready window without consuming all 90 days."""
         service = make_service(source_with_history(), FakeSink())
         service.bootstrap("station-1", BOOTSTRAP_AT)
 
@@ -399,7 +399,7 @@ class ForecastServiceTests(unittest.TestCase):
         for unique_id in SERIES_IDS:
             self.assertEqual(
                 champions[unique_id].training_start,
-                BOOTSTRAP_AT - timedelta(days=15),
+                BOOTSTRAP_AT - timedelta(days=28),
             )
             self.assertEqual(
                 champions[unique_id].training_end,
@@ -702,6 +702,18 @@ class ForecastServiceTests(unittest.TestCase):
         self.assertEqual(service.state("station-1").last_source_at, pull.end)
         self.assertEqual(service.state("station-1").last_published_at, GENERATED_AT)
         self.assertEqual(sink.latest, [snapshot])
+        self.assertIn("readiness", snapshot.model_manifest)
+        self.assertEqual(
+            snapshot.model_manifest["readiness"],
+            {
+                "required_days": 28,
+                "required_points": 2688,
+                "series": {
+                    "station_total_load": {"real_points": 2688},
+                    "storage_soc": {"real_points": 2688},
+                },
+            },
+        )
 
         body = snapshot.model_dump(exclude={"content_hash"})
         self.assertEqual(snapshot.content_hash, canonical_hash(body))

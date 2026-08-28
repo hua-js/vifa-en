@@ -398,6 +398,22 @@ class DeploymentArtifactTests(unittest.TestCase):
             self.assertNotIn(forbidden, rendered)
         self.assertNotRegex(rendered, re.compile(r"eyJ[a-zA-Z0-9_-]+\."))
 
+    def test_production_flow_embeds_current_dashboard_html(self):
+        flow = json.loads(PRODUCTION_FLOW.read_text(encoding="utf-8"))
+        page = next(
+            node for node in flow if node.get("id") == "m3_prod_page_template"
+        )
+        html = M3_HTML.read_text(encoding="utf-8")
+        marker = "  <script>\n    (() => {"
+        injection = (
+            "  <script>window.__M3_DASHBOARD_AUTH_MODE__ = "
+            "{{{m3DashboardAuthModeJson}}}; "
+            "window.__M3_NOCOBASE_PARENT_ORIGIN__ = "
+            "{{{m3NocobaseParentOriginJson}}};</script>\n"
+        )
+        self.assertEqual(html.count(marker), 1)
+        self.assertEqual(page["template"], html.replace(marker, injection + marker))
+
     def test_iframe_auth_uses_current_user_and_exact_origin_nonce_handshake(self):
         html = M3_HTML.read_text(encoding="utf-8")
         block = NOCOBASE_BLOCK.read_text(encoding="utf-8")

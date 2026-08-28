@@ -2,25 +2,29 @@ from datetime import timedelta
 import unittest
 import warnings
 
-from m3_worker.domain.training_data import build_training_dataset
+from m3_worker.domain.training_data import (
+    OPERATIONAL_HISTORY_DAYS,
+    build_training_dataset,
+)
 from tests.m3_test_support import make_quarter_hour_points
 
 
 class TrainingDataTests(unittest.TestCase):
-    def test_operational_training_keeps_only_the_latest_fifteen_days(self):
-        """Keeping all cached history would make the trial train beyond 15 days."""
-        points = make_quarter_hour_points(28)
+    def test_operational_training_expands_with_available_history_up_to_ready_window(self):
+        """Keeping the cold-start 15-day cap would prevent readiness forever."""
+        points = make_quarter_hour_points(35)
 
         dataset = build_training_dataset(
             points,
             "station_total_load",
-            history_days=15,
+            history_days=OPERATIONAL_HISTORY_DAYS,
         )
 
-        self.assertEqual(len(dataset.frame), 15 * 96)
-        self.assertEqual(dataset.start, points[-15 * 96].ds)
+        self.assertEqual(OPERATIONAL_HISTORY_DAYS, 28)
+        self.assertEqual(len(dataset.frame), 28 * 96)
+        self.assertEqual(dataset.start, points[-28 * 96].ds)
         self.assertEqual(dataset.end, points[-1].ds)
-        self.assertEqual(dataset.mode, "warming_up")
+        self.assertEqual(dataset.mode, "full")
 
     def test_operational_training_fills_a_long_gap_from_previous_day_only_in_copy(self):
         """Discarding all history before a 3.5-hour gap would leave only a few points."""

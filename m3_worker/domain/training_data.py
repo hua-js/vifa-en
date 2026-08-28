@@ -7,7 +7,10 @@ from m3_worker.contracts import ObservationPoint, SeriesId
 
 
 GRID = timedelta(minutes=15)
-OPERATIONAL_HISTORY_DAYS = 15
+POINTS_PER_DAY = 96
+READY_HISTORY_DAYS = 28
+READY_REQUIRED_POINTS = READY_HISTORY_DAYS * POINTS_PER_DAY
+OPERATIONAL_HISTORY_DAYS = READY_HISTORY_DAYS
 SHORT_GAP_BUCKETS = 2
 SEASONAL_LAG_BUCKETS = (96, 672)
 
@@ -22,10 +25,10 @@ class TrainingDataset:
 
 
 def _history_mode(point_count: int) -> str:
-    days = point_count / 96
+    days = point_count / POINTS_PER_DAY
     if days < 7:
         return "insufficient"
-    if days < 28:
+    if days < READY_HISTORY_DAYS:
         return "warming_up"
     return "full"
 

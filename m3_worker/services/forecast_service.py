@@ -23,6 +23,8 @@ from m3_worker.domain.forecasting import (
 )
 from m3_worker.domain.training_data import (
     OPERATIONAL_HISTORY_DAYS,
+    READY_HISTORY_DAYS,
+    READY_REQUIRED_POINTS,
     TrainingDataset,
     build_training_dataset,
 )
@@ -152,6 +154,29 @@ def _champion_manifest(champion: Champion | None) -> dict[str, object]:
     }
 
 
+def _readiness_manifest(
+    datasets: dict[SeriesId, TrainingDataset],
+) -> dict[str, object]:
+    if set(datasets) != SERIES_SET:
+        raise M3Error(
+            "forecast_incomplete", "Readiness requires both training datasets"
+        )
+    return {
+        "required_days": READY_HISTORY_DAYS,
+        "required_points": READY_REQUIRED_POINTS,
+        "series": {
+            unique_id: {
+                "real_points": min(
+                    len(datasets[unique_id].frame)
+                    - len(datasets[unique_id].imputed_keys),
+                    READY_REQUIRED_POINTS,
+                )
+            }
+            for unique_id in SERIES_IDS
+        },
+    }
+
+
 def build_latest_snapshot(
     station_id: str,
     as_of: datetime,
@@ -159,6 +184,8 @@ def build_latest_snapshot(
     source_data_end: datetime,
     series: list[ForecastSeries],
     champions: dict[str, Champion | None],
+    *,
+    readiness: dict[str, object] | None = None,
 ) -> LatestSnapshot:
     """Build one canonical typed terminal snapshot and verify its digest."""
 
@@ -199,6 +226,8 @@ def build_latest_snapshot(
             for unique_id in SERIES_IDS
         },
     }
+    if readiness is not None:
+        manifest["readiness"] = readiness
     body = {
         "station_id": station_id,
         "as_of": as_of,
@@ -490,6 +519,7 @@ class ForecastService:
                         completed_end,
                         forecast_series,
                         cache.state.champions,
+                        readiness=_readiness_manifest(datasets),
                     )
                 except Exception as cause:
                     error = _safe_error(

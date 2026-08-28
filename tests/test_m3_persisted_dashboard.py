@@ -53,7 +53,17 @@ def _latest_row(station_id: str) -> dict:
         source_data_end=FORECAST_START,
         status="ok",
         series=_series(),
-        model_manifest={"statsforecast_version": "2.1.1"},
+        model_manifest={
+            "statsforecast_version": "2.1.1",
+            "readiness": {
+                "required_days": 28,
+                "required_points": 2688,
+                "series": {
+                    "station_total_load": {"real_points": 2688},
+                    "storage_soc": {"real_points": 2688},
+                },
+            },
+        },
         content_hash=f"hash-{station_id}",
     )
     values = snapshot.model_dump(mode="json")
@@ -208,10 +218,44 @@ class PersistedDashboardTests(unittest.TestCase):
         )
         self.assertEqual(len(payload["stations"][0]["series"][0]["forecast"]), 96)
         self.assertEqual(len(payload["stations"][0]["series"][0]["actual"]), 96)
+        self.assertIn("readiness", payload["stations"][0])
+        self.assertEqual(
+            payload["stations"][0]["readiness"],
+            {
+                "required_days": 28,
+                "available_days": 28.0,
+                "remaining_days": 0.0,
+            },
+        )
         self.assertEqual(len(source.calls), 2)
         self.assertTrue(all(call.end - call.start == timedelta(hours=24) for call in source.calls))
         self.assertFalse(hasattr(api, "create_record"))
         self.assertNotIn("plant-alpha-ES01", envelope.model_dump_json())
+
+    def test_warming_station_exposes_shorter_series_readiness_progress(self):
+        api = FakeApi()
+        row = api.latest[STATION_1.station_id]
+        row["status"] = "warming_up"
+        for series in row["series_payload"]:
+            series["status"] = "warming_up"
+        row["model_manifest"]["readiness"]["series"] = {
+            "station_total_load": {"real_points": 2160},
+            "storage_soc": {"real_points": 2112},
+        }
+        service, _, _ = self.make_service(api=api)
+
+        station = service.build().model_dump(mode="python")["data"]["stations"][0]
+
+        self.assertEqual(station["system"]["state"], "initializing")
+        self.assertIn("readiness", station)
+        self.assertEqual(
+            station["readiness"],
+            {
+                "required_days": 28,
+                "available_days": 22.0,
+                "remaining_days": 6.0,
+            },
+        )
 
     def test_missing_latest_is_initializing_without_failing_healthy_peer(self):
         api = FakeApi()

@@ -116,11 +116,22 @@ const productionPage = nodeById(PRODUCTION_FLOW, "m3_prod_page_origin");
   });
   assert.strictEqual(result[0], request);
   assert.strictEqual(result[1], null);
-  assert.strictEqual(result[2], undefined);
+  assert.strictEqual(result[2], null);
   assert.strictEqual(request.url, "https://ems.lvkpower.com/api/auth:check");
 }
 
-for (const mode of ["server_token", undefined, ""] ) {
+{
+  const request = { req: { query: {}, headers: {} } };
+  const result = runFunction(productionAuth, request, {
+    M3_AUTH_MODE: "server_token",
+    M3_AUTH_BASE_URL: "https://ems.lvkpower.com",
+  });
+  assert.strictEqual(result[0], null);
+  assert.strictEqual(result[1], null);
+  assert.strictEqual(result[2], request);
+}
+
+for (const mode of [undefined, ""] ) {
   const request = { req: { query: {}, headers: {} } };
   const result = runFunction(productionAuth, request, {
     M3_AUTH_MODE: mode,
@@ -131,7 +142,17 @@ for (const mode of ["server_token", undefined, ""] ) {
   assert.strictEqual(result[1].payload.error.code, "auth_unavailable", String(mode));
 }
 
-for (const mode of ["server_token", undefined, ""] ) {
+{
+  const request = { req: { query: {} } };
+  const result = runFunction(productionPage, request, {
+    M3_AUTH_MODE: "server_token",
+    M3_NOCOBASE_PAGE_ORIGIN: "https://ems.lvkpower.com",
+  });
+  assert.strictEqual(result[0], request);
+  assert.strictEqual(result[1], null);
+}
+
+for (const mode of [undefined, ""] ) {
   const request = { req: { query: {} } };
   const result = runFunction(productionPage, request, {
     M3_AUTH_MODE: mode,

@@ -31,6 +31,7 @@ function task5Fixtures() {
     "first_values = ((410.0, 61.0), (730.0, 54.0))",
     "for station_index, station in enumerate(ready['data']['stations']):",
     "    station['system'].update(state='ready', mode='normal', stale=False)",
+    "    station['readiness'] = {'required_days':28,'available_days':28.0,'remaining_days':0.0}",
     "    for series_index, series in enumerate(station['series']):",
     "        series.update(status='ok', fallback_reason=None)",
     "        series['forecast'][0].update(value=first_values[station_index][series_index], raw_value=first_values[station_index][series_index], is_clipped=False)",
@@ -38,6 +39,8 @@ function task5Fixtures() {
     "ready['data']['stations'][1]['acceptance'] = {'acceptance_run_id':'run-station-2','status':'in_progress','completed_days':3,'expected_days':7,'results':[]}",
     "initializing_normal = deepcopy(base)",
     "initializing_normal['data']['stations'][0]['system']['mode'] = 'normal'",
+    "initializing_normal['data']['stations'][0]['readiness'] = {'required_days':28,'available_days':22.5,'remaining_days':5.5}",
+    "initializing_normal['data']['stations'][1]['readiness'] = {'required_days':28,'available_days':24.0,'remaining_days':4.0}",
     "degraded = deepcopy(ready)",
     "degraded['data']['stations'][0]['system'].update(state='degraded', mode='degraded')",
     "degraded['data']['system'].update(state='degraded', healthy_station_count=1)",
@@ -50,6 +53,7 @@ function task5Fixtures() {
     "error_station['system'].update(state='error', mode='error', generated_at=None, stale=False)",
     "for series in error_station['series']: series.update(model_name=None, status='error', fallback_reason='station_unavailable', actual=[], forecast=[])",
     "error_station['acceptance'] = None",
+    "error_station['readiness'] = None",
     "error['data']['system'].update(state='degraded', healthy_station_count=1)",
     "fixtures = {name: json.loads(DashboardEnvelope.model_validate(value).model_dump_json()) for name, value in {'ready':ready,'initializing_normal':initializing_normal,'degraded':degraded,'stale':stale,'error':error}.items()}",
     "microsecond_now = GENERATED_AT.replace(microsecond=123456)",
@@ -284,6 +288,8 @@ function pathCoordinates(pathData) {
   assert.deepStrictEqual(await page.locator(".station-section h2").allTextContents(), ["1# 电站", "2# 电站"]);
   assert.deepStrictEqual(await page.locator(".forecast-value").allTextContents(), ["410 kW", "61.0 %", "730 kW", "54.0 %"]);
   assert.deepStrictEqual(await page.locator(".station-window .forecast-start").allTextContents(), ["2026/08/26 10:00", "2026/08/26 09:45"]);
+  assert.deepStrictEqual(await page.locator(".readiness-hint").allTextContents(), ["已达到 Ready 条件", "已达到 Ready 条件"]);
+  assert.deepStrictEqual(await page.locator(".readiness-meta").allTextContents(), ["有效历史 28.0 / 28 天", "有效历史 28.0 / 28 天"]);
   assert.strictEqual(await page.locator(".station-acceptance").count(), 2);
   assert.deepStrictEqual(
     await page.locator("[data-station='station_1'] .acceptance-result-row").evaluateAll((rows) => rows.map((row) => row.dataset.series)),
@@ -299,6 +305,8 @@ function pathCoordinates(pathData) {
   await page.evaluate((data) => window.renderDashboard(data), fixtures.initializing_normal.data);
   assert.strictEqual(await page.locator("#forecast-dashboard").getAttribute("data-state"), "initializing");
   assert.strictEqual(await page.locator("[data-station='station_1']").getAttribute("data-state"), "initializing");
+  assert.strictEqual(await page.locator("[data-station='station_1'] .readiness-hint").innerText(), "距离 Ready 约 5.5 天");
+  assert.strictEqual(await page.locator("[data-station='station_1'] .readiness-meta").innerText(), "有效历史 22.5 / 28 天");
   assert.strictEqual(await page.locator("#error-state").isHidden(), true);
   assert.match(fixtures.microsecond_snapshot.data.system.generated_at, /\.123456\+08:00$/);
   await page.evaluate((data) => window.renderDashboard(data), fixtures.microsecond_snapshot.data);
@@ -370,15 +378,18 @@ function pathCoordinates(pathData) {
   await page.evaluate((data) => window.renderDashboard(data), fixtures.degraded.data);
   assert.strictEqual(await page.locator("#forecast-dashboard").getAttribute("data-state"), "degraded");
   assert.strictEqual(await page.locator("[data-station='station_1']").getAttribute("data-state"), "degraded");
+  assert.strictEqual(await page.locator("[data-station='station_1'] .readiness-hint").isHidden(), true);
   assert.deepStrictEqual(await page.locator("[data-station='station_1'] .forecast-value").allTextContents(), ["410 kW", "61.0 %"]);
   await page.evaluate((data) => window.renderDashboard(data), fixtures.stale.data);
   assert.strictEqual(await page.locator("#forecast-dashboard").getAttribute("data-state"), "stale");
   assert.strictEqual(await page.locator("[data-station='station_1']").getAttribute("data-state"), "stale");
+  assert.strictEqual(await page.locator("[data-station='station_1'] .readiness-hint").isHidden(), true);
   await page.evaluate((data) => window.renderDashboard(data), fixtures.error.data);
   assert.strictEqual(await page.locator("#forecast-dashboard").getAttribute("data-state"), "degraded");
   assert.deepStrictEqual(await page.locator("[data-station='station_1'] .forecast-value").allTextContents(), ["—", "—"]);
   assert.strictEqual(await page.locator("[data-station='station_1'] path.chart-line").count(), 0);
   assert.strictEqual(await page.locator("[data-station='station_1'] .acceptance-result-row").count(), 0);
+  assert.strictEqual(await page.locator("[data-station='station_1'] .readiness-hint").isHidden(), true);
   assert.deepStrictEqual(await page.locator("[data-station='station_2'] .forecast-value").allTextContents(), ["730 kW", "54.0 %"]);
   assert.strictEqual(await page.locator("[data-station='station_2'] path[data-kind='forecast']").count(), 2);
   await page.evaluate((data) => window.renderDashboard(data), payload.data);

@@ -13,6 +13,12 @@ from m3_worker.dashboard_contracts import (
     DashboardAcceptance,
     DashboardAcceptanceResult,
     DashboardEnvelope,
+    DashboardReadiness,
+)
+from m3_worker.domain.training_data import (
+    POINTS_PER_DAY,
+    READY_HISTORY_DAYS,
+    READY_REQUIRED_POINTS,
 )
 from m3_worker.errors import M3Error
 from m3_worker.services.live_dashboard_service import (
@@ -109,6 +115,49 @@ def _metric(value: object, field_name: str) -> float | None:
     if not math.isfinite(converted) or converted < 0:
         raise _contract_error(f"Persisted {field_name} is invalid")
     return converted
+
+
+def _readiness(model_manifest: dict[str, object]) -> DashboardReadiness | None:
+    if "readiness" not in model_manifest:
+        return None
+    value = model_manifest["readiness"]
+    if type(value) is not dict or set(value) != {
+        "required_days",
+        "required_points",
+        "series",
+    }:
+        raise _contract_error("Persisted readiness manifest is invalid")
+    if (
+        type(value["required_days"]) is not int
+        or value["required_days"] != READY_HISTORY_DAYS
+        or type(value["required_points"]) is not int
+        or value["required_points"] != READY_REQUIRED_POINTS
+    ):
+        raise _contract_error("Persisted readiness manifest is invalid")
+    series = value["series"]
+    if type(series) is not dict or set(series) != set(SERIES_IDS):
+        raise _contract_error("Persisted readiness series are invalid")
+    real_points = []
+    for unique_id in SERIES_IDS:
+        item = series[unique_id]
+        if (
+            type(item) is not dict
+            or set(item) != {"real_points"}
+            or type(item["real_points"]) is not int
+            or not 0 <= item["real_points"] <= READY_REQUIRED_POINTS
+        ):
+            raise _contract_error("Persisted readiness series are invalid")
+        real_points.append(item["real_points"])
+    available_days = round(min(real_points) / POINTS_PER_DAY, 1)
+    remaining_days = round(max(0.0, READY_HISTORY_DAYS - available_days), 1)
+    try:
+        return DashboardReadiness(
+            required_days=READY_HISTORY_DAYS,
+            available_days=available_days,
+            remaining_days=remaining_days,
+        )
+    except (ValidationError, TypeError, ValueError) as error:
+        raise _contract_error("Persisted readiness progress is invalid") from error
 
 
 class PersistedDashboardService:
@@ -322,6 +371,7 @@ class PersistedDashboardService:
         snapshot = self._latest(binding)
         if snapshot is None:
             return None
+        readiness = _readiness(snapshot.model_manifest)
         acceptance = self._acceptance(binding)
         forecast_start = snapshot.source_data_end
         degraded = False
@@ -347,6 +397,7 @@ class PersistedDashboardService:
             actual=actual,
             forecasts=snapshot.series,
             acceptance=acceptance,
+            readiness=readiness,
             degraded=degraded,
         )
 
