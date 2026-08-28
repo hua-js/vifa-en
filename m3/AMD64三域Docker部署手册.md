@@ -6,14 +6,14 @@
 适用架构：
 
 ```text
-数据源与 M3 四表：https://vifa.hlszh.com
+数据源、四个 M3 结果/明细集合与验收控制/汇总表：https://vifa.hlszh.com
 NocoBase 页面与普通 iframe：https://ems.lvkpower.com
 Node-RED 页面与 API：https://opdash.lvkpower.com
 Docker 主机：Linux AMD64，与 Node-RED 同机
 部署目录：/userdata/holo/pyfiles/vifa-m3
 ```
 
-本次不创建 M3 四表，不修改 M1/M2，不修改反向代理，不重启 Node-RED。
+本次不修改四个既有 M3 结果/明细集合、M1/M2 或反向代理，也不重启 Node-RED。
 
 ## 1. 服务器前置检查
 
@@ -106,7 +106,7 @@ M3_ACCEPTANCE_ENABLED=false
 M3_TIMEZONE=Asia/Shanghai
 ```
 
-填写两个真实完整电站 ID、四表写入 Key。`M3_SOURCE_API_TOKEN` 与
+填写两个真实完整电站 ID、四个结果/明细集合写入 Key 和验收任务最小权限 Key。`M3_SOURCE_API_TOKEN` 与
 `M3_ADMIN_API_TOKEN` 当前可分别使用 `openssl rand -hex 32` 生成不同随机值，以满足启动合同。
 
 ## 6. Dashboard 配置
@@ -125,7 +125,7 @@ M3_NOCOBASE_BASE_URL=https://vifa.hlszh.com
 M3_TIMEZONE=Asia/Shanghai
 ```
 
-`M3_STATIONS_JSON` 必须与 Worker 完全相同；填写四表只读 Key。
+`M3_STATIONS_JSON` 必须与 Worker 完全相同；填写四个结果/明细集合只读 Key。
 
 ```bash
 chown root:root /etc/vifa-m3/m3.env /etc/vifa-m3/dashboard.env
@@ -177,6 +177,8 @@ M3_NOCOBASE_PAGE_ORIGIN=https://ems.lvkpower.com
 确认两个 Exec 命令固定访问 `/userdata/holo/pyfiles/vifa-m3/run/*.sock`，然后选择
 `Deploy Modified Flows`；不得重启 Node-RED。
 
+后续仅启用连续七日验收时，不需要重新导入 `m3_production_gateway_flow.json`；生产 Node-RED 保持不变。
+
 ## 10. 人工配置 NocoBase iframe
 
 在 `https://ems.lvkpower.com` 创建普通 iframe/HTML 区块：
@@ -207,9 +209,56 @@ Header：不配置
 2. 停用新 M3 Node-RED Flow并发布 Modified Flows；
 3. 在部署目录执行 `docker compose stop`。
 
-不要删除 M3 四表、预测历史、env 或 Token 文件。
+不要删除四个 M3 结果/明细集合、验收任务表、预测历史、env 或 Token 文件。
 
-## 13. 验证范围
+## 13. 连续七日验收生产启用
+
+四个既有结果/明细集合为 `energy_forecast_latest`、`energy_forecast_batches`、`energy_forecast_points`、`energy_forecast_evaluations`。第五个集合 `energy_forecast_acceptance_runs` 是控制/汇总表，不重复 metrics；详细证据仍保留在 batches、points、evaluations。
+
+操作员创建任务身份、窗口和控制字段，Worker 仅更新汇总字段。以下是示例，不是生产 ID：
+
+```text
+station_id:          ES01-FULL-ID-EXAMPLE
+acceptance_run_id:   acceptance-20260829-station1
+window_start:        2026-08-29T01:00:00+08:00
+window_end:          2026-09-05T01:00:00+08:00
+control_state:       active
+completed_days:      0
+result_state:        pending
+calculated_at:       留空
+```
+
+日期仅为示例。每个真实任务从上海时间 01:00 开始，恰好七天后结束，并必须在首日 01:02 调度槽之前创建。
+
+在 NocoBase 角色 UI 中核验更新权限，不得以修改生产任务作部署探针。以下读取探针只过滤指定站和 `control_state=active`，并只请求获准字段：
+
+```bash
+read -rsp 'Worker NocoBase token: ' M3_PROBE_TOKEN
+echo
+read -rp 'Full station ID: ' M3_STATION_ID
+curl --fail --silent --show-error \
+  -H "Authorization: Bearer ${M3_PROBE_TOKEN}" \
+  --get 'https://vifa.hlszh.com/api/energy_forecast_acceptance_runs:list' \
+  --data-urlencode "filter={\"station_id\":\"${M3_STATION_ID}\",\"control_state\":\"active\"}" \
+  --data-urlencode 'fields=id,station_id,acceptance_run_id,window_start,window_end,control_state,completed_days,result_state,calculated_at' \
+  --data-urlencode 'page=1' \
+  --data-urlencode 'pageSize=1000'
+unset M3_PROBE_TOKEN M3_STATION_ID
+```
+
+按此顺序启用：
+
+1. 核验表约束和 Worker 角色权限。
+2. 在 `M3_ACCEPTANCE_ENABLED=false` 下部署新镜像。
+3. 为每个需要启用的电站创建一个活动任务。
+4. 核验每个活动/空电站查询。
+5. 在 `/etc/vifa-m3/m3.env` 中设置 `M3_ACCEPTANCE_ENABLED=true`。
+6. 在首个 01:02 槽之前只重建 `vifa-m3-worker`。
+7. 在 01:02 后检查首个完整 batch 和任务汇总。
+8. 在最终实绩回填和评估完成前保持 `control_state=active`。
+9. 仅在 Dashboard 显示终态 7/7 结果后将任务标记为 `completed`。
+
+## 14. 验证范围
 
 本地交付只执行静态 JSON、Compose 和脚本检查；没有启动生产容器，也没有执行自动化或端到端
 测试。上线后的 Socket、公开路由、iframe 页面和两站数据由人工确认。
