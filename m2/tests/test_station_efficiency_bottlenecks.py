@@ -26,14 +26,20 @@ def timestamp(minute):
     return f"2026-08-27T10:{minute:02d}:00+08:00"
 
 
-def minute_point(minute, *, pv_storage=90, storage_load=90, pv_load=90):
-    return {
+def minute_point(
+    minute, *, pv_storage=90, storage_load=90, pv_load=90,
+    pv_storage_input=None,
+):
+    point = {
         "station_id": "ES02",
         "data_time": timestamp(minute),
         "pv_storage_efficiency": pv_storage,
         "storage_load_efficiency": storage_load,
         "pv_load_efficiency": pv_load,
     }
+    if pv_storage_input is not None:
+        point["pv_storage_input_kw"] = pv_storage_input
+    return point
 
 
 def inverter_point(device_id, minute, power, *, name=None):
@@ -170,6 +176,30 @@ class StationEfficiencyBottleneckTests(unittest.TestCase):
             ),
             [],
         )
+
+    def test_chain_event_recovers_when_station_minutes_show_stopped_input(self):
+        active = self.evaluate_bottlenecks(
+            minute_points=[
+                minute_point(0, pv_storage=80),
+                minute_point(1, pv_storage=81),
+            ],
+            device_points=[],
+        )[0]
+
+        recovery = self.evaluate_bottlenecks(
+            minute_points=[
+                minute_point(1, pv_storage=81),
+                minute_point(2, pv_storage=None, pv_storage_input=0),
+                minute_point(3, pv_storage=None, pv_storage_input=0),
+            ],
+            device_points=[],
+            active_events=[active],
+        )
+
+        self.assertEqual(len(recovery), 1)
+        self.assertEqual(recovery[0]["status"], "recovered")
+        self.assertEqual(recovery[0]["end_time"], timestamp(2))
+        self.assertEqual(recovery[0]["evidence"]["recovery_reason"], "chain_stopped")
 
     def test_active_pending_chain_becomes_diagnosed_without_replacing_snapshot(self):
         active_chain = self.evaluate_bottlenecks(

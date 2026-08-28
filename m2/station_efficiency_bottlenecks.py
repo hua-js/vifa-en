@@ -4,6 +4,7 @@ import json
 from datetime import timedelta
 
 from m2.station_efficiency_history import (
+    CHAIN_COLUMNS,
     HistoryError,
     evaluate_battery_temperature_rise,
     evaluate_chain_low_efficiency,
@@ -224,11 +225,13 @@ def _trigger_snapshot(grouped, device_types, confirmation_time):
 
 def _chain_samples(minute_points, chain_name):
     label, efficiency_column, _device_types = CHAIN_META[chain_name]
+    _efficiency_column, input_column, _output_column = CHAIN_COLUMNS[chain_name]
     return [{
         "device_id": chain_name,
         "device_name": label,
         "data_time": point.get("data_time"),
         "efficiency_pct": point.get(efficiency_column),
+        "input_kw": point.get(input_column),
     } for point in minute_points]
 
 

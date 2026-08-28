@@ -453,12 +453,28 @@ def _normalize_chain_samples(samples):
             efficiency = float(value)
             if efficiency < 0 or efficiency > 100:
                 raise HistoryError("invalid_device_samples", "efficiency_pct 必须在 0 到 100 之间")
+        input_value = sample.get("input_kw")
+        if input_value is None:
+            input_kw = None
+        else:
+            if (
+                isinstance(input_value, bool)
+                or not isinstance(input_value, (int, float))
+                or not math.isfinite(float(input_value))
+                or float(input_value) < 0
+            ):
+                raise HistoryError(
+                    "invalid_device_samples",
+                    "input_kw 必须是有限非负数或 null",
+                )
+            input_kw = float(input_value)
         time = minute_bucket(sample.get("data_time")).astimezone(SHANGHAI_TIMEZONE)
         return {
             "device_id": _required_identifier(sample.get("device_id"), "device_id", "invalid_device_samples"),
             "device_name": _required_identifier(sample.get("device_name"), "device_name", "invalid_device_samples"),
             "data_time": time.isoformat(),
             "efficiency_pct": efficiency,
+            "input_kw": input_kw,
             "_time": time,
         }
     return _ordered_one_device(samples, normalize)
@@ -543,6 +559,9 @@ def evaluate_chain_low_efficiency(
             and sample["efficiency_pct"] < threshold
         )
 
+    def stopped(sample):
+        return sample["efficiency_pct"] is None and sample["input_kw"] == 0
+
     if active_event is None:
         run = _trailing_minute_run(
             ordered,
@@ -577,7 +596,10 @@ def evaluate_chain_low_efficiency(
         return event
 
     new_samples = [sample for sample in ordered if sample["_time"] > previous_last_seen_time]
-    if not any(sample["efficiency_pct"] is not None for sample in new_samples):
+    if not any(
+        sample["efficiency_pct"] is not None or stopped(sample)
+        for sample in new_samples
+    ):
         return _sync_chain_diagnosed_causes(
             _chain_event_copy(active_event), diagnosed_causes,
         )
@@ -604,11 +626,20 @@ def evaluate_chain_low_efficiency(
                 evidence["continuous_minutes"] = len(new_low_run)
             evidence["last_low_efficiency_time"] = new_low_run[-1]["data_time"]
 
-    valid_new_samples = [sample for sample in new_samples if sample["efficiency_pct"] is not None]
-    event["observed_value"] = min(
-        event["observed_value"], min(sample["efficiency_pct"] for sample in valid_new_samples),
-    )
-    latest = valid_new_samples[-1]
+    valid_new_samples = [
+        sample for sample in new_samples
+        if sample["efficiency_pct"] is not None
+    ]
+    if valid_new_samples:
+        event["observed_value"] = min(
+            event["observed_value"],
+            min(sample["efficiency_pct"] for sample in valid_new_samples),
+        )
+    observed_new_samples = [
+        sample for sample in new_samples
+        if sample["efficiency_pct"] is not None or stopped(sample)
+    ]
+    latest = observed_new_samples[-1]
     evidence["current_efficiency_pct"] = latest["efficiency_pct"]
     evidence["minimum_efficiency_pct"] = event["observed_value"]
     evidence["low_efficiency_threshold_pct"] = snapshot_rule["chain_low_efficiency_threshold_pct"]
@@ -619,19 +650,28 @@ def evaluate_chain_low_efficiency(
     event["last_seen_time"] = latest["data_time"]
 
     event_history = [sample for sample in ordered if sample["_time"] >= event_start_time]
-    recovery = _trailing_minute_run(
+    efficiency_recovery = _trailing_minute_run(
         event_history,
         lambda sample: (
             sample["efficiency_pct"] is not None
             and sample["efficiency_pct"] >= snapshot_rule["chain_low_efficiency_threshold_pct"]
         ),
     )
+    stopped_recovery = _trailing_minute_run(event_history, stopped)
     if (
-        len(recovery) >= snapshot_rule["chain_low_efficiency_recovery_minutes"]
-        and recovery[-1]["_time"] > previous_last_seen_time
+        len(efficiency_recovery) >= snapshot_rule["chain_low_efficiency_recovery_minutes"]
+        and efficiency_recovery[-1]["_time"] > previous_last_seen_time
     ):
         event["status"] = "recovered"
-        event["end_time"] = recovery[0]["data_time"]
+        event["end_time"] = efficiency_recovery[0]["data_time"]
+        evidence["recovery_reason"] = "efficiency_recovered"
+    elif (
+        len(stopped_recovery) >= snapshot_rule["chain_low_efficiency_recovery_minutes"]
+        and stopped_recovery[-1]["_time"] > previous_last_seen_time
+    ):
+        event["status"] = "recovered"
+        event["end_time"] = stopped_recovery[0]["data_time"]
+        evidence["recovery_reason"] = "chain_stopped"
     return event
 
 
@@ -892,6 +932,21 @@ def _event_overlaps(event, start, end):
     return event_start < end and (event_end is None or event_end >= start)
 
 
+def _public_event_device(event):
+    if event.get("event_type") != "chain_low_efficiency":
+        return event["device_name"]
+    evidence = event.get("evidence")
+    causes = evidence.get("diagnosed_causes") if isinstance(evidence, dict) else None
+    names = []
+    for cause in causes if isinstance(causes, list) else []:
+        if not isinstance(cause, dict):
+            continue
+        name = cause.get("device_name") or cause.get("device_id")
+        if name is not None and str(name).strip() and str(name).strip() not in names:
+            names.append(str(name).strip())
+    return "、".join(names) if names else "原因待判断"
+
+
 def build_calendar_day_dashboard(station_id, timezone_name, as_of, realtime, points, events):
     start, end = _day_bounds(as_of, timezone_name)
     cutoff = minute_bucket(as_of).astimezone(start.tzinfo)
@@ -916,7 +971,7 @@ def build_calendar_day_dashboard(station_id, timezone_name, as_of, realtime, poi
             "id": event.get("id"),
             "event_type": event["event_type"],
             "type": EVENT_LABELS[event["event_type"]],
-            "device": event["device_name"],
+            "device": _public_event_device(event),
             "start": _public_time(event["start_time"], start.tzinfo, "start_time"),
             "end": _public_time(event["end_time"], start.tzinfo, "end_time") if event.get("end_time") else None,
             "evidence": event["evidence"]["display_text"],

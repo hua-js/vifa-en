@@ -7,7 +7,11 @@ from unittest.mock import patch
 from urllib.parse import parse_qs, urlsplit
 from zoneinfo import ZoneInfo
 
-from m2.station_efficiency_job import cleanup_device_history, process_station_minute
+from m2.station_efficiency_job import (
+    _minute_chains,
+    cleanup_device_history,
+    process_station_minute,
+)
 from m2.station_efficiency_device_adapter import StationEfficiencyDeviceDataError
 from m2.station_efficiency_nocobase import StationEfficiencyStoreError
 from m2.station_efficiency_event_outbox import enqueue_event, pending_event_count
@@ -180,6 +184,35 @@ class StationEfficiencyJobTests(unittest.TestCase):
             self.fail(f"unexpected query URL: {url}")
 
         return query_request
+
+    def test_minute_chain_keeps_zero_flow_boundary_when_efficiency_is_none(self):
+        result = {
+            "pv_storage_dc_efficiency": None,
+            "storage_load_efficiency": 90,
+            "pv_load_efficiency": 95,
+            "intermediate": {
+                "pv_storage_dc_efficiency": {
+                    "denominator_kw": 0,
+                    "numerator_kw": 0,
+                },
+                "storage_load_efficiency": {
+                    "denominator_kw": 100,
+                    "numerator_kw": 90,
+                },
+                "pv_load_efficiency": {
+                    "denominator_kw": 100,
+                    "numerator_kw": 95,
+                },
+            },
+        }
+
+        chains = _minute_chains(result)
+
+        self.assertEqual(chains["pv_storage"], {
+            "efficiency": None,
+            "input_kw": 0,
+            "output_kw": 0,
+        })
 
     def test_processes_single_emu_fetch_through_device_and_event_flow(self):
         emu_calls, growall_calls, store_calls = [], [], []

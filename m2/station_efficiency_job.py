@@ -79,8 +79,6 @@ def _beijing_time(value, config, field):
 
 def _chain_from_result(result, metric):
     efficiency = result[metric]
-    if efficiency is None:
-        return {"efficiency": None, "input_kw": None, "output_kw": None}
     intermediate = result["intermediate"][metric]
     return {
         "efficiency": efficiency,

@@ -550,6 +550,10 @@ function assertClose(actual, expected, message) {
   );
   const chainRow = page.locator("#event-table-body tr", { hasText: "链路低效率" });
   assert.strictEqual(await chainRow.count(), 1);
+  assert.strictEqual(
+    (await chainRow.locator("td").nth(2).innerText()).trim(),
+    "原因待判断",
+  );
   assert.match(await chainRow.innerText(), /原因待判断/);
   await chainRow.locator("summary").click();
   assert.match(await chainRow.innerText(), /emu21/);

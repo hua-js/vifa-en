@@ -439,6 +439,29 @@ class StationEfficiencyHistoryTests(unittest.TestCase):
         self.assertEqual(unchanged, active)
         self.assertIsNot(unchanged, active)
 
+    def test_active_chain_event_recovers_after_two_zero_input_minutes(self):
+        active = evaluate_chain_low_efficiency(
+            [self.chain_sample(0, 80), self.chain_sample(1, 82)], self.inverter_rule(),
+            trigger_device_snapshot={}, diagnosed_causes=[],
+        )
+        stopped = [
+            dict(self.chain_sample(2, None), input_kw=0),
+            dict(self.chain_sample(3, None), input_kw=0),
+        ]
+
+        pending = evaluate_chain_low_efficiency(
+            stopped[:1], self.inverter_rule(), active_event=active,
+        )
+        recovered = evaluate_chain_low_efficiency(
+            stopped, self.inverter_rule(), active_event=active,
+        )
+
+        self.assertEqual(pending["status"], "active")
+        self.assertEqual(recovered["status"], "recovered")
+        self.assertEqual(recovered["end_time"], "2026-08-27T10:02:00+08:00")
+        self.assertEqual(recovered["last_seen_time"], "2026-08-27T10:03:00+08:00")
+        self.assertEqual(recovered["evidence"]["recovery_reason"], "chain_stopped")
+
     def test_active_chain_event_does_not_overwrite_trigger_snapshot(self):
         original = {"pv_inverters": [{"device_id": "emu1", "load_rate_pct": 10.0}]}
         active = evaluate_chain_low_efficiency(
@@ -760,10 +783,40 @@ class StationEfficiencyHistoryTests(unittest.TestCase):
             {}, [], [event],
         )
         self.assertEqual(dashboard["events"][0]["type"], "链路低效率")
+        self.assertEqual(dashboard["events"][0]["device"], "原因待判断")
         self.assertEqual(dashboard["events"][0]["cause_status"], "pending")
         self.assertEqual(
             dashboard["events"][0]["trigger_device_snapshot"]["battery_cabinets"][0]["temperature_c"],
             None,
+        )
+
+    def test_calendar_day_dashboard_uses_diagnosed_devices_for_chain_event(self):
+        event = evaluate_chain_low_efficiency(
+            [self.chain_sample(0, 80), self.chain_sample(1, 82)],
+            self.inverter_rule(),
+            trigger_device_snapshot={},
+            diagnosed_causes=[
+                {
+                    "event_type": "inverter_low_load",
+                    "device_id": "emu1",
+                    "device_name": "光伏逆变器 emu1",
+                },
+                {
+                    "event_type": "battery_temperature_rise",
+                    "device_id": "emu21",
+                    "device_name": "电池柜 emu21",
+                },
+            ],
+        )
+
+        dashboard = build_calendar_day_dashboard(
+            "station-1", "Asia/Shanghai", "2026-08-27T14:36:20+08:00",
+            {}, [], [event],
+        )
+
+        self.assertEqual(
+            dashboard["events"][0]["device"],
+            "光伏逆变器 emu1、电池柜 emu21",
         )
 
     def test_calendar_day_dashboard_rejects_duplicates_and_excludes_future_points(self):
