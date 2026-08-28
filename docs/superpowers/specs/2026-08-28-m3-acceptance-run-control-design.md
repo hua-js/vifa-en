@@ -4,9 +4,9 @@
 
 ## 1. 背景
 
-M3 已实现正式七日验收的基线生成、实绩回填、指标计算和结果展示，但生产配置保持 `M3_ACCEPTANCE_ENABLED=false`。现有实现通过 Node-RED 固定 HTTP 接口读取外部 EMS 提供的 `active`、`acceptance_run_id`、`window_start` 和 `window_end`；仓库和当前生产部署均未落地该外部验收任务控制面。
+M3 已实现正式七日验收的基线生成、实绩回填、指标计算和结果展示，但生产配置保持 `M3_ACCEPTANCE_ENABLED=false`。原始实现预留了通过 Node-RED 固定 HTTP 接口读取外部 EMS 验收上下文的路径；仓库和当前生产部署均未落地该外部控制面，而且现行生产明确不导入包含该路径的旧 `energy_forecast_flow.json`。
 
-生产已在 NocoBase 创建 `energy_forecast_acceptance_runs` 表并安装字段与数据库约束。本设计将该表作为验收任务主表：授权人员在 NocoBase 后台创建和控制任务，Node-RED 读取活动任务，Worker 继续向现有明细表写入验收证据，并回写任务进度摘要。
+生产已在 NocoBase 创建 `energy_forecast_acceptance_runs` 表并安装字段与数据库约束。本设计将该表作为验收任务主表：授权人员在 NocoBase 后台创建和控制任务，Worker 使用现有固定 NocoBase 客户端直接读取活动任务，继续向现有明细表写入验收证据，并回写任务进度摘要。生产 Node-RED Flow 不参与验收控制面。
 
 ## 2. 目标与非目标
 
@@ -18,7 +18,7 @@ M3 已实现正式七日验收的基线生成、实绩回填、指标计算和�
 - Worker 每天上海时间 01:02 生成一个正式基线批次。
 - Worker 根据持久化明细恢复并同步任务进度，重启不丢状态。
 - 任务主表只保存控制状态和结果摘要；详细预测、实绩与指标继续保存在现有明细表。
-- Node-RED、Worker 和 Dashboard 使用职责分离的最小权限凭据。
+- Worker 和 Dashboard 使用职责分离的最小权限凭据。
 
 非目标：
 
@@ -82,71 +82,43 @@ NocoBase 集合与 PostgreSQL 物理表均命名为 `energy_forecast_acceptance_
 
 新任务必须显式设为 `active`，`completed_days` 使用默认值 0，`result_state` 使用默认值 `pending`。管理员看到最终结果后将 `control_state` 改为 `completed`；需要中止时改为 `cancelled`。
 
-### 4.2 Node-RED 验收上下文角色
-
-专用只读 Key 只允许：
-
-- 对 `energy_forecast_acceptance_runs` 执行 `list`。
-- 读取 `station_id`、`acceptance_run_id`、`window_start`、`window_end`、`control_state`。
-- 按 `station_id`、`control_state` 过滤。
-- 不允许创建、更新、删除、导入或导出。
-
-### 4.3 Worker 角色
+### 4.2 Worker 角色
 
 Worker Key 对任务表只允许：
 
-- `list`：读取 `id`、任务身份、窗口、控制状态和结果摘要；按 `station_id`、`acceptance_run_id` 过滤。
+- `list`：读取 `id`、任务身份、窗口、控制状态和结果摘要；按 `station_id`、`acceptance_run_id`、`control_state` 过滤。
 - `update`：以 `id` 为记录键，只写 `completed_days`、`result_state`、`calculated_at`。
 
 Worker 不得写 `station_id`、`acceptance_run_id`、窗口或 `control_state`，也不得创建、删除、导入或导出任务。
 
-### 4.4 Dashboard 角色
+### 4.3 Dashboard 角色
 
 Dashboard 继续从批次和评估表构建详细七日验收区域。第一版不要求 Dashboard 直接读取任务主表，避免扩大公开只读面的权限。
 
-## 5. Node-RED 验收上下文
+## 5. Worker 任务仓储
 
-现有 Worker 固定调用：
+新增独立的 Worker 服务边界负责读写任务主表。该服务只接收现有 `NocoBaseApiClient`，不接受调用方提供 URL、集合名或任意字段列表。
 
-```text
-GET /internal/energy-forecast/v1/stations/:station_id/acceptance-context
-```
+活动任务查询固定包含：
 
-Node-RED 保留该入站合同和 `M3_SOURCE_READ_TOKEN` 鉴权，但不再调用未落地的 `M3_ACCEPTANCE_CONTEXT_URL`。它改为使用固定的 `M3_NOCOBASE_BASE_URL` 和专用 `M3_ACCEPTANCE_CONTEXT_READ_TOKEN` 查询任务表。
-
-查询固定包含：
-
-- `station_id=<路径中的完整电站 ID>`
+- `station_id=<配置中的完整电站 ID>`
 - `control_state=active`
-- 明确的字段列表
-- 第一页和最多两行，用于检测违反唯一活动任务的不一致状态
+- 明确的字段列表：`id`、任务身份、窗口、控制状态和结果摘要
 
 返回规则：
 
-- 0 行：返回 `active=false`，其余三个字段为 `null`。
-- 1 行：严格校验运行标识、七日窗口和上海时间边界，返回 `active=true`。
-- 超过 1 行、字段缺失、额外字段、非法时间或非法状态：返回合同错误，不选择任意一行。
-- NocoBase 401/403、非成功状态、重定向、超时或超限响应：返回固定错误，不泄露 Token 或上游响应正文。
+- 0 行：返回无活动任务，调度器正常跳过该站。
+- 1 行：严格校验记录主键、运行标识、七日窗口、上海时间 01:00 边界、控制状态和摘要状态。
+- 超过 1 行、字段缺失、额外字段、非法时间或非法状态：抛出 `acceptance_context_invalid`，不选择任意一行。
+- NocoBase 401/403、非成功状态、重定向、超时或超限响应：沿用固定 Sink 错误，不泄露 API Key 或上游响应正文。
 
-Worker 接收到的公开内部合同保持不变：
-
-```json
-{
-  "status": "ok",
-  "data": {
-    "active": true,
-    "acceptance_run_id": "acceptance-20260829-station1",
-    "window_start": "2026-08-29T01:00:00+08:00",
-    "window_end": "2026-09-05T01:00:00+08:00"
-  }
-}
-```
+旧 Node-RED 验收上下文客户端不再参与 `AcceptanceService` 装配。`M3_SOURCE_BASE_URL` 和 `M3_SOURCE_API_TOKEN` 仍供现有运行告警客户端使用，不作为验收任务来源。
 
 ## 6. Worker 行为
 
 ### 6.1 非活动电站
 
-`M3_ACCEPTANCE_ENABLED=true` 是全局功能开关，活动任务按站决定。每日 01:02 调度到一个没有活动任务的电站时，Worker 正常跳过，不产生 `acceptance_inactive` 告警。一个电站未启用不影响另一个电站。
+`M3_ACCEPTANCE_ENABLED=true` 是全局功能开关，活动任务按站决定。每日 01:02 调度到一个没有活动任务的电站时，Worker 任务仓储返回空结果，Worker 正常跳过，不产生 `acceptance_inactive` 告警。一个电站未启用不影响另一个电站。
 
 ### 6.2 每日基线与进度
 
@@ -189,7 +161,7 @@ Worker 启动恢复以及后续活动任务处理会从完整批次和最终评�
   control_state = completed
 ```
 
-管理员可在最终结果前将任务改为 `cancelled`。取消后 Node-RED 返回无活动任务，Worker 不再创建新基线或回填该任务；已经写入的证据不删除。
+管理员可在最终结果前将任务改为 `cancelled`。取消后 Worker 的活动任务查询返回空结果，不再创建新基线或回填该任务；已经写入的证据不删除。
 
 ## 8. 失败处理与告警
 
@@ -200,7 +172,6 @@ Worker 启动恢复以及后续活动任务处理会从完整批次和最终评�
 - `acceptance_summary_invalid`：批次数、日期拓扑或摘要状态非法。
 - `acceptance_run_update_incomplete`：任务摘要更新未完整落库或回显不一致。
 - `sink_unauthorized`：Worker 对 NocoBase 的任务表权限不足。
-- `source_unauthorized` 或现有同类错误：Node-RED 任务只读 Key 无权查询。
 
 非活动任务是正常状态，不触发告警。任务合同错误、活动任务基线失败、进度不可达和最终结果写入失败需要按站告警，另一电站继续运行。
 
@@ -208,18 +179,18 @@ Worker 启动恢复以及后续活动任务处理会从完整批次和最终评�
 
 需要修改：
 
-- `m3/contracts/nocobase_collections.json`：加入第五张表及三类最小权限。
-- `m3/node_red/forecast_contract.js`：加入任务行和 NocoBase 列表响应验证。
-- `m3/node_red/energy_forecast_flow.json`：将验收上下文改为固定 NocoBase 查询。
-- `m3_worker/services/acceptance_service.py`：跳过非活动任务，计算并同步摘要，恢复时校正。
+- `m3/contracts/nocobase_collections.json`：加入第五张表及 Worker 最小权限。
+- `m3_worker/services/acceptance_run_service.py`：新增固定任务仓储、严格记录验证和限定字段摘要更新。
+- `m3_worker/services/acceptance_service.py`：使用任务仓储，跳过非活动任务，计算并同步摘要，恢复时校正。
 - Worker 资源装配及必要的 DTO/客户端边界。
-- 生产环境变量示例和部署说明：移除外部上下文 URL 依赖，记录专用任务只读 Key，并说明启用顺序。
+- 生产部署说明：记录第五张表权限和启用顺序；不新增验收 URL 或 Token。
 
 不修改：
 
 - StatsForecast 模型和选型逻辑。
 - 现有四张明细表结构。
 - Dashboard 对外 JSON 合同和页面布局。
+- 生产 `m3_production_gateway_flow.json` 与其他 Node-RED Flow。
 - M1、M2、反向代理和公开路由。
 
 ## 10. 验证与上线顺序
@@ -227,7 +198,6 @@ Worker 启动恢复以及后续活动任务处理会从完整批次和最终评�
 遵循当前交付约束，不新增或执行自动化测试。实现阶段执行：
 
 - JSON 语法和精确合同静态检查。
-- Node-RED Flow 引用、节点连线和固定 URL 静态检查。
 - Python 语法/导入检查。
 - Compose 配置检查。
 - Git diff whitespace 检查。
@@ -235,10 +205,9 @@ Worker 启动恢复以及后续活动任务处理会从完整批次和最终评�
 生产启用顺序：
 
 1. 确认任务表字段、约束和角色权限已安装。
-2. 更新并发布 Node-RED Flow，保持 Worker 验收开关关闭。
-3. 使用两个真实电站 ID 验证验收上下文在无活动任务时返回 `active=false`。
-4. 部署新 Worker 镜像。
-5. 在 NocoBase 创建首个活动任务，窗口从计划首日上海时间 01:00 开始。
-6. 验证该站上下文返回活动任务，另一站仍可返回非活动。
-7. 在首日 01:02 前设置 `M3_ACCEPTANCE_ENABLED=true` 并重建 Worker 容器。
-8. 每日核对任务摘要和完整批次数；最终结果生成后人工将任务标记为 `completed`。
+2. 使用 Worker Key 对任务表执行只读权限探测，确认无活动任务时返回空列表。
+3. 部署新 Worker 镜像，保持 `M3_ACCEPTANCE_ENABLED=false`。
+4. 在 NocoBase 创建首个活动任务，窗口从计划首日上海时间 01:00 开始。
+5. 使用相同 Worker Key 验证该站可读取唯一活动任务，另一站仍返回空列表。
+6. 在首日 01:02 前设置 `M3_ACCEPTANCE_ENABLED=true` 并重建 Worker 容器。
+7. 每日核对任务摘要和完整批次数；最终结果生成后人工将任务标记为 `completed`。
