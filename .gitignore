@@ -14,3 +14,4 @@ __pycache__/
 /m3/node_red/本地机器.txt
 /m3_worker/密钥.txt
 /run/
+/m3_dist
