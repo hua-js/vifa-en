@@ -166,7 +166,7 @@ class AcceptanceService:
     def __init__(
         self,
         *,
-        context_source,
+        run_service,
         observation_source,
         api,
         sink,
@@ -174,7 +174,7 @@ class AcceptanceService:
         now,
         evaluator=None,
     ):
-        self._context_source = context_source
+        self._runs = run_service
         self._observation_source = observation_source
         self._api = api
         self._sink = sink
@@ -219,14 +219,21 @@ class AcceptanceService:
             )
 
     def _context(self, station_id: str, *, require_active: bool) -> AcceptanceContext:
-        try:
-            raw = self._context_source.get_acceptance_context(station_id)
-            payload = raw.model_dump(mode="python") if isinstance(raw, AcceptanceContext) else raw
-            context = AcceptanceContext.model_validate(payload)
-        except (ValidationError, TypeError, ValueError) as error:
-            raise M3Error(
-                "acceptance_context_invalid", "Acceptance context is invalid"
-            ) from error
+        run = self._runs.active_run(station_id)
+        if run is None:
+            context = AcceptanceContext(active=False)
+        else:
+            try:
+                context = AcceptanceContext(
+                    active=True,
+                    acceptance_run_id=run.acceptance_run_id,
+                    window_start=run.window_start,
+                    window_end=run.window_end,
+                )
+            except (ValidationError, TypeError, ValueError) as error:
+                raise M3Error(
+                    "acceptance_context_invalid", "Acceptance context is invalid"
+                ) from error
         if not context.active:
             if require_active:
                 raise M3Error("acceptance_inactive", "No active acceptance run")
@@ -415,14 +422,18 @@ class AcceptanceService:
             ) from error
         return batch, points
 
-    def run_baseline(self, station_id: str, as_of: datetime) -> dict[str, Any]:
+    def run_baseline(
+        self, station_id: str, as_of: datetime
+    ) -> dict[str, Any] | None:
         """Persist only the exact 01:02 baseline inside an active seven-day run."""
 
         self._validate_baseline_slot(as_of)
         with self._station_lock(station_id):
             self._validate_current_baseline_slot(as_of)
-            context = self._context(station_id, require_active=True)
-            _, window_start, window_end = self._active_window(context)
+            context = self._context(station_id, require_active=False)
+            if not context.active:
+                return None
+            acceptance_run_id, window_start, window_end = self._active_window(context)
             baseline_start = self._baseline_start(as_of)
             baseline_end = baseline_start + timedelta(days=1)
             if (
@@ -449,7 +460,9 @@ class AcceptanceService:
                 baseline_end,
             )
             self._backfill_locked(station_id, as_of, context)
-            return self._sink.publish_acceptance(batch, points)
+            published = self._sink.publish_acceptance(batch, points)
+            self._runs.sync_progress(station_id, acceptance_run_id)
+            return published
 
     @staticmethod
     def _completed_boundary(as_of: datetime) -> datetime:
@@ -945,6 +958,12 @@ class AcceptanceService:
                 values,
             )
             self._validate_evaluation_response(response, values)
+        self._runs.sync_result(
+            station_id,
+            acceptance_run_id,
+            overall["outcome"],
+            datetime.fromisoformat(calculated_at),
+        )
         results["overall"] = overall
         return results
 
@@ -1107,3 +1126,11 @@ class AcceptanceService:
                     )
                 recovered += 1
         return recovered
+
+    def reconcile_run_summaries(self, station_ids) -> int:
+        reconciled = 0
+        for station_id in station_ids:
+            with self._station_lock(station_id):
+                if self._runs.reconcile_active(station_id) is not None:
+                    reconciled += 1
+        return reconciled

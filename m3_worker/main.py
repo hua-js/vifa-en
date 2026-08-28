@@ -20,13 +20,14 @@ from m3_worker.clients.alert_api import NodeRedAlertClient
 from m3_worker.clients.http import RetryPolicy
 from m3_worker.clients.nocobase_api import NocoBaseApiClient
 from m3_worker.clients.raw_energy_api import RawEnergySourceClient
-from m3_worker.clients.source_api import STATION_ID_PATTERN, SourceApiClient
+from m3_worker.clients.source_api import STATION_ID_PATTERN
 from m3_worker.config import Settings
 from m3_worker.contracts import validate_shanghai_timestamp
 from m3_worker.domain.forecasting import forecast_one_safe
 from m3_worker.errors import M3Error
 from m3_worker.scheduler.runner import SchedulerRunner
 from m3_worker.services.acceptance_service import AcceptanceService
+from m3_worker.services.acceptance_run_service import AcceptanceRunService
 from m3_worker.services.forecast_service import (
     ForecastService,
     verify_statsforecast_runtime,
@@ -156,6 +157,9 @@ class WorkerResources:
         if getattr(self.settings, "acceptance_enabled", True):
             try:
                 self.acceptance_service.reconcile_writing_batches()
+                self.acceptance_service.reconcile_run_summaries(
+                    self.settings.station_ids
+                )
             except Exception as error:
                 failed = True
                 for station_id in self.settings.station_ids:
@@ -233,12 +237,6 @@ def build_resources(
             timeout=timeout, limits=limits, follow_redirects=False
         )
         retry = RetryPolicy()
-        context_source = SourceApiClient(
-            str(settings.source_base_url),
-            settings.source_api_token.get_secret_value(),
-            source_http,
-            retry,
-        )
         observation_source = RawEnergySourceClient(
             str(settings.raw_source_url),
             settings.raw_source_api_token.get_secret_value(),
@@ -267,6 +265,7 @@ def build_resources(
             nocobase_http,
             retry,
         )
+        run_service = AcceptanceRunService(api)
         sink = ForecastSink(api)
         caches = {
             station_id: StationCache(station_id)
@@ -277,7 +276,7 @@ def build_resources(
             observation_source, sink, caches, forecast_one_safe, clock
         )
         acceptance_service = AcceptanceService(
-            context_source=context_source,
+            run_service=run_service,
             observation_source=observation_source,
             api=api,
             sink=sink,
