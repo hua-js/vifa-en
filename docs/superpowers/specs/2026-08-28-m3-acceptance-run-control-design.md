@@ -1,0 +1,244 @@
+# M3 七日独立验收任务控制面设计
+
+日期：2026-08-28
+
+## 1. 背景
+
+M3 已实现正式七日验收的基线生成、实绩回填、指标计算和结果展示，但生产配置保持 `M3_ACCEPTANCE_ENABLED=false`。现有实现通过 Node-RED 固定 HTTP 接口读取外部 EMS 提供的 `active`、`acceptance_run_id`、`window_start` 和 `window_end`；仓库和当前生产部署均未落地该外部验收任务控制面。
+
+生产已在 NocoBase 创建 `energy_forecast_acceptance_runs` 表并安装字段与数据库约束。本设计将该表作为验收任务主表：授权人员在 NocoBase 后台创建和控制任务，Node-RED 读取活动任务，Worker 继续向现有明细表写入验收证据，并回写任务进度摘要。
+
+## 2. 目标与非目标
+
+目标：
+
+- 1号、2号电站分别创建验收任务，互不影响。
+- 每个电站最多存在一个活动任务。
+- 授权人员通过 NocoBase 后台启动、完成或取消任务。
+- Worker 每天上海时间 01:02 生成一个正式基线批次。
+- Worker 根据持久化明细恢复并同步任务进度，重启不丢状态。
+- 任务主表只保存控制状态和结果摘要；详细预测、实绩与指标继续保存在现有明细表。
+- Node-RED、Worker 和 Dashboard 使用职责分离的最小权限凭据。
+
+非目标：
+
+- 不新增浏览器端或公开的验收启动接口。
+- 不允许 Worker 修改验收窗口、运行标识或控制状态。
+- 不把 1,344 个七日预测点或完整指标复制到任务主表。
+- 不自动将 `control_state` 改为 `completed`；授权人员确认最终结果后人工完成任务。
+- 不改变模型选择、预测算法、Ready 判定或普通十五分钟预测计划。
+
+## 3. 数据模型
+
+### 3.1 任务主表
+
+NocoBase 集合与 PostgreSQL 物理表均命名为 `energy_forecast_acceptance_runs`。
+
+| 字段 | PostgreSQL 类型 | 可空 | 写入方 | 说明 |
+|---|---|---:|---|---|
+| `id` | bigint identity | 否 | 数据库 | 主键 |
+| `station_id` | text | 否 | 管理员 | 完整电站 ID |
+| `acceptance_run_id` | text | 否 | 管理员 | 运行标识，匹配 `^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$` |
+| `window_start` | timestamptz | 否 | 管理员 | 上海时间首日 01:00 |
+| `window_end` | timestamptz | 否 | 管理员 | `window_start + 7 days` |
+| `control_state` | text | 否 | 管理员 | `active`、`completed` 或 `cancelled` |
+| `completed_days` | smallint | 否 | Worker | 已完整持久化的每日基线数，0–7 |
+| `result_state` | text | 否 | Worker | `pending`、`in_progress`、`passed`、`failed` 或 `insufficient_data` |
+| `calculated_at` | timestamptz | 是 | Worker | 最终结果计算时间 |
+| `createdAt` | timestamptz | 否 | NocoBase | 系统创建时间；物理字段使用带引号的驼峰名 |
+| `updatedAt` | timestamptz | 否 | NocoBase | 系统更新时间；物理字段使用带引号的驼峰名 |
+
+已安装的数据库不变量：
+
+- `station_id, acceptance_run_id` 唯一。
+- 部分唯一索引保证每站最多一行 `control_state='active'`。
+- 窗口严格为七天，并按上海时间 01:00 对齐。
+- `completed_days` 在 0–7 之间。
+- `pending` 只能对应 0 天且 `calculated_at` 为空。
+- `in_progress` 对应 1–7 天且 `calculated_at` 为空。
+- 最终结果对应 7 天，且 `calculated_at >= window_end`。
+- `completed` 控制状态只能对应最终结果。
+
+### 3.2 现有明细表
+
+- `energy_forecast_batches`：每站每日一个不可变正式基线批次。
+- `energy_forecast_points`：保存预测点，并在目标时间过去后回填实绩。
+- `energy_forecast_evaluations`：保存两条序列及整体结果。
+- `energy_forecast_latest`：普通运行的最新预测快照，不作为正式验收证据。
+
+第一版不修改这些表的结构。任务主表与验收明细通过 `station_id + acceptance_run_id` 关联，Worker 在每次读写时验证两项身份一致。
+
+## 4. 权限模型
+
+### 4.1 NocoBase 管理员
+
+管理员通过 NocoBase 后台创建任务并写入：
+
+- `station_id`
+- `acceptance_run_id`
+- `window_start`
+- `window_end`
+- `control_state`
+
+新任务必须显式设为 `active`，`completed_days` 使用默认值 0，`result_state` 使用默认值 `pending`。管理员看到最终结果后将 `control_state` 改为 `completed`；需要中止时改为 `cancelled`。
+
+### 4.2 Node-RED 验收上下文角色
+
+专用只读 Key 只允许：
+
+- 对 `energy_forecast_acceptance_runs` 执行 `list`。
+- 读取 `station_id`、`acceptance_run_id`、`window_start`、`window_end`、`control_state`。
+- 按 `station_id`、`control_state` 过滤。
+- 不允许创建、更新、删除、导入或导出。
+
+### 4.3 Worker 角色
+
+Worker Key 对任务表只允许：
+
+- `list`：读取 `id`、任务身份、窗口、控制状态和结果摘要；按 `station_id`、`acceptance_run_id` 过滤。
+- `update`：以 `id` 为记录键，只写 `completed_days`、`result_state`、`calculated_at`。
+
+Worker 不得写 `station_id`、`acceptance_run_id`、窗口或 `control_state`，也不得创建、删除、导入或导出任务。
+
+### 4.4 Dashboard 角色
+
+Dashboard 继续从批次和评估表构建详细七日验收区域。第一版不要求 Dashboard 直接读取任务主表，避免扩大公开只读面的权限。
+
+## 5. Node-RED 验收上下文
+
+现有 Worker 固定调用：
+
+```text
+GET /internal/energy-forecast/v1/stations/:station_id/acceptance-context
+```
+
+Node-RED 保留该入站合同和 `M3_SOURCE_READ_TOKEN` 鉴权，但不再调用未落地的 `M3_ACCEPTANCE_CONTEXT_URL`。它改为使用固定的 `M3_NOCOBASE_BASE_URL` 和专用 `M3_ACCEPTANCE_CONTEXT_READ_TOKEN` 查询任务表。
+
+查询固定包含：
+
+- `station_id=<路径中的完整电站 ID>`
+- `control_state=active`
+- 明确的字段列表
+- 第一页和最多两行，用于检测违反唯一活动任务的不一致状态
+
+返回规则：
+
+- 0 行：返回 `active=false`，其余三个字段为 `null`。
+- 1 行：严格校验运行标识、七日窗口和上海时间边界，返回 `active=true`。
+- 超过 1 行、字段缺失、额外字段、非法时间或非法状态：返回合同错误，不选择任意一行。
+- NocoBase 401/403、非成功状态、重定向、超时或超限响应：返回固定错误，不泄露 Token 或上游响应正文。
+
+Worker 接收到的公开内部合同保持不变：
+
+```json
+{
+  "status": "ok",
+  "data": {
+    "active": true,
+    "acceptance_run_id": "acceptance-20260829-station1",
+    "window_start": "2026-08-29T01:00:00+08:00",
+    "window_end": "2026-09-05T01:00:00+08:00"
+  }
+}
+```
+
+## 6. Worker 行为
+
+### 6.1 非活动电站
+
+`M3_ACCEPTANCE_ENABLED=true` 是全局功能开关，活动任务按站决定。每日 01:02 调度到一个没有活动任务的电站时，Worker 正常跳过，不产生 `acceptance_inactive` 告警。一个电站未启用不影响另一个电站。
+
+### 6.2 每日基线与进度
+
+活动任务窗口内，每日 01:02 继续执行现有正式基线流程。基线以 `writing → complete` 协议完成后，Worker 查询同一 `station_id + acceptance_run_id` 下的完整批次数：
+
+- 0 批：`completed_days=0`，`result_state=pending`。
+- 1–7 批：`completed_days` 等于去重后的完整日批次数，`result_state=in_progress`。
+- 超过 7 批、重复日期、批次落在窗口外或任务身份不一致：拒绝摘要更新并告警。
+
+摘要更新前重新读取任务行并验证控制字段没有变化，再以主键 `id` 更新三个 Worker 字段。更新响应必须回显相同主键和期望值。
+
+### 6.3 实绩回填与最终结果
+
+普通预测任务继续每十五分钟回填已经完成的正式点。七日窗口结束且最后实绩可用后，Worker 计算两条序列及整体结果，并先写 `energy_forecast_evaluations`。
+
+三条评估记录全部成功并经过回读验证后，Worker 才将任务摘要更新为：
+
+- `completed_days=7`
+- `result_state=overall.outcome`
+- `calculated_at=评估计算时间`
+
+评估写入失败或不完整时，任务保持 `in_progress`，不得先显示最终摘要。
+
+### 6.4 恢复与迟到修订
+
+Worker 启动恢复以及后续活动任务处理会从完整批次和最终评估重新计算摘要。任务主表不是详细结果的事实源；摘要与明细冲突时，以经过严格验证的批次和评估为准，并通过限定字段更新修复摘要。
+
+任务在最终结果出现前必须保持 `active`，以允许迟到实绩继续回填。授权人员看到 Dashboard 的 7/7 最终结果后再将 `control_state` 改为 `completed`。
+
+## 7. 状态流
+
+```text
+管理员创建 active 任务
+  pending / 0 天
+        ↓ 每日完整基线
+  in_progress / 1–7 天
+        ↓ 七日结束、实绩回填、评估完成
+  passed | failed | insufficient_data / 7 天
+        ↓ 管理员确认
+  control_state = completed
+```
+
+管理员可在最终结果前将任务改为 `cancelled`。取消后 Node-RED 返回无活动任务，Worker 不再创建新基线或回填该任务；已经写入的证据不删除。
+
+## 8. 失败处理与告警
+
+需要保留或新增以下稳定错误码：
+
+- `acceptance_context_invalid`：任务字段、身份或状态不合法。
+- `acceptance_window_invalid`：窗口不是严格七天或未按 01:00 对齐。
+- `acceptance_summary_invalid`：批次数、日期拓扑或摘要状态非法。
+- `acceptance_run_update_incomplete`：任务摘要更新未完整落库或回显不一致。
+- `sink_unauthorized`：Worker 对 NocoBase 的任务表权限不足。
+- `source_unauthorized` 或现有同类错误：Node-RED 任务只读 Key 无权查询。
+
+非活动任务是正常状态，不触发告警。任务合同错误、活动任务基线失败、进度不可达和最终结果写入失败需要按站告警，另一电站继续运行。
+
+## 9. 代码与交付范围
+
+需要修改：
+
+- `m3/contracts/nocobase_collections.json`：加入第五张表及三类最小权限。
+- `m3/node_red/forecast_contract.js`：加入任务行和 NocoBase 列表响应验证。
+- `m3/node_red/energy_forecast_flow.json`：将验收上下文改为固定 NocoBase 查询。
+- `m3_worker/services/acceptance_service.py`：跳过非活动任务，计算并同步摘要，恢复时校正。
+- Worker 资源装配及必要的 DTO/客户端边界。
+- 生产环境变量示例和部署说明：移除外部上下文 URL 依赖，记录专用任务只读 Key，并说明启用顺序。
+
+不修改：
+
+- StatsForecast 模型和选型逻辑。
+- 现有四张明细表结构。
+- Dashboard 对外 JSON 合同和页面布局。
+- M1、M2、反向代理和公开路由。
+
+## 10. 验证与上线顺序
+
+遵循当前交付约束，不新增或执行自动化测试。实现阶段执行：
+
+- JSON 语法和精确合同静态检查。
+- Node-RED Flow 引用、节点连线和固定 URL 静态检查。
+- Python 语法/导入检查。
+- Compose 配置检查。
+- Git diff whitespace 检查。
+
+生产启用顺序：
+
+1. 确认任务表字段、约束和角色权限已安装。
+2. 更新并发布 Node-RED Flow，保持 Worker 验收开关关闭。
+3. 使用两个真实电站 ID 验证验收上下文在无活动任务时返回 `active=false`。
+4. 部署新 Worker 镜像。
+5. 在 NocoBase 创建首个活动任务，窗口从计划首日上海时间 01:00 开始。
+6. 验证该站上下文返回活动任务，另一站仍可返回非活动。
+7. 在首日 01:02 前设置 `M3_ACCEPTANCE_ENABLED=true` 并重建 Worker 容器。
+8. 每日核对任务摘要和完整批次数；最终结果生成后人工将任务标记为 `completed`。
