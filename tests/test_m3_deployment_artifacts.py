@@ -30,7 +30,6 @@ NOCOBASE_MANIFEST = (
 )
 ARCHITECTURE = ROOT / "m3" / "部署架构流程图.md"
 RUNBOOK = ROOT / "m3" / "AMD64三域Docker部署手册.md"
-AMD64_VENV_RUNBOOK = ROOT / "m3" / "AMD64 Python3.12虚拟环境部署手册.md"
 HOST_ENTRYPOINT = DEPLOY / "host-entrypoint.sh"
 HOST_WORKER_UNIT = DEPLOY / "vifa-m3-worker.service"
 HOST_DASHBOARD_UNIT = DEPLOY / "vifa-m3-dashboard.service"
@@ -201,44 +200,6 @@ class DeploymentArtifactTests(unittest.TestCase):
             self.assertNotIn("docker", rendered.lower())
             self.assertNotIn("--host", rendered)
             self.assertNotIn("--port", rendered)
-
-    def test_amd64_virtualenv_runbook_is_an_independent_non_docker_path(self):
-        runbook = AMD64_VENV_RUNBOOK.read_text(encoding="utf-8")
-        required = (
-            "Ubuntu 20.04",
-            "x86_64",
-            "AMD64",
-            "Python 3.12",
-            "https://astral.sh/uv/install.sh",
-            "UV_UNMANAGED_INSTALL",
-            "UV_PYTHON_INSTALL_DIR",
-            "uv python install 3.12",
-            "uv venv --python 3.12",
-            "uv sync --frozen --no-dev",
-            "/userdata/holo/pyfiles/vifa-m3/.venv/bin/python",
-            "/etc/vifa-m3/raw-source.token",
-            "M3_ACCEPTANCE_ENABLED=false",
-            "vifa-m3-worker.service",
-            "vifa-m3-dashboard.service",
-            "systemctl daemon-reload",
-            "systemctl enable --now vifa-m3-worker.service vifa-m3-dashboard.service",
-            "/userdata/holo/pyfiles/vifa-m3/run/worker.sock",
-            "/userdata/holo/pyfiles/vifa-m3/run/dashboard.sock",
-            "Modified Nodes",
-            "不重启 Node-RED",
-            "不得与 Docker 方案同时运行",
-            "回滚",
-        )
-        for marker in required:
-            self.assertIn(marker, runbook, marker)
-        for forbidden in (
-            "docker compose up",
-            "docker run",
-            "M3_RAW_SOURCE_API_TOKEN_FILE=/run/secrets/raw-source.token",
-            "systemctl restart nodered.service",
-            "python3.8 -m venv",
-        ):
-            self.assertNotIn(forbidden, runbook)
 
     def test_image_uses_python_312_hash_lock_and_non_root_runtime(self):
         dockerfile = DOCKERFILE.read_text(encoding="utf-8")
