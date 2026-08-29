@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 import re
 from typing import Literal
+from zoneinfo import ZoneInfo
 
 from m3_worker.contracts import SERIES_IDS, validate_shanghai_timestamp
 from m3_worker.errors import M3Error
@@ -47,6 +48,7 @@ EVALUATION_FIELDS = (
 )
 EVALUATION_KEYS = (*SERIES_IDS, "overall")
 EVALUATION_KEY_SET = frozenset(EVALUATION_KEYS)
+SHANGHAI = ZoneInfo("Asia/Shanghai")
 
 
 @dataclass(frozen=True)
@@ -96,6 +98,9 @@ def _timestamp(
             raise error_factory() from error
     else:
         raise error_factory()
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise error_factory()
+    parsed = parsed.astimezone(SHANGHAI)
     try:
         validate_shanghai_timestamp(
             parsed, field_name, quarter_hour=quarter_hour
