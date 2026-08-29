@@ -464,13 +464,13 @@
             <div class="input-shell"><select id="granularity"><option value="3600">1 小时</option><option value="1800">30 分钟</option><option value="900" selected>15 分钟</option><option value="300">5 分钟</option><option value="60">1 分钟</option><option value="30">30 秒</option></select></div>
             <div class="field-hint" id="points-hint">96 点 / 天</div>
           </div>
-          <div class="field action-field"><span class="action-label" aria-hidden="true">操作</span><button class="run-button" id="run-button" type="button" disabled title="当前网关仅提供最新预测结果查询，尚未提供自定义预测任务提交接口">开始预测</button><div class="field-hint" aria-hidden="true">&nbsp;</div></div>
+          <div class="field action-field"><span class="action-label" aria-hidden="true">操作</span><button class="run-button" id="run-button" type="button" disabled title="请先完成登录并填写有效参数">开始预测</button><div class="field-hint" id="run-hint" aria-live="polite">等待登录</div></div>
         </div>
         <div class="task-foot">
           <span>当前模型：<strong class="current-model-name">—</strong></span>
           <span>历史长度：<strong id="history-days-inline">—</strong></span>
           <span>总预测点数：<strong id="total-points-inline">96</strong></span>
-          <span class="integration-note">自定义任务提交接口待接入</span>
+          <span class="integration-note" id="task-state">尚未提交任务</span>
         </div>
       </section>
     </section>
@@ -514,7 +514,7 @@
         <div class="performance-top">
           <article class="performance-metric"><div class="performance-label">负载预测 MAPE</div><div class="performance-value model-current-mape load-mape-value">—</div><div class="performance-note current-mape-note">尚无已完成评估窗口</div></article>
           <article class="performance-metric"><div class="performance-label">SOC 预测 MAPE</div><div class="performance-value model-soc-mape soc-mape-value">—</div><div class="performance-note soc-mape-note">尚无已完成评估窗口</div></article>
-          <article class="performance-metric"><div class="performance-label">SeasonalNaive 基线</div><div class="performance-value model-baseline-mape baseline-value">—</div><div class="performance-note">负载预测同配置基线尚未提供</div></article>
+          <article class="performance-metric"><div class="performance-label">SeasonalNaive 基线</div><div class="performance-value model-baseline-mape baseline-value">—</div><div class="performance-note">负载预测同配置、同目标点基线</div></article>
           <article class="performance-metric"><div class="performance-label">负载相对基线提升</div><div class="performance-value good model-improvement improvement-value">—</div><div class="performance-note">获得同窗基线后自动计算</div></article>
         </div>
         <div class="compare-bars">
@@ -522,11 +522,11 @@
           <div class="compare-item"><div class="compare-row"><span>SeasonalNaive 基线</span><strong class="compare-baseline-value">—</strong></div><div class="compare-track"><i class="baseline-bar"></i></div></div>
         </div>
         <div class="dual-mape">
-          <section class="mape-panel"><div class="mape-head"><div><div class="title">近 7 日负载预测 MAPE</div><div class="desc">当前接口只提供 7 日汇总，逐日明细接入后自动填充</div></div><div class="mape-summary"><div class="mape-summary-item"><span>7 日汇总</span><strong class="load-mape-value">—</strong></div><div class="mape-summary-item"><span>评估进度</span><strong class="acceptance-summary">—</strong></div></div></div>
+          <section class="mape-panel"><div class="mape-head"><div><div class="title">近 7 日负载预测 MAPE</div><div class="desc">仅汇总输出粒度、预测时长和模型策略相同的任务</div></div><div class="mape-summary"><div class="mape-summary-item"><span>7 日汇总</span><strong class="load-mape-value">—</strong></div><div class="mape-summary-item"><span>可比任务</span><strong class="acceptance-summary">—</strong></div></div></div>
             <div class="mape-grid" aria-label="近7日负载 MAPE 明细待接入"><div class="mape-day"><span class="mape-date">D-6</span><strong class="mape-value">—</strong><div class="mape-bar"><i></i></div></div><div class="mape-day"><span class="mape-date">D-5</span><strong class="mape-value">—</strong><div class="mape-bar"><i></i></div></div><div class="mape-day"><span class="mape-date">D-4</span><strong class="mape-value">—</strong><div class="mape-bar"><i></i></div></div><div class="mape-day"><span class="mape-date">D-3</span><strong class="mape-value">—</strong><div class="mape-bar"><i></i></div></div><div class="mape-day"><span class="mape-date">D-2</span><strong class="mape-value">—</strong><div class="mape-bar"><i></i></div></div><div class="mape-day"><span class="mape-date">D-1</span><strong class="mape-value">—</strong><div class="mape-bar"><i></i></div></div><div class="mape-day"><span class="mape-date">当前</span><strong class="mape-value">—</strong><div class="mape-bar"><i></i></div></div></div>
             <div class="baseline-note"><i></i><span>SeasonalNaive 同配置基线：<strong class="baseline-note-value">—</strong></span></div>
           </section>
-          <section class="mape-panel"><div class="mape-head"><div><div class="title">近 7 日 SOC 预测 MAPE</div><div class="desc">与负载使用相同评估窗口；逐日明细暂未由接口提供</div></div><div class="mape-summary"><div class="mape-summary-item"><span>7 日汇总</span><strong class="soc-mape-value">—</strong></div><div class="mape-summary-item"><span>SOC MAE</span><strong class="model-soc-mae">—</strong></div></div></div>
+          <section class="mape-panel"><div class="mape-head"><div><div class="title">近 7 日 SOC 预测 MAPE</div><div class="desc">与负载使用相同的可比键和七日评估窗口</div></div><div class="mape-summary"><div class="mape-summary-item"><span>7 日汇总</span><strong class="soc-mape-value">—</strong></div><div class="mape-summary-item"><span>SOC MAE</span><strong class="model-soc-mae">—</strong></div></div></div>
             <div class="mape-grid" aria-label="近7日 SOC MAPE 明细待接入"><div class="mape-day"><span class="mape-date">D-6</span><strong class="mape-value">—</strong><div class="mape-bar"><i></i></div></div><div class="mape-day"><span class="mape-date">D-5</span><strong class="mape-value">—</strong><div class="mape-bar"><i></i></div></div><div class="mape-day"><span class="mape-date">D-4</span><strong class="mape-value">—</strong><div class="mape-bar"><i></i></div></div><div class="mape-day"><span class="mape-date">D-3</span><strong class="mape-value">—</strong><div class="mape-bar"><i></i></div></div><div class="mape-day"><span class="mape-date">D-2</span><strong class="mape-value">—</strong><div class="mape-bar"><i></i></div></div><div class="mape-day"><span class="mape-date">D-1</span><strong class="mape-value">—</strong><div class="mape-bar"><i></i></div></div><div class="mape-day"><span class="mape-date">当前</span><strong class="mape-value">—</strong><div class="mape-bar"><i></i></div></div></div>
             <div class="baseline-note"><span class="rule-dot"></span><span>当前窗口 SOC MAPE：<strong class="soc-mape-value">—</strong></span></div>
           </section>
@@ -565,6 +565,8 @@
       "use strict";
 
       const API_PATH = "/energy-forecast-api";
+      const CUSTOM_RUN_PATH = `${API_PATH}/custom-runs`;
+      const CUSTOM_PERFORMANCE_PATH = `${API_PATH}/custom-performance`;
       const STATION_KEYS = ["station_1", "station_2"];
       const STATION_NAMES = ["1# 电站", "2# 电站"];
       const SERIES_IDS = ["station_total_load", "storage_soc"];
@@ -573,6 +575,9 @@
       const STATE_LABELS = { ready: "正常", initializing: "初始化中", degraded: "降级", stale: "陈旧", error: "错误" };
       const SERIES_STATE_LABELS = { ok: "正常", warming_up: "预热", degraded: "降级", insufficient_history: "历史不足", initializing: "初始化中", error: "错误" };
       const OUTCOME_LABELS = { passed: "通过", failed: "未通过", insufficient_data: "数据不足" };
+      const CUSTOM_RUN_LABELS = { queued: "排队中", running: "预测中", succeeded: "预测完成", evaluated: "预测完成 · 已评估", failed: "预测失败" };
+      const ALLOWED_INTERVALS = [30, 60, 300, 900, 1800, 3600];
+      const RUN_STORAGE_KEY = "vifa.m3.customForecastRuns.v1";
       const DANGEROUS_KEYS = new Set(["__proto__", "prototype", "constructor"]);
       const SVG_NS = "http://www.w3.org/2000/svg";
       const root = document.querySelector("#forecast-dashboard");
@@ -585,6 +590,9 @@
       const historyEnd = root.querySelector("#history-end");
       const forecastDays = root.querySelector("#forecast-days");
       const granularity = root.querySelector("#granularity");
+      const runButton = root.querySelector("#run-button");
+      const runHint = root.querySelector("#run-hint");
+      const taskState = root.querySelector("#task-state");
       const injectedAuthMode = window.__M3_DASHBOARD_AUTH_MODE__;
       const injectedParentOrigin = window.__M3_NOCOBASE_PARENT_ORIGIN__;
       if (!Reflect.deleteProperty(window, "__M3_DASHBOARD_AUTH_MODE__")) window.__M3_DASHBOARD_AUTH_MODE__ = undefined;
@@ -598,6 +606,11 @@
       let inFlight = null;
       let hasRenderedDashboard = false;
       let lastDashboard = null;
+      let customBusy = false;
+      let customPollTimer = null;
+      let selectedPollRunId = null;
+      const customRunIds = loadStoredRunIds();
+      const customResults = new Map();
       let disposed = false;
 
       function applyTheme(theme) {
@@ -615,10 +628,16 @@
       function selectStation(stationKey) {
         if (!STATION_KEYS.includes(stationKey)) return;
         stationPicker.value = stationKey;
-        if (lastDashboard !== null) {
+        if (customResults.has(stationKey)) renderCustomResult(customResults.get(stationKey));
+        else if (lastDashboard !== null) {
           const station = lastDashboard.stations.find((item) => item.station_key === stationKey);
           if (station) renderStation(station);
         }
+        stopCustomPolling();
+        customBusy = false;
+        text(runButton, "开始预测");
+        updateTaskConfiguration();
+        void resumeSelectedRun();
       }
 
       function changeStation() { selectStation(stationPicker.value); }
@@ -626,6 +645,7 @@
       themeToggle.addEventListener("click", toggleTheme);
       stationPicker.addEventListener("change", changeStation);
       detailsToggle.addEventListener("click", toggleDetails);
+      runButton.addEventListener("click", startCustomForecast);
       [historyStart, historyEnd, forecastDays, granularity].forEach((control) => control.addEventListener("change", updateTaskConfiguration));
       applyTheme("light");
       selectStation(stationPicker.value);
@@ -644,20 +664,75 @@
         return `${seconds / 60} 分钟`;
       }
 
-      function localDateValue(value) {
-        const date = new Date(value);
-        const shifted = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
-        return shifted.toISOString().slice(0, 10);
+      function addCalendarDays(value, days) {
+        const parts = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+        if (!parts) return "";
+        return new Date(Date.UTC(Number(parts[1]), Number(parts[2]) - 1, Number(parts[3]) + days)).toISOString().slice(0, 10);
+      }
+
+      function shanghaiDateValue(value) {
+        const parts = new Intl.DateTimeFormat("en-US", {
+          timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit",
+        }).formatToParts(new Date(value));
+        const byType = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+        return `${byType.year}-${byType.month}-${byType.day}`;
       }
 
       function initializeTaskDates(referenceTime) {
         if (historyEnd.value) return;
-        const end = new Date(referenceTime);
-        const start = new Date(end);
-        start.setDate(start.getDate() - 27);
-        historyStart.value = localDateValue(start);
-        historyEnd.value = localDateValue(end);
+        const end = addCalendarDays(shanghaiDateValue(referenceTime), -1);
+        historyStart.value = addCalendarDays(end, -27);
+        historyEnd.value = end;
+        historyStart.max = historyEnd.value;
+        historyEnd.max = historyEnd.value;
         updateTaskConfiguration();
+      }
+
+      function taskConfiguration() {
+        const start = Date.parse(`${historyStart.value}T00:00:00+08:00`);
+        const inclusiveEnd = Date.parse(`${historyEnd.value}T00:00:00+08:00`);
+        const days = Number(forecastDays.value);
+        const seconds = Number(granularity.value);
+        if (
+          !Number.isFinite(start)
+          || !Number.isFinite(inclusiveEnd)
+          || inclusiveEnd < start
+          || !Number.isInteger(days)
+          || days < 1
+          || days > 7
+          || !ALLOWED_INTERVALS.includes(seconds)
+        ) return null;
+        const historyDays = Math.round((inclusiveEnd - start) / 86400000) + 1;
+        if (historyDays < 7 || historyDays > 90) return null;
+        return {
+          history_start: `${historyStart.value}T00:00:00+08:00`,
+          history_end: `${addCalendarDays(historyEnd.value, 1)}T00:00:00+08:00`,
+          history_days: historyDays,
+          forecast_days: days,
+          interval_seconds: seconds,
+        };
+      }
+
+      function updateRunAvailability(configuration) {
+        const authenticated = authMode === "postmessage" && apiToken !== null;
+        const enabled = authenticated && configuration !== null && !customBusy;
+        runButton.disabled = !enabled;
+        if (customBusy) {
+          runButton.title = "预测任务正在处理";
+          text(runHint, "任务处理中");
+        } else if (authMode !== "postmessage") {
+          runButton.title = "当前页面为只读模式，自定义预测需要登录态";
+          text(runHint, "只读模式不可提交");
+        } else if (!authenticated) {
+          runButton.title = "等待登录凭证";
+          text(runHint, "等待登录");
+        } else if (configuration === null) {
+          runButton.title = "历史范围需为 7–90 天，预测时长需为 1–7 天";
+          text(runHint, "请检查任务参数");
+        } else {
+          runButton.title = "提交自定义预测任务";
+          text(runHint, "参数有效，可以提交");
+        }
       }
 
       function updateTaskConfiguration() {
@@ -699,6 +774,7 @@
           if (!enabled) text(candidate.querySelector(".candidate-state"), "历史不足，未启用");
           else if (!candidate.classList.contains("selected")) text(candidate.querySelector(".candidate-state"), candidate.dataset.model === "SeasonalNaive" ? "基线 + 候选" : "参与选模");
         });
+        updateRunAvailability(taskConfiguration());
       }
 
       function configuredAuthMode(value) {
@@ -987,13 +1063,22 @@
         return commands.join(" ");
       }
 
+      function chartPoints(points, maximum = 1200) {
+        if (points.length <= maximum) return points;
+        const step = Math.ceil((points.length - 1) / (maximum - 1));
+        const sampled = [];
+        for (let index = 0; index < points.length; index += step) sampled.push(points[index]);
+        if (sampled.at(-1) !== points.at(-1)) sampled.push(points.at(-1));
+        return sampled;
+      }
+
       function renderChart(section, series, range) {
         const svg = section.querySelector(series.unique_id === "station_total_load" ? ".load-chart" : ".soc-chart");
         svg.replaceChildren();
         const title = svgNode("title");
-        text(title, `${section.querySelector("h2").textContent}${SERIES_LABELS[series.unique_id]} 48 小时趋势`);
+        text(title, `${section.querySelector("h2").textContent}${SERIES_LABELS[series.unique_id]}同时间轴趋势`);
         const description = svgNode("desc");
-        text(description, "实线为历史实绩，虚线为未来预测。");
+        text(description, "实线为已获得实绩，虚线为预测值，两者使用相同目标时间刻度。");
         svg.append(title, description);
         if (!range.history_start || (!series.actual.length && !series.forecast.length)) return;
         const width = 1180, height = 250, left = 54, right = 22, top = 24, bottom = 38;
@@ -1030,9 +1115,9 @@
         }
         const dividerX = x(range.now_separator);
         svg.append(svgNode("line", { x1: dividerX, y1: top, x2: dividerX, y2: height - bottom, class: "now-divider", "data-kind": "current-divider" }));
-        const actualPath = buildPath(series.actual, x, y, "data_time");
+        const actualPath = buildPath(chartPoints(series.actual), x, y, "data_time");
         if (actualPath) svg.append(svgNode("path", { d: actualPath, class: "chart-line", "data-kind": "actual", "data-series": series.unique_id }));
-        const forecastPath = buildPath(series.forecast, x, y, "target_time");
+        const forecastPath = buildPath(chartPoints(series.forecast), x, y, "target_time");
         if (forecastPath) svg.append(svgNode("path", { d: forecastPath, class: "chart-line", "data-kind": "forecast", "data-series": series.unique_id }));
       }
 
@@ -1131,7 +1216,7 @@
           : "预测窗口暂无足够的有效负载数据。");
         text(section.querySelector(".summary-soc-title"), minimumSoc ? `${timeOnly(minimumSoc.target_time)} SOC 预计降至 ${valueText("storage_soc", minimumSoc.value)}` : "暂无 SOC 最低点预测");
         text(section.querySelector(".summary-soc-copy"), minimumSoc && currentSoc
-          ? `当前 SOC 为 ${valueText("storage_soc", currentSoc.value)}；最低点来自未来 24 小时预测，页面未配置风险阈值。`
+          ? `当前 SOC 为 ${valueText("storage_soc", currentSoc.value)}；最低点来自本次预测窗口，页面未配置风险阈值。`
           : "预测窗口暂无足够的有效 SOC 数据。");
         text(section.querySelector(".summary-low-title"), lowLoad ? `${timeOnly(lowLoad.target_time)} 预计处于负载低位` : "暂无负载低位预测");
         text(section.querySelector(".summary-low-copy"), lowLoad
@@ -1171,6 +1256,305 @@
         });
         renderHighlights(section, station);
         renderAcceptance(section, station.acceptance);
+      }
+
+      function loadStoredRunIds() {
+        try {
+          const parsed = JSON.parse(sessionStorage.getItem(RUN_STORAGE_KEY) || "{}");
+          if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return Object.create(null);
+          const result = Object.create(null);
+          for (const stationKey of STATION_KEYS) {
+            const runId = parsed[stationKey];
+            if (typeof runId === "string" && /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(runId)) result[stationKey] = runId;
+          }
+          return result;
+        } catch (_error) {
+          return Object.create(null);
+        }
+      }
+
+      function storeRunId(stationKey, runId) {
+        customRunIds[stationKey] = runId;
+        try { sessionStorage.setItem(RUN_STORAGE_KEY, JSON.stringify(customRunIds)); } catch (_error) { /* persistence is best effort */ }
+      }
+
+      function validateCustomRun(value) {
+        exactObject(value, [
+          "run_id", "station_id", "status", "history_start", "history_end", "history_days",
+          "forecast_start", "forecast_end", "forecast_days", "interval_seconds", "points_per_day",
+          "expected_points_per_series", "model_policy", "model_manifest", "source_manifest", "error_code",
+          "started_at", "completed_at", "evaluated_at", "created_at", "updated_at",
+        ], "custom run");
+        assert(/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(value.run_id) && safeText(value.station_id), "custom run identity invalid");
+        assert(Object.hasOwn(CUSTOM_RUN_LABELS, value.status), "custom run status invalid");
+        ["history_start", "history_end", "forecast_start", "forecast_end", "created_at", "updated_at"].forEach((field) => assert(timestamp(value[field]), `custom run ${field} invalid`));
+        ["started_at", "completed_at", "evaluated_at"].forEach((field) => assert(value[field] === null || timestamp(value[field]), `custom run ${field} invalid`));
+        assert(integer(value.history_days, 7, 90) && integer(value.forecast_days, 1, 7), "custom run day range invalid");
+        assert(ALLOWED_INTERVALS.includes(value.interval_seconds), "custom run interval invalid");
+        assert(value.points_per_day === 86400 / value.interval_seconds, "custom run daily points invalid");
+        assert(value.expected_points_per_series === value.points_per_day * value.forecast_days, "custom run point count invalid");
+        assert(milliseconds(value.history_end) - milliseconds(value.history_start) === value.history_days * 86400000, "custom run history window invalid");
+        assert(value.history_end === value.forecast_start && milliseconds(value.forecast_end) - milliseconds(value.forecast_start) === value.forecast_days * 86400000, "custom run forecast window invalid");
+        assert(value.model_policy === (value.history_days < 28 ? "seasonal_naive_only" : "full_selection"), "custom run model policy invalid");
+        assert(value.error_code === null || safeText(value.error_code), "custom run error invalid");
+        assert(value.model_manifest === null || (typeof value.model_manifest === "object" && !Array.isArray(value.model_manifest)), "custom model manifest invalid");
+        assert(value.source_manifest === null || (typeof value.source_manifest === "object" && !Array.isArray(value.source_manifest)), "custom source manifest invalid");
+        return value;
+      }
+
+      function validateCustomResult(value) {
+        scanShape(value);
+        exactObject(value, ["run", "series"], "custom result");
+        const run = validateCustomRun(value.run);
+        assert(["succeeded", "evaluated"].includes(run.status), "custom result is not terminal");
+        assert(Array.isArray(value.series) && value.series.length === 2, "custom result series count invalid");
+        value.series.forEach((series, seriesIndex) => {
+          exactObject(series, ["unique_id", "unit", "model_name", "points"], "custom result series");
+          assert(series.unique_id === SERIES_IDS[seriesIndex] && series.unit === SERIES_UNITS[series.unique_id] && safeText(series.model_name), "custom result series identity invalid");
+          assert(Array.isArray(series.points) && series.points.length === run.expected_points_per_series, "custom result point count invalid");
+          series.points.forEach((point, pointIndex) => {
+            exactObject(point, ["target_time", "horizon_step", "forecast_value", "actual_value", "actual_quality", "absolute_percentage_error"], "custom result point");
+            assert(timestamp(point.target_time) && point.horizon_step === pointIndex + 1, "custom result horizon invalid");
+            assert(milliseconds(point.target_time) === milliseconds(run.forecast_start) + pointIndex * run.interval_seconds * 1000, "custom result continuity invalid");
+            assert(finite(point.forecast_value), "custom forecast value invalid");
+            assert(series.unique_id === "station_total_load" ? point.forecast_value >= 0 : point.forecast_value >= 0 && point.forecast_value <= 100, "custom forecast physical range invalid");
+            assert(point.actual_quality === null || ["valid", "invalid"].includes(point.actual_quality), "custom actual quality invalid");
+            assert(point.actual_quality === "valid" ? finite(point.actual_value) : point.actual_value === null, "custom actual value invalid");
+            assert(point.absolute_percentage_error === null || finite(point.absolute_percentage_error) && point.absolute_percentage_error >= 0, "custom APE invalid");
+          });
+        });
+        return value;
+      }
+
+      function validateCustomPerformance(value) {
+        scanShape(value);
+        exactObject(value, ["station_id", "lookback_days", "interval_seconds", "forecast_days", "model_policy", "calculated_at", "series"], "custom performance");
+        assert(safeText(value.station_id) && value.lookback_days === 7 && ALLOWED_INTERVALS.includes(value.interval_seconds), "custom performance identity invalid");
+        assert(integer(value.forecast_days, 1, 7) && ["seasonal_naive_only", "full_selection"].includes(value.model_policy) && timestamp(value.calculated_at), "custom performance config invalid");
+        assert(Array.isArray(value.series) && value.series.length === 2, "custom performance series count invalid");
+        value.series.forEach((series, index) => {
+          exactObject(series, ["unique_id", "mape_percent", "baseline_mape_percent", "relative_baseline_improvement_percent", "scorable_point_count", "run_count"], "custom performance series");
+          assert(series.unique_id === SERIES_IDS[index] && integer(series.scorable_point_count, 0) && integer(series.run_count, 0), "custom performance series invalid");
+          ["mape_percent", "baseline_mape_percent", "relative_baseline_improvement_percent"].forEach((field) => assert(series[field] === null || finite(series[field]), `custom performance ${field} invalid`));
+        });
+        return value;
+      }
+
+      async function customRequest(path, options = {}) {
+        if (authMode !== "postmessage" || apiToken === null) throw new Error("custom authentication unavailable");
+        const controller = new AbortController();
+        const timeout = window.setTimeout(() => controller.abort(), options.timeout || 30_000);
+        try {
+          const headers = { Accept: "application/json", Authorization: `Bearer ${apiToken}` };
+          if (options.body !== undefined) headers["Content-Type"] = "application/json";
+          const response = await fetch(path, {
+            method: options.method || "GET",
+            cache: "no-store",
+            redirect: "error",
+            referrerPolicy: "no-referrer",
+            credentials: "omit",
+            headers,
+            body: options.body === undefined ? undefined : JSON.stringify(options.body),
+            signal: controller.signal,
+          });
+          if (response.status === 401) {
+            requestAuthentication();
+            const error = new Error("登录状态已失效");
+            error.name = "M3AuthError";
+            throw error;
+          }
+          const declaredSize = Number(response.headers.get("content-length") || 0);
+          if (declaredSize > 16 * 1024 * 1024) throw new Error("预测结果过大");
+          const raw = await response.text();
+          if (new TextEncoder().encode(raw).byteLength > 16 * 1024 * 1024) throw new Error("预测结果过大");
+          let envelope;
+          try { envelope = JSON.parse(raw); } catch (_error) { throw new Error("预测服务返回不正确"); }
+          scanShape(envelope);
+          if (!response.ok) {
+            const code = envelope && envelope.error && safeText(envelope.error.code, true) ? envelope.error.code : null;
+            const labels = { invalid_request: "任务参数无效", unauthorized: "登录状态无效", conflict: "同一任务标识与参数冲突", job_capacity_exceeded: "当前预测任务较多，请稍后重试", not_found: "预测任务不存在" };
+            throw new Error(labels[code] || "预测服务暂不可用");
+          }
+          exactObject(envelope, ["status", "data"], "custom response envelope");
+          assert(envelope.status === "ok", "custom response status invalid");
+          return envelope.data;
+        } finally {
+          window.clearTimeout(timeout);
+        }
+      }
+
+      function setCustomBusy(busy, label = null) {
+        customBusy = busy;
+        text(runButton, busy ? "处理中…" : "开始预测");
+        if (label !== null) text(taskState, label);
+        updateTaskConfiguration();
+      }
+
+      function newIdempotencyKey(stationKey) {
+        return `ui-${stationKey}-${Date.now()}-${newAuthNonce()}`;
+      }
+
+      function stopCustomPolling() {
+        selectedPollRunId = null;
+        if (customPollTimer !== null) window.clearTimeout(customPollTimer);
+        customPollTimer = null;
+      }
+
+      function scheduleCustomPoll(stationKey, runId) {
+        stopCustomPolling();
+        selectedPollRunId = runId;
+        customPollTimer = window.setTimeout(() => { void pollCustomRun(stationKey, runId); }, 2_000);
+      }
+
+      async function pollCustomRun(stationKey, runId) {
+        if (disposed || stationPicker.value !== stationKey || selectedPollRunId !== runId) return;
+        try {
+          const run = validateCustomRun(await customRequest(`${CUSTOM_RUN_PATH}/${encodeURIComponent(runId)}`));
+          await handleCustomRun(stationKey, run);
+        } catch (error) {
+          setCustomBusy(false, error instanceof Error ? error.message : "预测任务查询失败");
+          renderRefreshError(error instanceof Error ? error.message : "预测任务查询失败");
+        }
+      }
+
+      async function handleCustomRun(stationKey, run) {
+        text(taskState, CUSTOM_RUN_LABELS[run.status]);
+        if (run.status === "failed") {
+          stopCustomPolling();
+          setCustomBusy(false, `预测失败 · ${run.error_code || "internal_error"}`);
+          return;
+        }
+        if (["queued", "running"].includes(run.status)) {
+          setCustomBusy(true, CUSTOM_RUN_LABELS[run.status]);
+          scheduleCustomPoll(stationKey, run.run_id);
+          return;
+        }
+        stopCustomPolling();
+        setCustomBusy(true, "正在读取预测结果");
+        const query = new URLSearchParams({
+          interval_seconds: String(run.interval_seconds),
+          forecast_days: String(run.forecast_days),
+          history_days: String(run.history_days),
+        });
+        const [resultValue, performanceValue] = await Promise.all([
+          customRequest(`${CUSTOM_RUN_PATH}/${encodeURIComponent(run.run_id)}/result`, { timeout: 60_000 }),
+          customRequest(`${CUSTOM_PERFORMANCE_PATH}/${encodeURIComponent(stationKey)}?${query}`),
+        ]);
+        const result = validateCustomResult(resultValue);
+        const performance = validateCustomPerformance(performanceValue);
+        const rendered = { stationKey, result, performance };
+        customResults.set(stationKey, rendered);
+        if (stationPicker.value === stationKey) renderCustomResult(rendered);
+        setCustomBusy(false, CUSTOM_RUN_LABELS[run.status]);
+      }
+
+      async function startCustomForecast() {
+        const configuration = taskConfiguration();
+        if (configuration === null || customBusy || authMode !== "postmessage" || apiToken === null) {
+          updateRunAvailability(configuration);
+          return;
+        }
+        const stationKey = stationPicker.value;
+        setCustomBusy(true, "正在提交任务");
+        errorState.hidden = true;
+        try {
+          const run = validateCustomRun(await customRequest(`${CUSTOM_RUN_PATH}/${encodeURIComponent(stationKey)}`, {
+            method: "POST",
+            timeout: 30_000,
+            body: {
+              history_start: configuration.history_start,
+              history_end: configuration.history_end,
+              forecast_days: configuration.forecast_days,
+              interval_seconds: configuration.interval_seconds,
+              idempotency_key: newIdempotencyKey(stationKey),
+            },
+          }));
+          storeRunId(stationKey, run.run_id);
+          await handleCustomRun(stationKey, run);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "预测任务提交失败";
+          stopCustomPolling();
+          setCustomBusy(false, message);
+          renderRefreshError(message);
+        }
+      }
+
+      async function resumeSelectedRun() {
+        const stationKey = stationPicker.value;
+        const runId = customRunIds[stationKey];
+        if (!runId || authMode !== "postmessage" || apiToken === null || customBusy) return;
+        const cached = customResults.get(stationKey);
+        if (cached && cached.result.run.run_id === runId) {
+          renderCustomResult(cached);
+          return;
+        }
+        try {
+          const run = validateCustomRun(await customRequest(`${CUSTOM_RUN_PATH}/${encodeURIComponent(runId)}`));
+          await handleCustomRun(stationKey, run);
+        } catch (error) {
+          text(taskState, error instanceof Error ? error.message : "历史任务恢复失败");
+        }
+      }
+
+      function renderCustomPerformance(performance) {
+        const load = performance.series[0];
+        const soc = performance.series[1];
+        const formatPercent = (value) => value === null ? "—" : `${metric(value)}%`;
+        const loadMape = formatPercent(load.mape_percent);
+        const socMape = formatPercent(soc.mape_percent);
+        const baseline = formatPercent(load.baseline_mape_percent);
+        const improvement = formatPercent(load.relative_baseline_improvement_percent);
+        root.querySelectorAll(".load-mape-value").forEach((node) => text(node, loadMape));
+        root.querySelectorAll(".soc-mape-value").forEach((node) => text(node, socMape));
+        root.querySelectorAll(".baseline-value").forEach((node) => text(node, baseline));
+        root.querySelectorAll(".improvement-value").forEach((node) => text(node, improvement));
+        text(root.querySelector(".compare-model-value"), loadMape);
+        text(root.querySelector(".compare-baseline-value"), baseline);
+        text(root.querySelector(".baseline-note-value"), baseline);
+        text(root.querySelector(".current-mape-note"), load.run_count ? `${load.run_count} 个同配置任务 · ${formatInteger(load.scorable_point_count)} 个有效点` : "尚无已完成评估窗口");
+        text(root.querySelector(".soc-mape-note"), soc.run_count ? `${soc.run_count} 个同配置任务 · ${formatInteger(soc.scorable_point_count)} 个有效点` : "尚无已完成评估窗口");
+        text(root.querySelector(".acceptance-summary"), load.run_count ? `${load.run_count} 个任务` : "数据积累中");
+        const maximum = Math.max(load.mape_percent || 0, load.baseline_mape_percent || 0, 1);
+        root.querySelector(".model-bar").style.width = load.mape_percent === null ? "0%" : `${Math.min(100, load.mape_percent / maximum * 100).toFixed(1)}%`;
+        root.querySelector(".baseline-bar").style.width = load.baseline_mape_percent === null ? "0%" : `${Math.min(100, load.baseline_mape_percent / maximum * 100).toFixed(1)}%`;
+      }
+
+      function renderCustomResult(value) {
+        const { stationKey, result, performance } = value;
+        const run = result.run;
+        const actualTimes = result.series.flatMap((series) => series.points.filter((point) => point.actual_quality === "valid").map((point) => point.target_time));
+        const actualLatest = actualTimes.length ? actualTimes.reduce((left, right) => milliseconds(left) > milliseconds(right) ? left : right) : null;
+        const station = {
+          station_key: stationKey,
+          station_name: STATION_NAMES[STATION_KEYS.indexOf(stationKey)],
+          system: { state: "ready", mode: "normal", generated_at: run.updated_at, stale: false },
+          range: {
+            timezone: "Asia/Shanghai", history_start: run.forecast_start, history_end: run.forecast_start,
+            actual_latest: actualLatest, forecast_start: run.forecast_start, forecast_end: run.forecast_end,
+            interval_seconds: run.interval_seconds, history_hours: 0, forecast_hours: run.forecast_days * 24,
+            display_hours: run.forecast_days * 24, now_separator: run.forecast_start,
+          },
+          readiness: null,
+          series: result.series.map((series) => ({
+            unique_id: series.unique_id,
+            unit: series.unit,
+            model_name: series.model_name,
+            status: "ok",
+            fallback_reason: null,
+            actual: series.points.map((point) => ({ data_time: point.target_time, value: point.actual_value, quality: point.actual_quality || "invalid", source_revision: 0 })),
+            forecast: series.points.map((point, index) => ({ data_time: index === 0 ? run.forecast_start : series.points[index - 1].target_time, target_time: point.target_time, value: point.forecast_value, raw_value: point.forecast_value, is_clipped: false })),
+          })),
+          acceptance: null,
+        };
+        renderStation(station);
+        const section = root.querySelector(".station-section");
+        const modelSummary = result.series.map((series) => `${SERIES_LABELS[series.unique_id]}：${series.model_name}`).join(" · ");
+        root.querySelectorAll(".current-model-name").forEach((node) => text(node, modelSummary));
+        text(section.querySelector(".history-window"), `${dateTime(run.history_start)} — ${dateTime(run.history_end)}`);
+        text(section.querySelector(".station-status"), CUSTOM_RUN_LABELS[run.status]);
+        text(root.querySelector("#result-model-meta"), `${run.history_days} 天训练 · ${intervalLabel(run.interval_seconds)}粒度 · ${formatInteger(run.points_per_day)} 点 / 天`);
+        renderCustomPerformance(performance);
+        errorState.hidden = true;
       }
 
       function renderError(message = "预测数据暂不可用") {
@@ -1273,6 +1657,7 @@
       function requestAuthentication() {
         if (disposed || authMode !== "postmessage" || parentOrigin === null) return;
         apiToken = null;
+        updateTaskConfiguration();
         authNonce = newAuthNonce();
         if (authTimeout !== null) window.clearTimeout(authTimeout);
         const requestedNonce = authNonce;
@@ -1297,6 +1682,7 @@
           window.clearTimeout(authTimeout);
           authTimeout = null;
         }
+        updateTaskConfiguration();
         startRefreshTimer();
         void loadDashboard();
       }
@@ -1311,9 +1697,11 @@
         authNonce = null;
         if (authTimeout !== null) window.clearTimeout(authTimeout);
         if (refreshTimer !== null) window.clearInterval(refreshTimer);
+        stopCustomPolling();
         themeToggle.removeEventListener("click", toggleTheme);
         stationPicker.removeEventListener("change", changeStation);
         detailsToggle.removeEventListener("click", toggleDetails);
+        runButton.removeEventListener("click", startCustomForecast);
         [historyStart, historyEnd, forecastDays, granularity].forEach((control) => control.removeEventListener("change", updateTaskConfiguration));
         window.removeEventListener("message", receiveAuthentication);
       }, { once: true });

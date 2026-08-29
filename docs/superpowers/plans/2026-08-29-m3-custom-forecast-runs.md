@@ -104,19 +104,19 @@
 - Modify: `m3/node_red/m3_production_gateway_flow.json`
 - Modify: `front/场站未来能耗预测.html`
 
-- [ ] Add fixed POST/GET proxy routes that validate the current NocoBase user before calling Worker with server-side credentials.
-- [ ] Forward only the fixed request fields and apply method, content-type, body-size, timeout and response-size limits.
-- [ ] Enable the button only when controls and auth are valid; send one idempotent request and show queued/running/failed states.
-- [ ] Poll the submitted run, render its actual and forecast points on one target-time axis, and restore the most recent run per station.
-- [ ] Render missing MAPE/baseline as `—`; do not substitute demo numbers.
-- [ ] Synchronize the exact formal HTML into the Node-RED template and compare them byte-for-byte.
+- [x] Add fixed POST/GET proxy routes that validate the current NocoBase user before calling Worker with server-side credentials.
+- [x] Forward only the fixed request fields and apply method, content-type, body-size, timeout and response-size limits.
+- [x] Enable the button only when controls and auth are valid; send one idempotent request and show queued/running/failed states.
+- [x] Poll the submitted run, render its actual and forecast points on one target-time axis, and restore the most recent run per station.
+- [x] Render missing MAPE/baseline as `—`; do not substitute demo numbers.
+- [x] Synchronize the exact formal HTML into the Node-RED template and compare them byte-for-byte.
 
 ## Task 8: Final static and interface verification
 
 **Files:** all changed files from Tasks 1–7.
 
-- [ ] Validate all JSON files with `python -m json.tool` or `jq empty`.
-- [ ] Compile/import changed Python modules without invoking the automated test suite.
-- [ ] Parse the dashboard script and verify there are no external assets, unsafe HTML insertion or accidental secrets.
-- [ ] Smoke-check create/status/result flows and one validation failure for each input bound.
-- [ ] Run `git diff --check`, review status to exclude unrelated user files, and commit only the custom forecast implementation.
+- [x] Validate all JSON files with `python -m json.tool` or `jq empty`.
+- [x] Compile/import changed Python modules without invoking the automated test suite.
+- [x] Parse the dashboard script and verify there are no external assets, unsafe HTML insertion or accidental secrets.
+- [x] Smoke-check create/status/result flows and one validation failure for each input bound.
+- [x] Run `git diff --check`, review status to exclude unrelated user files, and commit only the custom forecast implementation.

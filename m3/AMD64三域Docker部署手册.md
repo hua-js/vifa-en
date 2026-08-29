@@ -165,8 +165,11 @@ docker compose logs --tail=100 vifa-m3-dashboard
 
 ## 9. 人工导入 Node-RED
 
-只导入 `m3/node_red/m3_production_gateway_flow.json`。导入前搜索并停用旧的同名 `/ett` 和
-`/energy-forecast-api` 路由。确认 Flow 变量：
+只导入 `m3/node_red/m3_production_gateway_flow.json`。导入前搜索并停用旧的同名 `/ett`、
+`/energy-forecast-api`、`/energy-forecast-api/custom-runs/*` 和
+`/energy-forecast-api/custom-performance/*` 路由。
+
+若只保留公开只读看板，确认 Flow 变量：
 
 ```text
 M3_AUTH_MODE=server_token
@@ -174,10 +177,24 @@ M3_AUTH_BASE_URL=https://ems.lvkpower.com
 M3_NOCOBASE_PAGE_ORIGIN=https://ems.lvkpower.com
 ```
 
+此模式下“开始预测”按钮保持禁用。启用自定义预测前，必须改为当前用户认证并补齐服务端变量：
+
+```text
+M3_AUTH_MODE=postmessage
+M3_AUTH_BASE_URL=https://ems.lvkpower.com
+M3_NOCOBASE_PAGE_ORIGIN=https://ems.lvkpower.com
+M3_STATIONS_JSON=<与 Worker 完全相同的两站 JSON>
+M3_WORKER_ADMIN_TOKEN=<与 Worker M3_ADMIN_API_TOKEN 相同>
+```
+
+`M3_WORKER_ADMIN_TOKEN` 只允许配置在 Node-RED 服务端环境中，不得写入 HTML、浏览器脚本或提交到仓库。
+自定义接口先校验 NocoBase 当前用户，再通过固定 UDS、固定方法和白名单参数调用 Worker。
+
 确认两个 Exec 命令固定访问 `/userdata/holo/pyfiles/vifa-m3/run/*.sock`，然后选择
 `Deploy Modified Flows`；不得重启 Node-RED。
 
-后续仅启用连续七日验收时，不需要重新导入 `m3_production_gateway_flow.json`；生产 Node-RED 保持不变。
+后续仅启用连续七日验收时不需要重新导入；启用本次自定义预测接口时必须导入新版
+`m3_production_gateway_flow.json` 并选择 `Deploy Modified Flows`，不得重启 Node-RED。
 
 ## 10. 人工配置 NocoBase iframe
 
