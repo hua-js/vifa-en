@@ -39,3 +39,40 @@ Node-RED 看板页面和 API：https://opdash.lvkpower.com
 Compose 同时运行 `vifa-m3-worker` 和 `vifa-m3-dashboard`。两个服务不开放 TCP
 端口，只通过共享 Unix Socket 与宿主机 Node-RED 通信。两个环境文件必须配置完全相同的
 两个完整电站 ID。
+
+## 创建自定义预测集合
+
+`create-custom-forecast-collections.py` 通过固定的
+`POST /api/collections:create` 创建以下三张表：
+
+1. `energy_forecast_manual_runs`；
+2. `energy_forecast_manual_points`；
+3. `energy_forecast_manual_evaluations`。
+
+脚本直接读取 `m3/contracts/nocobase_collections.json` 并转换成 NocoBase 的
+collection、field、association 和 index 配置，不在脚本里维护第二份表结构。默认只生成离线计划，不连接
+NocoBase：
+
+```bash
+python3 m3/deploy/create-custom-forecast-collections.py
+python3 m3/deploy/create-custom-forecast-collections.py --show-payloads
+```
+
+以后实际执行时，单独创建一个短期 Schema 管理 API Key。不要复用 Worker 的
+`M3_NOCOBASE_API_KEY`，也不要把管理 Key 放在命令行或仓库中：
+
+```bash
+install -o root -g root -m 0600 schema-admin.token /etc/vifa-m3/schema-admin.token
+export M3_NOCOBASE_BASE_URL=https://vifa.hlszh.com
+export M3_NOCOBASE_SCHEMA_API_KEY_FILE=/etc/vifa-m3/schema-admin.token
+python3 m3/deploy/create-custom-forecast-collections.py --execute
+unset M3_NOCOBASE_BASE_URL M3_NOCOBASE_SCHEMA_API_KEY_FILE
+```
+
+执行模式先回读三张表；只要任何同名表已存在，就在发送 POST 前整体停止。之后按依赖顺序逐表创建并
+回读核验字段与索引。请求失败或结果不确定时不会自动重试，也不会自动删除已经创建的表，必须先人工检查
+NocoBase 再决定后续操作。
+
+`collections:create` 能创建列、主键、复合索引和 `run_pk` 关系外键，但不能表达契约中的全部命名
+SQL `CHECK` 约束。当前链路由 Worker 的严格输入、领域和持久化校验保证这些不变量；如果以后允许其他
+写入方直接访问这些表，需要再增加独立数据库迁移来落物理 `CHECK` 约束。
