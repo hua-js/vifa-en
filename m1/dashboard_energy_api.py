@@ -508,7 +508,7 @@ def fetch_station_storage_sources(
     url = _external_list_url(
         CABINET_POWER_URL,
         page_size=len(allowed_pairs),
-        fields="emu_sn,f_es_sn,latest_power,max_temp,last_time_iso,timestamp",
+        fields="emu_sn,f_es_sn,latest_power,max_temp,last_time_iso",
         filter_value={"$or": filters},
     )
     rows, error = fetch_external_rows(url, token)
