@@ -4,11 +4,16 @@ from datetime import datetime, timedelta
 import json
 import math
 import re
+from statistics import median
 from zoneinfo import ZoneInfo
 
 import httpx
 
 from m3_worker.contracts import ObservationPoint
+from m3_worker.custom_forecast_contracts import (
+    ALLOWED_INTERVAL_SECONDS,
+    CustomObservationPoint,
+)
 from m3_worker.errors import M3Error
 
 
@@ -65,6 +70,39 @@ class RawEnergySourceClient:
     def _validate_window(start: datetime, end: datetime) -> None:
         if (start.tzinfo is None or end.tzinfo is None or start.utcoffset() != timedelta(hours=8) or end.utcoffset() != timedelta(hours=8) or end <= start or start.minute % 15 or end.minute % 15 or start.second or end.second or start.microsecond or end.microsecond):
             raise M3Error("source_contract_invalid", "Raw source window must use Asia/Shanghai 15-minute boundaries")
+
+    @staticmethod
+    def _validate_custom_window(
+        start: datetime, end: datetime, interval_seconds: int
+    ) -> None:
+        if (
+            type(interval_seconds) is not int
+            or interval_seconds not in ALLOWED_INTERVAL_SECONDS
+        ):
+            raise M3Error(
+                "source_contract_invalid", "Raw source interval is not supported"
+            )
+        if (
+            start.tzinfo is None
+            or end.tzinfo is None
+            or start.utcoffset() != timedelta(hours=8)
+            or end.utcoffset() != timedelta(hours=8)
+            or end <= start
+            or end - start > timedelta(days=7)
+            or start.microsecond
+            or end.microsecond
+        ):
+            raise M3Error(
+                "source_contract_invalid",
+                "Raw source custom window must be in (0, 7 days] and use Asia/Shanghai",
+            )
+        start_seconds = start.hour * 3600 + start.minute * 60 + start.second
+        end_seconds = end.hour * 3600 + end.minute * 60 + end.second
+        if start_seconds % interval_seconds or end_seconds % interval_seconds:
+            raise M3Error(
+                "source_contract_invalid",
+                "Raw source custom window must align to interval boundaries",
+            )
 
     @staticmethod
     def _timestamp(value: object) -> datetime:
@@ -213,4 +251,123 @@ class RawEnergySourceClient:
                 ObservationPoint(unique_id="storage_soc", ds=bucket_start, y=valid_soc[-1][1] if soc_valid else None, quality="valid" if soc_valid else "invalid", source_revision=0),
             ))
             bucket_start = bucket_end
+        return points
+
+    @staticmethod
+    def _source_cadence_seconds(
+        rows: list[tuple[datetime, dict[str, object]]], interval_seconds: int
+    ) -> float:
+        deltas = [
+            (right[0] - left[0]).total_seconds()
+            for left, right in zip(rows, rows[1:])
+            if 0 < (right[0] - left[0]).total_seconds() <= interval_seconds
+        ]
+        return float(median(deltas)) if deltas else float(interval_seconds)
+
+    @staticmethod
+    def _custom_covered(
+        samples: list[tuple[datetime, float]],
+        bucket_start: datetime,
+        bucket_end: datetime,
+        *,
+        source_cadence_seconds: float,
+    ) -> bool:
+        bucket_seconds = (bucket_end - bucket_start).total_seconds()
+        expected_samples = max(1, math.ceil(bucket_seconds / source_cadence_seconds))
+        required_samples = max(1, math.ceil(expected_samples * 0.8))
+        boundary_tolerance = timedelta(
+            seconds=min(bucket_seconds, source_cadence_seconds * 2)
+        )
+        return (
+            len(samples) >= required_samples
+            and samples[0][0] <= bucket_start + boundary_tolerance
+            and samples[-1][0] >= bucket_end - boundary_tolerance
+        )
+
+    def list_custom_observations(
+        self,
+        station_id: str,
+        start: datetime,
+        end: datetime,
+        *,
+        interval_seconds: int,
+    ) -> list[CustomObservationPoint]:
+        """Return ordered two-series points for one approved custom interval."""
+
+        self._require_station(station_id)
+        self._validate_custom_window(start, end, interval_seconds)
+        rows = self._rows(station_id, start, end)
+        cadence = self._source_cadence_seconds(rows, interval_seconds)
+        bucket_count = int((end - start).total_seconds() // interval_seconds)
+        buckets: list[list[tuple[datetime, dict[str, object]]]] = [
+            [] for _ in range(bucket_count)
+        ]
+        for timestamp, row in rows:
+            index = int((timestamp - start).total_seconds() // interval_seconds)
+            if not 0 <= index < bucket_count:
+                raise M3Error(
+                    "source_contract_invalid",
+                    "Raw source row falls outside the custom bucket range",
+                )
+            buckets[index].append((timestamp, row))
+
+        points: list[CustomObservationPoint] = []
+        interval = timedelta(seconds=interval_seconds)
+        for index, bucket in enumerate(buckets):
+            bucket_start = start + index * interval
+            bucket_end = bucket_start + interval
+            load_values = [
+                (timestamp, value)
+                for timestamp, row in bucket
+                if (value := self._number(row.get("load_power"))) is not None
+            ]
+            soc_values = [
+                (timestamp, value)
+                for timestamp, row in bucket
+                if (value := self._number(row.get("emus_soc"))) is not None
+            ]
+            valid_load = [
+                (timestamp, value)
+                for timestamp, value in load_values
+                if value >= 0
+            ]
+            valid_soc = [
+                (timestamp, value)
+                for timestamp, value in soc_values
+                if 0 <= value <= 100
+            ]
+            load_valid = self._custom_covered(
+                valid_load,
+                bucket_start,
+                bucket_end,
+                source_cadence_seconds=cadence,
+            ) and not any(value < 0 for _, value in load_values)
+            soc_valid = self._custom_covered(
+                valid_soc,
+                bucket_start,
+                bucket_end,
+                source_cadence_seconds=cadence,
+            )
+            points.extend(
+                (
+                    CustomObservationPoint(
+                        unique_id="station_total_load",
+                        ds=bucket_start,
+                        y=(
+                            sum(value for _, value in valid_load) / len(valid_load)
+                            if load_valid
+                            else None
+                        ),
+                        quality="valid" if load_valid else "invalid",
+                        source_revision=0,
+                    ),
+                    CustomObservationPoint(
+                        unique_id="storage_soc",
+                        ds=bucket_start,
+                        y=valid_soc[-1][1] if soc_valid else None,
+                        quality="valid" if soc_valid else "invalid",
+                        source_revision=0,
+                    ),
+                )
+            )
         return points

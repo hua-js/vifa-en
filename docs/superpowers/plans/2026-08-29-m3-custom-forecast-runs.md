@@ -19,11 +19,11 @@
 - Modify: `m3/contracts/nocobase_collections.json`
 - Modify: deployment/permission documentation located by `rg "energy_forecast_latest|worker_role" m3 docs`
 
-- [ ] Add `energy_forecast_manual_runs` with bigint identity PK, stable external `run_id`, idempotency constraint, immutable request fields, bounded status fields, manifests and audit timestamps.
-- [ ] Add `energy_forecast_manual_points` with indexed FK, `(run_pk, unique_id, target_time)` uniqueness, forecast/actual fields and interval-independent horizon bounds.
-- [ ] Add `energy_forecast_manual_evaluations` with one row per task/evaluation key and comparable MAPE/baseline fields.
-- [ ] Add exact Worker least-privilege actions and fields; deny delete/import/export and arbitrary collection access.
-- [ ] Validate JSON and inspect every FK/index/check/access-pattern pair.
+- [x] Add `energy_forecast_manual_runs` with bigint identity PK, stable external `run_id`, idempotency constraint, immutable request fields, bounded status fields, manifests and audit timestamps.
+- [x] Add `energy_forecast_manual_points` with indexed FK, `(run_pk, unique_id, target_time)` uniqueness, forecast/actual fields and interval-independent horizon bounds.
+- [x] Add `energy_forecast_manual_evaluations` with one row per task/evaluation key and comparable MAPE/baseline fields.
+- [x] Add exact Worker least-privilege actions and fields; deny delete/import/export and arbitrary collection access.
+- [x] Validate JSON and inspect every FK/index/check/access-pattern pair.
 
 ## Task 2: Introduce interval-independent domain contracts
 
@@ -34,25 +34,25 @@
 - Add: `m3_worker/domain/custom_forecasting.py`
 - Keep unchanged: `m3_worker/contracts.py`, `m3_worker/domain/training_data.py`, `m3_worker/domain/forecasting.py`
 
-- [ ] Define strict request/config/run/point/evaluation models and the allowed interval set `{3600, 1800, 900, 300, 60, 30}`.
-- [ ] Derive points per day, horizon, day/week season lengths and the short/full model policy from validated input.
-- [ ] Parameterize resampling, gap handling, model factories, cross-validation and forecasting in the new modules.
-- [ ] Preserve load clipping to non-negative and SOC clipping to `0..100`; keep explicit fallback reasons.
-- [ ] Compile the new modules and run bounded fixture-free import/constructor smoke checks.
+- [x] Define strict request/config/run/point/evaluation models and the allowed interval set `{3600, 1800, 900, 300, 60, 30}`.
+- [x] Derive points per day, horizon, day/week season lengths and the short/full model policy from validated input.
+- [x] Parameterize resampling, gap handling, model factories, cross-validation and forecasting in the new modules.
+- [x] Preserve load clipping to non-negative and SOC clipping to `0..100`; keep explicit fallback reasons.
+- [x] Compile the new modules and run bounded fixture-free import/constructor smoke checks.
 
-## Task 3: Add the v2 configurable observation source
+## Task 3: Add the configurable raw observation source
 
 **Files:**
 
-- Modify: `m3_worker/clients/source_api.py`
 - Modify: `m3_worker/clients/raw_energy_api.py`
-- Modify: `m3/node_red/energy_forecast_flow.json`
+- Keep unchanged: `m3_worker/clients/source_api.py`, `m3/node_red/energy_forecast_flow.json`
 
-- [ ] Add a separate typed v2 response whose `interval_seconds` is validated against the allowed set.
-- [ ] Pass interval explicitly in the request; keep v1 paths and 15-minute behavior unchanged.
-- [ ] Aggregate load by mean and SOC by last valid value using coverage derived from the source sampling cadence.
-- [ ] Preserve seven-day request chunking, stable ordering, duplicate rejection, response-size bounds and configured-station allowlisting.
-- [ ] Validate Node-RED JSON and use direct HTTP smoke requests against the v2 route when the local flow is available.
+- [x] Confirm the active Worker path reads the fixed NocoBase raw source directly; do not add an unused Node-RED v2 path.
+- [x] Add a separate typed `list_custom_observations` method whose `interval_seconds` is validated against the allowed set.
+- [x] Pass interval explicitly; keep the existing 15-minute `list_observations` behavior unchanged.
+- [x] Aggregate load by mean and SOC by last valid value using coverage derived from the source sampling cadence.
+- [x] Preserve seven-day request chunking, stable ordering, duplicate rejection, response-size bounds and configured-station allowlisting.
+- [x] Compile the client and run a bounded in-memory raw aggregation smoke check.
 
 ## Task 4: Persist and recover custom tasks
 

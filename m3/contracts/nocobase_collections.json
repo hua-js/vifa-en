@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "database_policy": {
     "identifier_style": "lowercase_snake_case",
     "primary_key_strategy": "bigint_identity",
@@ -387,6 +387,429 @@
       ]
     },
     {
+      "name": "energy_forecast_manual_runs",
+      "fields": {
+        "id": {
+          "type": "bigint",
+          "nullable": false,
+          "identity": true,
+          "primary_key": true
+        },
+        "run_id": {"type": "text", "nullable": false},
+        "station_id": {"type": "text", "nullable": false},
+        "idempotency_key": {"type": "text", "nullable": false},
+        "history_start": {"type": "timestamptz", "nullable": false},
+        "history_end": {"type": "timestamptz", "nullable": false},
+        "history_days": {"type": "smallint", "nullable": false},
+        "forecast_start": {"type": "timestamptz", "nullable": false},
+        "forecast_end": {"type": "timestamptz", "nullable": false},
+        "forecast_days": {"type": "smallint", "nullable": false},
+        "interval_seconds": {"type": "integer", "nullable": false},
+        "points_per_day": {"type": "integer", "nullable": false},
+        "expected_points_per_series": {"type": "integer", "nullable": false},
+        "model_policy": {"type": "text", "nullable": false},
+        "status": {"type": "text", "nullable": false},
+        "model_manifest": {"type": "jsonb", "nullable": true},
+        "source_manifest": {"type": "jsonb", "nullable": true},
+        "content_hash": {"type": "text", "nullable": true},
+        "error_code": {"type": "text", "nullable": true},
+        "requested_by": {"type": "text", "nullable": true},
+        "started_at": {"type": "timestamptz", "nullable": true},
+        "completed_at": {"type": "timestamptz", "nullable": true},
+        "evaluated_at": {"type": "timestamptz", "nullable": true},
+        "created_at": {
+          "type": "timestamptz",
+          "nullable": false,
+          "client_writable": false,
+          "server_managed": {"on_create": "current_timestamp"}
+        },
+        "updated_at": {
+          "type": "timestamptz",
+          "nullable": false,
+          "client_writable": false,
+          "server_managed": {
+            "on_create": "current_timestamp",
+            "on_update": "current_timestamp"
+          }
+        }
+      },
+      "unique_constraints": [
+        {
+          "name": "energy_forecast_manual_runs_run_id_key",
+          "fields": ["run_id"]
+        },
+        {
+          "name": "energy_forecast_manual_runs_station_idempotency_key",
+          "fields": ["station_id", "idempotency_key"]
+        }
+      ],
+      "foreign_keys": [],
+      "indexes": [
+        {
+          "name": "energy_forecast_manual_runs_run_id_key",
+          "fields": ["run_id"],
+          "unique": true,
+          "provided_by": "unique_constraint",
+          "access_pattern": {
+            "equality_prefix": ["run_id"],
+            "range_suffix": []
+          }
+        },
+        {
+          "name": "energy_forecast_manual_runs_station_idempotency_key",
+          "fields": ["station_id", "idempotency_key"],
+          "unique": true,
+          "provided_by": "unique_constraint",
+          "access_pattern": {
+            "equality_prefix": ["station_id", "idempotency_key"],
+            "range_suffix": []
+          }
+        },
+        {
+          "name": "energy_forecast_manual_runs_station_created_idx",
+          "fields": ["station_id", "created_at"],
+          "sort": ["asc", "desc"],
+          "unique": false,
+          "provided_by": "explicit_index",
+          "access_pattern": {
+            "equality_prefix": ["station_id"],
+            "range_suffix": ["created_at"]
+          }
+        },
+        {
+          "name": "energy_forecast_manual_runs_status_created_idx",
+          "fields": ["status", "created_at"],
+          "sort": ["asc", "asc"],
+          "unique": false,
+          "provided_by": "explicit_index",
+          "access_pattern": {
+            "equality_prefix": ["status"],
+            "range_suffix": ["created_at"]
+          }
+        }
+      ],
+      "check_constraints": [
+        {
+          "name": "energy_forecast_manual_runs_history_days_check",
+          "kind": "range",
+          "field": "history_days",
+          "range": {"minimum": 7, "maximum": 90}
+        },
+        {
+          "name": "energy_forecast_manual_runs_forecast_days_check",
+          "kind": "range",
+          "field": "forecast_days",
+          "range": {"minimum": 1, "maximum": 7}
+        },
+        {
+          "name": "energy_forecast_manual_runs_interval_check",
+          "kind": "enum",
+          "field": "interval_seconds",
+          "allowed_values": [30, 60, 300, 900, 1800, 3600]
+        },
+        {
+          "name": "energy_forecast_manual_runs_points_per_day_check",
+          "kind": "enum",
+          "field": "points_per_day",
+          "allowed_values": [24, 48, 96, 288, 1440, 2880]
+        },
+        {
+          "name": "energy_forecast_manual_runs_expected_points_check",
+          "kind": "range",
+          "field": "expected_points_per_series",
+          "range": {"minimum": 24, "maximum": 20160}
+        },
+        {
+          "name": "energy_forecast_manual_runs_model_policy_check",
+          "kind": "enum",
+          "field": "model_policy",
+          "allowed_values": ["seasonal_naive_only", "full_selection"]
+        },
+        {
+          "name": "energy_forecast_manual_runs_status_check",
+          "kind": "enum",
+          "field": "status",
+          "allowed_values": ["queued", "running", "succeeded", "evaluated", "failed"]
+        },
+        {
+          "name": "energy_forecast_manual_runs_history_window_check",
+          "kind": "field_comparison",
+          "left_field": "history_end",
+          "operator": ">",
+          "right_field": "history_start"
+        },
+        {
+          "name": "energy_forecast_manual_runs_forecast_window_check",
+          "kind": "field_comparison",
+          "left_field": "forecast_end",
+          "operator": ">",
+          "right_field": "forecast_start"
+        },
+        {
+          "name": "energy_forecast_manual_runs_updated_check",
+          "kind": "field_comparison",
+          "left_field": "updated_at",
+          "operator": ">=",
+          "right_field": "created_at"
+        }
+      ],
+      "application_invariants": [
+        "history_end_equals_forecast_start",
+        "history_window_equals_history_days_in_asia_shanghai",
+        "forecast_window_equals_forecast_days_in_asia_shanghai",
+        "points_per_day_equals_86400_divided_by_interval_seconds",
+        "expected_points_per_series_equals_points_per_day_times_forecast_days",
+        "history_under_28_days_requires_seasonal_naive_only",
+        "history_at_least_28_days_requires_full_selection",
+        "terminal_success_requires_complete_point_count_and_verified_content_hash",
+        "failed_status_requires_stable_error_code"
+      ]
+    },
+    {
+      "name": "energy_forecast_manual_points",
+      "fields": {
+        "id": {
+          "type": "bigint",
+          "nullable": false,
+          "identity": true,
+          "primary_key": true
+        },
+        "run_pk": {"type": "bigint", "nullable": false},
+        "unique_id": {"type": "text", "nullable": false},
+        "target_time": {"type": "timestamptz", "nullable": false},
+        "horizon_step": {"type": "integer", "nullable": false},
+        "model_name": {"type": "text", "nullable": false},
+        "raw_forecast": {"type": "numeric(14,6)", "nullable": false},
+        "forecast_value": {"type": "numeric(14,6)", "nullable": false},
+        "is_clipped": {"type": "boolean", "nullable": false},
+        "actual_value": {"type": "numeric(14,6)", "nullable": true},
+        "actual_quality": {"type": "text", "nullable": true},
+        "actual_source_revision": {"type": "bigint", "nullable": true},
+        "actual_recorded_at": {"type": "timestamptz", "nullable": true},
+        "evaluated_at": {"type": "timestamptz", "nullable": true},
+        "absolute_percentage_error": {"type": "numeric(14,8)", "nullable": true}
+      },
+      "unique_constraints": [
+        {
+          "name": "energy_forecast_manual_points_run_series_target_key",
+          "fields": ["run_pk", "unique_id", "target_time"]
+        }
+      ],
+      "foreign_keys": [
+        {
+          "name": "energy_forecast_manual_points_run_pk_fkey",
+          "fields": ["run_pk"],
+          "references": {
+            "collection": "energy_forecast_manual_runs",
+            "fields": ["id"]
+          },
+          "on_delete": "restrict",
+          "index_coverage": "energy_forecast_manual_points_run_series_target_key"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "energy_forecast_manual_points_run_series_target_key",
+          "fields": ["run_pk", "unique_id", "target_time"],
+          "unique": true,
+          "provided_by": "unique_constraint",
+          "access_pattern": {
+            "equality_prefix": ["run_pk", "unique_id"],
+            "range_suffix": ["target_time"]
+          }
+        }
+      ],
+      "check_constraints": [
+        {
+          "name": "energy_forecast_manual_points_unique_id_check",
+          "kind": "enum",
+          "field": "unique_id",
+          "allowed_values": ["station_total_load", "storage_soc"]
+        },
+        {
+          "name": "energy_forecast_manual_points_horizon_check",
+          "kind": "range",
+          "field": "horizon_step",
+          "range": {"minimum": 1, "maximum": 20160}
+        },
+        {
+          "name": "energy_forecast_manual_points_load_forecast_check",
+          "kind": "conditional_minimum",
+          "when": {"field": "unique_id", "equals": "station_total_load"},
+          "field": "forecast_value",
+          "minimum": 0
+        },
+        {
+          "name": "energy_forecast_manual_points_soc_forecast_check",
+          "kind": "conditional_range",
+          "when": {"field": "unique_id", "equals": "storage_soc"},
+          "field": "forecast_value",
+          "range": {"minimum": 0, "maximum": 100}
+        },
+        {
+          "name": "energy_forecast_manual_points_actual_quality_check",
+          "kind": "enum",
+          "field": "actual_quality",
+          "allowed_values": ["valid", "invalid"],
+          "null_allowed": true
+        },
+        {
+          "name": "energy_forecast_manual_points_ape_check",
+          "kind": "nullable_minimum",
+          "field": "absolute_percentage_error",
+          "minimum": 0
+        }
+      ],
+      "application_invariants": [
+        "target_times_are_contiguous_at_parent_run_interval",
+        "horizon_steps_are_contiguous_from_one_per_series",
+        "each_series_point_count_matches_parent_expected_points_per_series",
+        "is_clipped_matches_raw_and_published_values",
+        "replay_never_mutates_forecast_fields",
+        "actual_fields_change_only_for_newer_source_revision"
+      ]
+    },
+    {
+      "name": "energy_forecast_manual_evaluations",
+      "fields": {
+        "id": {
+          "type": "bigint",
+          "nullable": false,
+          "identity": true,
+          "primary_key": true
+        },
+        "run_pk": {"type": "bigint", "nullable": false},
+        "station_id": {"type": "text", "nullable": false},
+        "run_id": {"type": "text", "nullable": false},
+        "evaluation_key": {"type": "text", "nullable": false},
+        "interval_seconds": {"type": "integer", "nullable": false},
+        "forecast_days": {"type": "smallint", "nullable": false},
+        "model_policy": {"type": "text", "nullable": false},
+        "window_start": {"type": "timestamptz", "nullable": false},
+        "window_end": {"type": "timestamptz", "nullable": false},
+        "expected_count": {"type": "integer", "nullable": false},
+        "valid_count": {"type": "integer", "nullable": false},
+        "zero_actual_count": {"type": "integer", "nullable": false},
+        "mape_percent": {"type": "numeric(10,6)", "nullable": true},
+        "mae": {"type": "numeric(14,6)", "nullable": true},
+        "smape_percent": {"type": "numeric(10,6)", "nullable": true},
+        "wape_percent": {"type": "numeric(10,6)", "nullable": true},
+        "median_ape_percent": {"type": "numeric(10,6)", "nullable": true},
+        "p90_ape_percent": {"type": "numeric(10,6)", "nullable": true},
+        "baseline_mape_percent": {"type": "numeric(10,6)", "nullable": true},
+        "relative_baseline_improvement_percent": {"type": "numeric(10,6)", "nullable": true},
+        "outcome": {"type": "text", "nullable": false},
+        "calculated_at": {"type": "timestamptz", "nullable": false}
+      },
+      "unique_constraints": [
+        {
+          "name": "energy_forecast_manual_evaluations_run_key",
+          "fields": ["run_pk", "evaluation_key"]
+        }
+      ],
+      "foreign_keys": [
+        {
+          "name": "energy_forecast_manual_evaluations_run_pk_fkey",
+          "fields": ["run_pk"],
+          "references": {
+            "collection": "energy_forecast_manual_runs",
+            "fields": ["id"]
+          },
+          "on_delete": "restrict",
+          "index_coverage": "energy_forecast_manual_evaluations_run_key"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "energy_forecast_manual_evaluations_run_key",
+          "fields": ["run_pk", "evaluation_key"],
+          "unique": true,
+          "provided_by": "unique_constraint",
+          "access_pattern": {
+            "equality_prefix": ["run_pk", "evaluation_key"],
+            "range_suffix": []
+          }
+        },
+        {
+          "name": "energy_forecast_manual_evaluations_comparable_idx",
+          "fields": ["station_id", "evaluation_key", "interval_seconds", "forecast_days", "model_policy", "calculated_at"],
+          "sort": ["asc", "asc", "asc", "asc", "asc", "desc"],
+          "unique": false,
+          "provided_by": "explicit_index",
+          "access_pattern": {
+            "equality_prefix": ["station_id", "evaluation_key", "interval_seconds", "forecast_days", "model_policy"],
+            "range_suffix": ["calculated_at"]
+          }
+        }
+      ],
+      "check_constraints": [
+        {
+          "name": "energy_forecast_manual_evaluations_key_check",
+          "kind": "enum",
+          "field": "evaluation_key",
+          "allowed_values": ["station_total_load", "storage_soc", "overall"]
+        },
+        {
+          "name": "energy_forecast_manual_evaluations_interval_check",
+          "kind": "enum",
+          "field": "interval_seconds",
+          "allowed_values": [30, 60, 300, 900, 1800, 3600]
+        },
+        {
+          "name": "energy_forecast_manual_evaluations_forecast_days_check",
+          "kind": "range",
+          "field": "forecast_days",
+          "range": {"minimum": 1, "maximum": 7}
+        },
+        {
+          "name": "energy_forecast_manual_evaluations_policy_check",
+          "kind": "enum",
+          "field": "model_policy",
+          "allowed_values": ["seasonal_naive_only", "full_selection"]
+        },
+        {
+          "name": "energy_forecast_manual_evaluations_counts_check",
+          "kind": "bounded_counts",
+          "fields": ["valid_count", "zero_actual_count"],
+          "minimum": 0,
+          "maximum_field": "expected_count"
+        },
+        {
+          "name": "energy_forecast_manual_evaluations_window_check",
+          "kind": "field_comparison",
+          "left_field": "window_end",
+          "operator": ">",
+          "right_field": "window_start"
+        },
+        {
+          "name": "energy_forecast_manual_evaluations_mape_check",
+          "kind": "nullable_minimum",
+          "field": "mape_percent",
+          "minimum": 0
+        },
+        {
+          "name": "energy_forecast_manual_evaluations_baseline_check",
+          "kind": "nullable_minimum",
+          "field": "baseline_mape_percent",
+          "minimum": 0
+        },
+        {
+          "name": "energy_forecast_manual_evaluations_outcome_check",
+          "kind": "enum",
+          "field": "outcome",
+          "allowed_values": ["in_progress", "available", "insufficient_data"]
+        }
+      ],
+      "application_invariants": [
+        "station_id_and_run_id_match_parent_run",
+        "comparison_configuration_matches_parent_run",
+        "series_expected_count_matches_parent_expected_points_per_series",
+        "overall_expected_count_is_twice_parent_expected_points_per_series",
+        "relative_improvement_is_null_when_baseline_mape_is_zero_or_unavailable",
+        "rolling_seven_day_mape_uses_only_equal_comparison_configuration"
+      ]
+    },
+    {
       "name": "energy_forecast_acceptance_runs",
       "fields": {
         "id": {
@@ -549,7 +972,9 @@
         "energy_forecast_latest",
         "energy_forecast_batches",
         "energy_forecast_evaluations",
-        "energy_forecast_acceptance_runs"
+        "energy_forecast_acceptance_runs",
+        "energy_forecast_manual_runs",
+        "energy_forecast_manual_evaluations"
       ]
     }
   },
@@ -707,6 +1132,84 @@
           }
         },
         "upsert_fields": ["station_id", "acceptance_run_id", "evaluation_key", "window_start", "window_end", "expected_count", "valid_count", "zero_actual_count", "mape_percent", "mae", "smape_percent", "wape_percent", "median_ape_percent", "p90_ape_percent", "outcome", "calculated_at"],
+        "protected_fields": ["id"]
+      },
+      "energy_forecast_manual_runs": {
+        "allowed_actions": ["list", "update", "firstOrCreate"],
+        "denied_actions": ["get", "create", "updateOrCreate", "destroy", "delete", "export", "import"],
+        "fields_by_action": {
+          "list": {
+            "read": ["id", "run_id", "station_id", "idempotency_key", "history_start", "history_end", "history_days", "forecast_start", "forecast_end", "forecast_days", "interval_seconds", "points_per_day", "expected_points_per_series", "model_policy", "status", "model_manifest", "source_manifest", "content_hash", "error_code", "requested_by", "started_at", "completed_at", "evaluated_at", "created_at", "updated_at"],
+            "filter": ["run_id", "station_id", "idempotency_key", "status"],
+            "sort": ["created_at"],
+            "write": [],
+            "record_key": []
+          },
+          "update": {
+            "read": ["id", "run_id", "station_id", "status", "model_manifest", "source_manifest", "content_hash", "error_code", "started_at", "completed_at", "evaluated_at", "updated_at"],
+            "filter": [],
+            "sort": [],
+            "write": ["status", "model_manifest", "source_manifest", "content_hash", "error_code", "started_at", "completed_at", "evaluated_at"],
+            "record_key": ["id"]
+          },
+          "firstOrCreate": {
+            "read": ["id", "run_id", "station_id", "idempotency_key", "history_start", "history_end", "history_days", "forecast_start", "forecast_end", "forecast_days", "interval_seconds", "points_per_day", "expected_points_per_series", "model_policy", "status", "requested_by", "created_at"],
+            "filter": ["station_id", "idempotency_key"],
+            "sort": [],
+            "write": ["run_id", "station_id", "idempotency_key", "history_start", "history_end", "history_days", "forecast_start", "forecast_end", "forecast_days", "interval_seconds", "points_per_day", "expected_points_per_series", "model_policy", "status", "requested_by"],
+            "record_key": []
+          }
+        },
+        "protected_fields": ["id", "run_id", "station_id", "idempotency_key", "history_start", "history_end", "history_days", "forecast_start", "forecast_end", "forecast_days", "interval_seconds", "points_per_day", "expected_points_per_series", "model_policy", "requested_by", "created_at", "updated_at"]
+      },
+      "energy_forecast_manual_points": {
+        "allowed_actions": ["list", "update", "firstOrCreate"],
+        "denied_actions": ["get", "create", "updateOrCreate", "destroy", "delete", "export", "import"],
+        "fields_by_action": {
+          "list": {
+            "read": ["id", "run_pk", "unique_id", "target_time", "horizon_step", "model_name", "raw_forecast", "forecast_value", "is_clipped", "actual_value", "actual_quality", "actual_source_revision", "actual_recorded_at", "evaluated_at", "absolute_percentage_error"],
+            "filter": ["run_pk", "unique_id", "target_time"],
+            "sort": ["unique_id", "target_time"],
+            "write": [],
+            "record_key": []
+          },
+          "update": {
+            "read": ["id", "run_pk", "unique_id", "target_time", "actual_value", "actual_quality", "actual_source_revision", "actual_recorded_at", "evaluated_at", "absolute_percentage_error"],
+            "filter": [],
+            "sort": [],
+            "write": ["actual_value", "actual_quality", "actual_source_revision", "actual_recorded_at", "evaluated_at", "absolute_percentage_error"],
+            "record_key": ["id"]
+          },
+          "firstOrCreate": {
+            "read": ["id", "run_pk", "unique_id", "target_time", "horizon_step", "model_name", "raw_forecast", "forecast_value", "is_clipped"],
+            "filter": ["run_pk", "unique_id", "target_time"],
+            "sort": [],
+            "write": ["run_pk", "unique_id", "target_time", "horizon_step", "model_name", "raw_forecast", "forecast_value", "is_clipped"],
+            "record_key": []
+          }
+        },
+        "protected_fields": ["id", "run_pk", "unique_id", "target_time", "horizon_step", "model_name", "raw_forecast", "forecast_value", "is_clipped"]
+      },
+      "energy_forecast_manual_evaluations": {
+        "allowed_actions": ["list", "updateOrCreate"],
+        "denied_actions": ["get", "create", "update", "firstOrCreate", "destroy", "delete", "export", "import"],
+        "fields_by_action": {
+          "list": {
+            "read": ["id", "run_pk", "station_id", "run_id", "evaluation_key", "interval_seconds", "forecast_days", "model_policy", "window_start", "window_end", "expected_count", "valid_count", "zero_actual_count", "mape_percent", "mae", "smape_percent", "wape_percent", "median_ape_percent", "p90_ape_percent", "baseline_mape_percent", "relative_baseline_improvement_percent", "outcome", "calculated_at"],
+            "filter": ["run_pk", "station_id", "run_id", "evaluation_key", "interval_seconds", "forecast_days", "model_policy", "calculated_at"],
+            "sort": ["calculated_at"],
+            "write": [],
+            "record_key": []
+          },
+          "updateOrCreate": {
+            "read": ["id", "run_pk", "station_id", "run_id", "evaluation_key", "interval_seconds", "forecast_days", "model_policy", "window_start", "window_end", "expected_count", "valid_count", "zero_actual_count", "mape_percent", "mae", "smape_percent", "wape_percent", "median_ape_percent", "p90_ape_percent", "baseline_mape_percent", "relative_baseline_improvement_percent", "outcome", "calculated_at"],
+            "filter": ["run_pk", "evaluation_key"],
+            "sort": [],
+            "write": ["run_pk", "station_id", "run_id", "evaluation_key", "interval_seconds", "forecast_days", "model_policy", "window_start", "window_end", "expected_count", "valid_count", "zero_actual_count", "mape_percent", "mae", "smape_percent", "wape_percent", "median_ape_percent", "p90_ape_percent", "baseline_mape_percent", "relative_baseline_improvement_percent", "outcome", "calculated_at"],
+            "record_key": []
+          }
+        },
+        "upsert_fields": ["run_pk", "station_id", "run_id", "evaluation_key", "interval_seconds", "forecast_days", "model_policy", "window_start", "window_end", "expected_count", "valid_count", "zero_actual_count", "mape_percent", "mae", "smape_percent", "wape_percent", "median_ape_percent", "p90_ape_percent", "baseline_mape_percent", "relative_baseline_improvement_percent", "outcome", "calculated_at"],
         "protected_fields": ["id"]
       },
       "energy_forecast_acceptance_runs": {
