@@ -47,8 +47,8 @@ RUN_FIELDS = [
     "started_at",
     "completed_at",
     "evaluated_at",
-    "created_at",
-    "updated_at",
+    "createdAt",
+    "updatedAt",
 ]
 POINT_FIELDS = [
     "id",
@@ -227,8 +227,8 @@ class CustomForecastRepository:
             evaluated_at=_timestamp(
                 row["evaluated_at"], "evaluated_at", optional=True
             ),
-            created_at=_timestamp(row["created_at"], "created_at"),
-            updated_at=_timestamp(row["updated_at"], "updated_at"),
+            created_at=_timestamp(row["createdAt"], "createdAt"),
+            updated_at=_timestamp(row["updatedAt"], "updatedAt"),
         )
 
     @staticmethod
@@ -309,7 +309,7 @@ class CustomForecastRepository:
                 RUNS,
                 filter={"status": status},
                 fields=RUN_FIELDS,
-                sort=["created_at"],
+                sort=["createdAt"],
             )
             for row in rows:
                 run = self._parse_run(row)
@@ -326,7 +326,7 @@ class CustomForecastRepository:
             RUNS,
             filter={"station_id": station_id, "status": "succeeded"},
             fields=RUN_FIELDS,
-            sort=["created_at"],
+            sort=["createdAt"],
         )
         return [self._parse_run(row) for row in rows]
 

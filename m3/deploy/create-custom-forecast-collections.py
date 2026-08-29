@@ -59,8 +59,6 @@ FIELD_TITLES = {
     "started_at": "开始执行时间",
     "completed_at": "完成时间",
     "evaluated_at": "评估时间",
-    "created_at": "创建时间",
-    "updated_at": "更新时间",
     "run_pk": "预测任务主键",
     "unique_id": "序列标识",
     "target_time": "目标时间",
@@ -94,6 +92,13 @@ FIELD_TITLES = {
     "run": "预测任务",
 }
 IDENTIFIER = re.compile(r"[a-z][a-z0-9_]*\Z")
+SYSTEM_FIELD_NAMES = frozenset({"createdAt", "createdBy", "updatedAt", "updatedBy"})
+SYSTEM_FIELD_TITLES = {
+    "createdAt": '{{t("Created at")}}',
+    "createdBy": '{{t("Created by")}}',
+    "updatedAt": '{{t("Last updated at")}}',
+    "updatedBy": '{{t("Last updated by")}}',
+}
 TOKEN = re.compile(r"[\x21-\x7e]{16,4096}\Z")
 NUMERIC_TYPE = re.compile(r"numeric\(([1-9][0-9]*),([0-9]+)\)\Z")
 DEFAULT_TIMEOUT_SECONDS = 15
@@ -122,7 +127,7 @@ def load_contract() -> dict[str, Any]:
         raise DeploymentError("无法读取 M3 NocoBase 集合契约") from error
     if (
         type(value) is not dict
-        or value.get("version") != 4
+        or value.get("version") != 5
         or type(value.get("collections")) is not list
     ):
         raise DeploymentError("M3 NocoBase 集合契约格式不正确")
@@ -157,17 +162,6 @@ def field_ui_options(name: str, field_type: str, type_options: dict[str, int]) -
     title = FIELD_TITLES.get(name)
     if title is None:
         raise DeploymentError(f"字段 {name} 缺少 NocoBase 显示名称")
-    if name in {"created_at", "updated_at"}:
-        return {
-            "interface": "createdAt" if name == "created_at" else "updatedAt",
-            "uiSchema": {
-                "type": "datetime",
-                "title": title,
-                "x-component": "DatePicker",
-                "x-component-props": {"showTime": True, "utc": True},
-                "x-read-pretty": True,
-            },
-        }
     if field_type == "text":
         return {
             "interface": "textarea",
@@ -235,9 +229,75 @@ def field_ui_options(name: str, field_type: str, type_options: dict[str, int]) -
     raise DeploymentError(f"字段 {name} 缺少 NocoBase 界面类型映射")
 
 
+def system_field_payload(name: str, definition: dict[str, Any]) -> dict[str, Any]:
+    if definition.get("nullable") is not True or definition.get("client_writable") is not False:
+        raise DeploymentError(f"系统字段 {name} 必须是只读可空字段")
+    if definition.get("interface") != name:
+        raise DeploymentError(f"系统字段 {name} 的 interface 不正确")
+    if name in {"createdAt", "updatedAt"}:
+        expected_management = {"on_create": "current_timestamp"}
+        if name == "updatedAt":
+            expected_management["on_update"] = "current_timestamp"
+        if (
+            definition.get("type") != "timestamptz"
+            or definition.get("server_managed") != expected_management
+        ):
+            raise DeploymentError(f"系统时间字段 {name} 的契约不正确")
+        return {
+            "name": name,
+            "type": "date",
+            "interface": name,
+            "field": name,
+            "uiSchema": {
+                "title": SYSTEM_FIELD_TITLES[name],
+                "type": "datetime",
+                "x-component": "DatePicker",
+                "x-component-props": {
+                    "dateFormat": "YYYY-MM-DD",
+                    "picker": "date",
+                },
+                "x-read-pretty": True,
+            },
+        }
+    expected_management = {"on_create": "current_user"}
+    if name == "updatedBy":
+        expected_management["on_update"] = "current_user"
+    expected_foreign_key = "createdById" if name == "createdBy" else "updatedById"
+    if (
+        definition.get("type") != "belongsTo"
+        or definition.get("target") != "users"
+        or definition.get("foreign_key") != expected_foreign_key
+        or definition.get("target_key") != "id"
+        or definition.get("server_managed") != expected_management
+    ):
+        raise DeploymentError(f"系统人员字段 {name} 的契约不正确")
+    return {
+        "name": name,
+        "type": "belongsTo",
+        "interface": name,
+        "target": "users",
+        "foreignKey": expected_foreign_key,
+        "targetKey": "id",
+        "uiSchema": {
+            "title": SYSTEM_FIELD_TITLES[name],
+            "type": "object",
+            "x-component": "AssociationField",
+            "x-component-props": {
+                "fieldNames": {"label": "nickname", "value": "id"},
+            },
+            "x-read-pretty": True,
+        },
+    }
+
+
 def field_payload(name: str, definition: object) -> dict[str, Any]:
-    if IDENTIFIER.fullmatch(name) is None or type(definition) is not dict:
+    if (
+        (IDENTIFIER.fullmatch(name) is None and name not in SYSTEM_FIELD_NAMES)
+        or type(definition) is not dict
+    ):
         raise DeploymentError("集合契约包含无效字段")
+    if name in SYSTEM_FIELD_NAMES:
+        return system_field_payload(name, definition)
     field_type, type_options = nocobase_type(definition.get("type"))
     nullable = definition.get("nullable")
     if type(nullable) is not bool:
@@ -266,10 +326,6 @@ def field_payload(name: str, definition: object) -> dict[str, Any]:
         if generated != "current_timestamp":
             raise DeploymentError(f"字段 {name} 的生成规则不受支持")
         payload["defaultToCurrentTime"] = True
-    if name == "created_at":
-        payload["interface"] = "createdAt"
-    elif name == "updated_at":
-        payload["interface"] = "updatedAt"
     return payload
 
 
@@ -641,6 +697,20 @@ def verify_collection(actual: dict[str, Any], expected: dict[str, Any]) -> None:
             raise DeploymentError(f"集合 {expected['name']} 索引 {index['name']} 回读不一致")
 
 
+def physical_columns(payload: dict[str, Any]) -> list[str]:
+    result: list[str] = []
+    for field in payload["fields"]:
+        if field["type"] == "belongsTo":
+            column = field.get("foreignKey")
+            if type(column) is not str:
+                continue
+        else:
+            column = field["name"]
+        if column not in result:
+            result.append(column)
+    return result
+
+
 def execute(args: argparse.Namespace, payloads: list[dict[str, Any]]) -> None:
     base_value = args.base_url or os.environ.get("M3_NOCOBASE_BASE_URL", "")
     base_url = strict_origin(base_value, allow_http=args.allow_http)
@@ -700,9 +770,7 @@ def main() -> int:
     if args.show_payloads:
         summaries = []
         for payload in payloads:
-            physical_fields = [
-                field["name"] for field in payload["fields"] if field["type"] != "belongsTo"
-            ]
+            physical_fields = physical_columns(payload)
             metadata_fields = [field["name"] for field in payload["fields"]]
             summaries.append(
                 {
@@ -725,7 +793,7 @@ def main() -> int:
     if not args.execute:
         print("offline-plan-only: 未连接 NocoBase，未创建任何表", file=sys.stderr)
         for payload in payloads:
-            physical_count = sum(field["type"] != "belongsTo" for field in payload["fields"])
+            physical_count = len(physical_columns(payload))
             print(
                 f"planned {payload['name']} physical_columns={physical_count} "
                 f"metadata_fields={len(payload['fields'])} indexes={len(payload['indexes'])}",

@@ -59,10 +59,11 @@ python3 m3/deploy/create-custom-forecast-collections.py --show-payloads
 ```
 
 三张集合都在 `fields` 中显式创建非空自增 `bigint id` 主键，并关闭 `autoGenId`，避免仅设置
-`autoGenId` 后字段元数据中仍缺少 `id`。三张表均包含由服务端维护的 `created_at`、`updated_at`；脚本还会
-为每个字段提交与存储类型匹配的 `interface`、中文标题和 `uiSchema`，确保字段能够在 NocoBase 数据源管理
-界面完整显示。离线 `--show-payloads` 输出包含 schema summary，其中会明确列出物理列、显式 `id` 主键和
-关联元数据字段。
+`autoGenId` 后字段元数据中仍缺少 `id`。三张表均显式包含 NocoBase 管理的 `createdAt`、`createdBy`、
+`updatedAt`、`updatedBy`；其中创建人和修改人关联 `users.id`，对应物理外键列为 `createdById`、
+`updatedById`。脚本还会为每个字段提交与存储类型匹配的 `interface`、标题和 `uiSchema`，确保字段能够在
+NocoBase 数据源管理界面完整显示。离线 `--show-payloads` 输出包含 schema summary，其中会明确列出物理列、
+显式 `id` 主键和关联元数据字段。
 
 以后实际执行时，单独创建一个短期 Schema 管理 API Key。不要复用 Worker 的
 `M3_NOCOBASE_API_KEY`，也不要把管理 Key 放在命令行或仓库中：

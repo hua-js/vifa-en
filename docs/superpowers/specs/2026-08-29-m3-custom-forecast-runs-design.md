@@ -100,9 +100,9 @@ v1 固定 15 分钟接口保持不变，避免影响当前正式预测和验收�
 - `error_code text`
 - `requested_by text`
 - `started_at/completed_at/evaluated_at timestamptz`
-- NocoBase 系统创建、更新时间
+- NocoBase 系统审计字段：`createdAt`、`createdBy`、`updatedAt`、`updatedBy`
 
-唯一约束为 `run_id` 及 `station_id + idempotency_key`。主要查询索引为 `(station_id, created_at desc)` 和 `(status, created_at)`。
+唯一约束为 `run_id` 及 `station_id + idempotency_key`。主要查询索引为 `(station_id, createdAt desc)` 和 `(status, createdAt)`。
 
 ### 5.2 `energy_forecast_manual_points`
 
