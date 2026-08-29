@@ -169,26 +169,35 @@ docker compose logs --tail=100 vifa-m3-dashboard
 `/energy-forecast-api`、`/energy-forecast-api/custom-runs/*` 和
 `/energy-forecast-api/custom-performance/*` 路由。
 
-若只保留公开只读看板，确认 Flow 变量：
+普通 iframe 无用户登录凭证并启用自定义预测时，确认 Flow 变量：
 
 ```text
 M3_AUTH_MODE=server_token
 M3_AUTH_BASE_URL=https://ems.lvkpower.com
 M3_NOCOBASE_PAGE_ORIGIN=https://ems.lvkpower.com
-```
-
-此模式下“开始预测”按钮保持禁用。启用自定义预测前，必须改为当前用户认证并补齐服务端变量：
-
-```text
-M3_AUTH_MODE=postmessage
-M3_AUTH_BASE_URL=https://ems.lvkpower.com
-M3_NOCOBASE_PAGE_ORIGIN=https://ems.lvkpower.com
 M3_STATIONS_JSON=<与 Worker 完全相同的两站 JSON>
-M3_WORKER_ADMIN_TOKEN=<与 Worker M3_ADMIN_API_TOKEN 相同>
 ```
 
-`M3_WORKER_ADMIN_TOKEN` 只允许配置在 Node-RED 服务端环境中，不得写入 HTML、浏览器脚本或提交到仓库。
-自定义接口先校验 NocoBase 当前用户，再通过固定 UDS、固定方法和白名单参数调用 Worker。
+从 Worker 环境安全生成 Node-RED 专用令牌文件，命令不会输出令牌：
+
+```bash
+sudo /bin/sh -c '
+set -a
+. /etc/vifa-m3/m3.env
+set +a
+umask 077
+printf %s "$M3_ADMIN_API_TOKEN" > /userdata/holo/pyfiles/vifa-m3/run/.worker-admin.token
+chown 10001:10001 /userdata/holo/pyfiles/vifa-m3/run/.worker-admin.token
+chmod 600 /userdata/holo/pyfiles/vifa-m3/run/.worker-admin.token
+'
+docker exec nodered test -r /userdata/holo/pyfiles/vifa-m3/run/.worker-admin.token
+```
+
+`.worker-admin.token` 只允许保存在服务端共享运行目录中，不得写入 HTML、浏览器脚本、Node-RED Flow、
+URL、命令行参数或仓库。更新 `/etc/vifa-m3/m3.env` 中的 `M3_ADMIN_API_TOKEN` 后，必须重新生成该文件。
+`server_token` 模式下浏览器不传凭证，Node-RED 通过固定 UDS、固定方法和白名单参数调用 Worker；任何能访问
+OPDash 页面的人都可以提交两个场站的预测任务。以后需要当前用户权限时，再将 `M3_AUTH_MODE` 改为
+`postmessage` 并使用 NocoBase JS 区块传递当前用户凭证。
 
 确认两个 Exec 命令固定访问 `/userdata/holo/pyfiles/vifa-m3/run/*.sock`，然后选择
 `Deploy Modified Flows`；不得重启 Node-RED。
@@ -206,7 +215,7 @@ URL：https://opdash.lvkpower.com/ett
 Header：不配置
 ```
 
-该模式为公开只读：任何能访问 OPDash 地址的人都能查看两站预测数据。不得把 Dashboard
+该模式为公开访问：任何能访问 OPDash 地址的人都能查看两站预测数据并提交自定义预测任务。不得把 Dashboard
 只读 Key、管理员 Token或其他凭据写入 iframe URL。详细步骤见
 `m3/nocobase/M3普通iframe配置说明.md`。
 
@@ -216,9 +225,10 @@ Header：不配置
 2. 从 EMS 页面打开普通 iframe；
 3. 浏览器 Network 中 `/energy-forecast-api` 返回 200；
 4. 浏览器请求不携带 Token，也不调用 EMS `/api/auth:check`；
-5. 页面显示 1#、2# 电站及各自总负荷和 SOC；
-6. 浏览器没有 Mixed Content、CSP、X-Frame-Options 或 CORS 错误；
-7. Node-RED 和 Docker 日志没有 Token。
+5. 选择有效参数后“开始预测”可用，提交请求不携带 Token；
+6. 页面显示 1#、2# 电站及各自总负荷和 SOC；
+7. 浏览器没有 Mixed Content、CSP、X-Frame-Options 或 CORS 错误；
+8. Node-RED 和 Docker 日志没有 Token。
 
 ## 12. 回退
 

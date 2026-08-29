@@ -34,6 +34,7 @@ NocoBase 页面和当前用户认证：https://ems.lvkpower.com
 Node-RED 看板页面和 API：https://opdash.lvkpower.com
 宿主机 /userdata/holo/pyfiles/vifa-m3/run -> 容器 /run/vifa-m3
 宿主机 /etc/vifa-m3/raw-source.token -> 容器 /run/secrets/raw-source.token
+宿主机 /userdata/holo/pyfiles/vifa-m3/run/.worker-admin.token -> Node-RED 固定 Worker 管理令牌文件
 ```
 
 Compose 同时运行 `vifa-m3-worker` 和 `vifa-m3-dashboard`。两个服务不开放 TCP

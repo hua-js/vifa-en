@@ -1,6 +1,6 @@
 {
   "kind": "vifa-m3-nocobase-iframe-manifest",
-  "version": 2,
+  "version": 3,
   "nocobase_native_import": {
     "importable": false,
     "reason": "NocoBase 页面配置没有通用 JSON 导入格式；本文件是人工配置和验收清单"
@@ -12,30 +12,31 @@
     "iframe_url": "https://opdash.lvkpower.com/ett"
   },
   "access": {
-    "audience": "public_read_url",
+    "audience": "public_read_write_url",
     "station_scope": "all_configured_stations",
-    "description": "任何能访问 OPDash /ett 或 /energy-forecast-api 的用户均可查看两个已配置电站"
+    "description": "任何能访问 OPDash /ett 的用户均可查看两个已配置电站并提交自定义预测"
   },
   "block": {
     "type": "iframe_html",
     "title": "场站未来能耗预测",
     "iframe_url": "https://opdash.lvkpower.com/ett",
-    "authentication": "none_public_read"
+    "authentication": "none_public_read_write"
   },
   "security": {
-    "token_source": "server-side Dashboard read-only key",
+    "token_source": "server-side Dashboard read-only key and fixed Worker admin token file",
     "token_transport": "not exposed to browser",
     "token_in_url": false,
     "fixed_token_fallback": false,
     "public_read": true,
+    "public_write": true,
     "public_exposure_accepted": true,
-    "description": "OPDash /ett 与 /energy-forecast-api 对任何可访问该域名的人公开；Dashboard 四表只读 Key 只保存在容器环境中，不进入浏览器"
+    "description": "OPDash 页面、读取 API 和受限自定义预测 API 对任何可访问该域名的人公开；Dashboard 四表只读 Key 与 Worker 管理令牌文件只保存在服务端，不进入 Flow 或浏览器"
   },
   "preflight": [
     {
-      "id": "public_read_acceptance",
-      "action": "确认业务接受任何能访问 OPDash 地址的人查看两个电站预测数据",
-      "expected": "无需 NocoBase 登录即可直接访问 /ett 与 /energy-forecast-api",
+      "id": "public_read_write_acceptance",
+      "action": "确认业务接受任何能访问 OPDash 地址的人查看两个电站数据并提交预测任务",
+      "expected": "无需 NocoBase 登录即可直接访问页面、读取 API 和受限自定义预测 API",
       "blocking": true
     },
     {
@@ -79,12 +80,12 @@
       "expected": "页面展示两个电站的最近24小时实绩、未来24小时预测和模型状态"
     },
     {
-      "id": "public_read",
-      "expected": "预测 API 无需浏览器 Token，直接通过 Dashboard Socket 返回公开只读结果"
+      "id": "public_read_write",
+      "expected": "读取和自定义预测 API 均无需浏览器 Token；自定义预测由 Node-RED 使用服务端令牌调用 Worker"
     },
     {
       "id": "server_side_key_only",
-      "expected": "iframe 配置、Node-RED Flow 和 URL 均不包含 Dashboard 四表只读 Key"
+      "expected": "iframe 配置、URL 与浏览器请求均不包含 Dashboard 四表只读 Key或 Worker 管理令牌"
     }
   ],
   "rollback": [
@@ -94,7 +95,7 @@
     },
     {
       "step": 2,
-      "action": "在 Node-RED 停用 M3 /ett、/energy-forecast-api 和健康检查组"
+      "action": "在 Node-RED 停用 M3 /ett、/energy-forecast-api、自定义预测路由和健康检查组"
     },
     {
       "step": 3,
