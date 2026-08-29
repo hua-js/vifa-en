@@ -35,6 +35,64 @@ COLLECTION_DESCRIPTIONS = {
     "energy_forecast_manual_points": "保存 M3 自定义预测任务的负荷与 SOC 预测点。",
     "energy_forecast_manual_evaluations": "保存 M3 自定义预测的可比实绩评估结果。",
 }
+FIELD_TITLES = {
+    "id": "主键 ID",
+    "run_id": "预测任务 ID",
+    "station_id": "场站 ID",
+    "idempotency_key": "幂等键",
+    "history_start": "历史数据开始时间",
+    "history_end": "历史数据结束时间",
+    "history_days": "历史数据天数",
+    "forecast_start": "预测开始时间",
+    "forecast_end": "预测结束时间",
+    "forecast_days": "预测天数",
+    "interval_seconds": "输出间隔（秒）",
+    "points_per_day": "每日预测点数",
+    "expected_points_per_series": "单序列预期点数",
+    "model_policy": "模型策略",
+    "status": "任务状态",
+    "model_manifest": "模型清单",
+    "source_manifest": "数据源清单",
+    "content_hash": "内容哈希",
+    "error_code": "错误码",
+    "requested_by": "请求人",
+    "started_at": "开始执行时间",
+    "completed_at": "完成时间",
+    "evaluated_at": "评估时间",
+    "created_at": "创建时间",
+    "updated_at": "更新时间",
+    "run_pk": "预测任务主键",
+    "unique_id": "序列标识",
+    "target_time": "目标时间",
+    "horizon_step": "预测步数",
+    "model_name": "模型名称",
+    "raw_forecast": "原始预测值",
+    "forecast_value": "预测值",
+    "baseline_forecast_value": "基线预测值",
+    "is_clipped": "是否截断",
+    "actual_value": "实际值",
+    "actual_quality": "实际值质量",
+    "actual_source_revision": "实际值数据版本",
+    "actual_recorded_at": "实际值记录时间",
+    "absolute_percentage_error": "绝对百分比误差",
+    "evaluation_key": "评估键",
+    "window_start": "评估窗口开始",
+    "window_end": "评估窗口结束",
+    "expected_count": "预期点数",
+    "valid_count": "有效点数",
+    "zero_actual_count": "实际值为零点数",
+    "mape_percent": "MAPE（%）",
+    "mae": "MAE",
+    "smape_percent": "sMAPE（%）",
+    "wape_percent": "WAPE（%）",
+    "median_ape_percent": "APE 中位数（%）",
+    "p90_ape_percent": "APE P90（%）",
+    "baseline_mape_percent": "基线 MAPE（%）",
+    "relative_baseline_improvement_percent": "相对基线提升（%）",
+    "outcome": "评估结果",
+    "calculated_at": "计算时间",
+    "run": "预测任务",
+}
 IDENTIFIER = re.compile(r"[a-z][a-z0-9_]*\Z")
 TOKEN = re.compile(r"[\x21-\x7e]{16,4096}\Z")
 NUMERIC_TYPE = re.compile(r"numeric\(([1-9][0-9]*),([0-9]+)\)\Z")
@@ -64,7 +122,7 @@ def load_contract() -> dict[str, Any]:
         raise DeploymentError("无法读取 M3 NocoBase 集合契约") from error
     if (
         type(value) is not dict
-        or value.get("version") != 3
+        or value.get("version") != 4
         or type(value.get("collections")) is not list
     ):
         raise DeploymentError("M3 NocoBase 集合契约格式不正确")
@@ -95,6 +153,88 @@ def nocobase_type(type_name: object) -> tuple[str, dict[str, int]]:
     raise DeploymentError(f"collections:create 不支持契约字段类型：{type_name}")
 
 
+def field_ui_options(name: str, field_type: str, type_options: dict[str, int]) -> dict[str, Any]:
+    title = FIELD_TITLES.get(name)
+    if title is None:
+        raise DeploymentError(f"字段 {name} 缺少 NocoBase 显示名称")
+    if name in {"created_at", "updated_at"}:
+        return {
+            "interface": "createdAt" if name == "created_at" else "updatedAt",
+            "uiSchema": {
+                "type": "datetime",
+                "title": title,
+                "x-component": "DatePicker",
+                "x-component-props": {"showTime": True, "utc": True},
+                "x-read-pretty": True,
+            },
+        }
+    if field_type == "text":
+        return {
+            "interface": "textarea",
+            "uiSchema": {
+                "type": "string",
+                "title": title,
+                "x-component": "Input.TextArea",
+            },
+        }
+    if field_type in {"integer", "bigInt"}:
+        return {
+            "interface": "integer",
+            "uiSchema": {
+                "type": "number",
+                "title": title,
+                "x-component": "InputNumber",
+                "x-component-props": {"stringMode": True, "step": "1"},
+                "x-validator": "integer",
+            },
+        }
+    if field_type == "decimal":
+        scale = type_options.get("scale", 0)
+        step = "1" if scale == 0 else f"0.{'0' * (scale - 1)}1"
+        return {
+            "interface": "number",
+            "uiSchema": {
+                "type": "number",
+                "title": title,
+                "x-component": "InputNumber",
+                "x-component-props": {"stringMode": True, "step": step},
+            },
+        }
+    if field_type == "date":
+        return {
+            "interface": "datetime",
+            "timezone": True,
+            "uiSchema": {
+                "type": "string",
+                "title": title,
+                "x-component": "DatePicker",
+                "x-component-props": {"showTime": True, "utc": True},
+            },
+        }
+    if field_type == "json":
+        return {
+            "interface": "json",
+            "jsonb": True,
+            "uiSchema": {
+                "type": "object",
+                "title": title,
+                "x-component": "Input.JSON",
+                "x-component-props": {"autoSize": {"minRows": 5}},
+                "default": None,
+            },
+        }
+    if field_type == "boolean":
+        return {
+            "interface": "checkbox",
+            "uiSchema": {
+                "type": "boolean",
+                "title": title,
+                "x-component": "Checkbox",
+            },
+        }
+    raise DeploymentError(f"字段 {name} 缺少 NocoBase 界面类型映射")
+
+
 def field_payload(name: str, definition: object) -> dict[str, Any]:
     if IDENTIFIER.fullmatch(name) is None or type(definition) is not dict:
         raise DeploymentError("集合契约包含无效字段")
@@ -107,6 +247,7 @@ def field_payload(name: str, definition: object) -> dict[str, Any]:
         "type": field_type,
         "allowNull": nullable,
         **type_options,
+        **field_ui_options(name, field_type, type_options),
     }
     if definition.get("primary_key") is True:
         payload["primaryKey"] = True
@@ -166,6 +307,11 @@ def association_field(collection_name: str) -> dict[str, Any] | None:
         "name": "run",
         "type": "belongsTo",
         "interface": "m2o",
+        "uiSchema": {
+            "title": FIELD_TITLES["run"],
+            "x-component": "AssociationField",
+            "x-component-props": {"multiple": False},
+        },
         "target": "energy_forecast_manual_runs",
         "foreignKey": "run_pk",
         "targetKey": "id",
@@ -196,6 +342,20 @@ def validate_foreign_key(collection: dict[str, Any]) -> None:
         raise DeploymentError(f"集合 {name} 的 run_pk 外键与脚本不一致")
 
 
+def validate_contract_id(collection_name: str, fields: dict[str, Any]) -> None:
+    definition = fields.get("id")
+    if type(definition) is not dict or any(
+        definition.get(key) != expected
+        for key, expected in {
+            "type": "bigint",
+            "nullable": False,
+            "primary_key": True,
+            "identity": True,
+        }.items()
+    ):
+        raise DeploymentError(f"集合 {collection_name} 的 id 必须是非空自增 bigint 主键")
+
+
 def build_payloads() -> list[dict[str, Any]]:
     contract = load_contract()
     selected = {
@@ -212,6 +372,7 @@ def build_payloads() -> list[dict[str, Any]]:
         raw_fields = collection.get("fields")
         if type(raw_fields) is not dict or not raw_fields:
             raise DeploymentError(f"集合 {name} 缺少 fields")
+        validate_contract_id(name, raw_fields)
         fields = [field_payload(field_name, definition) for field_name, definition in raw_fields.items()]
         association = association_field(name)
         if association is not None:
@@ -412,6 +573,28 @@ def verify_collection(actual: dict[str, Any], expected: dict[str, Any]) -> None:
         for item in actual_fields
         if type(item) is dict and type(item.get("name")) is str
     }
+    expected_names = {field["name"] for field in expected["fields"]}
+    actual_names = set(actual_by_name)
+    if actual_names != expected_names:
+        missing = sorted(expected_names - actual_names)
+        unexpected = sorted(actual_names - expected_names)
+        details = []
+        if missing:
+            details.append("缺少 " + ", ".join(missing))
+        if unexpected:
+            details.append("多出 " + ", ".join(unexpected))
+        raise DeploymentError(f"集合 {expected['name']} 字段集合不一致：{'；'.join(details)}")
+    id_field = actual_by_name["id"]
+    if any(
+        id_field.get(key) != value
+        for key, value in {
+            "type": "bigInt",
+            "allowNull": False,
+            "primaryKey": True,
+            "autoIncrement": True,
+        }.items()
+    ):
+        raise DeploymentError(f"集合 {expected['name']} 的 id 不是非空自增 bigint 主键")
     for field in expected["fields"]:
         actual_field = actual_by_name.get(field["name"])
         if type(actual_field) is not dict:
@@ -430,9 +613,20 @@ def verify_collection(actual: dict[str, Any], expected: dict[str, Any]) -> None:
             "targetKey",
             "onDelete",
             "constraints",
+            "interface",
+            "timezone",
+            "jsonb",
         )
         if any(key in field and actual_field.get(key) != field[key] for key in checked_options):
             raise DeploymentError(f"集合 {expected['name']} 字段 {field['name']} 配置回读不一致")
+        expected_ui = field.get("uiSchema")
+        actual_ui = actual_field.get("uiSchema")
+        if type(expected_ui) is dict and (
+            type(actual_ui) is not dict
+            or actual_ui.get("title") != expected_ui.get("title")
+            or actual_ui.get("x-component") != expected_ui.get("x-component")
+        ):
+            raise DeploymentError(f"集合 {expected['name']} 字段 {field['name']} 界面配置回读不一致")
     actual_indexes = actual.get("indexes")
     if type(actual_indexes) is not list:
         raise DeploymentError(f"集合 {expected['name']} 回读缺少 indexes")
@@ -504,12 +698,37 @@ def main() -> int:
         raise DeploymentError("max-response-bytes 必须在 1 KiB–16 MiB 之间")
     payloads = build_payloads()
     if args.show_payloads:
-        print(json.dumps({"collections": payloads}, ensure_ascii=False, indent=2, sort_keys=True))
+        summaries = []
+        for payload in payloads:
+            physical_fields = [
+                field["name"] for field in payload["fields"] if field["type"] != "belongsTo"
+            ]
+            metadata_fields = [field["name"] for field in payload["fields"]]
+            summaries.append(
+                {
+                    "name": payload["name"],
+                    "explicit_primary_key": "id",
+                    "physical_column_count": len(physical_fields),
+                    "physical_columns": physical_fields,
+                    "metadata_field_count": len(metadata_fields),
+                    "metadata_fields": metadata_fields,
+                }
+            )
+        print(
+            json.dumps(
+                {"schema_summary": summaries, "collections": payloads},
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
+            )
+        )
     if not args.execute:
         print("offline-plan-only: 未连接 NocoBase，未创建任何表", file=sys.stderr)
         for payload in payloads:
+            physical_count = sum(field["type"] != "belongsTo" for field in payload["fields"])
             print(
-                f"planned {payload['name']} fields={len(payload['fields'])} indexes={len(payload['indexes'])}",
+                f"planned {payload['name']} physical_columns={physical_count} "
+                f"metadata_fields={len(payload['fields'])} indexes={len(payload['indexes'])}",
                 file=sys.stderr,
             )
         return 0

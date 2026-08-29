@@ -58,6 +58,12 @@ python3 m3/deploy/create-custom-forecast-collections.py
 python3 m3/deploy/create-custom-forecast-collections.py --show-payloads
 ```
 
+三张集合都在 `fields` 中显式创建非空自增 `bigint id` 主键，并关闭 `autoGenId`，避免仅设置
+`autoGenId` 后字段元数据中仍缺少 `id`。三张表均包含由服务端维护的 `created_at`、`updated_at`；脚本还会
+为每个字段提交与存储类型匹配的 `interface`、中文标题和 `uiSchema`，确保字段能够在 NocoBase 数据源管理
+界面完整显示。离线 `--show-payloads` 输出包含 schema summary，其中会明确列出物理列、显式 `id` 主键和
+关联元数据字段。
+
 以后实际执行时，单独创建一个短期 Schema 管理 API Key。不要复用 Worker 的
 `M3_NOCOBASE_API_KEY`，也不要把管理 Key 放在命令行或仓库中：
 
@@ -70,8 +76,8 @@ unset M3_NOCOBASE_BASE_URL M3_NOCOBASE_SCHEMA_API_KEY_FILE
 ```
 
 执行模式先回读三张表；只要任何同名表已存在，就在发送 POST 前整体停止。之后按依赖顺序逐表创建并
-回读核验字段与索引。请求失败或结果不确定时不会自动重试，也不会自动删除已经创建的表，必须先人工检查
-NocoBase 再决定后续操作。
+回读核验精确字段集合、`id` 主键属性、字段类型、字段界面配置与索引。请求失败或结果不确定时不会自动
+重试，也不会自动删除已经创建的表，必须先人工检查 NocoBase 再决定后续操作。
 
 `collections:create` 能创建列、主键、复合索引和 `run_pk` 关系外键，但不能表达契约中的全部命名
 SQL `CHECK` 约束。当前链路由 Worker 的严格输入、领域和持久化校验保证这些不变量；如果以后允许其他

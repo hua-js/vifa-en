@@ -1,5 +1,5 @@
 {
-  "version": 3,
+  "version": 4,
   "database_policy": {
     "identifier_style": "lowercase_snake_case",
     "primary_key_strategy": "bigint_identity",
@@ -588,7 +588,22 @@
         "actual_source_revision": {"type": "bigint", "nullable": true},
         "actual_recorded_at": {"type": "timestamptz", "nullable": true},
         "evaluated_at": {"type": "timestamptz", "nullable": true},
-        "absolute_percentage_error": {"type": "numeric(14,8)", "nullable": true}
+        "absolute_percentage_error": {"type": "numeric(14,8)", "nullable": true},
+        "created_at": {
+          "type": "timestamptz",
+          "nullable": false,
+          "client_writable": false,
+          "server_managed": {"on_create": "current_timestamp"}
+        },
+        "updated_at": {
+          "type": "timestamptz",
+          "nullable": false,
+          "client_writable": false,
+          "server_managed": {
+            "on_create": "current_timestamp",
+            "on_update": "current_timestamp"
+          }
+        }
       },
       "unique_constraints": [
         {
@@ -659,6 +674,13 @@
           "kind": "nullable_minimum",
           "field": "absolute_percentage_error",
           "minimum": 0
+        },
+        {
+          "name": "energy_forecast_manual_points_updated_check",
+          "kind": "field_comparison",
+          "left_field": "updated_at",
+          "operator": ">=",
+          "right_field": "created_at"
         }
       ],
       "application_invariants": [
@@ -701,7 +723,22 @@
         "baseline_mape_percent": {"type": "numeric(10,6)", "nullable": true},
         "relative_baseline_improvement_percent": {"type": "numeric(10,6)", "nullable": true},
         "outcome": {"type": "text", "nullable": false},
-        "calculated_at": {"type": "timestamptz", "nullable": false}
+        "calculated_at": {"type": "timestamptz", "nullable": false},
+        "created_at": {
+          "type": "timestamptz",
+          "nullable": false,
+          "client_writable": false,
+          "server_managed": {"on_create": "current_timestamp"}
+        },
+        "updated_at": {
+          "type": "timestamptz",
+          "nullable": false,
+          "client_writable": false,
+          "server_managed": {
+            "on_create": "current_timestamp",
+            "on_update": "current_timestamp"
+          }
+        }
       },
       "unique_constraints": [
         {
@@ -800,6 +837,13 @@
           "kind": "enum",
           "field": "outcome",
           "allowed_values": ["in_progress", "available", "insufficient_data"]
+        },
+        {
+          "name": "energy_forecast_manual_evaluations_updated_check",
+          "kind": "field_comparison",
+          "left_field": "updated_at",
+          "operator": ">=",
+          "right_field": "created_at"
         }
       ],
       "application_invariants": [
@@ -1183,7 +1227,7 @@
             "record_key": []
           }
         },
-        "protected_fields": ["id", "run_pk", "unique_id", "target_time", "horizon_step", "model_name", "raw_forecast", "forecast_value", "baseline_forecast_value", "is_clipped"]
+        "protected_fields": ["id", "run_pk", "unique_id", "target_time", "horizon_step", "model_name", "raw_forecast", "forecast_value", "baseline_forecast_value", "is_clipped", "created_at", "updated_at"]
       },
       "energy_forecast_manual_evaluations": {
         "allowed_actions": ["list", "updateOrCreate"],
@@ -1205,7 +1249,7 @@
           }
         },
         "upsert_fields": ["run_pk", "station_id", "run_id", "evaluation_key", "interval_seconds", "forecast_days", "model_policy", "window_start", "window_end", "expected_count", "valid_count", "zero_actual_count", "mape_percent", "mae", "smape_percent", "wape_percent", "median_ape_percent", "p90_ape_percent", "baseline_mape_percent", "relative_baseline_improvement_percent", "outcome", "calculated_at"],
-        "protected_fields": ["id"]
+        "protected_fields": ["id", "created_at", "updated_at"]
       },
       "energy_forecast_acceptance_runs": {
         "allowed_actions": ["list", "update"],
