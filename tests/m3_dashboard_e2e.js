@@ -286,6 +286,46 @@ function pathCoordinates(pathData) {
   assert.strictEqual(await page.locator(".series-card").count(), 4);
   assert.strictEqual(await page.locator("svg.forecast-chart").count(), 4);
   assert.deepStrictEqual(await page.locator(".station-section h2").allTextContents(), ["1# 电站", "2# 电站"]);
+  const themeToggle = page.locator("#theme-toggle");
+  assert.strictEqual(await themeToggle.count(), 1, "theme toggle must exist");
+  assert.strictEqual(await page.locator("html").getAttribute("data-theme"), "dark");
+  assert.match(await themeToggle.innerText(), /白天模式/);
+  const darkPaper = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--paper").trim());
+  await themeToggle.click();
+  assert.strictEqual(await page.locator("html").getAttribute("data-theme"), "light");
+  assert.match(await themeToggle.innerText(), /黑夜模式/);
+  assert.strictEqual(await themeToggle.getAttribute("aria-pressed"), "true");
+  assert.notStrictEqual(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--paper").trim()), darkPaper);
+  await page.screenshot({ path: "/tmp/m3-task6-light.png", fullPage: true });
+  await themeToggle.click();
+  assert.strictEqual(await page.locator("html").getAttribute("data-theme"), "dark");
+  const stationPicker = page.locator("#station-picker");
+  assert.strictEqual(await stationPicker.count(), 1, "station picker must exist");
+  assert.deepStrictEqual(await stationPicker.locator("option").allTextContents(), ["1# 电站", "2# 电站"]);
+  assert.strictEqual(await stationPicker.inputValue(), "station_1");
+  assert.strictEqual(await page.locator("[data-station='station_1']").isVisible(), true);
+  assert.strictEqual(await page.locator("[data-station='station_2']").isHidden(), true);
+  const firstStation = payload.data.stations[0];
+  const firstLoad = firstStation.series[0];
+  const firstSoc = firstStation.series[1];
+  const currentLoad = firstLoad.actual.filter((point) => point.value !== null).at(-1).value;
+  const currentSoc = firstSoc.actual.filter((point) => point.value !== null).at(-1).value;
+  const peakLoad = Math.max(...firstLoad.forecast.map((point) => point.value));
+  const minimumSoc = Math.min(...firstSoc.forecast.map((point) => point.value));
+  assert.strictEqual(await page.locator("[data-station='station_1'] .metric-current-load").innerText(), `${Math.round(currentLoad)} kW`);
+  assert.strictEqual(await page.locator("[data-station='station_1'] .metric-peak-load").innerText(), `${Math.round(peakLoad)} kW`);
+  assert.strictEqual(await page.locator("[data-station='station_1'] .metric-current-soc").innerText(), `${currentSoc.toFixed(1)} %`);
+  assert.strictEqual(await page.locator("[data-station='station_1'] .metric-minimum-soc").innerText(), `${minimumSoc.toFixed(1)} %`);
+  assert.strictEqual(await page.locator("[data-station='station_1'] .model-current-mape").innerText(), "2.50%");
+  assert.strictEqual(await page.locator("[data-station='station_1'] .model-baseline-mape").innerText(), "—");
+  assert.strictEqual(await page.locator("[data-station='station_1'] .model-improvement").innerText(), "—");
+  await stationPicker.selectOption("station_2");
+  assert.strictEqual(await page.locator("[data-station='station_1']").isHidden(), true);
+  assert.strictEqual(await page.locator("[data-station='station_2']").isVisible(), true);
+  const secondLoad = payload.data.stations[1].series[0].actual.filter((point) => point.value !== null).at(-1).value;
+  assert.strictEqual(await page.locator("[data-station='station_2'] .metric-current-load").innerText(), `${Math.round(secondLoad)} kW`);
+  assert.match(await page.locator("[data-station='station_2'] .acceptance-summary").innerText(), /3 \/ 7/);
+  await stationPicker.selectOption("station_1");
   assert.deepStrictEqual(await page.locator(".forecast-value").allTextContents(), ["410 kW", "61.0 %", "730 kW", "54.0 %"]);
   assert.deepStrictEqual(await page.locator(".station-window .forecast-start").allTextContents(), ["2026/08/26 10:00", "2026/08/26 09:45"]);
   assert.deepStrictEqual(await page.locator(".readiness-hint").allTextContents(), ["已达到 Ready 条件", "已达到 Ready 条件"]);
@@ -483,15 +523,16 @@ function pathCoordinates(pathData) {
   await page.screenshot({ path: "/tmp/m3-task6-desktop.png", fullPage: true });
   assert.strictEqual(await page.locator("#error-state").isHidden(), true);
   assert.strictEqual(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true);
-  assert.strictEqual(await page.locator(".station-section").evaluateAll((nodes) => nodes.every((node) => getComputedStyle(node).display !== "none")), true);
-  assert.strictEqual(await page.locator(".series-card").evaluateAll((nodes) => nodes.every((node) => getComputedStyle(node).display !== "none")), true);
+  assert.strictEqual(await page.locator(".station-section:visible").count(), 1);
+  assert.strictEqual(await page.locator(".station-section:visible .series-card:visible").count(), 2);
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.waitForTimeout(50);
   assert.strictEqual(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true);
-  assert.strictEqual(await page.locator(".chart-grid").first().evaluate((node) => getComputedStyle(node).gridTemplateColumns.split(" ").length), 1);
+  assert.strictEqual(await page.locator(".station-section:visible .chart-grid").evaluate((node) => getComputedStyle(node).gridTemplateColumns.split(" ").length), 1);
   assert.strictEqual(await page.locator(".chart-viewport").count(), 4);
-  for (const viewport of await page.locator(".chart-viewport").all()) {
+  assert.strictEqual(await page.locator(".station-section:visible .chart-viewport").count(), 2);
+  for (const viewport of await page.locator(".station-section:visible .chart-viewport").all()) {
     const metrics = await viewport.evaluate((node) => {
       const svg = node.querySelector("svg");
       const labels = [...svg.querySelectorAll(".axis-label")];
