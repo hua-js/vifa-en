@@ -13,15 +13,16 @@ import argparse
 import copy
 from datetime import datetime
 import json
-import os
+import math
 from typing import Any
 from urllib.parse import urlencode
 import urllib.request
 from zoneinfo import ZoneInfo
 
 
-M1_NOCOBASE_TOKEN_ENV = "M1_NOCOBASE_TOKEN"
-M1_ENERGY_TOKEN_ENV = "M1_ENERGY_TOKEN"
+# 默认 Token 供无参数启动使用；部署时仍可通过 --token 覆盖。
+DEFAULT_TK = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOjEsInRlbXAiOnRydWUsImlhdCI6MTc4NjY3ODkzNSwic2lnbkluVGltZSI6MTc4NjY3ODkzNTkxMSwiZXhwIjoxNzg2NzY1MzM1LCJqdGkiOiI0MzEyOGFiOS01M2NhLTRiZjItOGRjNC0zMjIzNjdkNGVjMDUifQ.Fu69uKtaEpZcReCjtpvh-vzOsZ86LB-SDcnLyk7P1bM"
+DEFAULT_E606_TK = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOjEsInJvbGVOYW1lIjoicm9vdCIsImlhdCI6MTc4NzM5MjA1OSwiZXhwIjozMzM0NDk5MjA1OX0.ZJT1Lg_MbkT6R243Nl3ojBwWDmnA-slbLyVgqjn0k9M"
 
 # NocoBase 原看板数据源。
 BASE = "http://holobase/api"
@@ -80,27 +81,6 @@ GROWATT_INVERTER_SNS = (
     "emu23",
     "emu24",
 )
-
-
-def resolve_tokens(
-    token: str | None,
-    energy_token: str | None,
-) -> tuple[str, str]:
-    """Resolve required credentials without embedding deployment secrets."""
-    resolved_token = (token or os.getenv(M1_NOCOBASE_TOKEN_ENV, "")).strip()
-    resolved_energy_token = (
-        energy_token or os.getenv(M1_ENERGY_TOKEN_ENV, "")
-    ).strip()
-
-    missing = []
-    if not resolved_token:
-        missing.append(M1_NOCOBASE_TOKEN_ENV)
-    if not resolved_energy_token:
-        missing.append(M1_ENERGY_TOKEN_ENV)
-    if missing:
-        raise ValueError("缺少凭据环境变量：" + "、".join(missing))
-
-    return resolved_token, resolved_energy_token
 
 
 def api(path: str, token: str) -> dict[str, Any]:
@@ -445,6 +425,18 @@ def to_number(value: Any) -> float | None:
         return None
 
 
+def max_temperature_c(value: Any) -> float | None:
+    """将 t_emu.max_temp 转换为有限的摄氏温度数值。"""
+    if isinstance(value, bool):
+        return None
+    temperature = to_number(value)
+    return (
+        temperature
+        if temperature is not None and math.isfinite(temperature)
+        else None
+    )
+
+
 def fetch_station_load_sources(
     es_list: list[dict[str, Any]], token: str
 ) -> tuple[dict[str, dict[str, Any]], dict[str, str]]:
@@ -516,7 +508,7 @@ def fetch_station_storage_sources(
     url = _external_list_url(
         CABINET_POWER_URL,
         page_size=len(allowed_pairs),
-        fields="emu_sn,f_es_sn,latest_power,last_time_iso,timestamp",
+        fields="emu_sn,f_es_sn,latest_power,max_temp,last_time_iso,timestamp",
         filter_value={"$or": filters},
     )
     rows, error = fetch_external_rows(url, token)
@@ -564,6 +556,12 @@ def fetch_station_storage_sources(
             "power": round(sum(power for power in powers if power is not None), 3),
             "timestamp": max(timestamps),
             "power_source": "t_emu.latest_power",
+            "cabinet_max_temperatures_c": {
+                str(row.get("emu_sn") or "").strip(): max_temperature_c(
+                    row.get("max_temp")
+                )
+                for row in station_rows
+            },
         }
     return sources, errors
 
@@ -585,6 +583,31 @@ def apply_authoritative_power_sources(
         for item in realtime
         if item.get("fk_en") is not None
     }
+    cabinet_max_temperatures_c = {
+        cabinet_sn: temperature
+        for source in storage_sources.values()
+        for cabinet_sn, temperature in source.get(
+            "cabinet_max_temperatures_c", {}
+        ).items()
+    }
+    for node in data.get("nodes", []):
+        if node.get("node_type") != "ess" or node.get("is_aggregate"):
+            continue
+        cabinet_sn = str(node.get("sn") or "").strip()
+        if cabinet_sn not in cabinet_max_temperatures_c:
+            continue
+        node_id = str(node.get("id"))
+        realtime_item = realtime_by_node.get(node_id)
+        if realtime_item is None:
+            realtime_item = {
+                "fk_en": node.get("id"),
+                "soc": None,
+                "run_status": node.get("run_status", ""),
+            }
+            realtime.append(realtime_item)
+            realtime_by_node[node_id] = realtime_item
+        realtime_item["temperature_c"] = cabinet_max_temperatures_c[cabinet_sn]
+
     source_by_type = {
         "load": (load_sources, "t_es_data.load_power"),
         "ess": (storage_sources, "t_emu.latest_power"),
@@ -616,7 +639,13 @@ def apply_authoritative_power_sources(
                 }
             )
             continue
-        realtime_item.update(source)
+        realtime_item.update(
+            {
+                "power": source["power"],
+                "timestamp": source["timestamp"],
+                "power_source": source["power_source"],
+            }
+        )
 
 
 def calculate_efficiency(
@@ -909,30 +938,29 @@ def main(argv: list[str] | None = None) -> int:
     """分别使用基础站点和能源源 Token，并输出组合后的单个 JSON 响应。"""
     parser = argparse.ArgumentParser(description="运营监控看板 API")
     parser.add_argument(
-        "--token",
-        default=None,
-        help=f"基础 NocoBase Bearer token（默认读取 {M1_NOCOBASE_TOKEN_ENV}）",
+        "--token", default=DEFAULT_TK, help="基础 NocoBase Bearer token"
     )
     parser.add_argument(
         "--energy-token",
-        default=None,
-        help=f"t_es_data / t_emu Bearer token（默认读取 {M1_ENERGY_TOKEN_ENV}）",
+        default=DEFAULT_E606_TK,
+        help="t_es_data / t_emu Bearer token",
     )
 
     args = parser.parse_args(argv)
 
     try:
-        token, energy_token = resolve_tokens(args.token, args.energy_token)
+        token = args.token or DEFAULT_TK
         # 基础看板始终从 NocoBase 接口获取。
         raw = fetch_raw_data(token)
         source_errors: dict[str, str] = {}
 
         # Growatt 只返回固定九台逆变器白名单。
-        growatt_rows, growatt_error = fetch_growatt_rows(energy_token)
+        growatt_rows, growatt_error = fetch_growatt_rows(DEFAULT_E606_TK)
         if growatt_error:
             source_errors["growatt"] = growatt_error
 
         # 负载与储能分别使用精确电站、精确柜体白名单数据。
+        energy_token = args.energy_token or DEFAULT_E606_TK
         load_sources, load_errors = fetch_station_load_sources(
             raw.get("data", {}).get("es_list", []), energy_token
         )
