@@ -2,6 +2,8 @@
 
 from dataclasses import dataclass
 from datetime import datetime
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+import math
 from typing import Any
 from uuid import uuid4
 from zoneinfo import ZoneInfo
@@ -112,6 +114,7 @@ ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
     "failed": frozenset(),
 }
 SHANGHAI = ZoneInfo("Asia/Shanghai")
+POINT_DECIMAL_QUANTUM = Decimal("0.000001")
 
 
 def _positive_id(value: object, context: str) -> int:
@@ -148,6 +151,44 @@ def _optional_mapping(value: object, field_name: str) -> dict[str, object] | Non
         raise M3Error("sink_contract_invalid", f"Persisted {field_name} is invalid")
     canonical_hash(value)
     return value
+
+
+def _point_decimal(value: object, field_name: str) -> float:
+    if type(value) is str:
+        if not value or value != value.strip():
+            raise M3Error(
+                "sink_contract_invalid", f"Custom point {field_name} is invalid"
+            )
+        source = value
+    elif type(value) in {int, float}:
+        source = str(value)
+    else:
+        raise M3Error(
+            "sink_contract_invalid", f"Custom point {field_name} is invalid"
+        )
+    try:
+        number = Decimal(source)
+    except InvalidOperation as error:
+        raise M3Error(
+            "sink_contract_invalid", f"Custom point {field_name} is invalid"
+        ) from error
+    if not number.is_finite():
+        raise M3Error(
+            "sink_contract_invalid", f"Custom point {field_name} is invalid"
+        )
+    try:
+        normalized = float(
+            number.quantize(POINT_DECIMAL_QUANTUM, rounding=ROUND_HALF_UP)
+        )
+    except InvalidOperation as error:
+        raise M3Error(
+            "sink_contract_invalid", f"Custom point {field_name} is invalid"
+        ) from error
+    if not math.isfinite(normalized):
+        raise M3Error(
+            "sink_contract_invalid", f"Custom point {field_name} is invalid"
+        )
+    return normalized
 
 
 @dataclass(frozen=True)
@@ -453,11 +494,7 @@ class CustomForecastRepository:
             "forecast_value",
             "baseline_forecast_value",
         ):
-            if type(value[field]) not in {int, float}:
-                raise M3Error(
-                    "sink_contract_invalid", "Custom point value is invalid"
-                )
-            value[field] = float(value[field])
+            value[field] = _point_decimal(value[field], field)
         return value
 
     def list_points(self, run: StoredCustomRun) -> list[dict[str, Any]]:
@@ -474,7 +511,13 @@ class CustomForecastRepository:
             if key in seen:
                 raise M3Error("sink_contract_invalid", "Custom point is duplicated")
             seen.add(key)
-            self._immutable_point(row)
+            normalized = self._immutable_point(row)
+            for field in (
+                "raw_forecast",
+                "forecast_value",
+                "baseline_forecast_value",
+            ):
+                row[field] = normalized[field]
         return rows
 
     def store_points(

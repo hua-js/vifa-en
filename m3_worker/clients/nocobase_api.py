@@ -22,7 +22,9 @@ MAX_LIST_PAGES = 64
 MAX_LIST_RECORDS = 50_000
 MAX_CREATE_RECORDS = 500
 IDENTIFIER_PATTERN = re.compile(r"[a-z][a-z0-9_]*\Z")
-SORT_PATTERN = re.compile(r"-?[a-z][a-z0-9_]*\Z")
+NOCOBASE_SYSTEM_FIELDS = frozenset(
+    {"createdAt", "createdBy", "updatedAt", "updatedBy"}
+)
 
 
 def validate_exact_json_value(
@@ -84,16 +86,21 @@ class NocoBaseApiClient:
 
     @staticmethod
     def _identifier(value: str, field_name: str) -> str:
-        if not isinstance(value, str) or IDENTIFIER_PATTERN.fullmatch(value) is None:
+        if not isinstance(value, str) or (
+            IDENTIFIER_PATTERN.fullmatch(value) is None
+            and value not in NOCOBASE_SYSTEM_FIELDS
+        ):
             raise M3Error(
                 "sink_contract_invalid", f"NocoBase {field_name} is invalid"
             )
         return value
 
-    @staticmethod
-    def _sort_identifier(value: str) -> str:
-        if not isinstance(value, str) or SORT_PATTERN.fullmatch(value) is None:
+    @classmethod
+    def _sort_identifier(cls, value: str) -> str:
+        if not isinstance(value, str) or not value:
             raise M3Error("sink_contract_invalid", "NocoBase sort field is invalid")
+        field_name = value[1:] if value.startswith("-") else value
+        cls._identifier(field_name, "sort field")
         return value
 
     @staticmethod
@@ -491,7 +498,7 @@ class NocoBaseApiClient:
             "update",
             params={"filterByTk": str(record_id)},
             json_body=checked_values,
-            parse=self._parse_record_envelope,
+            parse=self._parse_upsert_record_envelope,
         )
 
     def update_or_create(
