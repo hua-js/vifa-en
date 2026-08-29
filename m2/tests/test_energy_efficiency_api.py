@@ -1,7 +1,11 @@
 import importlib.util
 import copy
 from pathlib import Path
+import sys
 import unittest
+from unittest.mock import patch
+
+from m2.station_efficiency_device_adapter import build_battery_device_points
 
 
 ENTRYPOINT_PATH = Path(__file__).resolve().parents[2] / "energy-efficiency-api.py"
@@ -20,6 +24,42 @@ ENVIRONMENT = {
 
 
 class EnergyEfficiencyApiTests(unittest.TestCase):
+    def test_default_runtime_config_maps_t_emu_max_temp_safely(self):
+        clean_spec = importlib.util.spec_from_file_location(
+            "energy_efficiency_api_without_local_config",
+            ENTRYPOINT_PATH,
+        )
+        clean_api = importlib.util.module_from_spec(clean_spec)
+        with patch.dict(sys.modules, {"energy_efficiency_local_config": None}):
+            clean_spec.loader.exec_module(clean_api)
+
+        points = build_battery_device_points(
+            station_id="ES01",
+            emu_rows=[
+                {
+                    "f_es_sn": "ES01",
+                    "emu_sn": "emu11",
+                    "last_time_iso": "2026-08-29T10:00:00+08:00",
+                    "battery_power": -18000,
+                    "max_temp": 31.5,
+                },
+                {
+                    "f_es_sn": "ES01",
+                    "emu_sn": "emu12",
+                    "last_time_iso": "2026-08-29T10:00:00+08:00",
+                    "battery_power": -17000,
+                    "max_temp": "not-a-temperature",
+                },
+            ],
+            minute_bucket_time="2026-08-29T10:00:00+08:00",
+            calculation_time="2026-08-29T10:00:00+08:00",
+            config=clean_api.load_runtime_config(ENVIRONMENT),
+        )
+
+        self.assertEqual(points[0]["temperature_c"], 31.5)
+        self.assertIsNone(points[0]["subdevice_id"])
+        self.assertIsNone(points[1]["temperature_c"])
+
     def test_parse_request_accepts_cleanup_only_without_station(self):
         self.assertEqual(energy_api.parse_request(["cleanup"]), ("cleanup", None))
         for invalid in (["cleanup", "ES02"], ["minute"], ["dashboard", "ES03"]):

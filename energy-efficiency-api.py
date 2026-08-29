@@ -70,7 +70,7 @@ LOCAL_DEVICE_POINT_RETENTION_DAYS = getattr(
 LOCAL_BATTERY_MAX_TEMPERATURE_FIELD = getattr(
     local_config,
     "BATTERY_MAX_TEMPERATURE_FIELD",
-    "",
+    "max_temp",
 )
 LOCAL_BATTERY_HOT_CLUSTER_FIELD = getattr(
     local_config,
