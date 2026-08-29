@@ -13,6 +13,7 @@ from m3_worker.contracts import ASIA_SHANGHAI_OFFSET, SeriesId, is_load_series
 ALLOWED_INTERVAL_SECONDS: tuple[int, ...] = (30, 60, 300, 900, 1800, 3600)
 MAX_POINTS_PER_SERIES = 7 * (86_400 // min(ALLOWED_INTERVAL_SECONDS))
 IDEMPOTENCY_KEY = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}\Z")
+RUN_ID_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"
 RUN_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,127}\Z")
 ModelPolicy = Literal["seasonal_naive_only", "full_selection"]
 RunStatus = Literal["queued", "running", "succeeded", "evaluated", "failed"]

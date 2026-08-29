@@ -28,6 +28,11 @@ from m3_worker.errors import M3Error
 from m3_worker.scheduler.runner import SchedulerRunner
 from m3_worker.services.acceptance_service import AcceptanceService
 from m3_worker.services.acceptance_run_service import AcceptanceRunService
+from m3_worker.services.custom_forecast_repository import CustomForecastRepository
+from m3_worker.services.custom_forecast_evaluation_service import (
+    CustomForecastEvaluationService,
+)
+from m3_worker.services.custom_forecast_service import CustomForecastService
 from m3_worker.services.forecast_service import (
     ForecastService,
     verify_statsforecast_runtime,
@@ -95,6 +100,8 @@ class WorkerResources:
     nocobase_http: object
     forecast_service: object
     acceptance_service: object
+    custom_forecasts: object
+    custom_evaluations: object
     scheduler: object
     jobs: object
     clock: Callable[[], datetime]
@@ -164,6 +171,14 @@ class WorkerResources:
                     self._alert(
                         station_id, "acceptance_reconcile", error, recovery_at
                     )
+        try:
+            self.custom_forecasts.recover()
+        except Exception as error:
+            failed = True
+            for station_id in self.settings.station_ids:
+                self._alert(
+                    station_id, "custom_forecast_recovery", error, recovery_at
+                )
         if not failed:
             try:
                 failed = any(
@@ -202,7 +217,12 @@ class WorkerResources:
                 return
             self._closed = True
         first_error = None
-        for resource in (self.jobs, self.source_http, self.nocobase_http):
+        for resource in (
+            self.jobs,
+            self.custom_forecasts,
+            self.source_http,
+            self.nocobase_http,
+        ):
             try:
                 resource.close()
             except Exception as error:
@@ -227,6 +247,7 @@ def build_resources(
     source_http = None
     nocobase_http = None
     jobs = None
+    custom_forecasts = None
     try:
         source_http = httpx.Client(
             timeout=timeout, limits=limits, follow_redirects=False
@@ -264,6 +285,7 @@ def build_resources(
             retry,
         )
         run_service = AcceptanceRunService(api)
+        custom_repository = CustomForecastRepository(api)
         sink = ForecastSink(api)
         caches = {
             station_id: StationCache(station_id)
@@ -281,6 +303,19 @@ def build_resources(
             forecast_service=forecast_service,
             now=clock,
         )
+        custom_forecasts = CustomForecastService(
+            custom_repository,
+            observation_source,
+            clock,
+            station_ids=settings.station_ids,
+            max_workers=1,
+            max_pending=16,
+        )
+        custom_evaluations = CustomForecastEvaluationService(
+            custom_repository,
+            observation_source,
+            clock,
+        )
         scheduler = SchedulerRunner(
             settings.station_ids,
             forecast_service,
@@ -288,6 +323,7 @@ def build_resources(
             alert_sink=effective_alert_sink,
             clock=clock,
             acceptance_enabled=settings.acceptance_enabled,
+            custom_evaluation_service=custom_evaluations,
         )
         jobs = JobService(
             scheduler.run_manual,
@@ -303,6 +339,8 @@ def build_resources(
             nocobase_http=nocobase_http,
             forecast_service=forecast_service,
             acceptance_service=acceptance_service,
+            custom_forecasts=custom_forecasts,
+            custom_evaluations=custom_evaluations,
             scheduler=scheduler,
             jobs=jobs,
             clock=clock,
@@ -311,7 +349,7 @@ def build_resources(
             alert_client=alert_client,
         )
     except Exception:
-        for resource in (jobs, source_http, nocobase_http):
+        for resource in (jobs, custom_forecasts, source_http, nocobase_http):
             if resource is None:
                 continue
             try:
@@ -431,6 +469,7 @@ def create_app(
         codes = {
             401: "unauthorized",
             404: "not_found",
+            409: "conflict",
             422: "request_invalid",
             429: "job_capacity_exceeded",
             503: "job_service_unavailable",

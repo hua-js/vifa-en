@@ -81,6 +81,7 @@ class SchedulerRunner:
         alert_sink: Callable[[str, str, str, datetime], None] | None = None,
         clock: Callable[[], datetime] | None = None,
         *,
+        custom_evaluation_service=None,
         poll_seconds: float = 15.0,
         stop_timeout_seconds: float | None = None,
         max_seen: int = 8192,
@@ -107,6 +108,7 @@ class SchedulerRunner:
         self._station_set = frozenset(stations)
         self._forecast = forecast_service
         self._acceptance = acceptance_service
+        self._custom_evaluations = custom_evaluation_service
         self._acceptance_enabled = acceptance_enabled
         self._alert_sink = alert_sink or (lambda *_args: None)
         self._clock = clock or (lambda: datetime.now(SHANGHAI))
@@ -250,6 +252,8 @@ class SchedulerRunner:
             self._forecast.run_forecast(station_id, at)
             if self._acceptance_enabled:
                 self._acceptance.backfill_actuals(station_id, at)
+            if self._custom_evaluations is not None:
+                self._custom_evaluations.evaluate_station(station_id, at)
         elif task == "model_selection":
             self._forecast.bootstrap(station_id, _completed_quarter(at))
             self._forecast.select_models(station_id)

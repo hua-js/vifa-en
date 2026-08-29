@@ -581,6 +581,7 @@
         "model_name": {"type": "text", "nullable": false},
         "raw_forecast": {"type": "numeric(14,6)", "nullable": false},
         "forecast_value": {"type": "numeric(14,6)", "nullable": false},
+        "baseline_forecast_value": {"type": "numeric(14,6)", "nullable": false},
         "is_clipped": {"type": "boolean", "nullable": false},
         "actual_value": {"type": "numeric(14,6)", "nullable": true},
         "actual_quality": {"type": "text", "nullable": true},
@@ -666,7 +667,8 @@
         "each_series_point_count_matches_parent_expected_points_per_series",
         "is_clipped_matches_raw_and_published_values",
         "replay_never_mutates_forecast_fields",
-        "actual_fields_change_only_for_newer_source_revision"
+        "actual_values_remain_owned_by_the_immutable_raw_source_in_the_initial_custom_release",
+        "baseline_forecast_is_seasonal_naive_for_the_same_history_and_target_time"
       ]
     },
     {
@@ -1017,7 +1019,7 @@
     "unlisted_sort_fields": "deny",
     "unlisted_write_fields": "deny",
     "unlisted_record_key_fields": "deny",
-    "allowed_actions": ["list", "update", "updateOrCreate", "firstOrCreate"],
+    "allowed_actions": ["list", "create", "update", "updateOrCreate", "firstOrCreate"],
     "denied_actions": ["destroy", "delete", "export", "import"],
     "installed_api_documentation": {
       "gate": "hard_pre_production",
@@ -1163,32 +1165,25 @@
         "protected_fields": ["id", "run_id", "station_id", "idempotency_key", "history_start", "history_end", "history_days", "forecast_start", "forecast_end", "forecast_days", "interval_seconds", "points_per_day", "expected_points_per_series", "model_policy", "requested_by", "created_at", "updated_at"]
       },
       "energy_forecast_manual_points": {
-        "allowed_actions": ["list", "update", "firstOrCreate"],
-        "denied_actions": ["get", "create", "updateOrCreate", "destroy", "delete", "export", "import"],
+        "allowed_actions": ["list", "create"],
+        "denied_actions": ["get", "update", "updateOrCreate", "firstOrCreate", "destroy", "delete", "export", "import"],
         "fields_by_action": {
           "list": {
-            "read": ["id", "run_pk", "unique_id", "target_time", "horizon_step", "model_name", "raw_forecast", "forecast_value", "is_clipped", "actual_value", "actual_quality", "actual_source_revision", "actual_recorded_at", "evaluated_at", "absolute_percentage_error"],
+            "read": ["id", "run_pk", "unique_id", "target_time", "horizon_step", "model_name", "raw_forecast", "forecast_value", "baseline_forecast_value", "is_clipped", "actual_value", "actual_quality", "actual_source_revision", "actual_recorded_at", "evaluated_at", "absolute_percentage_error"],
             "filter": ["run_pk", "unique_id", "target_time"],
             "sort": ["unique_id", "target_time"],
             "write": [],
             "record_key": []
           },
-          "update": {
-            "read": ["id", "run_pk", "unique_id", "target_time", "actual_value", "actual_quality", "actual_source_revision", "actual_recorded_at", "evaluated_at", "absolute_percentage_error"],
+          "create": {
+            "read": ["id", "run_pk", "unique_id", "target_time", "horizon_step", "model_name", "raw_forecast", "forecast_value", "baseline_forecast_value", "is_clipped"],
             "filter": [],
             "sort": [],
-            "write": ["actual_value", "actual_quality", "actual_source_revision", "actual_recorded_at", "evaluated_at", "absolute_percentage_error"],
-            "record_key": ["id"]
-          },
-          "firstOrCreate": {
-            "read": ["id", "run_pk", "unique_id", "target_time", "horizon_step", "model_name", "raw_forecast", "forecast_value", "is_clipped"],
-            "filter": ["run_pk", "unique_id", "target_time"],
-            "sort": [],
-            "write": ["run_pk", "unique_id", "target_time", "horizon_step", "model_name", "raw_forecast", "forecast_value", "is_clipped"],
+            "write": ["run_pk", "unique_id", "target_time", "horizon_step", "model_name", "raw_forecast", "forecast_value", "baseline_forecast_value", "is_clipped"],
             "record_key": []
           }
         },
-        "protected_fields": ["id", "run_pk", "unique_id", "target_time", "horizon_step", "model_name", "raw_forecast", "forecast_value", "is_clipped"]
+        "protected_fields": ["id", "run_pk", "unique_id", "target_time", "horizon_step", "model_name", "raw_forecast", "forecast_value", "baseline_forecast_value", "is_clipped"]
       },
       "energy_forecast_manual_evaluations": {
         "allowed_actions": ["list", "updateOrCreate"],

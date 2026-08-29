@@ -60,15 +60,15 @@
 
 - Add: `m3_worker/services/custom_forecast_repository.py`
 - Add: `m3_worker/services/custom_forecast_service.py`
-- Modify: `m3_worker/services/job_service.py`
+- Modify: `m3_worker/clients/nocobase_api.py`
 - Modify: `m3_worker/main.py`
 
-- [ ] Create the run row before executor submission and return the existing row for the same station/idempotency key.
-- [ ] Pull the selected history range in bounded chunks, construct both datasets, select allowed models and persist source/model manifests.
-- [ ] Write points in bounded batches with immutable replay validation and a final content hash/count check.
-- [ ] Mark status only after persistent evidence is complete; store stable errors on failure.
-- [ ] Recover `queued/running` rows at startup without creating duplicate runs or points.
-- [ ] Keep a separate bounded concurrency path so manual 30-second jobs do not block scheduled operational forecasts.
+- [x] Create the run row before executor submission and return the existing row for the same station/idempotency key.
+- [x] Pull the selected history range in bounded chunks, construct both datasets, select allowed models and persist source/model manifests.
+- [x] Write points with NocoBase's documented array `create` in bounded batches, with paginated immutable replay validation and a final content hash/count check.
+- [x] Mark status only after persistent evidence is complete; store stable errors on failure and leave fully persisted runs recoverable if only the final status write fails.
+- [x] Recover `queued/running` rows at startup without creating duplicate runs or points.
+- [x] Keep a separate bounded concurrency path instead of changing `JobService`, so manual 30-second jobs do not block scheduled operational forecasts.
 
 ## Task 5: Expose protected task and result APIs
 
@@ -78,11 +78,11 @@
 - Modify: `m3_worker/api/routes.py`
 - Modify: `m3_worker/api/dependencies.py` only if the existing station authorization boundary needs a typed user identity
 
-- [ ] Add strict custom-run request and response models with no coercion of dates, integers or interval values.
-- [ ] Add POST run creation and GET state/result/performance routes from the design.
-- [ ] Return `202` for queued/running, `200` for terminal reads, `404` for unknown authorized IDs, and stable bounded error codes.
-- [ ] Never return internal numeric PKs, service tokens, upstream bodies or stack traces.
-- [ ] Exercise local request/response smoke checks without running the automated test suite.
+- [x] Add strict custom-run request and response models with no coercion of dates, integers or interval values.
+- [x] Add POST run creation and GET state/result/performance routes from the design.
+- [x] Return `202` for submission, `200` for state/result reads, `404` for unknown authorized IDs, and stable bounded error codes.
+- [x] Never return internal numeric PKs, service tokens, upstream bodies or stack traces.
+- [x] Exercise local request/response smoke checks without running the automated test suite.
 
 ## Task 6: Backfill actuals and calculate comparable MAPE
 
@@ -91,11 +91,11 @@
 - Add: `m3_worker/services/custom_forecast_evaluation_service.py`
 - Modify: scheduler/resource wiring located by `rg "AcceptanceService|run_forecast" m3_worker/main.py m3_worker/services`
 
-- [ ] Find succeeded custom runs whose target times have elapsed and fetch actuals at the stored interval.
-- [ ] Update actual fields only when source revision is newer; never mutate the persisted forecast fields.
-- [ ] Calculate per-series metrics and SeasonalNaive baseline on the same target points.
-- [ ] Persist three evaluation rows and expose only comparable-key rolling seven-day aggregates.
-- [ ] Mark runs `evaluated` only after point and evaluation persistence verifies completely.
+- [x] Find succeeded custom runs whose complete target window has elapsed and fetch actuals at the stored interval.
+- [x] Keep immutable raw observations as actual-value truth and overlay them at read/evaluation time; never mutate persisted forecast fields.
+- [x] Calculate per-series metrics and SeasonalNaive baseline on the same target points.
+- [x] Persist three evaluation rows and expose only comparable-key rolling seven-day aggregates.
+- [x] Mark runs `evaluated` only after forecast-point and evaluation persistence verifies completely.
 
 ## Task 7: Connect the same-origin gateway and dashboard button
 

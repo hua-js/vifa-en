@@ -5,18 +5,26 @@ import math
 import re
 from typing import Annotated
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Path, Request
+from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, Request
 from pydantic import ValidationError
 
 from m3_worker.api.dependencies import StationDep, require_admin
 from m3_worker.api.models import (
     ChampionResponse,
+    CustomPerformanceResponse,
+    CustomPerformanceSeriesResponse,
+    CustomResultPointResponse,
+    CustomResultSeriesResponse,
+    CustomRunRequest,
+    CustomRunResponse,
+    CustomRunResultResponse,
     HealthResponse,
     JobResponse,
     ManualRunRequest,
     StationStateResponse,
 )
 from m3_worker.contracts import SERIES_IDS
+from m3_worker.custom_forecast_contracts import ALLOWED_INTERVAL_SECONDS, RUN_ID_PATTERN
 from m3_worker.errors import M3Error
 
 
@@ -55,6 +63,50 @@ def _job_response(request: Request, job) -> JobResponse:
         )
     except (ValidationError, TypeError, ValueError) as error:
         raise HTTPException(status_code=500, detail="internal_error") from error
+
+
+def _custom_run_response(request: Request, run) -> CustomRunResponse:
+    try:
+        if run.station_id not in request.app.state.settings.station_ids:
+            raise ValueError("custom run station")
+        config = run.config
+        return CustomRunResponse(
+            run_id=run.run_id,
+            station_id=run.station_id,
+            status=run.status,
+            history_start=config.history_start,
+            history_end=config.history_end,
+            history_days=config.history_days,
+            forecast_start=config.forecast_start,
+            forecast_end=config.forecast_end,
+            forecast_days=config.forecast_days,
+            interval_seconds=config.interval_seconds,
+            points_per_day=config.points_per_day,
+            expected_points_per_series=config.expected_points_per_series,
+            model_policy=config.model_policy,
+            model_manifest=run.model_manifest,
+            source_manifest=run.source_manifest,
+            error_code=_safe_code(run.record.error_code),
+            started_at=run.started_at,
+            completed_at=run.completed_at,
+            evaluated_at=run.evaluated_at,
+            created_at=run.created_at,
+            updated_at=run.updated_at,
+        )
+    except (ValidationError, TypeError, ValueError) as error:
+        raise HTTPException(status_code=500, detail="internal_error") from error
+
+
+def _custom_service_error(error: M3Error) -> HTTPException:
+    if error.code == "request_invalid":
+        return HTTPException(status_code=422, detail="request_invalid")
+    if error.code == "idempotency_conflict":
+        return HTTPException(status_code=409, detail="idempotency_conflict")
+    if error.code == "job_capacity_exceeded":
+        return HTTPException(status_code=429, detail="job_capacity_exceeded")
+    if error.code == "job_service_closed":
+        return HTTPException(status_code=503, detail="job_service_closed")
+    return HTTPException(status_code=503, detail="custom_forecast_unavailable")
 
 
 @health_router.get("/health")
@@ -218,6 +270,143 @@ def run_model_selection(
     _payload: Annotated[ManualRunRequest, Body()],
 ) -> JobResponse:
     return _submit(request, station_id, "model_selection")
+
+
+@router.post(
+    "/stations/{station_id}/runs/custom-forecast",
+    status_code=202,
+)
+def run_custom_forecast(
+    request: Request,
+    station_id: StationDep,
+    payload: Annotated[CustomRunRequest, Body()],
+) -> CustomRunResponse:
+    try:
+        run = request.app.state.resources.custom_forecasts.submit(
+            station_id,
+            payload,
+            requested_by="m3_operations_api",
+        )
+        return _custom_run_response(request, run)
+    except M3Error as error:
+        raise _custom_service_error(error) from error
+    except HTTPException:
+        raise
+    except Exception as error:
+        raise HTTPException(status_code=500, detail="internal_error") from error
+
+
+@router.get("/custom-forecast-runs/{run_id}")
+def custom_forecast_state(
+    request: Request,
+    run_id: Annotated[str, Path(min_length=1, max_length=128, pattern=RUN_ID_PATTERN)],
+) -> CustomRunResponse:
+    try:
+        run = request.app.state.resources.custom_forecasts.get(run_id)
+        if run is None or run.station_id not in request.app.state.settings.station_ids:
+            raise HTTPException(status_code=404, detail="not_found")
+        return _custom_run_response(request, run)
+    except M3Error as error:
+        raise _custom_service_error(error) from error
+
+
+@router.get("/custom-forecast-runs/{run_id}/result")
+def custom_forecast_result(
+    request: Request,
+    run_id: Annotated[str, Path(min_length=1, max_length=128, pattern=RUN_ID_PATTERN)],
+) -> CustomRunResultResponse:
+    try:
+        result = request.app.state.resources.custom_forecasts.result(run_id)
+        if result is None:
+            raise HTTPException(status_code=404, detail="not_found")
+        run, points = result
+        if run.station_id not in request.app.state.settings.station_ids:
+            raise HTTPException(status_code=404, detail="not_found")
+        if points:
+            points = request.app.state.resources.custom_evaluations.overlay_actuals(
+                run, points
+            )
+        grouped: dict[str, list[dict]] = {unique_id: [] for unique_id in SERIES_IDS}
+        for point in points:
+            unique_id = point.get("unique_id")
+            if unique_id not in grouped:
+                raise ValueError("custom point series")
+            grouped[unique_id].append(point)
+        series = []
+        for unique_id in SERIES_IDS:
+            rows = grouped[unique_id]
+            model_names = {row.get("model_name") for row in rows}
+            if rows and (
+                len(rows) != run.config.expected_points_per_series
+                or len(model_names) != 1
+                or not all(isinstance(name, str) and name for name in model_names)
+            ):
+                raise ValueError("custom result series")
+            series.append(
+                CustomResultSeriesResponse(
+                    unique_id=unique_id,
+                    unit="kW" if unique_id == "station_total_load" else "%",
+                    model_name=next(iter(model_names)) if model_names else "none",
+                    points=[
+                        CustomResultPointResponse(
+                            target_time=row["target_time"],
+                            horizon_step=row["horizon_step"],
+                            forecast_value=row["forecast_value"],
+                            actual_value=row["actual_value"],
+                            actual_quality=row["actual_quality"],
+                            absolute_percentage_error=row[
+                                "absolute_percentage_error"
+                            ],
+                        )
+                        for row in rows
+                    ],
+                )
+            )
+        return CustomRunResultResponse(
+            run=_custom_run_response(request, run),
+            series=series,
+        )
+    except HTTPException:
+        raise
+    except M3Error as error:
+        raise _custom_service_error(error) from error
+    except (ValidationError, KeyError, TypeError, ValueError) as error:
+        raise HTTPException(status_code=500, detail="internal_error") from error
+
+
+@router.get("/stations/{station_id}/custom-forecast-performance")
+def custom_forecast_performance(
+    request: Request,
+    station_id: StationDep,
+    interval_seconds: Annotated[int, Query()],
+    forecast_days: Annotated[int, Query(ge=1, le=7)],
+    history_days: Annotated[int, Query(ge=7, le=90)],
+) -> CustomPerformanceResponse:
+    if interval_seconds not in ALLOWED_INTERVAL_SECONDS:
+        raise HTTPException(status_code=422, detail="request_invalid")
+    try:
+        value = request.app.state.resources.custom_evaluations.performance(
+            station_id=station_id,
+            interval_seconds=interval_seconds,
+            forecast_days=forecast_days,
+            history_days=history_days,
+        )
+        return CustomPerformanceResponse(
+            station_id=value["station_id"],
+            lookback_days=7,
+            interval_seconds=value["interval_seconds"],
+            forecast_days=value["forecast_days"],
+            model_policy=value["model_policy"],
+            calculated_at=value["calculated_at"],
+            series=[
+                CustomPerformanceSeriesResponse.model_validate(item)
+                for item in value["series"]
+            ],
+        )
+    except M3Error as error:
+        raise _custom_service_error(error) from error
+    except (ValidationError, KeyError, TypeError, ValueError) as error:
+        raise HTTPException(status_code=500, detail="internal_error") from error
 
 
 @router.get("/jobs/{job_id}")
