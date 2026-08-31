@@ -535,7 +535,7 @@
           <div class="compare-item"><div class="compare-row"><span>SeasonalNaive 基线</span><strong class="compare-baseline-value">—</strong></div><div class="compare-track"><i class="baseline-bar"></i></div></div>
         </div>
         <div class="dual-mape">
-          <section class="mape-panel"><div class="mape-head"><div><div class="title">近 7 日负载预测 MAPE</div><div class="desc">仅汇总输出粒度、预测时长和模型策略相同的任务</div></div><div class="mape-summary"><div class="mape-summary-item"><span>7 日汇总</span><strong class="load-mape-value">—</strong></div><div class="mape-summary-item"><span>可比任务</span><strong class="acceptance-summary">—</strong></div></div></div>
+          <section class="mape-panel"><div class="mape-head"><div><div class="title">近 7 日负载预测 MAPE</div><div class="desc">仅汇总输出粒度、预测时长和模型策略相同的任务</div></div><div class="mape-summary"><div class="mape-summary-item"><span>7 日汇总</span><strong class="legacy-load-mape-value">—</strong></div><div class="mape-summary-item"><span>可比任务</span><strong class="acceptance-summary">—</strong></div></div></div>
             <div class="mape-grid" aria-label="近7日负载 MAPE 明细待接入"><div class="mape-day"><span class="mape-date">D-6</span><strong class="mape-value">—</strong><div class="mape-bar"><i></i></div></div><div class="mape-day"><span class="mape-date">D-5</span><strong class="mape-value">—</strong><div class="mape-bar"><i></i></div></div><div class="mape-day"><span class="mape-date">D-4</span><strong class="mape-value">—</strong><div class="mape-bar"><i></i></div></div><div class="mape-day"><span class="mape-date">D-3</span><strong class="mape-value">—</strong><div class="mape-bar"><i></i></div></div><div class="mape-day"><span class="mape-date">D-2</span><strong class="mape-value">—</strong><div class="mape-bar"><i></i></div></div><div class="mape-day"><span class="mape-date">D-1</span><strong class="mape-value">—</strong><div class="mape-bar"><i></i></div></div><div class="mape-day"><span class="mape-date">当前</span><strong class="mape-value">—</strong><div class="mape-bar"><i></i></div></div></div>
             <div class="baseline-note"><i></i><span>SeasonalNaive 同配置基线：<strong class="baseline-note-value">—</strong></span></div>
           </section>
@@ -1112,7 +1112,7 @@
         [".metric-peak-load", ".metric-current-soc", ".metric-minimum-soc", ".peak-time", ".minimum-soc-time",
           ".summary-peak-title", ".summary-peak-copy", ".summary-soc-title", ".summary-soc-copy",
           ".summary-low-title", ".summary-low-copy"].forEach((selector) => text(section.querySelector(selector), "—"));
-        [".load-wape-value", ".load-mae-value", ".load-mape-value", ".soc-mape-value", ".baseline-value", ".improvement-value", ".model-soc-mae"].forEach((selector) => root.querySelectorAll(selector).forEach((node) => text(node, "—")));
+        [".load-wape-value", ".load-mae-value", ".load-mape-value", ".legacy-load-mape-value", ".soc-mape-value", ".baseline-value", ".improvement-value", ".model-soc-mae"].forEach((selector) => root.querySelectorAll(selector).forEach((node) => text(node, "—")));
         root.querySelectorAll(".performance-value").forEach((node) => node.removeAttribute("data-state"));
         text(root.querySelector("#performance-zone-subtitle"), "先看当前模型是否优于同配置基线，再看近 7 日稳定性");
         text(root.querySelector(".current-mape-note"), "尚无已完成评估窗口");
@@ -1273,7 +1273,7 @@
         const body = root.querySelector(".station-acceptance tbody");
         const socMae = root.querySelector(".model-soc-mae");
         body.replaceChildren();
-        [".load-wape-value", ".load-mae-value", ".load-mape-value", ".soc-mape-value", ".baseline-value", ".improvement-value"].forEach((selector) => root.querySelectorAll(selector).forEach((node) => text(node, "—")));
+        [".load-wape-value", ".load-mae-value", ".load-mape-value", ".legacy-load-mape-value", ".soc-mape-value", ".baseline-value", ".improvement-value"].forEach((selector) => root.querySelectorAll(selector).forEach((node) => text(node, "—")));
         text(socMae, "—");
         text(root.querySelector(".compare-model-value"), "—");
         text(root.querySelector(".compare-baseline-value"), "—");
@@ -1291,7 +1291,7 @@
         const loadResult = acceptance.results.find((result) => result.unique_id === "station_total_load");
         const socResult = acceptance.results.find((result) => result.unique_id === "storage_soc");
         const currentMapeValue = loadResult && loadResult.mape_percent !== null ? `${metric(loadResult.mape_percent)}%` : "—";
-        root.querySelectorAll(".load-mape-value").forEach((node) => text(node, currentMapeValue));
+        root.querySelectorAll(".legacy-load-mape-value").forEach((node) => text(node, currentMapeValue));
         text(root.querySelector(".compare-model-value"), currentMapeValue);
         text(root.querySelector(".current-mape-note"), loadResult ? `${loadResult.valid_count} / ${loadResult.expected_count} 个有效对比点` : "尚无已完成评估窗口");
         const socMapeValue = socResult && socResult.mape_percent !== null ? `${metric(socResult.mape_percent)}%` : "—";
@@ -1746,46 +1746,28 @@
         const load = performance.series[0];
         const soc = performance.series[1];
         const formatPercent = (value) => value === null ? "—" : `${metric(value)}%`;
-        root.querySelectorAll(".load-wape-value, .load-mae-value").forEach((node) => text(node, "—"));
-        text(root.querySelector(".load-mae-note"), "尚无本次留出周评分");
-        text(root.querySelector(".load-mape-note"), "尚无本次留出周评分");
+        root.querySelectorAll(".load-wape-value, .load-mae-value, .load-mape-value, .baseline-value, .improvement-value").forEach((node) => text(node, "—"));
+        text(root.querySelector(".current-mape-note"), "仅 weekly_load_v1 任务提供留出周 WAPE");
+        text(root.querySelector(".load-mae-note"), "仅 weekly_load_v1 任务提供留出周 MAE");
+        text(root.querySelector(".load-mape-note"), "仅 weekly_load_v1 任务提供留出周 MAPE");
+        text(root.querySelector(".baseline-mape-note"), "仅 weekly_load_v1 任务提供 WeeklyNaive WAPE");
+        text(root.querySelector(".improvement-note"), "仅 weekly_load_v1 任务提供相对 WAPE 提升");
         const loadPending = load.run_count === 0;
         const socPending = soc.run_count === 0;
         const loadMape = loadPending ? "待评估" : formatPercent(load.mape_percent);
         const socMape = socPending ? "待评估" : formatPercent(soc.mape_percent);
         const baseline = loadPending ? "待评估" : formatPercent(load.baseline_mape_percent);
-        const improvement = loadPending ? "待评估" : formatPercent(load.relative_baseline_improvement_percent);
         const expectedEvaluation = `预计可评估时间：${dateTime(run.forecast_end)} 后的下一调度周期`;
-        root.querySelectorAll(".load-mape-value").forEach((node) => text(node, loadMape));
+        root.querySelectorAll(".legacy-load-mape-value").forEach((node) => text(node, loadMape));
         root.querySelectorAll(".soc-mape-value").forEach((node) => text(node, socMape));
-        root.querySelectorAll(".baseline-value").forEach((node) => text(node, baseline));
-        root.querySelectorAll(".improvement-value").forEach((node) => text(node, improvement));
         text(root.querySelector(".compare-model-value"), loadMape);
         text(root.querySelector(".compare-baseline-value"), baseline);
         text(root.querySelector(".baseline-note-value"), baseline);
-        const loadPerformanceValue = root.querySelector(".performance-value.load-mape-value");
         const socPerformanceValue = root.querySelector(".performance-value.soc-mape-value");
-        const baselinePerformanceValue = root.querySelector(".performance-value.baseline-value");
-        const improvementPerformanceValue = root.querySelector(".performance-value.improvement-value");
-        [
-          [loadPerformanceValue, loadPending],
-          [socPerformanceValue, socPending],
-          [baselinePerformanceValue, loadPending],
-          [improvementPerformanceValue, loadPending],
-        ].forEach(([node, pending]) => {
-          if (node !== null) node.dataset.state = pending ? "pending" : "ready";
-        });
-        if (loadPending) {
-          text(loadPerformanceValue, "待实际值完整回填");
-          text(baselinePerformanceValue, "暂无已完成评估任务");
-          text(improvementPerformanceValue, "评估完成后计算");
-        }
+        if (socPerformanceValue !== null) socPerformanceValue.dataset.state = socPending ? "pending" : "ready";
         if (socPending && socPerformanceValue !== null) text(socPerformanceValue, "待实际值完整回填");
-        text(root.querySelector("#performance-zone-subtitle"), loadPending && socPending ? "近 7 日暂无同配置可比任务" : "先看当前模型是否优于同配置基线，再看近 7 日稳定性");
-        text(root.querySelector(".current-mape-note"), loadPending ? expectedEvaluation : `${load.run_count} 个同配置任务 · ${formatInteger(load.scorable_point_count)} 个有效点`);
+        text(root.querySelector("#performance-zone-subtitle"), loadPending && socPending ? "近 7 日暂无同配置可比任务" : "历史任务保留近 7 日 MAPE 汇总；留出周 WAPE 仅用于 weekly_load_v1");
         text(root.querySelector(".soc-mape-note"), socPending ? expectedEvaluation : `${soc.run_count} 个同配置任务 · ${formatInteger(soc.scorable_point_count)} 个有效点`);
-        text(root.querySelector(".baseline-mape-note"), loadPending ? "暂无已完成评估任务" : "负载预测同配置、同目标点基线");
-        text(root.querySelector(".improvement-note"), loadPending ? "获得当前模型与同窗基线后计算" : "获得同窗基线后自动计算");
         text(root.querySelector(".acceptance-summary"), loadPending ? "0 个任务" : `${load.run_count} 个任务`);
         const maximum = Math.max(load.mape_percent || 0, load.baseline_mape_percent || 0, 1);
         root.querySelector(".model-bar").style.width = load.mape_percent === null ? "0%" : `${Math.min(100, load.mape_percent / maximum * 100).toFixed(1)}%`;

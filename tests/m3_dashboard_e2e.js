@@ -196,6 +196,20 @@ function warmingEvidenceFixture() {
   return fixture;
 }
 
+function legacyPerformanceFixture() {
+  const fixture = weeklyEvidenceFixture();
+  fixture.run.run_id = "legacy-performance-run";
+  delete fixture.run.model_manifest;
+  delete fixture.run.source_manifest;
+  fixture.result.run = fixture.run;
+  fixture.result.series[0].model_name = "SeasonalNaive";
+  fixture.performance.series = [
+    { unique_id: "station_total_load", mape_percent: 13, baseline_mape_percent: 16, relative_baseline_improvement_percent: 18.75, scorable_point_count: 384, run_count: 4 },
+    { unique_id: "storage_soc", mape_percent: 7, baseline_mape_percent: 9, relative_baseline_improvement_percent: 22.22, scorable_point_count: 384, run_count: 4 },
+  ];
+  return fixture;
+}
+
 (async () => {
   const fixtures = task5Fixtures();
   const payload = fixtures.ready;
@@ -669,6 +683,17 @@ function warmingEvidenceFixture() {
     assert.ok((await page.locator(selector).allTextContents()).every((value) => value === "—"), selector);
   }
   assert.match(await page.locator(".candidate[data-model='WeeklyNaive'] .candidate-state").innerText(), /预热：暂无回测分数/);
+
+  customPayload = legacyPerformanceFixture();
+  await page.locator("#run-button").click();
+  await page.locator("#result-model-meta").getByText("28 天训练 · 15 分钟粒度").waitFor();
+  for (const selector of [".load-wape-value", ".load-mae-value", ".load-mape-value", ".baseline-value", ".improvement-value"]) {
+    assert.ok((await page.locator(selector).allTextContents()).every((value) => value === "—"), `legacy run ${selector} must not show generic aggregate metrics`);
+  }
+  assert.deepStrictEqual(await page.locator(".legacy-load-mape-value").allTextContents(), ["13.00%"]);
+  assert.deepStrictEqual(await page.locator(".compare-model-value").allTextContents(), ["13.00%"]);
+  assert.deepStrictEqual(await page.locator(".compare-baseline-value").allTextContents(), ["16.00%"]);
+  assert.deepStrictEqual(await page.locator(".baseline-note-value").allTextContents(), ["16.00%"]);
 
   await page.screenshot({ path: "/tmp/m3-task6-desktop.png", fullPage: true });
   assert.strictEqual(await page.locator("#error-state").isHidden(), true);
