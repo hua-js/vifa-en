@@ -1803,7 +1803,12 @@
         text(root.querySelector(".selection-basis"), "模型选择依据：留出周 WAPE → MAE → 固定模型顺序");
         text(root.querySelector("#details-policy"), evidence.usableWeeks === null ? "留出周选模" : `负载 ${evidence.usableWeeks} 个连续有效周`);
         text(root.querySelector("#history-policy-hint"), evidence.usableWeeks === null ? "连续有效周证据不可用" : `${evidence.usableWeeks} 个连续有效周`);
-        const policyCopy = evidence.load.selection_status === "warming_up"
+        const degradedReconstructedWeek = evidence.load.selection_status === "degraded"
+          && evidence.load.selection_reason === "latest_week_high_imputation"
+          && evidence.load.model_name === "WeeklyNaive";
+        const policyCopy = degradedReconstructedWeek
+          ? "最近一周缺失较多；使用插补后的 WeeklyNaive 降级预测"
+          : evidence.load.selection_status === "warming_up"
           ? "连续有效周积累中；WeeklyNaive 可用，回测分数暂不可用"
           : selectionMetric === "mae"
             ? "留出周 WAPE 分母为 0；按 MAE 选择负载模型"
@@ -1817,7 +1822,14 @@
           candidate.classList.toggle("selected", selectedModel);
           candidate.classList.toggle("disabled", score === null && !selectedModel);
           if (score === null) {
-            text(candidate.querySelector(".candidate-state"), selectedModel && evidence.load.selection_status === "warming_up" ? "预热：暂无回测分数" : "本次未参与");
+            text(
+              candidate.querySelector(".candidate-state"),
+              selectedModel && degradedReconstructedWeek
+                ? "降级：最近一周缺失较多"
+                : selectedModel && evidence.load.selection_status === "warming_up"
+                  ? "预热：暂无回测分数"
+                  : "本次未参与",
+            );
           } else if (score.skip_reason !== null && score.skip_reason !== undefined) {
             text(candidate.querySelector(".candidate-state"), `跳过：${safeSkipReason(score.skip_reason)}`);
           } else {

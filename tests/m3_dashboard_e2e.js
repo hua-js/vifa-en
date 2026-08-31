@@ -220,6 +220,25 @@ function warmingEvidenceFixture() {
   return fixture;
 }
 
+function degradedReconstructedWeekFixture() {
+  const fixture = weeklyEvidenceFixture();
+  fixture.run.run_id = "weekly-degraded-reconstructed-run";
+  const load = fixture.run.model_manifest.series.station_total_load;
+  load.model_name = "WeeklyNaive";
+  load.selection_metric = null;
+  load.selection_reason = "latest_week_high_imputation";
+  load.selection_status = "degraded";
+  load.realized_model_name = "WeeklyNaive";
+  load.realized_status = "degraded";
+  load.realized_fallback_reason = "latest_week_high_imputation";
+  load.candidate_scores = [];
+  fixture.run.source_manifest.series.station_total_load.usable_week_count = 0;
+  fixture.run.source_manifest.series.station_total_load.weeks = [];
+  fixture.result.run = fixture.run;
+  fixture.result.series[0].model_name = "WeeklyNaive";
+  return fixture;
+}
+
 function realizedFallbackFixture() {
   const fixture = weeklyEvidenceFixture();
   fixture.run.run_id = "weekly-realized-fallback-run";
@@ -928,13 +947,31 @@ function legacyNullManifestFixture() {
   }
   assert.match(await page.locator(".candidate[data-model='WeeklyNaive'] .candidate-state").innerText(), /预热：暂无回测分数/);
 
+  customPayload = degradedReconstructedWeekFixture();
+  const degradedRequestStart = apiRequests.length;
+  const degradedResponseStart = apiResponses.length;
+  await page.locator("#run-button").click();
+  await waitForCustomResultModelMeta("0 个连续有效周 · 负载周期 7 天 · 15 分钟粒度", degradedRequestStart, degradedResponseStart);
+  assert.strictEqual(
+    await page.locator("#policy-copy").innerText(),
+    "最近一周缺失较多；使用插补后的 WeeklyNaive 降级预测",
+  );
+  assert.strictEqual(
+    await page.locator(".candidate[data-model='WeeklyNaive'] .candidate-state").innerText(),
+    "降级：最近一周缺失较多",
+  );
+  assert.strictEqual(
+    await page.locator(".series-card[data-series='station_total_load'] .series-status").innerText(),
+    "降级",
+  );
+
   customPayload = legacyPerformanceFixture();
   const legacyRequestStart = apiRequests.length;
   const legacyResponseStart = apiResponses.length;
   await page.locator("#run-button").click();
   await page.locator("#task-state").getByText("任务版本已失效，请重新预测", { exact: true }).waitFor();
   assert.strictEqual(await page.locator("#error-state").innerText(), "任务版本已失效，请重新预测");
-  assert.strictEqual(await page.locator("#result-model-meta").innerText(), "1 个连续有效周 · 负载周期 7 天 · 15 分钟粒度");
+  assert.strictEqual(await page.locator("#result-model-meta").innerText(), "0 个连续有效周 · 负载周期 7 天 · 15 分钟粒度");
   assert.match(await page.locator(".current-model-name").first().innerText(), /电站总负荷：WeeklyNaive/);
   assert.strictEqual(await page.evaluate(() => sessionStorage.getItem("vifa.m3.customForecastRuns.v1")), null);
   assert.deepStrictEqual(

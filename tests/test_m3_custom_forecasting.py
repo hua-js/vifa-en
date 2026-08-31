@@ -145,6 +145,23 @@ def load_dataset_with_literal_week_values() -> CustomTrainingDataset:
     return load_dataset_with_weeks(3, week_values=[50.0, 80.0, 70.0])
 
 
+def reconstructed_load_week_above_quality_threshold() -> CustomTrainingDataset:
+    dataset = load_dataset_with_weeks(1)
+    imputed_times = frozenset(
+        (
+            "station_total_load",
+            pd.Timestamp(dataset.frame.iloc[index]["ds"]).to_pydatetime(),
+        )
+        for index in (24, 37, 50, 63, 76, 89, 102, 115, 128)
+    )
+    return replace(
+        dataset,
+        imputed_keys=imputed_times,
+        mode="insufficient",
+        usable_weeks=(),
+    )
+
+
 def soc_dataset_with_days(days: int = 28) -> CustomTrainingDataset:
     times = pd.date_range(
         FORECAST_START - timedelta(days=days), periods=days * 24, freq="1h"
@@ -227,6 +244,19 @@ class CustomForecastAnchoringTests(unittest.TestCase):
 
 
 class LoadDispatchSelectionTests(unittest.TestCase):
+    def test_reconstructed_latest_week_above_quality_threshold_degrades_to_weekly_naive(self):
+        dataset = reconstructed_load_week_above_quality_threshold()
+
+        champion = select_custom_champion(dataset, make_selection_config(7))
+        series = forecast_custom_series(dataset, champion, make_selection_config(7))
+
+        self.assertEqual(champion.model_name, "WeeklyNaive")
+        self.assertEqual(champion.selection_reason, "latest_week_high_imputation")
+        self.assertEqual(champion.selection_status, "degraded")
+        self.assertEqual(series.model_name, "WeeklyNaive")
+        self.assertEqual(series.status, "degraded")
+        self.assertEqual(len(series.points), 24)
+
     def test_one_or_two_usable_weeks_select_weekly_naive_without_cv(self):
         champion = select_custom_champion(
             load_dataset_with_weeks(2), make_selection_config()

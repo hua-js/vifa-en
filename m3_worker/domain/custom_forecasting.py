@@ -126,6 +126,31 @@ def select_load_champion(
 ) -> CustomChampion:
     usable_week_count = len(dataset.usable_weeks)
     if usable_week_count == 0:
+        latest_week_start = (
+            config.history_end - config.weekly_season_length * config.interval
+        )
+        latest_week = dataset.frame[
+            (dataset.frame["ds"] >= latest_week_start)
+            & (dataset.frame["ds"] < config.history_end)
+        ]
+        expected_times = list(
+            pd.date_range(
+                latest_week_start,
+                periods=config.weekly_season_length,
+                freq=config.pandas_frequency,
+            )
+        )
+        observed_times = [pd.Timestamp(value) for value in latest_week["ds"]]
+        if (
+            len(latest_week) == config.weekly_season_length
+            and observed_times == expected_times
+            and not latest_week["y"].isna().any()
+        ):
+            return weekly_naive_champion(
+                dataset,
+                selection_reason="latest_week_high_imputation",
+                selection_status="degraded",
+            )
         raise M3Error(
             "insufficient_history", "insufficient_history: no complete usable load weeks"
         )
@@ -512,7 +537,9 @@ def forecast_custom_series(
         public_fallback_reason = fallback_reason
     elif champion.selection_status:
         status = champion.selection_status
-        public_fallback_reason = None
+        public_fallback_reason = (
+            champion.selection_reason if status == "degraded" else None
+        )
     elif champion.selection_reason and champion.selection_reason != "wape_unavailable":
         status = "degraded"
         public_fallback_reason = champion.selection_reason

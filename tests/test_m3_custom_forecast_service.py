@@ -70,14 +70,18 @@ def make_observations(
     history_days: int = 7,
     load_week_values: list[float] | None = None,
     missing_load_index: int | None = None,
+    missing_load_indices: set[int] | None = None,
 ) -> list[CustomObservationPoint]:
     history_start = HISTORY_END - timedelta(days=history_days)
     if load_week_values is not None and len(load_week_values) * 7 != history_days:
         raise ValueError("load_week_values must cover complete history weeks")
     points: list[CustomObservationPoint] = []
+    missing_indices = set(missing_load_indices or ())
+    if missing_load_index is not None:
+        missing_indices.add(missing_load_index)
     for index in range(history_days * 24):
         timestamp = history_start + timedelta(hours=index)
-        if index != missing_load_index:
+        if index not in missing_indices:
             load_value = (
                 load_week_values[index // (7 * 24)]
                 if load_week_values is not None
@@ -310,6 +314,48 @@ class CustomForecastServiceTests(unittest.TestCase):
         self.assertEqual(baseline.model_name, "WeeklyNaive")
         self.assertEqual(baseline.status, "warming_up")
         self.assertEqual(len(baseline.points), 24)
+
+    def test_execute_persists_degraded_weekly_naive_when_latest_week_is_reconstructed(self):
+        """A complete reconstructed week must forecast instead of failing at 5%."""
+        run = make_run(run_id="degraded-reconstructed-week-run")
+        repository = InMemoryRepository(run)
+        service = CustomForecastService(
+            repository,
+            InMemorySource(
+                make_observations(
+                    missing_load_indices={24, 37, 50, 63, 76, 89, 102, 115, 128}
+                )
+            ),
+            now=lambda: NOW,
+            station_ids=("ES01",),
+        )
+        self.addCleanup(service.close)
+        self.assertTrue(service._capacity.acquire(blocking=False))
+
+        service._execute(run.run_id)
+
+        self.assertEqual(repository.run.status, "succeeded")
+        load_manifest = repository.run.model_manifest["series"]["station_total_load"]
+        self.assertEqual(load_manifest["model_name"], "WeeklyNaive")
+        self.assertEqual(
+            load_manifest["selection_reason"], "latest_week_high_imputation"
+        )
+        self.assertEqual(load_manifest["selection_status"], "degraded")
+        self.assertEqual(load_manifest["realized_status"], "degraded")
+        self.assertEqual(
+            load_manifest["realized_fallback_reason"],
+            "latest_week_high_imputation",
+        )
+        self.assertEqual(
+            repository.run.source_manifest["series"]["station_total_load"][
+                "usable_week_count"
+            ],
+            0,
+        )
+        self.assertEqual(
+            repository.captured_baselines["station_total_load"].status,
+            "degraded",
+        )
 
     def test_execute_persists_selected_and_realized_load_fallback_evidence(self):
         """Selection evidence must not overwrite the model that produced stored points."""

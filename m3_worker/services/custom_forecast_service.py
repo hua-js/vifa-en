@@ -48,6 +48,9 @@ DIAGNOSTIC_INTEGER_FIELDS = (
 SAFE_LOAD_SKIP_REASONS = frozenset(
     {"no_scorable_points", "non_finite_prediction", "wape_unavailable"}
 )
+SAFE_REALIZED_FALLBACK_REASONS = SAFE_LOAD_SKIP_REASONS | {
+    "latest_week_high_imputation"
+}
 
 
 def _safe_error_code(error: BaseException) -> str:
@@ -257,7 +260,7 @@ class CustomForecastService:
             return None
         if type(value) is not str:
             return "unknown"
-        if value in SAFE_LOAD_SKIP_REASONS:
+        if value in SAFE_REALIZED_FALLBACK_REASONS:
             return value
         if (
             value
@@ -332,10 +335,15 @@ class CustomForecastService:
                 for unique_id in SERIES_IDS
             ]
             series_by_id = {item.unique_id: item for item in series}
+            selected_load_champion = champions["station_total_load"]
             baseline_series = [
                 forecast_custom_series(
                     datasets["station_total_load"],
-                    weekly_naive_champion(datasets["station_total_load"]),
+                    (
+                        selected_load_champion
+                        if selected_load_champion.model_name == "WeeklyNaive"
+                        else weekly_naive_champion(datasets["station_total_load"])
+                    ),
                     run.config,
                 ),
                 forecast_custom_series(
