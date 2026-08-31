@@ -254,8 +254,8 @@ function legacyPerformanceFixture() {
   fixture.result.run = fixture.run;
   fixture.result.series[0].model_name = "SeasonalNaive";
   fixture.performance.series = [
-    { unique_id: "station_total_load", mape_percent: 13, baseline_mape_percent: 16, relative_baseline_improvement_percent: 18.75, scorable_point_count: 384, run_count: 4 },
-    { unique_id: "storage_soc", mape_percent: 7, baseline_mape_percent: 9, relative_baseline_improvement_percent: 22.22, scorable_point_count: 384, run_count: 4 },
+    { unique_id: "station_total_load", mape_percent: 73, baseline_mape_percent: 91, relative_baseline_improvement_percent: 19.78, scorable_point_count: 384, run_count: 4 },
+    { unique_id: "storage_soc", mape_percent: 47, baseline_mape_percent: 59, relative_baseline_improvement_percent: 20.34, scorable_point_count: 384, run_count: 4 },
   ];
   return fixture;
 }
@@ -553,6 +553,7 @@ function legacyNullManifestFixture() {
   });
 
   await page.goto(`${origin}/ett?token=must-not-forward&api=https://example.invalid/leak`, { waitUntil: "domcontentloaded" });
+  const preResultSelectionBasis = await page.locator(".selection-basis").innerText();
   await page.waitForFunction(() => window.__m3AuthMessages.some((item) => item.data?.type === "vifa-m3-auth-ready"));
   assert.deepStrictEqual(apiRequests, [], "API request must wait for current-user authentication");
   const readyMessage = await page.evaluate(() => window.__m3AuthMessages.find((item) => item.data?.type === "vifa-m3-auth-ready"));
@@ -932,33 +933,51 @@ function legacyNullManifestFixture() {
   const legacyResponseStart = apiResponses.length;
   await page.locator("#run-button").click();
   await waitForCustomResultModelMeta("28 天训练 · 15 分钟粒度", legacyRequestStart, legacyResponseStart);
-  for (const selector of [".load-wape-value", ".load-mae-value", ".load-mape-value", ".baseline-value", ".improvement-value"]) {
-    assert.ok((await page.locator(selector).allTextContents()).every((value) => value === "—"), `legacy run ${selector} must not show generic aggregate metrics`);
+  for (const selector of [
+    ".load-wape-value",
+    ".load-mae-value",
+    ".load-mape-value",
+    ".legacy-load-mape-value",
+    ".soc-mape-value",
+    ".model-soc-mae",
+    ".baseline-value",
+    ".improvement-value",
+    ".compare-model-value",
+    ".compare-baseline-value",
+    ".baseline-note-value",
+  ]) {
+    assert.ok((await page.locator(selector).allTextContents()).every((value) => value === "—"), `legacy run ${selector} must suppress weekly-policy aggregates`);
   }
-  assert.deepStrictEqual(await page.locator(".legacy-load-mape-value").allTextContents(), ["13.00%"]);
-  assert.deepStrictEqual(await page.locator(".compare-model-value").allTextContents(), ["13.00%"]);
-  assert.deepStrictEqual(await page.locator(".compare-baseline-value").allTextContents(), ["16.00%"]);
-  assert.deepStrictEqual(await page.locator(".baseline-note-value").allTextContents(), ["16.00%"]);
   assert.strictEqual(await page.locator(".compare-model-label").innerText(), "当前模型 MAPE");
   assert.strictEqual(await page.locator(".compare-baseline-label").innerText(), "SeasonalNaive 基线");
   assert.strictEqual(await page.locator(".baseline-note-label").innerText(), "SeasonalNaive 同配置基线");
-  assert.strictEqual(await inlineBarPercent(page, ".model-bar"), 81.3);
-  assert.strictEqual(await inlineBarPercent(page, ".baseline-bar"), 100);
+  assert.strictEqual(await inlineBarPercent(page, ".model-bar"), 0);
+  assert.strictEqual(await inlineBarPercent(page, ".baseline-bar"), 0);
+  assert.strictEqual(await page.locator("#performance-zone-subtitle").innerText(), "旧任务无同策略可比汇总；未显示 weekly_load_v1 历史指标");
+  assert.strictEqual(await page.locator(".acceptance-summary").innerText(), "无同策略汇总");
+  assert.match(await page.locator(".current-model-name").first().innerText(), /电站总负荷：SeasonalNaive · 储能 SOC：SeasonalNaive（状态锚定）/);
   assert.strictEqual(await page.locator("#policy-name").innerText(), "旧版日周期策略");
   assert.strictEqual(await page.locator("#policy-version").innerText(), "无周选模证据");
   assert.match(await page.locator("#policy-copy").innerText(), /未记录 weekly_load_v1 选模证据/);
   assert.ok(await page.locator(".candidate").evaluateAll((nodes) => nodes.every((node) => node.classList.contains("disabled") && !node.classList.contains("selected"))));
   assert.ok((await page.locator(".candidate-state").allTextContents()).every((value) => value === "旧任务无周候选证据"));
+  assert.strictEqual(
+    preResultSelectionBasis,
+    "模型选择依据：留出周 WAPE → MAE → 固定模型顺序",
+    "pre-result policy copy must name the deterministic final tie-break",
+  );
 
   customPayload = legacyNullManifestFixture();
   const legacyNullRequestStart = apiRequests.length;
   const legacyNullResponseStart = apiResponses.length;
   await page.locator("#run-button").click();
   await waitForCustomResultModelMeta("28 天训练 · 15 分钟粒度", legacyNullRequestStart, legacyNullResponseStart);
-  for (const selector of [".load-wape-value", ".load-mae-value", ".load-mape-value", ".baseline-value", ".improvement-value"]) {
-    assert.ok((await page.locator(selector).allTextContents()).every((value) => value === "—"), `legacy null manifests ${selector} must not show weekly evidence`);
+  for (const selector of [".load-wape-value", ".load-mae-value", ".load-mape-value", ".legacy-load-mape-value", ".soc-mape-value", ".baseline-value", ".improvement-value"]) {
+    assert.ok((await page.locator(selector).allTextContents()).every((value) => value === "—"), `legacy null manifests ${selector} must suppress weekly-policy aggregates`);
   }
-  assert.deepStrictEqual(await page.locator(".legacy-load-mape-value").allTextContents(), ["13.00%"]);
+  assert.strictEqual(await inlineBarPercent(page, ".model-bar"), 0);
+  assert.strictEqual(await inlineBarPercent(page, ".baseline-bar"), 0);
+  assert.strictEqual(await page.locator("#performance-zone-subtitle").innerText(), "旧任务无同策略可比汇总；未显示 weekly_load_v1 历史指标");
 
   await page.screenshot({ path: "/tmp/m3-task6-desktop.png", fullPage: true });
   assert.strictEqual(await page.locator("#error-state").isHidden(), true);

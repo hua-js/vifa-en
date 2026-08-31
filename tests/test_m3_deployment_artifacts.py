@@ -437,6 +437,19 @@ class DeploymentArtifactTests(unittest.TestCase):
             "baseline-note-label",
         ):
             self.assertIn(label, html)
+        self.assertIn(
+            '<span class="selection-basis">模型选择依据：留出周 WAPE → MAE → 固定模型顺序</span>',
+            html,
+        )
+        self.assertNotIn(
+            '<span class="selection-basis">模型选择依据：留出周 WAPE → MAE → MAPE</span>',
+            html,
+        )
+
+    def test_production_page_marks_legacy_performance_as_incomparable(self):
+        html = M3_HTML.read_text(encoding="utf-8")
+
+        self.assertIn("旧任务无同策略可比汇总", html)
 
     def test_production_flow_sync_reports_and_repairs_drift(self):
         python = sys.executable

@@ -566,7 +566,7 @@
             </div></div>
             <div class="selection-panel"><div class="panel-title">选模策略与候选模型</div><div class="rule"><span class="rule-dot"></span><span><strong id="policy-name">等待数据</strong> · <span id="policy-copy">载入历史长度后显示选模策略</span></span></div>
               <div class="candidates"><div class="candidate" data-model="WeeklyNaive"><div class="candidate-name">WeeklyNaive</div><div class="candidate-role">上一连续有效周<br>同刻度负载基线</div><div class="candidate-state">1 周起可用</div></div><div class="candidate" data-model="WeeklyWeighted2"><div class="candidate-name">WeeklyWeighted2</div><div class="candidate-role">最近两个连续有效周<br>加权负载轮廓</div><div class="candidate-state">3 周起可用</div></div><div class="candidate" data-model="WeeklyMedian3"><div class="candidate-name">WeeklyMedian3</div><div class="candidate-role">最近三个连续有效周<br>中位数负载轮廓</div><div class="candidate-state">4 周起可用</div></div><div class="candidate" data-model="AutoARIMA"><div class="candidate-name">AutoARIMA</div><div class="candidate-role">周季节自回归模型<br>仅 5 分钟及以上粒度</div><div class="candidate-state">4 周起可用</div></div><div class="candidate" data-model="MSTL"><div class="candidate-name">MSTL</div><div class="candidate-role">日 / 周季节分解<br>仅 5 分钟及以上粒度</div><div class="candidate-state">4 周起可用</div></div></div>
-              <div class="model-foot"><span class="selection-basis">模型选择依据：留出周 WAPE → MAE → MAPE</span><span>策略版本：<strong id="policy-version">weekly_load_v1</strong></span></div>
+              <div class="model-foot"><span class="selection-basis">模型选择依据：留出周 WAPE → MAE → 固定模型顺序</span><span>策略版本：<strong id="policy-version">weekly_load_v1</strong></span></div>
             </div>
           </div>
         </div>
@@ -1846,6 +1846,20 @@
         text(root.querySelector(".load-mape-note"), "仅 weekly_load_v1 任务提供留出周 MAPE");
         text(root.querySelector(".baseline-mape-note"), "仅 weekly_load_v1 任务提供 WeeklyNaive WAPE");
         text(root.querySelector(".improvement-note"), "仅 weekly_load_v1 任务提供相对 WAPE 提升");
+        if (loadEvidenceFor(run) === null) {
+          root.querySelectorAll(".legacy-load-mape-value, .soc-mape-value, .model-soc-mae, .compare-model-value, .compare-baseline-value, .baseline-note-value").forEach((node) => text(node, "—"));
+          const socPerformanceValue = root.querySelector(".performance-value.soc-mape-value");
+          if (socPerformanceValue !== null) socPerformanceValue.removeAttribute("data-state");
+          text(root.querySelector("#performance-zone-subtitle"), "旧任务无同策略可比汇总；未显示 weekly_load_v1 历史指标");
+          text(root.querySelector(".current-mape-note"), "旧任务无同策略可比汇总");
+          text(root.querySelector(".load-mae-note"), "旧任务无同策略可比汇总");
+          text(root.querySelector(".load-mape-note"), "旧任务无同策略可比汇总");
+          text(root.querySelector(".baseline-mape-note"), "旧任务无同策略可比汇总");
+          text(root.querySelector(".improvement-note"), "旧任务无同策略可比汇总");
+          text(root.querySelector(".acceptance-summary"), "无同策略汇总");
+          setComparisonBars(null, null);
+          return;
+        }
         const loadPending = load.run_count === 0;
         const socPending = soc.run_count === 0;
         const loadMape = loadPending ? "待评估" : formatPercent(load.mape_percent);
