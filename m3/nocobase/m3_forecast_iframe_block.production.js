@@ -31,7 +31,7 @@ void (async () => {
 
     const iframe = document.createElement("iframe");
     iframe.src = iframeUrl.href;
-    iframe.title = "场站未来能耗预测";
+    iframe.title = "电站未来能耗预测";
     iframe.setAttribute("sandbox", "allow-scripts allow-same-origin");
     iframe.referrerPolicy = "no-referrer";
     iframe.style.width = "100%";

@@ -18,7 +18,7 @@
   },
   "block": {
     "type": "iframe_html",
-    "title": "场站未来能耗预测",
+    "title": "电站未来能耗预测",
     "iframe_url": "https://opdash.lvkpower.com/ett",
     "authentication": "none_public_read_write"
   },
@@ -59,7 +59,7 @@
     },
     {
       "step": 2,
-      "action": "新增普通 iframe/HTML 区块，标题设置为场站未来能耗预测"
+      "action": "新增普通 iframe/HTML 区块，标题设置为电站未来能耗预测"
     },
     {
       "step": 3,
@@ -77,7 +77,7 @@
   "verification": [
     {
       "id": "dashboard",
-      "expected": "页面展示两个电站的最近24小时实绩、未来24小时预测和模型状态"
+      "expected": "页面展示两个电站状态；提交手动预测后，按相同目标时刻叠加预测值与对应实际值，未产生任务结果时不展示误导性的48小时拼接曲线"
     },
     {
       "id": "public_read_write",
@@ -91,7 +91,7 @@
   "rollback": [
     {
       "step": 1,
-      "action": "停用或删除场站未来能耗预测 iframe 区块"
+      "action": "停用或删除电站未来能耗预测 iframe 区块"
     },
     {
       "step": 2,
