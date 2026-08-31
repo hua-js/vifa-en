@@ -88,6 +88,22 @@ class WeeklyProfileTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             weekly_profile_values(dataset, "WeeklyNaive", origin=START, periods=8)
 
+    def test_profile_does_not_access_future_row_value_for_valid_forecast(self):
+        class UnexpectedFutureValue:
+            def __float__(self):
+                raise AssertionError("future row value was accessed")
+
+        dataset = make_dataset(
+            {
+                START - timedelta(days=7): 42.0,
+                START: UnexpectedFutureValue(),
+            }
+        )
+
+        result = weekly_profile_values(dataset, "WeeklyNaive", origin=START, periods=1)
+
+        self.assertEqual(result, [42.0])
+
 
 class EligibilityTests(unittest.TestCase):
     def test_high_frequency_models_are_lightweight_only(self):

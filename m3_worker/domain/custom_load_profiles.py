@@ -104,7 +104,7 @@ def weekly_profile_values(
     source_values: dict[datetime, float] = {}
     for row in dataset.frame.itertuples(index=False):
         timestamp = _as_datetime(getattr(row, "ds"))
-        if timestamp is None:
+        if timestamp is None or timestamp >= origin:
             continue
         try:
             value = float(getattr(row, "y"))
