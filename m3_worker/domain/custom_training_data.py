@@ -1,7 +1,7 @@
 """Build interval-independent M3 training frames without changing v1 data."""
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pandas as pd
 
@@ -13,6 +13,17 @@ from m3_worker.custom_forecast_contracts import (
 
 
 SHORT_GAP_BUCKETS = 2
+MAX_WEEK_IMPUTATION_RATIO = 0.05
+
+
+@dataclass(frozen=True)
+class CustomWeekSummary:
+    start: datetime
+    end: datetime
+    point_count: int
+    real_point_count: int
+    imputed_point_count: int
+    imputation_ratio: float
 
 
 @dataclass(frozen=True)
@@ -24,6 +35,7 @@ class CustomTrainingDataset:
     mode: str
     interval_seconds: int
     points_per_day: int
+    usable_weeks: tuple[CustomWeekSummary, ...] = ()
 
 
 def _history_mode(real_point_count: int, points_per_day: int) -> str:
@@ -33,6 +45,40 @@ def _history_mode(real_point_count: int, points_per_day: int) -> str:
     if days < 28:
         return "warming_up"
     return "full"
+
+
+def _usable_week_summaries(
+    frame: pd.DataFrame,
+    imputed_keys: frozenset[tuple[str, datetime]],
+    unique_id: str,
+    config: CustomForecastConfig,
+) -> tuple[CustomWeekSummary, ...]:
+    expected = config.points_per_day * 7
+    summaries: list[CustomWeekSummary] = []
+    week_end = config.history_end
+    while week_end - timedelta(days=7) >= config.history_start:
+        week_start = week_end - timedelta(days=7)
+        week = frame[(frame["ds"] >= week_start) & (frame["ds"] < week_end)]
+        if len(week) != expected or week["y"].isna().any():
+            break
+        imputed = sum(
+            (unique_id, pd.Timestamp(value).to_pydatetime()) in imputed_keys
+            for value in week["ds"]
+        )
+        if imputed / expected > MAX_WEEK_IMPUTATION_RATIO:
+            break
+        summaries.append(
+            CustomWeekSummary(
+                start=week_start,
+                end=week_end,
+                point_count=expected,
+                real_point_count=expected - imputed,
+                imputed_point_count=imputed,
+                imputation_ratio=imputed / expected,
+            )
+        )
+        week_end = week_start
+    return tuple(reversed(summaries))
 
 
 def build_custom_training_dataset(
@@ -118,15 +164,17 @@ def build_custom_training_dataset(
         raise ValueError(f"no continuous observations for {unique_id}")
     frame["unique_id"] = unique_id
     retained_imputed = frame.loc[frame["ds"].isin(imputed_times), "ds"]
+    imputed_keys = frozenset(
+        (unique_id, value.to_pydatetime()) for value in retained_imputed
+    )
     real_point_count = len(frame) - len(retained_imputed)
     return CustomTrainingDataset(
         frame=frame[["unique_id", "ds", "y"]],
-        imputed_keys=frozenset(
-            (unique_id, value.to_pydatetime()) for value in retained_imputed
-        ),
+        imputed_keys=imputed_keys,
         start=frame["ds"].iloc[0].to_pydatetime(),
         end=frame["ds"].iloc[-1].to_pydatetime(),
         mode=_history_mode(real_point_count, config.points_per_day),
         interval_seconds=config.interval_seconds,
         points_per_day=config.points_per_day,
+        usable_weeks=_usable_week_summaries(frame, imputed_keys, unique_id, config),
     )
