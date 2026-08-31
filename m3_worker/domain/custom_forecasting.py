@@ -1,6 +1,6 @@
 """StatsForecast selection and prediction for configurable M3 intervals."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from importlib.metadata import version
 
 import numpy as np
@@ -14,6 +14,12 @@ from m3_worker.custom_forecast_contracts import (
     CustomForecastPoint,
     CustomForecastSeries,
     validate_custom_series_for_config,
+)
+from m3_worker.domain.custom_load_profiles import (
+    LoadCandidateScore,
+    eligible_load_models,
+    load_candidate_score,
+    weekly_profile_values,
 )
 from m3_worker.domain.custom_training_data import CustomTrainingDataset
 from m3_worker.errors import M3Error
@@ -52,6 +58,9 @@ class CustomChampion:
     training_end: pd.Timestamp
     statsforecast_version: str
     selection_reason: str | None = None
+    candidate_scores: tuple[LoadCandidateScore, ...] = ()
+    selection_metric: str | None = None
+    selection_status: str | None = None
 
 
 def seasonal_naive_champion(
@@ -65,6 +74,23 @@ def seasonal_naive_champion(
         training_end=pd.Timestamp(dataset.end),
         statsforecast_version=version("statsforecast"),
         selection_reason=selection_reason,
+    )
+
+
+def weekly_naive_champion(
+    dataset: CustomTrainingDataset,
+    selection_reason: str | None = None,
+    selection_status: str | None = None,
+) -> CustomChampion:
+    return CustomChampion(
+        model_name="WeeklyNaive",
+        cv_mape_percent=None,
+        selected_at=pd.Timestamp.now(tz="Asia/Shanghai"),
+        training_start=pd.Timestamp(dataset.start),
+        training_end=pd.Timestamp(dataset.end),
+        statsforecast_version=version("statsforecast"),
+        selection_reason=selection_reason,
+        selection_status=selection_status,
     )
 
 
@@ -92,7 +118,103 @@ def _model_mape(
     return score if np.isfinite(score) else None
 
 
-def select_custom_champion(
+def select_load_champion(
+    dataset: CustomTrainingDataset, config: CustomForecastConfig
+) -> CustomChampion:
+    usable_week_count = len(dataset.usable_weeks)
+    if usable_week_count == 0:
+        raise M3Error(
+            "insufficient_history", "insufficient_history: no complete usable load weeks"
+        )
+    if usable_week_count < 3:
+        return weekly_naive_champion(
+            dataset,
+            selection_reason="fewer_than_three_usable_weeks",
+            selection_status="warming_up",
+        )
+
+    latest_week = dataset.usable_weeks[-1]
+    holdout = dataset.frame[
+        (dataset.frame["ds"] >= latest_week.start)
+        & (dataset.frame["ds"] < latest_week.end)
+    ]
+    training = replace(
+        dataset,
+        frame=dataset.frame[dataset.frame["ds"] < latest_week.start].copy(),
+    )
+    unique_id = dataset.frame["unique_id"].iloc[0]
+    excluded_times = frozenset(
+        timestamp
+        for key_unique_id, timestamp in dataset.imputed_keys
+        if key_unique_id == unique_id
+    )
+    scores: list[LoadCandidateScore] = []
+    for model_name in eligible_load_models(usable_week_count, config.interval_seconds):
+        try:
+            if model_name.startswith("Weekly"):
+                predictions = weekly_profile_values(
+                    training,
+                    model_name,
+                    origin=latest_week.start,
+                    periods=len(holdout),
+                )
+            else:
+                engine = StatsForecast(
+                    models=[_load_automatic_model(model_name, config)],
+                    freq=config.pandas_frequency,
+                    n_jobs=1,
+                )
+                forecast = engine.forecast(df=training.frame, h=len(holdout))
+                predictions = forecast[model_name].tolist()
+            scores.append(
+                load_candidate_score(
+                    model_name, holdout, predictions, excluded_times
+                )
+            )
+        except Exception as error:
+            scores.append(
+                LoadCandidateScore(
+                    model_name,
+                    None,
+                    None,
+                    None,
+                    0,
+                    type(error).__name__,
+                )
+            )
+
+    viable_scores = [score for score in scores if score.mae is not None]
+    if not viable_scores:
+        raise M3Error("model_selection_failed", "all load candidates failed")
+    winner = min(viable_scores, key=lambda score: score.comparison_key)
+    return CustomChampion(
+        model_name=winner.model_name,
+        cv_mape_percent=winner.mape_percent,
+        selected_at=pd.Timestamp.now(tz="Asia/Shanghai"),
+        training_start=pd.Timestamp(dataset.start),
+        training_end=pd.Timestamp(dataset.end),
+        statsforecast_version=version("statsforecast"),
+        candidate_scores=tuple(scores),
+        selection_metric="wape_percent",
+    )
+
+
+def _load_automatic_model(name: str, config: CustomForecastConfig):
+    if name == "AutoARIMA":
+        return AutoARIMA(
+            season_length=config.weekly_season_length,
+            alias="AutoARIMA",
+        )
+    if name == "MSTL":
+        return MSTL(
+            season_length=[config.daily_season_length, config.weekly_season_length],
+            trend_forecaster=AutoARIMA(),
+            alias="MSTL",
+        )
+    raise ValueError(f"unsupported load automatic model: {name}")
+
+
+def _select_soc_champion(
     dataset: CustomTrainingDataset, config: CustomForecastConfig
 ) -> CustomChampion:
     if dataset.interval_seconds != config.interval_seconds:
@@ -134,6 +256,17 @@ def select_custom_champion(
     )
 
 
+def select_custom_champion(
+    dataset: CustomTrainingDataset, config: CustomForecastConfig
+) -> CustomChampion:
+    if dataset.interval_seconds != config.interval_seconds:
+        raise M3Error("training_interval_invalid", "Training interval does not match")
+    unique_id = dataset.frame["unique_id"].iloc[0]
+    if is_load_series(unique_id):
+        return select_load_champion(dataset, config)
+    return _select_soc_champion(dataset, config)
+
+
 def _model_by_name(name: str, config: CustomForecastConfig):
     for model_name, factory in _candidate_factories(config):
         if model_name == name:
@@ -164,7 +297,10 @@ def _forecast_frame(
     champion: CustomChampion,
     config: CustomForecastConfig,
 ) -> tuple[pd.DataFrame, str, str | None]:
+    unique_id = dataset.frame["unique_id"].iloc[0]
     try:
+        if is_load_series(unique_id):
+            return _forecast_load_model(dataset, champion, config)
         model = _model_by_name(champion.model_name, config)
         engine = StatsForecast(
             models=[model], freq=config.pandas_frequency, n_jobs=1
@@ -175,6 +311,27 @@ def _forecast_frame(
             None,
         )
     except Exception as champion_error:
+        if is_load_series(unique_id):
+            if champion.model_name == "WeeklyNaive":
+                raise M3Error(
+                    "weekly_naive_failed", "weekly naive final forecast failed"
+                ) from None
+            try:
+                values = weekly_profile_values(
+                    dataset,
+                    "WeeklyNaive",
+                    origin=config.forecast_start,
+                    periods=config.expected_points_per_series,
+                )
+                return (
+                    _load_frame(config, unique_id, "WeeklyNaive", values),
+                    "WeeklyNaive",
+                    type(champion_error).__name__,
+                )
+            except Exception:
+                raise M3Error(
+                    "weekly_naive_failed", "weekly naive final forecast failed"
+                ) from None
         if champion.model_name == "SeasonalNaive":
             raise
         fallback = StatsForecast(
@@ -191,6 +348,52 @@ def _forecast_frame(
         )
 
 
+def _forecast_load_model(
+    dataset: CustomTrainingDataset,
+    champion: CustomChampion,
+    config: CustomForecastConfig,
+) -> tuple[pd.DataFrame, str, str | None]:
+    unique_id = dataset.frame["unique_id"].iloc[0]
+    if champion.model_name.startswith("Weekly"):
+        values = weekly_profile_values(
+            dataset,
+            champion.model_name,
+            origin=config.forecast_start,
+            periods=config.expected_points_per_series,
+        )
+        return (
+            _load_frame(config, unique_id, champion.model_name, values),
+            champion.model_name,
+            None,
+        )
+    model = _load_automatic_model(champion.model_name, config)
+    engine = StatsForecast(models=[model], freq=config.pandas_frequency, n_jobs=1)
+    return (
+        engine.forecast(df=dataset.frame, h=config.expected_points_per_series),
+        champion.model_name,
+        None,
+    )
+
+
+def _load_frame(
+    config: CustomForecastConfig,
+    unique_id: str,
+    model_name: str,
+    values: list[float],
+) -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "unique_id": [unique_id] * len(values),
+            "ds": pd.date_range(
+                config.forecast_start,
+                periods=len(values),
+                freq=config.pandas_frequency,
+            ),
+            model_name: values,
+        }
+    )
+
+
 def forecast_custom_series(
     dataset: CustomTrainingDataset,
     champion: CustomChampion | None,
@@ -198,7 +401,11 @@ def forecast_custom_series(
 ) -> CustomForecastSeries:
     unique_id = dataset.frame["unique_id"].iloc[0]
     unit = "kW" if is_load_series(unique_id) else "%"
-    if dataset.mode == "insufficient":
+    if dataset.mode == "insufficient" and not (
+        is_load_series(unique_id)
+        and champion is not None
+        and champion.selection_status is not None
+    ):
         return CustomForecastSeries(
             unique_id=unique_id,
             unit=unit,
@@ -236,17 +443,25 @@ def forecast_custom_series(
                 is_clipped=clipped,
             )
         )
+    if fallback_reason:
+        status = "degraded"
+        public_fallback_reason = fallback_reason
+    elif champion.selection_status:
+        status = champion.selection_status
+        public_fallback_reason = None
+    elif champion.selection_reason:
+        status = "degraded"
+        public_fallback_reason = champion.selection_reason
+    else:
+        status = "warming_up" if dataset.mode == "warming_up" else "ok"
+        public_fallback_reason = None
     series = CustomForecastSeries(
         unique_id=unique_id,
         unit=unit,
         model_name=used_model,
-        status=(
-            "degraded"
-            if fallback_reason or champion.selection_reason
-            else ("warming_up" if dataset.mode == "warming_up" else "ok")
-        ),
+        status=status,
         points=points,
-        fallback_reason=fallback_reason or champion.selection_reason,
+        fallback_reason=public_fallback_reason,
     )
     validate_custom_series_for_config(series, config)
     return series
