@@ -21,6 +21,12 @@ LIST_PAGE_SIZE = 1000
 MAX_LIST_PAGES = 64
 MAX_LIST_RECORDS = 50_000
 MAX_CREATE_RECORDS = 500
+BULK_CREATE_TIMEOUT = httpx.Timeout(
+    connect=2.0,
+    read=60.0,
+    write=15.0,
+    pool=2.0,
+)
 IDENTIFIER_PATTERN = re.compile(r"[a-z][a-z0-9_]*\Z")
 NOCOBASE_SYSTEM_FIELDS = frozenset(
     {"createdAt", "createdBy", "updatedAt", "updatedBy"}
@@ -297,17 +303,23 @@ class NocoBaseApiClient:
         *,
         params: dict[str, str] | list[tuple[str, str]] | None = None,
         json_body: dict[str, Any] | list[dict[str, Any]] | None = None,
+        timeout: httpx.Timeout | None = None,
         parse: Callable[[object], Any],
     ) -> Any:
         collection = self._identifier(collection, "collection")
 
         def request_factory() -> httpx.Request:
+            request_kwargs = {
+                "params": params,
+                "json": json_body,
+                "headers": self._headers,
+            }
+            if timeout is not None:
+                request_kwargs["timeout"] = timeout
             return self._client.build_request(
                 method,
                 f"{self._base_url}/api/{collection}:{action}",
-                params=params,
-                json=json_body,
-                headers=self._headers,
+                **request_kwargs,
             )
 
         def consume(response: httpx.Response) -> Any:
@@ -423,6 +435,7 @@ class NocoBaseApiClient:
             collection,
             "create",
             json_body=checked_values,
+            timeout=BULK_CREATE_TIMEOUT,
             parse=lambda value: self._parse_records_envelope(
                 value, len(checked_values)
             ),

@@ -169,6 +169,26 @@ def make_api(handler, retry: RetryPolicy | None = None) -> NocoBaseApiClient:
 
 
 class NocoBaseClientTests(unittest.TestCase):
+    def test_bulk_create_uses_extended_read_timeout(self):
+        """Large NocoBase creates need longer than the shared 15-second read window."""
+        timeout: dict[str, float] | None = None
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            nonlocal timeout
+            timeout = request.extensions.get("timeout")
+            return httpx.Response(200, json={"data": [{"id": 1}]})
+
+        result = make_api(handler).create_records(
+            "energy_forecast_manual_points", [{"run_pk": 14}]
+        )
+
+        self.assertEqual(result, [{"id": 1}])
+        self.assertIsNotNone(timeout)
+        self.assertEqual(timeout["connect"], 2.0)
+        self.assertEqual(timeout["read"], 60.0)
+        self.assertEqual(timeout["write"], 15.0)
+        self.assertEqual(timeout["pool"], 2.0)
+
     def test_uses_fixed_resource_action_body_and_bearer_header_only(self):
         """Moving the token into URL/body or changing the fixed action breaks the API/security contract."""
         requests: list[httpx.Request] = []

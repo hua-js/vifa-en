@@ -521,6 +521,23 @@ class CustomForecastRepository:
                 row[field] = normalized[field]
         return rows
 
+    def _point_batch_is_persisted(
+        self, run: StoredCustomRun, chunk: list[dict[str, object]]
+    ) -> bool:
+        try:
+            persisted = {
+                self._point_key(row): row for row in self.list_points(run)
+            }
+        except Exception:
+            return False
+        for expected in chunk:
+            row = persisted.get(self._point_key(expected))
+            if row is None or canonical_hash(
+                self._immutable_point(row)
+            ) != canonical_hash(self._immutable_point(expected)):
+                return False
+        return True
+
     def store_points(
         self,
         run: StoredCustomRun,
@@ -563,6 +580,10 @@ class CustomForecastRepository:
                         ),
                     }
                 )
+                if error.code == "sink_http_failed" and self._point_batch_is_persisted(
+                    run, chunk
+                ):
+                    continue
                 raise M3Error(error.code, error.message, details) from error
             if len(created) != len(chunk):
                 raise M3Error(
