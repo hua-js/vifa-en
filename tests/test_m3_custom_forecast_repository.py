@@ -53,13 +53,15 @@ def make_run() -> StoredCustomRun:
     )
 
 
-def make_series(unique_id: str) -> CustomForecastSeries:
+def make_series(
+    unique_id: str, *, model_name: str = "SeasonalNaive"
+) -> CustomForecastSeries:
     is_load = unique_id == "station_total_load"
     value = 800.0 if is_load else 55.0
     return CustomForecastSeries(
         unique_id=unique_id,
         unit="kW" if is_load else "%",
-        model_name="SeasonalNaive",
+        model_name=model_name,
         status="ok",
         points=[
             CustomForecastPoint(
@@ -114,6 +116,35 @@ class AmbiguousCommitApi:
 
 
 class CustomForecastRepositoryTests(unittest.TestCase):
+    def test_requires_weekly_naive_load_baseline_and_seasonal_naive_soc_baseline(self):
+        """Changing either fixed baseline model must reject the persistence payload."""
+        run = make_run()
+        series = [
+            make_series("station_total_load"),
+            make_series("storage_soc"),
+        ]
+        baselines = [
+            make_series("station_total_load", model_name="WeeklyNaive"),
+            make_series("storage_soc", model_name="SeasonalNaive"),
+        ]
+
+        values = CustomForecastRepository._point_values(run, series, baselines)
+
+        self.assertEqual(len(values), 48)
+        for unique_id, model_name in (
+            ("station_total_load", "SeasonalNaive"),
+            ("storage_soc", "WeeklyNaive"),
+        ):
+            wrong_baselines = [
+                make_series("station_total_load", model_name="WeeklyNaive"),
+                make_series("storage_soc", model_name="SeasonalNaive"),
+            ]
+            wrong_baselines[0 if unique_id == "station_total_load" else 1] = (
+                make_series(unique_id, model_name=model_name)
+            )
+            with self.subTest(unique_id=unique_id), self.assertRaises(M3Error):
+                CustomForecastRepository._point_values(run, series, wrong_baselines)
+
     def test_accepts_a_failed_create_when_the_exact_batch_was_committed(self):
         api = AmbiguousCommitApi()
         repository = CustomForecastRepository(api)
@@ -122,8 +153,12 @@ class CustomForecastRepositoryTests(unittest.TestCase):
             make_series("station_total_load"),
             make_series("storage_soc"),
         ]
+        baselines = [
+            make_series("station_total_load", model_name="WeeklyNaive"),
+            make_series("storage_soc"),
+        ]
 
-        digest = repository.store_points(run, series, series)
+        digest = repository.store_points(run, series, baselines)
 
         self.assertEqual(api.create_calls, 1)
         self.assertEqual(len(api.rows), 48)

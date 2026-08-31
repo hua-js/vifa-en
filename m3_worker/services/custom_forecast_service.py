@@ -3,6 +3,7 @@
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 import logging
+import math
 import re
 from threading import BoundedSemaphore, Lock
 from typing import Callable
@@ -14,8 +15,16 @@ from m3_worker.domain.custom_forecasting import (
     forecast_custom_series,
     seasonal_naive_champion,
     select_custom_champion,
+    weekly_naive_champion,
 )
-from m3_worker.domain.custom_training_data import build_custom_training_dataset
+from m3_worker.domain.custom_load_profiles import (
+    LOAD_SELECTION_POLICY,
+    LoadCandidateScore,
+)
+from m3_worker.domain.custom_training_data import (
+    CustomWeekSummary,
+    build_custom_training_dataset,
+)
 from m3_worker.errors import M3Error
 from m3_worker.services.custom_forecast_repository import (
     CustomForecastRepository,
@@ -33,6 +42,7 @@ DIAGNOSTIC_INTEGER_FIELDS = (
     "status_code",
     "elapsed_ms",
 )
+SAFE_LOAD_SKIP_REASONS = frozenset({"no_scorable_points", "wape_unavailable"})
 
 
 def _safe_error_code(error: BaseException) -> str:
@@ -192,7 +202,68 @@ class CustomForecastService:
         return points
 
     @staticmethod
-    def _champion_manifest(champion: CustomChampion) -> dict[str, object]:
+    def _candidate_score_manifest(score: LoadCandidateScore) -> dict[str, object]:
+        def number_or_none(value: object) -> int | float | None:
+            if type(value) not in {int, float} or not math.isfinite(value):
+                return None
+            return value
+
+        skip_reason = score.skip_reason
+        if skip_reason is not None:
+            if type(skip_reason) is str and skip_reason in SAFE_LOAD_SKIP_REASONS:
+                pass
+            elif (
+                type(skip_reason) is str
+                and skip_reason
+                and skip_reason[0].isupper()
+                and SAFE_DIAGNOSTIC_TEXT.fullmatch(skip_reason) is not None
+            ):
+                pass
+            else:
+                skip_reason = "unknown"
+        return {
+            "model_name": score.model_name,
+            "wape_percent": number_or_none(score.wape_percent),
+            "mae": number_or_none(score.mae),
+            "mape_percent": number_or_none(score.mape_percent),
+            "scorable_point_count": (
+                score.scorable_point_count
+                if type(score.scorable_point_count) is int
+                and score.scorable_point_count >= 0
+                else 0
+            ),
+            "skip_reason": skip_reason,
+        }
+
+    @staticmethod
+    def _week_manifest(week: CustomWeekSummary) -> dict[str, object]:
+        return {
+            "start": week.start.isoformat(),
+            "end": week.end.isoformat(),
+            "point_count": week.point_count,
+            "real_point_count": week.real_point_count,
+            "imputed_point_count": week.imputed_point_count,
+            "imputation_ratio": week.imputation_ratio,
+        }
+
+    @classmethod
+    def _load_champion_manifest(cls, champion: CustomChampion) -> dict[str, object]:
+        return {
+            "model_name": champion.model_name,
+            "selection_metric": champion.selection_metric,
+            "selection_reason": champion.selection_reason,
+            "selection_status": champion.selection_status,
+            "candidate_scores": [
+                cls._candidate_score_manifest(score)
+                for score in champion.candidate_scores
+            ],
+            "training_start": champion.training_start.isoformat(),
+            "training_end": champion.training_end.isoformat(),
+            "statsforecast_version": champion.statsforecast_version,
+        }
+
+    @staticmethod
+    def _soc_champion_manifest(champion: CustomChampion) -> dict[str, object]:
         return {
             "model_name": champion.model_name,
             "cv_mape_percent": champion.cv_mape_percent,
@@ -230,18 +301,17 @@ class CustomForecastService:
                 )
                 for unique_id in SERIES_IDS
             ]
-            series_by_id = {item.unique_id: item for item in series}
             baseline_series = [
-                (
-                    series_by_id[unique_id]
-                    if champions[unique_id].model_name == "SeasonalNaive"
-                    else forecast_custom_series(
-                        datasets[unique_id],
-                        seasonal_naive_champion(datasets[unique_id]),
-                        run.config,
-                    )
-                )
-                for unique_id in SERIES_IDS
+                forecast_custom_series(
+                    datasets["station_total_load"],
+                    weekly_naive_champion(datasets["station_total_load"]),
+                    run.config,
+                ),
+                forecast_custom_series(
+                    datasets["storage_soc"],
+                    seasonal_naive_champion(datasets["storage_soc"]),
+                    run.config,
+                ),
             ]
             source_manifest = {
                 "history_start": run.config.history_start.isoformat(),
@@ -253,18 +323,28 @@ class CustomForecastService:
                         "retained_points": len(datasets[unique_id].frame),
                         "imputed_points": len(datasets[unique_id].imputed_keys),
                         "mode": datasets[unique_id].mode,
+                        "usable_week_count": len(datasets[unique_id].usable_weeks),
+                        "weeks": [
+                            self._week_manifest(week)
+                            for week in datasets[unique_id].usable_weeks
+                        ],
                     }
                     for unique_id in SERIES_IDS
                 },
             }
             model_manifest = {
+                "selection_policy": LOAD_SELECTION_POLICY,
                 "model_policy": run.config.model_policy,
                 "interval_seconds": run.config.interval_seconds,
                 "daily_season_length": run.config.daily_season_length,
                 "weekly_season_length": run.config.weekly_season_length,
                 "series": {
-                    unique_id: self._champion_manifest(champions[unique_id])
-                    for unique_id in SERIES_IDS
+                    "station_total_load": self._load_champion_manifest(
+                        champions["station_total_load"]
+                    ),
+                    "storage_soc": self._soc_champion_manifest(
+                        champions["storage_soc"]
+                    ),
                 },
             }
             digest = self._repository.store_points(run, series, baseline_series)

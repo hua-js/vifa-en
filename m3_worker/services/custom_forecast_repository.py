@@ -435,6 +435,10 @@ class CustomForecastRepository:
                 "forecast_incomplete", "Custom result requires load and SOC exactly once"
             )
         values: list[dict[str, object]] = []
+        baseline_model_by_id = {
+            "station_total_load": "WeeklyNaive",
+            "storage_soc": "SeasonalNaive",
+        }
         for unique_id in ("station_total_load", "storage_soc"):
             item = by_id[unique_id]
             baseline = baseline_by_id[unique_id]
@@ -443,7 +447,7 @@ class CustomForecastRepository:
             if (
                 item.status in {"insufficient_history", "error"}
                 or baseline.status in {"insufficient_history", "error"}
-                or baseline.model_name != "SeasonalNaive"
+                or baseline.model_name != baseline_model_by_id[unique_id]
             ):
                 raise M3Error(
                     "forecast_incomplete", "Custom result series is unavailable"
