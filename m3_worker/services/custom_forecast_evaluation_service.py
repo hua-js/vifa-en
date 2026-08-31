@@ -10,6 +10,7 @@ import numpy as np
 
 from m3_worker.contracts import SERIES_IDS
 from m3_worker.custom_forecast_contracts import ALLOWED_INTERVAL_SECONDS
+from m3_worker.domain.custom_load_profiles import LOAD_SELECTION_POLICY
 from m3_worker.errors import M3Error
 from m3_worker.services.custom_forecast_repository import (
     CustomForecastRepository,
@@ -306,6 +307,21 @@ class CustomForecastEvaluationService:
         policy = "seasonal_naive_only" if history_days < 28 else "full_selection"
         since = at - timedelta(days=7)
         series_results = []
+        run_cache: dict[str, StoredCustomRun | None] = {}
+
+        def uses_weekly_load_policy(row: dict[str, Any]) -> bool:
+            run_id = row.get("run_id")
+            if type(run_id) is not str:
+                return False
+            if run_id not in run_cache:
+                run_cache[run_id] = self._repository.get_by_run_id(run_id)
+            run = run_cache[run_id]
+            manifest = run.model_manifest if run else None
+            return (
+                type(manifest) is dict
+                and manifest.get("selection_policy") == LOAD_SELECTION_POLICY
+            )
+
         for unique_id in SERIES_IDS:
             rows = self._repository.list_comparable_evaluations(
                 station_id=station_id,
@@ -315,6 +331,7 @@ class CustomForecastEvaluationService:
                 model_policy=policy,
                 calculated_since=since,
             )
+            rows = [row for row in rows if uses_weekly_load_policy(row)]
             usable = [
                 row
                 for row in rows
