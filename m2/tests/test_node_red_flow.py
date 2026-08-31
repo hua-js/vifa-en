@@ -71,6 +71,10 @@ class NodeRedFlowTests(unittest.TestCase):
                 "python3 /userdata/holo/pyfiles/energy-efficiency-api.py minute ES02",
             ],
         )
+        self.assertEqual(
+            [message["m2_station_id"] for message in commands[0]],
+            ["ES01", "ES02"],
+        )
         self.assertEqual(commands[0][0]["topic"], "ignored")
         self.assertEqual(commands[0][1]["topic"], "ignored")
 
@@ -204,8 +208,8 @@ class NodeRedFlowTests(unittest.TestCase):
             "处理分钟退出状态",
             {"payload": {"code": 1}},
         )
-        self.assertNotIn("code", json.dumps(minute_nonzero))
-        self.assertIn("服务器受控日志", minute_nonzero["payload"]["message"])
+        self.assertEqual(minute_nonzero["payload"]["error_code"], "internal_error")
+        self.assertEqual(minute_nonzero["payload"]["message"], "服务器内部错误")
 
         cleanup_ok = self._run_function(
             "脱敏清理结果",
@@ -233,6 +237,112 @@ class NodeRedFlowTests(unittest.TestCase):
         )
         self.assertNotIn("code", json.dumps(cleanup_nonzero))
         self.assertIn("服务器受控日志", cleanup_nonzero["payload"]["message"])
+
+    def test_minute_stdout_classifies_only_allowlisted_public_errors(self):
+        classified = self._run_function(
+            "脱敏分钟写入结果",
+            {
+                "m2_station_id": "ES02",
+                "payload": json.dumps({
+                    "status": "error",
+                    "error": {
+                        "code": "store_error",
+                        "message": "分钟效率数据读写失败",
+                    },
+                }),
+            },
+        )
+        self.assertIsNone(classified[0])
+        self.assertEqual(classified[1]["payload"], {
+            "status": "error",
+            "source": "minute_job",
+            "station_id": "ES02",
+            "error_code": "store_error",
+            "message": "分钟效率数据读写失败",
+        })
+
+        untrusted = self._run_function(
+            "脱敏分钟写入结果",
+            {
+                "m2_station_id": "ES01",
+                "payload": json.dumps({
+                    "status": "error",
+                    "error": {
+                        "code": "attacker_defined",
+                        "message": "token=untrusted-secret",
+                    },
+                }),
+            },
+        )
+        self.assertIsNone(untrusted[0])
+        self.assertEqual(untrusted[1]["payload"], {
+            "status": "error",
+            "source": "minute_job",
+            "station_id": "ES01",
+            "error_code": "invalid_output",
+            "message": "分钟任务没有返回可用结果",
+        })
+        self.assertNotIn("untrusted-secret", json.dumps(untrusted))
+
+        malicious_success = self._run_function(
+            "脱敏分钟写入结果",
+            {
+                "m2_station_id": "ES01",
+                "payload": json.dumps({
+                    "status": "ok",
+                    "data": {
+                        "operation": "minute",
+                        "station_id": "ES01",
+                        "data_time": "https://untrusted.example/?token=untrusted-secret",
+                        "device_points_saved": 1,
+                        "event_update_count": 0,
+                        "event_persistence": {
+                            "attempted": 0,
+                            "saved": 0,
+                            "failed": 0,
+                            "outbox_pending": 0,
+                        },
+                        "warning_count": 0,
+                    },
+                }),
+            },
+        )
+        self.assertIsNone(malicious_success[0])
+        self.assertEqual(
+            malicious_success[1]["payload"]["error_code"],
+            "invalid_output",
+        )
+        self.assertNotIn("untrusted-secret", json.dumps(malicious_success))
+        self.assertNotIn("untrusted.example", json.dumps(malicious_success))
+
+    def test_minute_exit_status_classifies_nonzero_and_interrupted_processes(self):
+        store_failure = self._run_function(
+            "处理分钟退出状态",
+            {"m2_station_id": "ES02", "payload": {"code": 6}},
+        )
+        self.assertEqual(store_failure["payload"], {
+            "status": "error",
+            "source": "minute_job",
+            "station_id": "ES02",
+            "error_code": "store_error",
+            "message": "分钟效率数据读写失败",
+        })
+
+        interrupted = self._run_function(
+            "处理分钟退出状态",
+            {
+                "m2_station_id": "ES01",
+                "payload": {"code": None, "signal": "untrusted-signal"},
+            },
+        )
+        self.assertEqual(interrupted["payload"], {
+            "status": "error",
+            "source": "minute_job",
+            "station_id": "ES01",
+            "error_code": "process_interrupted",
+            "message": "分钟任务被超时或信号终止",
+        })
+        self.assertNotIn("untrusted-signal", json.dumps(interrupted))
 
 
 if __name__ == "__main__":
