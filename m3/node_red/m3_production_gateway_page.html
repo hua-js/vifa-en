@@ -662,7 +662,7 @@
         if (customResults.has(stationKey)) renderCustomResult(customResults.get(stationKey));
         else if (lastDashboard !== null) {
           const station = lastDashboard.stations.find((item) => item.station_key === stationKey);
-          if (station) renderComparisonPending(station);
+          if (station) renderStation(station);
         }
         stopCustomPolling();
         customBusy = false;
@@ -776,6 +776,8 @@
         const total = pointsPerDay * days;
         const usableWeeks = historyDays === null ? null : Math.floor(historyDays / 7);
         const candidates = configuredLoadCandidates(usableWeeks, seconds);
+        const selectedResult = customResults.get(stationPicker.value);
+        const selectedEvidence = selectedResult === undefined ? null : loadEvidenceFor(selectedResult.result.run);
         text(root.querySelector("#history-hint"), historyDays === null ? "日期范围无效" : `共 ${historyDays} 天`);
         text(root.querySelector("#history-days-inline"), historyDays === null ? "—" : `${historyDays} 天`);
         text(root.querySelector("#history-days-value"), historyDays === null ? "—" : `${historyDays} 天`);
@@ -792,27 +794,29 @@
         if (!customResults.has(stationPicker.value)) {
           text(root.querySelector("#result-model-meta"), `${historyDays === null ? "历史范围待设置" : `${historyDays} 天训练`} · ${intervalLabel(seconds)}粒度 · ${formatInteger(pointsPerDay)} 点 / 天`);
         }
-        text(root.querySelector("#details-policy"), usableWeeks === null ? "等待数据" : `负载 ${usableWeeks} 周`);
-        text(root.querySelector("#policy-name"), usableWeeks === null ? "等待数据" : LOAD_SELECTION_POLICY);
-        text(root.querySelector("#policy-copy"), usableWeeks === null
-          ? "载入历史长度后显示连续有效周与候选资格"
-          : candidates.size
-            ? `${usableWeeks} 个配置周可用；完成后按留出周 WAPE 选择负载模型`
-            : "至少需要 1 个连续有效周才能生成负载预测");
-        root.querySelectorAll(".candidate").forEach((candidate) => {
-          const model = candidate.dataset.model;
-          const rule = LOAD_CANDIDATE_RULES[model];
-          const enabled = candidates.has(model);
-          candidate.classList.toggle("disabled", !enabled);
-          if (!enabled) {
-            const reason = usableWeeks === null || usableWeeks < rule.weeks
-              ? `需 ${rule.weeks} 个连续有效周`
-              : "当前粒度不支持";
-            text(candidate.querySelector(".candidate-state"), reason);
-          } else if (!candidate.classList.contains("selected")) {
-            text(candidate.querySelector(".candidate-state"), model === "WeeklyNaive" ? "基线 + 候选" : "参与选模");
-          }
-        });
+        if (selectedEvidence === null) {
+          text(root.querySelector("#details-policy"), usableWeeks === null ? "等待数据" : `负载 ${usableWeeks} 周`);
+          text(root.querySelector("#policy-name"), usableWeeks === null ? "等待数据" : LOAD_SELECTION_POLICY);
+          text(root.querySelector("#policy-copy"), usableWeeks === null
+            ? "载入历史长度后显示连续有效周与候选资格"
+            : candidates.size
+              ? `${usableWeeks} 个配置周可用；完成后按留出周 WAPE 选择负载模型`
+              : "至少需要 1 个连续有效周才能生成负载预测");
+          root.querySelectorAll(".candidate").forEach((candidate) => {
+            const model = candidate.dataset.model;
+            const rule = LOAD_CANDIDATE_RULES[model];
+            const enabled = candidates.has(model);
+            candidate.classList.toggle("disabled", !enabled);
+            if (!enabled) {
+              const reason = usableWeeks === null || usableWeeks < rule.weeks
+                ? `需 ${rule.weeks} 个连续有效周`
+                : "当前粒度不支持";
+              text(candidate.querySelector(".candidate-state"), reason);
+            } else if (!candidate.classList.contains("selected")) {
+              text(candidate.querySelector(".candidate-state"), model === "WeeklyNaive" ? "基线 + 候选" : "参与选模");
+            }
+          });
+        }
         updateRunAvailability(taskConfiguration());
       }
 
@@ -880,6 +884,18 @@
         const actual = Object.keys(value).sort();
         const expected = [...keys].sort();
         assert(actual.length === expected.length && actual.every((key, index) => key === expected[index]), `${label} has invalid fields`);
+      }
+
+      function exactObjectWithOptional(value, keys, optionalKeys, label) {
+        assert(value !== null && typeof value === "object" && !Array.isArray(value), `${label} must be an object`);
+        const allowed = new Set(keys);
+        const optional = new Set(optionalKeys);
+        const actual = Object.keys(value);
+        assert(
+          actual.every((key) => allowed.has(key))
+            && keys.every((key) => optional.has(key) || Object.hasOwn(value, key)),
+          `${label} has invalid fields`,
+        );
       }
 
       function finite(value) { return typeof value === "number" && Number.isFinite(value); }
@@ -1115,7 +1131,6 @@
         root.querySelectorAll(".performance-value").forEach((node) => node.removeAttribute("data-state"));
         text(root.querySelector("#performance-zone-subtitle"), "先看当前模型是否优于同配置基线，再看近 7 日稳定性");
         text(root.querySelector(".current-mape-note"), "尚无已完成评估窗口");
-        text(root.querySelector(".soc-mape-note"), "尚无已完成评估窗口");
         text(root.querySelector(".baseline-mape-note"), "负载预测同配置、同目标点基线");
         text(root.querySelector(".improvement-note"), "获得同窗基线后自动计算");
         text(root.querySelector(".compare-model-value"), "—");
@@ -1190,7 +1205,11 @@
         const padding = series.unique_id === "storage_soc" ? 0 : (maximum - minimum) * .1;
         minimum = Math.max(series.unique_id === "station_total_load" ? 0 : minimum, minimum - padding);
         maximum += padding;
-        const x = (time) => left + (milliseconds(time) - start) / (end - start) * (width - left - right);
+        const x = (time) => {
+          const instant = finite(time) ? time : milliseconds(time);
+          assert(Number.isFinite(instant), "chart timestamp invalid");
+          return left + (instant - start) / (end - start) * (width - left - right);
+        };
         const y = (value) => top + (maximum - value) / (maximum - minimum) * (height - top - bottom);
         for (let index = 0; index <= 4; index += 1) {
           const yy = top + index / 4 * (height - top - bottom);
@@ -1278,7 +1297,6 @@
         text(root.querySelector(".compare-baseline-value"), "—");
         text(root.querySelector(".baseline-note-value"), "—");
         text(root.querySelector(".current-mape-note"), "尚无已完成评估窗口");
-        text(root.querySelector(".soc-mape-note"), "尚无已完成评估窗口");
         root.querySelector(".model-bar").style.width = "0%";
         root.querySelector(".baseline-bar").style.width = "0%";
         if (acceptance === null) { text(summary, "数据积累中"); return; }
@@ -1295,7 +1313,6 @@
         text(root.querySelector(".current-mape-note"), loadResult ? `${loadResult.valid_count} / ${loadResult.expected_count} 个有效对比点` : "尚无已完成评估窗口");
         const socMapeValue = socResult && socResult.mape_percent !== null ? `${metric(socResult.mape_percent)}%` : "—";
         root.querySelectorAll(".soc-mape-value").forEach((node) => text(node, socMapeValue));
-        text(root.querySelector(".soc-mape-note"), socResult ? `${socResult.valid_count} / ${socResult.expected_count} 个有效对比点` : "尚无已完成评估窗口");
         text(socMae, socResult ? `${metric(socResult.mae)}%` : "—");
         acceptance.results.forEach((result) => {
           const row = document.createElement("tr");
@@ -1430,27 +1447,33 @@
       }
 
       function validateCustomRun(value) {
-        exactObject(value, [
+        const fields = [
           "run_id", "station_id", "status", "history_start", "history_end", "history_days",
           "forecast_start", "forecast_end", "forecast_days", "interval_seconds", "points_per_day",
           "expected_points_per_series", "model_policy", "model_manifest", "source_manifest", "error_code",
           "started_at", "completed_at", "evaluated_at", "created_at", "updated_at",
-        ], "custom run");
-        assert(/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(value.run_id) && safeText(value.station_id), "custom run identity invalid");
-        assert(Object.hasOwn(CUSTOM_RUN_LABELS, value.status), "custom run status invalid");
-        ["history_start", "history_end", "forecast_start", "forecast_end", "created_at", "updated_at"].forEach((field) => assert(timestamp(value[field]), `custom run ${field} invalid`));
-        ["started_at", "completed_at", "evaluated_at"].forEach((field) => assert(value[field] === null || timestamp(value[field]), `custom run ${field} invalid`));
-        assert(integer(value.history_days, 7, 90) && integer(value.forecast_days, 1, 7), "custom run day range invalid");
-        assert(ALLOWED_INTERVALS.includes(value.interval_seconds), "custom run interval invalid");
-        assert(value.points_per_day === 86400 / value.interval_seconds, "custom run daily points invalid");
-        assert(value.expected_points_per_series === value.points_per_day * value.forecast_days, "custom run point count invalid");
-        assert(milliseconds(value.history_end) - milliseconds(value.history_start) === value.history_days * 86400000, "custom run history window invalid");
-        assert(value.history_end === value.forecast_start && milliseconds(value.forecast_end) - milliseconds(value.forecast_start) === value.forecast_days * 86400000, "custom run forecast window invalid");
-        assert(value.model_policy === (value.history_days < 28 ? "seasonal_naive_only" : "full_selection"), "custom run model policy invalid");
-        assert(value.error_code === null || safeText(value.error_code), "custom run error invalid");
-        assert(value.model_manifest === null || (typeof value.model_manifest === "object" && !Array.isArray(value.model_manifest)), "custom model manifest invalid");
-        assert(value.source_manifest === null || (typeof value.source_manifest === "object" && !Array.isArray(value.source_manifest)), "custom source manifest invalid");
-        return value;
+        ];
+        exactObjectWithOptional(value, fields, ["model_manifest", "source_manifest"], "custom run");
+        const run = {
+          ...value,
+          model_manifest: Object.hasOwn(value, "model_manifest") ? value.model_manifest : null,
+          source_manifest: Object.hasOwn(value, "source_manifest") ? value.source_manifest : null,
+        };
+        assert(/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(run.run_id) && safeText(run.station_id), "custom run identity invalid");
+        assert(Object.hasOwn(CUSTOM_RUN_LABELS, run.status), "custom run status invalid");
+        ["history_start", "history_end", "forecast_start", "forecast_end", "created_at", "updated_at"].forEach((field) => assert(timestamp(run[field]), `custom run ${field} invalid`));
+        ["started_at", "completed_at", "evaluated_at"].forEach((field) => assert(run[field] === null || timestamp(run[field]), `custom run ${field} invalid`));
+        assert(integer(run.history_days, 7, 90) && integer(run.forecast_days, 1, 7), "custom run day range invalid");
+        assert(ALLOWED_INTERVALS.includes(run.interval_seconds), "custom run interval invalid");
+        assert(run.points_per_day === 86400 / run.interval_seconds, "custom run daily points invalid");
+        assert(run.expected_points_per_series === run.points_per_day * run.forecast_days, "custom run point count invalid");
+        assert(milliseconds(run.history_end) - milliseconds(run.history_start) === run.history_days * 86400000, "custom run history window invalid");
+        assert(run.history_end === run.forecast_start && milliseconds(run.forecast_end) - milliseconds(run.forecast_start) === run.forecast_days * 86400000, "custom run forecast window invalid");
+        assert(run.model_policy === (run.history_days < 28 ? "seasonal_naive_only" : "full_selection"), "custom run model policy invalid");
+        assert(run.error_code === null || safeText(run.error_code), "custom run error invalid");
+        assert(run.model_manifest === null || (typeof run.model_manifest === "object" && !Array.isArray(run.model_manifest)), "custom model manifest invalid");
+        assert(run.source_manifest === null || (typeof run.source_manifest === "object" && !Array.isArray(run.source_manifest)), "custom source manifest invalid");
+        return run;
       }
 
       function validateCustomResult(value) {
@@ -1475,7 +1498,7 @@
             assert(point.absolute_percentage_error === null || finite(point.absolute_percentage_error) && point.absolute_percentage_error >= 0, "custom APE invalid");
           });
         });
-        return value;
+        return { ...value, run };
       }
 
       function validateCustomPerformance(value) {
@@ -1756,7 +1779,6 @@
         const loadMape = loadPending ? "待评估" : formatPercent(load.mape_percent);
         const socMape = socPending ? "待评估" : formatPercent(soc.mape_percent);
         const baseline = loadPending ? "待评估" : formatPercent(load.baseline_mape_percent);
-        const expectedEvaluation = `预计可评估时间：${dateTime(run.forecast_end)} 后的下一调度周期`;
         root.querySelectorAll(".legacy-load-mape-value").forEach((node) => text(node, loadMape));
         root.querySelectorAll(".soc-mape-value").forEach((node) => text(node, socMape));
         text(root.querySelector(".compare-model-value"), loadMape);
@@ -1766,7 +1788,6 @@
         if (socPerformanceValue !== null) socPerformanceValue.dataset.state = socPending ? "pending" : "ready";
         if (socPending && socPerformanceValue !== null) text(socPerformanceValue, "待实际值完整回填");
         text(root.querySelector("#performance-zone-subtitle"), loadPending && socPending ? "近 7 日暂无同配置可比任务" : "历史任务保留近 7 日 MAPE 汇总；留出周 WAPE 仅用于 weekly_load_v1");
-        text(root.querySelector(".soc-mape-note"), socPending ? expectedEvaluation : `${soc.run_count} 个同配置任务 · ${formatInteger(soc.scorable_point_count)} 个有效点`);
         text(root.querySelector(".acceptance-summary"), loadPending ? "0 个任务" : `${load.run_count} 个任务`);
         const maximum = Math.max(load.mape_percent || 0, load.baseline_mape_percent || 0, 1);
         root.querySelector(".model-bar").style.width = load.mape_percent === null ? "0%" : `${Math.min(100, load.mape_percent / maximum * 100).toFixed(1)}%`;

@@ -81,9 +81,18 @@ function pathCoordinates(pathData) {
   return [...pathData.matchAll(/[ML]\s+([\d.]+)\s+([\d.]+)/g)].map((match) => ({ x: Number(match[1]), y: Number(match[2]) }));
 }
 
+async function invalidSvgLineCoordinates(page) {
+  return page.locator("svg line").evaluateAll((lines) => lines.flatMap((line) => ["x1", "x2", "y1", "y2"].flatMap((name) => {
+    const value = line.getAttribute(name);
+    return value === null || !Number.isFinite(Number(value))
+      ? [{ chart: line.closest("svg")?.getAttribute("class") ?? null, name, value }]
+      : [];
+  })));
+}
+
 function weeklyEvidenceFixture() {
   const forecastStart = "2026-08-31T12:15:00+08:00";
-  const firstTargetMs = Date.parse("2026-08-31T04:30:00Z");
+  const firstTargetMs = Date.parse(forecastStart);
   const toUtc = (offset) => new Date(firstTargetMs + offset * 900_000).toISOString().replace(".000Z", "Z");
   const run = {
     run_id: "weekly-evidence-run",
@@ -210,6 +219,15 @@ function legacyPerformanceFixture() {
   return fixture;
 }
 
+function legacyNullManifestFixture() {
+  const fixture = legacyPerformanceFixture();
+  fixture.run.run_id = "legacy-null-manifest-run";
+  fixture.run.model_manifest = null;
+  fixture.run.source_manifest = null;
+  fixture.result.run = fixture.run;
+  return fixture;
+}
+
 (async () => {
   const fixtures = task5Fixtures();
   const payload = fixtures.ready;
@@ -285,6 +303,7 @@ function legacyPerformanceFixture() {
   await context.addCookies([{ name: "m3_token", value: "must-not-send", url: origin }]);
   const page = await context.newPage();
   const apiRequests = [];
+  const apiResponses = [];
   const externalRequests = [];
   const consoleErrors = [];
   const pageErrors = [];
@@ -294,6 +313,98 @@ function legacyPerformanceFixture() {
   let customPayload = null;
   let releaseDelayed;
   let timeoutRequestStartedResolve;
+
+  async function fulfillApi(route, response) {
+    const body = typeof response.body === "string" ? response.body : "";
+    apiResponses.push({
+      method: route.request().method(),
+      path: new URL(route.request().url()).pathname,
+      status: response.status,
+      bodyPreview: body.length <= 1000 ? body : `${body.slice(0, 1000)}…`,
+    });
+    await route.fulfill(response);
+  }
+
+  function requestDiagnostic(request) {
+    const requestUrl = new URL(request.url);
+    return {
+      method: request.method,
+      path: requestUrl.pathname,
+      search: requestUrl.search,
+      postData: request.postData,
+    };
+  }
+
+  async function waitForInitialDashboardReady() {
+    try {
+      await page.locator("#forecast-dashboard[data-state='ready']").waitFor({ timeout: 3000 });
+    } catch (error) {
+      const beforeRender = await page.evaluate(() => {
+        const dashboard = document.querySelector("#forecast-dashboard");
+        const errorState = document.querySelector("#error-state");
+        return {
+          rootDataState: dashboard?.dataset.state ?? null,
+          errorState: errorState === null ? null : { visible: !errorState.hidden, text: errorState.textContent },
+        };
+      });
+      let renderReturn;
+      try {
+        renderReturn = await page.evaluate((dashboard) => {
+          if (typeof window.renderDashboard !== "function") return "renderDashboard unavailable";
+          return window.renderDashboard(dashboard);
+        }, responsePayload?.data ?? null);
+      } catch (renderError) {
+        renderReturn = `renderDashboard threw: ${renderError instanceof Error ? renderError.message : String(renderError)}`;
+      }
+      throw new Error(`initial dashboard did not become ready: ${JSON.stringify({
+        ...beforeRender,
+        renderReturn,
+        pageErrors,
+        consoleErrors,
+        apiRequestCount: apiRequests.length,
+        apiRequests: apiRequests.map(requestDiagnostic),
+        apiResponses,
+      }, null, 2)}\n${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  async function waitForCustomResultModelMeta(expectedText, requestStart, responseStart) {
+    try {
+      await page.locator("#result-model-meta").getByText(expectedText).waitFor({ timeout: 3000 });
+    } catch (error) {
+      const pageState = await page.evaluate(() => {
+        const errorState = document.querySelector("#error-state");
+        const runButton = document.querySelector("#run-button");
+        const sessionStorageSnapshot = Object.fromEntries(
+          Object.keys(sessionStorage).sort().map((key) => [
+            key,
+            /(token|auth|secret)/i.test(key) ? "<redacted>" : sessionStorage.getItem(key),
+          ]),
+        );
+        return {
+          runButton: runButton === null ? null : { disabled: runButton.disabled, title: runButton.title },
+          taskState: document.querySelector("#task-state")?.textContent ?? null,
+          errorState: errorState === null ? null : { visible: !errorState.hidden, text: errorState.textContent },
+          resultModelMeta: document.querySelector("#result-model-meta")?.textContent ?? null,
+          currentModelName: document.querySelector(".current-model-name")?.textContent ?? null,
+          sessionStorage: sessionStorageSnapshot,
+        };
+      });
+      const customRequests = apiRequests.slice(requestStart)
+        .filter((request) => new URL(request.url).pathname.startsWith(`${API_PATH}/custom-`))
+        .map(requestDiagnostic);
+      const customResponses = apiResponses.slice(responseStart)
+        .filter((response) => response.path.startsWith(`${API_PATH}/custom-`));
+      throw new Error(`custom result did not render: ${JSON.stringify({
+        expectedText,
+        ...pageState,
+        customRequests,
+        customResponses,
+        pageErrors,
+        consoleErrors,
+      }, null, 2)}\n${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
 
   await page.addInitScript(() => {
     window.__m3AuthMessages = [];
@@ -343,7 +454,7 @@ function legacyPerformanceFixture() {
   });
   page.on("console", (message) => { if (message.type() === "error") consoleErrors.push(message.text()); });
   page.on("pageerror", (error) => pageErrors.push(error.message));
-  await page.route("**/energy-forecast-api*", async (route) => {
+  await page.route(/\/energy-forecast-api(?:\/|$|\?)/, async (route) => {
     const allHeaders = await route.request().allHeaders();
     apiRequests.push({
       method: route.request().method(), url: route.request().url(),
@@ -360,7 +471,7 @@ function legacyPerformanceFixture() {
       else if (requestUrl.pathname.endsWith("/result")) data = customPayload.result;
       else if (requestUrl.pathname.startsWith(`${API_PATH}/custom-performance/`)) data = customPayload.performance;
       else throw new Error(`unexpected custom route ${route.request().method()} ${requestUrl.pathname}`);
-      await route.fulfill({
+      await fulfillApi(route, {
         status: 200,
         contentType: "application/json; charset=utf-8",
         headers: { "Cache-Control": "no-store" },
@@ -369,7 +480,7 @@ function legacyPerformanceFixture() {
       return;
     }
     if (responseMode === "redirect") {
-      await route.fulfill({ status: 302, headers: { Location: "/redirect-target" }, body: "" });
+      await fulfillApi(route, { status: 302, headers: { Location: "/redirect-target" }, body: "" });
       return;
     }
     if (responseMode === "timeout") {
@@ -377,7 +488,7 @@ function legacyPerformanceFixture() {
       timeoutRequestStartedResolve = undefined;
       await new Promise((resolve) => setTimeout(resolve, 250));
     }
-    await route.fulfill({
+    await fulfillApi(route, {
       status: 200,
       contentType: "application/json; charset=utf-8",
       headers: { "Cache-Control": "public, max-age=3600" },
@@ -396,6 +507,11 @@ function legacyPerformanceFixture() {
   assert.strictEqual(readyMessage.origin, origin);
   assert.deepStrictEqual(Object.keys(readyMessage.data).sort(), ["nonce", "type"]);
   assert.match(readyMessage.data.nonce, /^[a-f0-9]{32}$/);
+
+  await page.evaluate(() => window.renderError("E2E cleanup probe"));
+  assert.strictEqual(await page.locator("#forecast-dashboard").getAttribute("data-state"), "error");
+  assert.strictEqual(await page.locator("#error-state").innerText(), "E2E cleanup probe");
+  assert.deepStrictEqual(pageErrors, [], "renderError cleanup must not throw for the canonical DOM");
 
   await page.evaluate(({ allowedOrigin, nonce }) => {
     const send = (originValue, sourceValue, data) => window.dispatchEvent(new MessageEvent("message", {
@@ -419,7 +535,7 @@ function legacyPerformanceFixture() {
       data: { type: "vifa-m3-auth-token", nonce, token: "current-user-token" },
     }));
   }, { allowedOrigin: origin, nonce: readyMessage.data.nonce });
-  await page.locator("#forecast-dashboard[data-state='ready']").waitFor({ timeout: 3000 });
+  await waitForInitialDashboardReady();
 
   assert.deepStrictEqual(apiRequests.map((item) => [item.method, new URL(item.url).pathname, new URL(item.url).search, item.postData]), [
     ["GET", API_PATH, "", null],
@@ -441,17 +557,17 @@ function legacyPerformanceFixture() {
   assert.deepStrictEqual(await page.locator(".station-section h2").allTextContents(), ["1# 电站"]);
   const themeToggle = page.locator("#theme-toggle");
   assert.strictEqual(await themeToggle.count(), 1, "theme toggle must exist");
-  assert.strictEqual(await page.locator("html").getAttribute("data-theme"), "dark");
-  assert.match(await themeToggle.innerText(), /白天模式/);
-  const darkPaper = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--paper").trim());
-  await themeToggle.click();
   assert.strictEqual(await page.locator("html").getAttribute("data-theme"), "light");
   assert.match(await themeToggle.innerText(), /黑夜模式/);
-  assert.strictEqual(await themeToggle.getAttribute("aria-pressed"), "true");
-  assert.notStrictEqual(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--paper").trim()), darkPaper);
-  await page.screenshot({ path: "/tmp/m3-task6-light.png", fullPage: true });
+  const lightPaper = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--paper").trim());
   await themeToggle.click();
   assert.strictEqual(await page.locator("html").getAttribute("data-theme"), "dark");
+  assert.match(await themeToggle.innerText(), /白天模式/);
+  assert.strictEqual(await themeToggle.getAttribute("aria-pressed"), "false");
+  assert.notStrictEqual(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--paper").trim()), lightPaper);
+  await page.screenshot({ path: "/tmp/m3-task6-dark.png", fullPage: true });
+  await themeToggle.click();
+  assert.strictEqual(await page.locator("html").getAttribute("data-theme"), "light");
   const stationPicker = page.locator("#station-picker");
   assert.strictEqual(await stationPicker.count(), 1, "station picker must exist");
   assert.deepStrictEqual(await stationPicker.locator("option").allTextContents(), ["1# 电站", "2# 电站"]);
@@ -470,38 +586,54 @@ function legacyPerformanceFixture() {
   const currentSoc = firstSoc.actual.filter((point) => point.value !== null).at(-1).value;
   const peakLoad = Math.max(...firstLoad.forecast.map((point) => point.value));
   const minimumSoc = Math.min(...firstSoc.forecast.map((point) => point.value));
-  assert.strictEqual(await page.locator("[data-station='station_1'] .metric-current-load").innerText(), `${Math.round(currentLoad)} kW`);
+  const firstStationDiagnostics = await page.locator("[data-station='station_1']").evaluate((station) => ({
+    stationDataState: station.dataset.state ?? null,
+    series: [...station.querySelectorAll(".series-card")].map((card) => ({
+      dataSeries: card.dataset.series ?? null,
+      dataStatus: card.dataset.status ?? null,
+      actual: card.querySelector(".actual-value")?.textContent ?? null,
+      forecast: card.querySelector(".forecast-value")?.textContent ?? null,
+      model: card.querySelector(".model-name")?.textContent ?? null,
+    })),
+  }));
+  assert.strictEqual(
+    await page.locator("[data-station='station_1'] .metric-current-load").innerText(),
+    `${Math.round(currentLoad)} kW`,
+    `selected station series did not render: ${JSON.stringify(firstStationDiagnostics)}`,
+  );
   assert.strictEqual(await page.locator("[data-station='station_1'] .metric-peak-load").innerText(), `${Math.round(peakLoad)} kW`);
   assert.strictEqual(await page.locator("[data-station='station_1'] .metric-current-soc").innerText(), `${currentSoc.toFixed(1)} %`);
   assert.strictEqual(await page.locator("[data-station='station_1'] .metric-minimum-soc").innerText(), `${minimumSoc.toFixed(1)} %`);
-  assert.strictEqual(await page.locator("[data-station='station_1'] .model-current-mape").innerText(), "2.50%");
-  assert.strictEqual(await page.locator("[data-station='station_1'] .model-baseline-wape").innerText(), "—");
-  assert.strictEqual(await page.locator("[data-station='station_1'] .model-improvement").innerText(), "—");
+  assert.strictEqual(await page.locator(".legacy-load-mape-value").innerText(), "2.50%");
+  assert.strictEqual(await page.locator(".model-baseline-wape").innerText(), "—");
+  assert.strictEqual(await page.locator(".model-improvement").innerText(), "—");
   await stationPicker.selectOption("station_2");
   assert.strictEqual(await page.locator(".station-section").getAttribute("data-station"), "station_2");
   const secondLoad = payload.data.stations[1].series[0].actual.filter((point) => point.value !== null).at(-1).value;
   assert.strictEqual(await page.locator(".metric-current-load").innerText(), `${Math.round(secondLoad)} kW`);
   assert.match(await page.locator(".acceptance-summary").innerText(), /3 \/ 7/);
+  assert.strictEqual(await page.locator(".legacy-load-mape-value").innerText(), "—");
   await stationPicker.selectOption("station_1");
+  assert.strictEqual(await page.locator(".legacy-load-mape-value").innerText(), "2.50%");
   assert.deepStrictEqual(await page.locator(".forecast-value").allTextContents(), ["410 kW", "61.0 %"]);
   assert.strictEqual(await page.locator(".forecast-start").innerText(), "2026/08/26 10:00");
   assert.deepStrictEqual(await page.locator(".readiness-hint").allTextContents(), ["已达到 Ready 条件"]);
   assert.deepStrictEqual(await page.locator(".readiness-meta").allTextContents(), ["有效历史 28.0 / 28 天"]);
   assert.strictEqual(await page.locator(".station-acceptance").count(), 1);
   assert.deepStrictEqual(
-    await page.locator("[data-station='station_1'] .acceptance-result-row").evaluateAll((rows) => rows.map((row) => row.dataset.series)),
+    await page.locator(".station-acceptance .acceptance-result-row").evaluateAll((rows) => rows.map((row) => row.dataset.series)),
     SERIES_IDS,
   );
   assert.deepStrictEqual(
-    await page.locator("[data-station='station_1'] .acceptance-result-row").first().locator("td").allTextContents(),
-    ["场站总负荷", "660 / 672", "3", "2.50%", "1.25", "2.60%", "2.40%", "1.90%", "5.20%", "通过"],
+    await page.locator(".station-acceptance .acceptance-result-row").first().locator("td").allTextContents(),
+    ["电站总负荷", "660 / 672", "3", "2.50%", "1.25", "2.60%", "2.40%", "1.90%", "5.20%", "通过"],
   );
 
   await page.evaluate((data) => window.renderDashboard(data), fixtures.initializing_normal.data);
   assert.strictEqual(await page.locator("#forecast-dashboard").getAttribute("data-state"), "initializing");
   assert.strictEqual(await page.locator("[data-station='station_1']").getAttribute("data-state"), "initializing");
-  assert.strictEqual(await page.locator("[data-station='station_1'] .readiness-hint").innerText(), "距离 Ready 约 5.5 天");
-  assert.strictEqual(await page.locator("[data-station='station_1'] .readiness-meta").innerText(), "有效历史 22.5 / 28 天");
+  assert.strictEqual(await page.locator(".readiness-hint").innerText(), "距离 Ready 约 5.5 天");
+  assert.strictEqual(await page.locator(".readiness-meta").innerText(), "有效历史 22.5 / 28 天");
   assert.strictEqual(await page.locator("#error-state").isHidden(), true);
   assert.match(fixtures.microsecond_snapshot.data.system.generated_at, /\.123456\+08:00$/);
   await page.evaluate((data) => window.renderDashboard(data), fixtures.microsecond_snapshot.data);
@@ -510,7 +642,11 @@ function legacyPerformanceFixture() {
   assert.match(fixtures.microsecond_empty_error.data.stations[0].range.now_separator, /\.123456\+08:00$/);
   await page.evaluate((data) => window.renderDashboard(data), fixtures.microsecond_empty_error.data);
   assert.strictEqual(await page.locator("#forecast-dashboard").getAttribute("data-state"), "degraded");
-  assert.deepStrictEqual(await page.locator(".station-section").evaluateAll((nodes) => nodes.map((node) => node.dataset.state)), ["error", "initializing"]);
+  assert.strictEqual(await page.locator(".station-section").getAttribute("data-state"), "error");
+  await stationPicker.selectOption("station_2");
+  assert.strictEqual(await page.locator(".station-section").getAttribute("data-state"), "initializing");
+  await stationPicker.selectOption("station_1");
+  assert.strictEqual(await page.locator(".station-section").getAttribute("data-state"), "error");
   for (const fraction of ["1", "123", "123456"]) {
     const fractional = clone(fixtures.microsecond_snapshot);
     fractional.data.system.generated_at = fractional.data.system.generated_at.replace(/\.123456\+08:00$/, `.${fraction}+08:00`);
@@ -544,7 +680,7 @@ function legacyPerformanceFixture() {
   assert.strictEqual(await page.locator("#error-state").innerText(), "请求超时");
   assert.deepStrictEqual(await page.locator(".forecast-value").allTextContents(), ["410 kW", "61.0 %"]);
   assert.ok(await page.locator("svg.forecast-chart > *").count() > 0);
-  assert.strictEqual(await page.locator(".acceptance-result-row").count(), 2);
+  assert.strictEqual(await page.locator(".station-acceptance .acceptance-result-row").count(), 2);
   responseMode = "payload";
   const requestsBeforeRecovery = apiRequests.length;
   await page.evaluate(() => window.loadDashboard());
@@ -571,18 +707,18 @@ function legacyPerformanceFixture() {
   await page.evaluate((data) => window.renderDashboard(data), fixtures.degraded.data);
   assert.strictEqual(await page.locator("#forecast-dashboard").getAttribute("data-state"), "degraded");
   assert.strictEqual(await page.locator("[data-station='station_1']").getAttribute("data-state"), "degraded");
-  assert.strictEqual(await page.locator("[data-station='station_1'] .readiness-hint").isHidden(), true);
+  assert.strictEqual(await page.locator(".readiness-hint").isHidden(), true);
   assert.deepStrictEqual(await page.locator("[data-station='station_1'] .forecast-value").allTextContents(), ["410 kW", "61.0 %"]);
   await page.evaluate((data) => window.renderDashboard(data), fixtures.stale.data);
   assert.strictEqual(await page.locator("#forecast-dashboard").getAttribute("data-state"), "stale");
   assert.strictEqual(await page.locator("[data-station='station_1']").getAttribute("data-state"), "stale");
-  assert.strictEqual(await page.locator("[data-station='station_1'] .readiness-hint").isHidden(), true);
+  assert.strictEqual(await page.locator(".readiness-hint").isHidden(), true);
   await page.evaluate((data) => window.renderDashboard(data), fixtures.error.data);
   assert.strictEqual(await page.locator("#forecast-dashboard").getAttribute("data-state"), "degraded");
   assert.deepStrictEqual(await page.locator("[data-station='station_1'] .forecast-value").allTextContents(), ["—", "—"]);
   assert.strictEqual(await page.locator("[data-station='station_1'] path.chart-line").count(), 0);
-  assert.strictEqual(await page.locator("[data-station='station_1'] .acceptance-result-row").count(), 0);
-  assert.strictEqual(await page.locator("[data-station='station_1'] .readiness-hint").isHidden(), true);
+  assert.strictEqual(await page.locator(".station-acceptance .acceptance-result-row").count(), 0);
+  assert.strictEqual(await page.locator(".readiness-hint").isHidden(), true);
   await page.evaluate((data) => window.renderDashboard(data), payload.data);
 
   const malformedCases = [];
@@ -664,14 +800,24 @@ function legacyPerformanceFixture() {
   assert.ok(apiRequests.every((item) => !/must-not-send|must-not-forward|example\.invalid/.test(JSON.stringify(item.headers))));
 
   customPayload = weeklyEvidenceFixture();
+  const weeklyRequestStart = apiRequests.length;
+  const weeklyResponseStart = apiResponses.length;
   await page.locator("#run-button").click();
-  await page.locator("#result-model-meta").getByText("3 个连续有效周 · 负载周期 7 天 · 15 分钟粒度").waitFor();
+  await waitForCustomResultModelMeta("3 个连续有效周 · 负载周期 7 天 · 15 分钟粒度", weeklyRequestStart, weeklyResponseStart);
   assert.deepStrictEqual(await page.locator(".load-wape-value").allTextContents(), ["10.00%", "10.00%"]);
   assert.deepStrictEqual(await page.locator(".load-mae-value").allTextContents(), ["8.00", "8.00"]);
   assert.ok((await page.locator(".load-mape-value").allTextContents()).every((value) => value === "11.00%"));
   assert.ok((await page.locator(".baseline-value").allTextContents()).every((value) => value === "12.50%"));
   assert.ok((await page.locator(".improvement-value").allTextContents()).every((value) => value === "20.00%"));
-  assert.match(await page.locator(".current-model-name").first().innerText(), /场站总负荷：WeeklyWeighted2 · 储能 SOC：SeasonalNaive（状态锚定）/);
+  assert.match(await page.locator(".current-model-name").first().innerText(), /电站总负荷：WeeklyWeighted2 · 储能 SOC：SeasonalNaive（状态锚定）/);
+  assert.match(await page.locator(".candidate[data-model='WeeklyMedian3'] .candidate-state").innerText(), /跳过：无可评分点/);
+  await page.locator("#granularity").selectOption("60");
+  assert.match(await page.locator(".candidate[data-model='WeeklyMedian3'] .candidate-state").innerText(), /跳过：无可评分点/);
+  await page.locator("#granularity").selectOption("900");
+  await stationPicker.selectOption("station_2");
+  assert.strictEqual(await page.locator(".station-section").getAttribute("data-station"), "station_2");
+  await stationPicker.selectOption("station_1");
+  assert.strictEqual(await page.locator(".station-section").getAttribute("data-station"), "station_1");
   assert.match(await page.locator(".candidate[data-model='WeeklyMedian3'] .candidate-state").innerText(), /跳过：无可评分点/);
   assert.ok((await page.locator(".load-chart .axis-label").allTextContents()).includes("08/31 12:15"));
   await page.locator(".load-chart").evaluate((svg) => {
@@ -683,18 +829,23 @@ function legacyPerformanceFixture() {
     await page.locator(".load-chart").evaluate((svg) => svg.closest(".chart-viewport").querySelector(".chart-tooltip").textContent),
     /2026\/08\/31 12:30/,
   );
+  assert.deepStrictEqual(await invalidSvgLineCoordinates(page), [], "custom charts must not render invalid SVG line coordinates");
   customPayload = warmingEvidenceFixture();
+  const warmingRequestStart = apiRequests.length;
+  const warmingResponseStart = apiResponses.length;
   await page.locator("#run-button").click();
-  await page.locator("#result-model-meta").getByText("1 个连续有效周 · 负载周期 7 天 · 15 分钟粒度").waitFor();
-  assert.match(await page.locator(".current-model-name").first().innerText(), /场站总负荷：WeeklyNaive/);
+  await waitForCustomResultModelMeta("1 个连续有效周 · 负载周期 7 天 · 15 分钟粒度", warmingRequestStart, warmingResponseStart);
+  assert.match(await page.locator(".current-model-name").first().innerText(), /电站总负荷：WeeklyNaive/);
   for (const selector of [".load-wape-value", ".load-mae-value", ".load-mape-value", ".baseline-value", ".improvement-value"]) {
     assert.ok((await page.locator(selector).allTextContents()).every((value) => value === "—"), selector);
   }
   assert.match(await page.locator(".candidate[data-model='WeeklyNaive'] .candidate-state").innerText(), /预热：暂无回测分数/);
 
   customPayload = legacyPerformanceFixture();
+  const legacyRequestStart = apiRequests.length;
+  const legacyResponseStart = apiResponses.length;
   await page.locator("#run-button").click();
-  await page.locator("#result-model-meta").getByText("28 天训练 · 15 分钟粒度").waitFor();
+  await waitForCustomResultModelMeta("28 天训练 · 15 分钟粒度", legacyRequestStart, legacyResponseStart);
   for (const selector of [".load-wape-value", ".load-mae-value", ".load-mape-value", ".baseline-value", ".improvement-value"]) {
     assert.ok((await page.locator(selector).allTextContents()).every((value) => value === "—"), `legacy run ${selector} must not show generic aggregate metrics`);
   }
@@ -703,11 +854,22 @@ function legacyPerformanceFixture() {
   assert.deepStrictEqual(await page.locator(".compare-baseline-value").allTextContents(), ["16.00%"]);
   assert.deepStrictEqual(await page.locator(".baseline-note-value").allTextContents(), ["16.00%"]);
 
+  customPayload = legacyNullManifestFixture();
+  const legacyNullRequestStart = apiRequests.length;
+  const legacyNullResponseStart = apiResponses.length;
+  await page.locator("#run-button").click();
+  await waitForCustomResultModelMeta("28 天训练 · 15 分钟粒度", legacyNullRequestStart, legacyNullResponseStart);
+  for (const selector of [".load-wape-value", ".load-mae-value", ".load-mape-value", ".baseline-value", ".improvement-value"]) {
+    assert.ok((await page.locator(selector).allTextContents()).every((value) => value === "—"), `legacy null manifests ${selector} must not show weekly evidence`);
+  }
+  assert.deepStrictEqual(await page.locator(".legacy-load-mape-value").allTextContents(), ["13.00%"]);
+
   await page.screenshot({ path: "/tmp/m3-task6-desktop.png", fullPage: true });
   assert.strictEqual(await page.locator("#error-state").isHidden(), true);
   assert.strictEqual(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true);
   assert.strictEqual(await page.locator(".station-section:visible").count(), 1);
-  assert.strictEqual(await page.locator(".station-section:visible .series-card:visible").count(), 2);
+  assert.strictEqual(await page.locator(".station-section:visible .chart-panel:visible").count(), 2);
+  assert.strictEqual(await page.locator(".station-section .series-card").count(), 2);
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.waitForTimeout(50);
