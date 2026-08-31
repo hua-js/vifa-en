@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 import math
+from time import monotonic
 from typing import Any
 from uuid import uuid4
 from zoneinfo import ZoneInfo
@@ -546,7 +547,23 @@ class CustomForecastRepository:
         missing = [value for key, value in expected.items() if key not in existing]
         for offset in range(0, len(missing), POINT_BATCH_SIZE):
             chunk = missing[offset : offset + POINT_BATCH_SIZE]
-            created = self._api.create_records(POINTS, chunk)
+            started_at = monotonic()
+            try:
+                created = self._api.create_records(POINTS, chunk)
+            except M3Error as error:
+                details = dict(error.details)
+                details.update(
+                    {
+                        "collection": POINTS,
+                        "batch_number": offset // POINT_BATCH_SIZE + 1,
+                        "batch_offset": offset,
+                        "batch_size": len(chunk),
+                        "elapsed_ms": max(
+                            0, int((monotonic() - started_at) * 1000)
+                        ),
+                    }
+                )
+                raise M3Error(error.code, error.message, details) from error
             if len(created) != len(chunk):
                 raise M3Error(
                     "sink_contract_invalid", "Custom point batch write is incomplete"

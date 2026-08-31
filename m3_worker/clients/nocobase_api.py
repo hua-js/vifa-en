@@ -317,7 +317,11 @@ class NocoBaseApiClient:
                 raise M3Error(
                     "sink_http_failed",
                     "NocoBase action failed",
-                    {"action": action, "status_code": response.status_code},
+                    {
+                        "collection": collection,
+                        "action": action,
+                        "status_code": response.status_code,
+                    },
                 )
             body = self._read_limited_body(response)
             try:
@@ -338,7 +342,21 @@ class NocoBaseApiClient:
             )
         except M3Error as error:
             if error.code == "http_retry_exhausted":
-                raise M3Error("sink_http_failed", "NocoBase retry exhausted") from error
+                cause = error.__cause__
+                failure_type = (
+                    type(cause).__name__
+                    if isinstance(cause, httpx.RequestError)
+                    else "RequestError"
+                )
+                raise M3Error(
+                    "sink_http_failed",
+                    "NocoBase retry exhausted",
+                    {
+                        "collection": collection,
+                        "action": action,
+                        "failure_type": failure_type,
+                    },
+                ) from error
             raise
 
     def list_records(

@@ -2,6 +2,8 @@
 
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
+import logging
+import re
 from threading import BoundedSemaphore, Lock
 from typing import Callable
 
@@ -21,6 +23,18 @@ from m3_worker.services.custom_forecast_repository import (
 )
 
 
+LOGGER = logging.getLogger("m3_worker.custom_forecast")
+SAFE_DIAGNOSTIC_TEXT = re.compile(r"[A-Za-z][A-Za-z0-9_]{0,63}\Z")
+DIAGNOSTIC_TEXT_FIELDS = ("collection", "action", "failure_type")
+DIAGNOSTIC_INTEGER_FIELDS = (
+    "batch_number",
+    "batch_offset",
+    "batch_size",
+    "status_code",
+    "elapsed_ms",
+)
+
+
 def _safe_error_code(error: BaseException) -> str:
     if isinstance(error, M3Error):
         code = error.code
@@ -37,6 +51,27 @@ def _safe_error_code(error: BaseException) -> str:
         ):
             return code
     return "internal_error"
+
+
+def _diagnostic_details(error: BaseException) -> dict[str, str | int]:
+    source = error.details if isinstance(error, M3Error) else {}
+    details: dict[str, str | int] = {}
+    for field in DIAGNOSTIC_TEXT_FIELDS:
+        value = source.get(field)
+        details[field] = (
+            value
+            if isinstance(value, str)
+            and SAFE_DIAGNOSTIC_TEXT.fullmatch(value) is not None
+            else "unknown"
+        )
+    for field in DIAGNOSTIC_INTEGER_FIELDS:
+        value = source.get(field)
+        details[field] = (
+            value
+            if type(value) is int and 0 <= value <= 86_400_000
+            else -1
+        )
+    return details
 
 
 class CustomForecastService:
@@ -243,6 +278,24 @@ class CustomForecastService:
                 content_hash=digest,
             )
         except Exception as error:
+            diagnostic = _diagnostic_details(error)
+            LOGGER.error(
+                "m3_custom_forecast_failed run_id=%s station_id=%s "
+                "error_code=%s collection=%s action=%s "
+                "batch_number=%s batch_offset=%s batch_size=%s "
+                "status_code=%s failure_type=%s elapsed_ms=%s",
+                run_id,
+                run.station_id if run is not None else "unknown",
+                _safe_error_code(error),
+                diagnostic["collection"],
+                diagnostic["action"],
+                diagnostic["batch_number"],
+                diagnostic["batch_offset"],
+                diagnostic["batch_size"],
+                diagnostic["status_code"],
+                diagnostic["failure_type"],
+                diagnostic["elapsed_ms"],
+            )
             if (
                 not points_persisted
                 and run is not None
