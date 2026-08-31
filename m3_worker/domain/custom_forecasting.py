@@ -151,6 +151,14 @@ def _clip(unique_id: str, raw: float) -> tuple[float, float, bool]:
     return value, published, value != published
 
 
+def _last_real_value(dataset: CustomTrainingDataset, unique_id: str) -> float:
+    for row in dataset.frame.iloc[::-1].itertuples(index=False):
+        timestamp = pd.Timestamp(row.ds).to_pydatetime()
+        if (unique_id, timestamp) not in dataset.imputed_keys:
+            return float(row.y)
+    raise M3Error("training_data_invalid", f"no real observations for {unique_id}")
+
+
 def _forecast_frame(
     dataset: CustomTrainingDataset,
     champion: CustomChampion,
@@ -209,10 +217,16 @@ def forecast_custom_series(
     if first_time != config.forecast_start:
         raise M3Error("forecast_alignment_invalid", "Forecast start is misaligned")
 
+    soc_offset = 0.0
+    if not is_load_series(unique_id):
+        first_raw = float(frame[used_model].iloc[0])
+        soc_offset = _last_real_value(dataset, unique_id) - first_raw
+
     points = []
     for horizon_step, row in enumerate(frame.itertuples(index=False), start=1):
         target_time = pd.Timestamp(row.ds).to_pydatetime()
-        raw, published, clipped = _clip(unique_id, getattr(row, used_model))
+        model_value = float(getattr(row, used_model))
+        raw, published, clipped = _clip(unique_id, model_value + soc_offset)
         points.append(
             CustomForecastPoint(
                 target_time=target_time,
