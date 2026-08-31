@@ -298,9 +298,9 @@ def _forecast_frame(
     config: CustomForecastConfig,
 ) -> tuple[pd.DataFrame, str, str | None]:
     unique_id = dataset.frame["unique_id"].iloc[0]
+    if is_load_series(unique_id):
+        return _forecast_load_frame(dataset, champion, config)
     try:
-        if is_load_series(unique_id):
-            return _forecast_load_model(dataset, champion, config)
         model = _model_by_name(champion.model_name, config)
         engine = StatsForecast(
             models=[model], freq=config.pandas_frequency, n_jobs=1
@@ -311,27 +311,6 @@ def _forecast_frame(
             None,
         )
     except Exception as champion_error:
-        if is_load_series(unique_id):
-            if champion.model_name == "WeeklyNaive":
-                raise M3Error(
-                    "weekly_naive_failed", "weekly naive final forecast failed"
-                ) from None
-            try:
-                values = weekly_profile_values(
-                    dataset,
-                    "WeeklyNaive",
-                    origin=config.forecast_start,
-                    periods=config.expected_points_per_series,
-                )
-                return (
-                    _load_frame(config, unique_id, "WeeklyNaive", values),
-                    "WeeklyNaive",
-                    type(champion_error).__name__,
-                )
-            except Exception:
-                raise M3Error(
-                    "weekly_naive_failed", "weekly naive final forecast failed"
-                ) from None
         if champion.model_name == "SeasonalNaive":
             raise
         fallback = StatsForecast(
@@ -346,6 +325,45 @@ def _forecast_frame(
             "SeasonalNaive",
             type(champion_error).__name__,
         )
+
+
+def _forecast_load_frame(
+    dataset: CustomTrainingDataset,
+    champion: CustomChampion,
+    config: CustomForecastConfig,
+) -> tuple[pd.DataFrame, str, str | None]:
+    unique_id = dataset.frame["unique_id"].iloc[0]
+    try:
+        frame, model_name, _ = _forecast_load_model(dataset, champion, config)
+        return (
+            _validated_load_forecast_frame(frame, model_name, config),
+            model_name,
+            None,
+        )
+    except Exception as champion_error:
+        if champion.model_name == "WeeklyNaive":
+            raise M3Error(
+                "weekly_naive_failed", "weekly naive final forecast failed"
+            ) from None
+        try:
+            values = weekly_profile_values(
+                dataset,
+                "WeeklyNaive",
+                origin=config.forecast_start,
+                periods=config.expected_points_per_series,
+            )
+            fallback_frame = _load_frame(config, unique_id, "WeeklyNaive", values)
+            return (
+                _validated_load_forecast_frame(
+                    fallback_frame, "WeeklyNaive", config
+                ),
+                "WeeklyNaive",
+                type(champion_error).__name__,
+            )
+        except Exception:
+            raise M3Error(
+                "weekly_naive_failed", "weekly naive final forecast failed"
+            ) from None
 
 
 def _forecast_load_model(
@@ -392,6 +410,43 @@ def _load_frame(
             model_name: values,
         }
     )
+
+
+def _validated_load_forecast_frame(
+    frame: pd.DataFrame,
+    model_name: str,
+    config: CustomForecastConfig,
+) -> pd.DataFrame:
+    if len(frame) != config.expected_points_per_series:
+        raise M3Error("forecast_alignment_invalid", "Forecast horizon is incomplete")
+    try:
+        timestamps = [
+            pd.Timestamp(value).to_pydatetime() for value in frame["ds"]
+        ]
+    except Exception:
+        raise M3Error(
+            "forecast_alignment_invalid", "Forecast timestamps are invalid"
+        ) from None
+    expected_times = [
+        config.forecast_start + index * config.interval
+        for index in range(config.expected_points_per_series)
+    ]
+    if timestamps != expected_times:
+        raise M3Error("forecast_alignment_invalid", "Forecast timestamps are misaligned")
+    try:
+        numeric_values = np.asarray(
+            pd.to_numeric(frame[model_name], errors="raise"), dtype=float
+        )
+    except Exception:
+        raise M3Error(
+            "forecast_values_invalid", "Forecast values are invalid"
+        ) from None
+    if not np.isfinite(numeric_values).all():
+        raise M3Error("forecast_values_invalid", "Forecast values are invalid")
+    normalized = frame.copy()
+    normalized["ds"] = timestamps
+    normalized[model_name] = numeric_values
+    return normalized
 
 
 def forecast_custom_series(

@@ -418,6 +418,90 @@ class LoadForecastingTests(unittest.TestCase):
         )
 
     @patch("m3_worker.domain.custom_forecasting.weekly_profile_values")
+    @patch("m3_worker.domain.custom_forecasting.StatsForecast")
+    def test_malformed_automatic_load_winner_retries_weekly_naive(
+        self, statsforecast_type, profile_values
+    ):
+        dataset = load_dataset_with_weeks(4)
+        config = make_selection_config(28)
+        champion = replace(weekly_naive_champion(dataset), model_name="AutoARIMA")
+        profile_values.return_value = [42.0] * config.expected_points_per_series
+        valid_times = pd.date_range(
+            config.forecast_start,
+            periods=config.expected_points_per_series,
+            freq=config.pandas_frequency,
+        )
+        cases = {
+            "incomplete": pd.DataFrame(
+                {
+                    "ds": valid_times[:-1],
+                    "AutoARIMA": [42.0] * (config.expected_points_per_series - 1),
+                }
+            ),
+            "missing_model_column": pd.DataFrame({"ds": valid_times}),
+            "nonfinite": pd.DataFrame(
+                {
+                    "ds": valid_times,
+                    "AutoARIMA": [float("inf")]
+                    + [42.0] * (config.expected_points_per_series - 1),
+                }
+            ),
+            "noncoercible": pd.DataFrame(
+                {
+                    "ds": valid_times,
+                    "AutoARIMA": [object()]
+                    + [42.0] * (config.expected_points_per_series - 1),
+                }
+            ),
+            "misaligned": pd.DataFrame(
+                {
+                    "ds": valid_times + config.interval,
+                    "AutoARIMA": [42.0] * config.expected_points_per_series,
+                }
+            ),
+        }
+
+        for problem, frame in cases.items():
+            with self.subTest(problem=problem):
+                statsforecast_type.return_value.forecast.return_value = frame
+                profile_values.reset_mock()
+
+                series = forecast_custom_series(dataset, champion, config)
+
+                self.assertEqual(series.model_name, "WeeklyNaive")
+                self.assertEqual(series.status, "degraded")
+                self.assertEqual(series.fallback_reason, "M3Error")
+                self.assertEqual(profile_values.call_args.args[1], "WeeklyNaive")
+
+    @patch("m3_worker.domain.custom_forecasting._forecast_load_model")
+    def test_malformed_weekly_naive_result_raises_safe_m3_error(
+        self, forecast_load_model
+    ):
+        dataset = load_dataset_with_weeks(1)
+        config = make_selection_config(7)
+        forecast_load_model.return_value = (
+            pd.DataFrame(
+                {
+                    "ds": pd.date_range(
+                        config.forecast_start,
+                        periods=config.expected_points_per_series - 1,
+                        freq=config.pandas_frequency,
+                    ),
+                    "WeeklyNaive": [42.0]
+                    * (config.expected_points_per_series - 1),
+                }
+            ),
+            "WeeklyNaive",
+            None,
+        )
+
+        with self.assertRaises(M3Error) as raised:
+            forecast_custom_series(dataset, weekly_naive_champion(dataset), config)
+
+        self.assertEqual(raised.exception.code, "weekly_naive_failed")
+        self.assertNotIn("forecast horizon", raised.exception.message)
+
+    @patch("m3_worker.domain.custom_forecasting.weekly_profile_values")
     def test_failed_weekly_naive_raises_safe_m3_error(self, profile_values):
         profile_values.side_effect = RuntimeError("database password")
         dataset = load_dataset_with_weeks(1)
