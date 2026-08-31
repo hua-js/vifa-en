@@ -417,7 +417,12 @@ class DeploymentArtifactTests(unittest.TestCase):
             "{{{m3NocobaseParentOriginJson}}};</script>\n"
         )
         self.assertEqual(html.count(marker), 1)
+        self.assertEqual(html.count("{{{m3DashboardAuthModeJson}}}"), 0)
+        self.assertEqual(html.count("{{{m3NocobaseParentOriginJson}}}"), 0)
         self.assertEqual(page["template"], html.replace(marker, injection + marker))
+        self.assertEqual(page["template"].count(injection), 1)
+        self.assertEqual(page["template"].count("{{{m3DashboardAuthModeJson}}}"), 1)
+        self.assertEqual(page["template"].count("{{{m3NocobaseParentOriginJson}}}"), 1)
 
     def test_production_page_describes_weekly_load_evidence(self):
         html = M3_HTML.read_text(encoding="utf-8")

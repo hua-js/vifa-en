@@ -215,6 +215,14 @@ function legacyPerformanceFixture() {
   const payload = fixtures.ready;
   const html = fs.readFileSync(HTML_PATH);
   const htmlText = html.toString("utf8");
+  const syntaxInjectedHtml = htmlText.replace(
+    "  <script>\n    (() => {",
+    `  <script>window.__M3_DASHBOARD_AUTH_MODE__ = "postmessage"; window.__M3_NOCOBASE_PARENT_ORIGIN__ = ${JSON.stringify("https://ems.lvkpower.com")};</script>\n  <script>\n    (() => {`,
+  );
+  assert.notStrictEqual(syntaxInjectedHtml, htmlText, "postmessage auth injection marker missing");
+  assert.doesNotThrow(() => {
+    for (const match of syntaxInjectedHtml.matchAll(/<script>([\s\S]*?)<\/script>/g)) new Function(match[1]);
+  }, "postmessage-injected production page must parse before it boots");
   const productionBlockPath = path.join(
     ROOT,
     "m3",
