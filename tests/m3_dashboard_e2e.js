@@ -9,7 +9,7 @@ const { spawnSync } = require("child_process");
 const { chromium } = require("playwright");
 
 const ROOT = path.resolve(__dirname, "..");
-const HTML_PATH = path.join(ROOT, "front", "场站未来能耗预测.html");
+const HTML_PATH = path.join(ROOT, "m3", "node_red", "m3_production_gateway_page.html");
 const PYTHON = process.env.M3_TEST_PYTHON || path.join(ROOT, ".venv", "bin", "python");
 const API_PATH = "/energy-forecast-api";
 const SERIES_IDS = ["station_total_load", "storage_soc"];
@@ -79,6 +79,121 @@ async function assertRejected(page, payload, label) {
 
 function pathCoordinates(pathData) {
   return [...pathData.matchAll(/[ML]\s+([\d.]+)\s+([\d.]+)/g)].map((match) => ({ x: Number(match[1]), y: Number(match[2]) }));
+}
+
+function weeklyEvidenceFixture() {
+  const forecastStart = "2026-08-31T12:15:00+08:00";
+  const firstTargetMs = Date.parse("2026-08-31T04:30:00Z");
+  const toUtc = (offset) => new Date(firstTargetMs + offset * 900_000).toISOString().replace(".000Z", "Z");
+  const run = {
+    run_id: "weekly-evidence-run",
+    station_id: "plant-alpha-ES01",
+    status: "succeeded",
+    history_start: "2026-08-03T12:15:00+08:00",
+    history_end: forecastStart,
+    history_days: 28,
+    forecast_start: forecastStart,
+    forecast_end: "2026-09-01T12:15:00+08:00",
+    forecast_days: 1,
+    interval_seconds: 900,
+    points_per_day: 96,
+    expected_points_per_series: 96,
+    model_policy: "full_selection",
+    model_manifest: {
+      selection_policy: "weekly_load_v1",
+      model_policy: "full_selection",
+      interval_seconds: 900,
+      daily_season_length: 96,
+      weekly_season_length: 672,
+      series: {
+        station_total_load: {
+          model_name: "WeeklyWeighted2",
+          selection_metric: "wape_percent",
+          selection_reason: null,
+          selection_status: null,
+          candidate_scores: [
+            { model_name: "WeeklyNaive", wape_percent: 12.5, mae: 10, mape_percent: 13, scorable_point_count: 96, skip_reason: null },
+            { model_name: "WeeklyWeighted2", wape_percent: 10, mae: 8, mape_percent: 11, scorable_point_count: 96, skip_reason: null },
+            { model_name: "WeeklyMedian3", wape_percent: null, mae: null, mape_percent: null, scorable_point_count: 0, skip_reason: "no_scorable_points" },
+          ],
+          training_start: "2026-08-03T12:15:00+08:00",
+          training_end: forecastStart,
+          statsforecast_version: "1.0.0",
+        },
+        storage_soc: {
+          model_name: "SeasonalNaive",
+          cv_mape_percent: null,
+          selected_at: "2026-08-31T12:15:00+08:00",
+          training_start: "2026-08-03T12:15:00+08:00",
+          training_end: forecastStart,
+          statsforecast_version: "1.0.0",
+          selection_reason: null,
+        },
+      },
+    },
+    source_manifest: {
+      history_start: "2026-08-03T12:15:00+08:00",
+      history_end: forecastStart,
+      interval_seconds: 900,
+      observation_count: 2688,
+      series: {
+        station_total_load: { retained_points: 2688, imputed_points: 0, mode: "ready", usable_week_count: 3, weeks: [] },
+        storage_soc: { retained_points: 2688, imputed_points: 0, mode: "ready", usable_week_count: 3, weeks: [] },
+      },
+    },
+    error_code: null,
+    started_at: "2026-08-31T12:15:00+08:00",
+    completed_at: "2026-08-31T12:16:00+08:00",
+    evaluated_at: null,
+    created_at: "2026-08-31T12:14:00+08:00",
+    updated_at: "2026-08-31T12:16:00+08:00",
+  };
+  const series = [
+    ["station_total_load", "kW", "WeeklyWeighted2", 500],
+    ["storage_soc", "%", "SeasonalNaive", 60],
+  ].map(([unique_id, unit, model_name, base]) => ({
+    unique_id,
+    unit,
+    model_name,
+    points: Array.from({ length: 96 }, (_, index) => ({
+      target_time: toUtc(index),
+      horizon_step: index + 1,
+      forecast_value: base + index / 10,
+      actual_value: null,
+      actual_quality: null,
+      absolute_percentage_error: null,
+    })),
+  }));
+  return {
+    run,
+    result: { run, series },
+    performance: {
+      station_id: "plant-alpha-ES01",
+      lookback_days: 7,
+      interval_seconds: 900,
+      forecast_days: 1,
+      model_policy: "full_selection",
+      calculated_at: "2026-08-31T12:16:00+08:00",
+      series: [
+        { unique_id: "station_total_load", mape_percent: null, baseline_mape_percent: null, relative_baseline_improvement_percent: null, scorable_point_count: 0, run_count: 0 },
+        { unique_id: "storage_soc", mape_percent: null, baseline_mape_percent: null, relative_baseline_improvement_percent: null, scorable_point_count: 0, run_count: 0 },
+      ],
+    },
+  };
+}
+
+function warmingEvidenceFixture() {
+  const fixture = weeklyEvidenceFixture();
+  fixture.run.run_id = "weekly-warming-run";
+  fixture.run.model_manifest.series.station_total_load.model_name = "WeeklyNaive";
+  fixture.run.model_manifest.series.station_total_load.selection_metric = null;
+  fixture.run.model_manifest.series.station_total_load.selection_reason = "fewer_than_three_usable_weeks";
+  fixture.run.model_manifest.series.station_total_load.selection_status = "warming_up";
+  fixture.run.model_manifest.series.station_total_load.candidate_scores = [];
+  fixture.run.source_manifest.series.station_total_load.usable_week_count = 1;
+  fixture.result.run = fixture.run;
+  fixture.result.series[0].model_name = "WeeklyNaive";
+  return fixture;
 }
 
 (async () => {
@@ -154,6 +269,7 @@ function pathCoordinates(pathData) {
   const redirectRequests = [];
   let responsePayload = payload;
   let responseMode = "payload";
+  let customPayload = null;
   let releaseDelayed;
   let timeoutRequestStartedResolve;
 
@@ -214,6 +330,21 @@ function pathCoordinates(pathData) {
     if (releaseDelayed === null) {
       await new Promise((resolve) => { releaseDelayed = resolve; });
       releaseDelayed = undefined;
+    }
+    const requestUrl = new URL(route.request().url());
+    if (customPayload !== null && requestUrl.pathname.startsWith(`${API_PATH}/custom-`)) {
+      let data;
+      if (route.request().method() === "POST") data = customPayload.run;
+      else if (requestUrl.pathname.endsWith("/result")) data = customPayload.result;
+      else if (requestUrl.pathname.startsWith(`${API_PATH}/custom-performance/`)) data = customPayload.performance;
+      else throw new Error(`unexpected custom route ${route.request().method()} ${requestUrl.pathname}`);
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json; charset=utf-8",
+        headers: { "Cache-Control": "no-store" },
+        body: JSON.stringify({ status: "ok", data }),
+      });
+      return;
     }
     if (responseMode === "redirect") {
       await route.fulfill({ status: 302, headers: { Location: "/redirect-target" }, body: "" });
@@ -282,10 +413,10 @@ function pathCoordinates(pathData) {
   assert.ok(!JSON.stringify(apiRequests[0].headers).includes("must-not-forward"));
   assert.deepStrictEqual(externalRequests, []);
   assert.strictEqual(await page.evaluate(() => window.__m3IntervalCount()), 1);
-  assert.strictEqual(await page.locator(".station-section").count(), 2);
-  assert.strictEqual(await page.locator(".series-card").count(), 4);
-  assert.strictEqual(await page.locator("svg.forecast-chart").count(), 4);
-  assert.deepStrictEqual(await page.locator(".station-section h2").allTextContents(), ["1# 电站", "2# 电站"]);
+  assert.strictEqual(await page.locator(".station-section").count(), 1);
+  assert.strictEqual(await page.locator(".series-card").count(), 2);
+  assert.strictEqual(await page.locator("svg.forecast-chart").count(), 2);
+  assert.deepStrictEqual(await page.locator(".station-section h2").allTextContents(), ["1# 电站"]);
   const themeToggle = page.locator("#theme-toggle");
   assert.strictEqual(await themeToggle.count(), 1, "theme toggle must exist");
   assert.strictEqual(await page.locator("html").getAttribute("data-theme"), "dark");
@@ -304,7 +435,12 @@ function pathCoordinates(pathData) {
   assert.deepStrictEqual(await stationPicker.locator("option").allTextContents(), ["1# 电站", "2# 电站"]);
   assert.strictEqual(await stationPicker.inputValue(), "station_1");
   assert.strictEqual(await page.locator("[data-station='station_1']").isVisible(), true);
-  assert.strictEqual(await page.locator("[data-station='station_2']").isHidden(), true);
+  assert.strictEqual(await page.locator(".candidate[data-model='WeeklyNaive']").evaluate((node) => node.classList.contains("disabled")), false);
+  assert.strictEqual(await page.locator(".candidate[data-model='WeeklyWeighted2']").evaluate((node) => node.classList.contains("disabled")), false);
+  assert.strictEqual(await page.locator(".candidate[data-model='AutoARIMA']").evaluate((node) => node.classList.contains("disabled")), false);
+  await page.locator("#granularity").selectOption("60");
+  assert.strictEqual(await page.locator(".candidate[data-model='AutoARIMA']").evaluate((node) => node.classList.contains("disabled")), true);
+  await page.locator("#granularity").selectOption("900");
   const firstStation = payload.data.stations[0];
   const firstLoad = firstStation.series[0];
   const firstSoc = firstStation.series[1];
@@ -317,20 +453,19 @@ function pathCoordinates(pathData) {
   assert.strictEqual(await page.locator("[data-station='station_1'] .metric-current-soc").innerText(), `${currentSoc.toFixed(1)} %`);
   assert.strictEqual(await page.locator("[data-station='station_1'] .metric-minimum-soc").innerText(), `${minimumSoc.toFixed(1)} %`);
   assert.strictEqual(await page.locator("[data-station='station_1'] .model-current-mape").innerText(), "2.50%");
-  assert.strictEqual(await page.locator("[data-station='station_1'] .model-baseline-mape").innerText(), "—");
+  assert.strictEqual(await page.locator("[data-station='station_1'] .model-baseline-wape").innerText(), "—");
   assert.strictEqual(await page.locator("[data-station='station_1'] .model-improvement").innerText(), "—");
   await stationPicker.selectOption("station_2");
-  assert.strictEqual(await page.locator("[data-station='station_1']").isHidden(), true);
-  assert.strictEqual(await page.locator("[data-station='station_2']").isVisible(), true);
+  assert.strictEqual(await page.locator(".station-section").getAttribute("data-station"), "station_2");
   const secondLoad = payload.data.stations[1].series[0].actual.filter((point) => point.value !== null).at(-1).value;
-  assert.strictEqual(await page.locator("[data-station='station_2'] .metric-current-load").innerText(), `${Math.round(secondLoad)} kW`);
-  assert.match(await page.locator("[data-station='station_2'] .acceptance-summary").innerText(), /3 \/ 7/);
+  assert.strictEqual(await page.locator(".metric-current-load").innerText(), `${Math.round(secondLoad)} kW`);
+  assert.match(await page.locator(".acceptance-summary").innerText(), /3 \/ 7/);
   await stationPicker.selectOption("station_1");
-  assert.deepStrictEqual(await page.locator(".forecast-value").allTextContents(), ["410 kW", "61.0 %", "730 kW", "54.0 %"]);
-  assert.deepStrictEqual(await page.locator(".station-window .forecast-start").allTextContents(), ["2026/08/26 10:00", "2026/08/26 09:45"]);
-  assert.deepStrictEqual(await page.locator(".readiness-hint").allTextContents(), ["已达到 Ready 条件", "已达到 Ready 条件"]);
-  assert.deepStrictEqual(await page.locator(".readiness-meta").allTextContents(), ["有效历史 28.0 / 28 天", "有效历史 28.0 / 28 天"]);
-  assert.strictEqual(await page.locator(".station-acceptance").count(), 2);
+  assert.deepStrictEqual(await page.locator(".forecast-value").allTextContents(), ["410 kW", "61.0 %"]);
+  assert.strictEqual(await page.locator(".forecast-start").innerText(), "2026/08/26 10:00");
+  assert.deepStrictEqual(await page.locator(".readiness-hint").allTextContents(), ["已达到 Ready 条件"]);
+  assert.deepStrictEqual(await page.locator(".readiness-meta").allTextContents(), ["有效历史 28.0 / 28 天"]);
+  assert.strictEqual(await page.locator(".station-acceptance").count(), 1);
   assert.deepStrictEqual(
     await page.locator("[data-station='station_1'] .acceptance-result-row").evaluateAll((rows) => rows.map((row) => row.dataset.series)),
     SERIES_IDS,
@@ -339,8 +474,6 @@ function pathCoordinates(pathData) {
     await page.locator("[data-station='station_1'] .acceptance-result-row").first().locator("td").allTextContents(),
     ["场站总负荷", "660 / 672", "3", "2.50%", "1.25", "2.60%", "2.40%", "1.90%", "5.20%", "通过"],
   );
-  assert.strictEqual(await page.locator("[data-station='station_2'] .acceptance-result-row").count(), 0);
-  assert.match(await page.locator("[data-station='station_2'] .acceptance-summary").innerText(), /3 \/ 7/);
 
   await page.evaluate((data) => window.renderDashboard(data), fixtures.initializing_normal.data);
   assert.strictEqual(await page.locator("#forecast-dashboard").getAttribute("data-state"), "initializing");
@@ -368,7 +501,7 @@ function pathCoordinates(pathData) {
   responseMode = "redirect";
   await page.evaluate(() => window.loadDashboard());
   assert.strictEqual(await page.locator("#forecast-dashboard").getAttribute("data-state"), "ready");
-  assert.deepStrictEqual(await page.locator(".forecast-value").allTextContents(), ["410 kW", "61.0 %", "730 kW", "54.0 %"]);
+  assert.deepStrictEqual(await page.locator(".forecast-value").allTextContents(), ["410 kW", "61.0 %"]);
   assert.strictEqual(await page.locator("#error-state").innerText(), "预测数据加载失败");
   assert.deepStrictEqual(redirectRequests, []);
   assert.ok(consoleErrors.slice(consoleBeforeRedirect).every((message) => /ERR_FAILED|Failed to load resource/.test(message)));
@@ -387,7 +520,7 @@ function pathCoordinates(pathData) {
   await timeoutLoad;
   assert.strictEqual(await page.locator("#forecast-dashboard").getAttribute("data-state"), "ready");
   assert.strictEqual(await page.locator("#error-state").innerText(), "请求超时");
-  assert.deepStrictEqual(await page.locator(".forecast-value").allTextContents(), ["410 kW", "61.0 %", "730 kW", "54.0 %"]);
+  assert.deepStrictEqual(await page.locator(".forecast-value").allTextContents(), ["410 kW", "61.0 %"]);
   assert.ok(await page.locator("svg.forecast-chart > *").count() > 0);
   assert.strictEqual(await page.locator(".acceptance-result-row").count(), 2);
   responseMode = "payload";
@@ -395,19 +528,17 @@ function pathCoordinates(pathData) {
   await page.evaluate(() => window.loadDashboard());
   assert.strictEqual(apiRequests.length, requestsBeforeRecovery + 1);
   await page.locator("#forecast-dashboard[data-state='ready']").waitFor();
-  assert.deepStrictEqual(await page.locator(".forecast-value").allTextContents(), ["410 kW", "61.0 %", "730 kW", "54.0 %"]);
+  assert.deepStrictEqual(await page.locator(".forecast-value").allTextContents(), ["410 kW", "61.0 %"]);
 
-  for (const stationKey of ["station_1", "station_2"]) {
-    const station = page.locator(`[data-station='${stationKey}']`);
-    assert.strictEqual(await station.locator("path[data-kind='actual']").count(), 2);
-    assert.strictEqual(await station.locator("path[data-kind='forecast']").count(), 2);
-    assert.strictEqual(await station.locator("path[data-kind='actual']").first().evaluate((node) => getComputedStyle(node).strokeDasharray), "none");
-    assert.notStrictEqual(await station.locator("path[data-kind='forecast']").first().evaluate((node) => getComputedStyle(node).strokeDasharray), "none");
-  }
+  const chartStation = page.locator("[data-station='station_1']");
+  assert.strictEqual(await chartStation.locator("path[data-kind='actual']").count(), 2);
+  assert.strictEqual(await chartStation.locator("path[data-kind='forecast']").count(), 2);
+  assert.strictEqual(await chartStation.locator("path[data-kind='actual']").first().evaluate((node) => getComputedStyle(node).strokeDasharray), "none");
+  assert.notStrictEqual(await chartStation.locator("path[data-kind='forecast']").first().evaluate((node) => getComputedStyle(node).strokeDasharray), "none");
   const stationOne = payload.data.stations[0];
   const chartStart = Date.parse(stationOne.range.history_start);
   const chartEnd = Date.parse(stationOne.range.forecast_end);
-  const chartX = (value) => 48 + (Date.parse(value) - chartStart) / (chartEnd - chartStart) * (640 - 48 - 15);
+  const chartX = (value) => 54 + (Date.parse(value) - chartStart) / (chartEnd - chartStart) * (1180 - 54 - 22);
   const loadActualCoordinates = pathCoordinates(await page.locator("[data-station='station_1'] .load-chart path[data-kind='actual']").getAttribute("d"));
   const loadForecastCoordinates = pathCoordinates(await page.locator("[data-station='station_1'] .load-chart path[data-kind='forecast']").getAttribute("d"));
   assert.ok(Math.abs(loadActualCoordinates.at(-1).x - chartX(stationOne.series[0].actual.at(-1).data_time)) < 0.02);
@@ -430,17 +561,7 @@ function pathCoordinates(pathData) {
   assert.strictEqual(await page.locator("[data-station='station_1'] path.chart-line").count(), 0);
   assert.strictEqual(await page.locator("[data-station='station_1'] .acceptance-result-row").count(), 0);
   assert.strictEqual(await page.locator("[data-station='station_1'] .readiness-hint").isHidden(), true);
-  assert.deepStrictEqual(await page.locator("[data-station='station_2'] .forecast-value").allTextContents(), ["730 kW", "54.0 %"]);
-  assert.strictEqual(await page.locator("[data-station='station_2'] path[data-kind='forecast']").count(), 2);
   await page.evaluate((data) => window.renderDashboard(data), payload.data);
-
-  const bothFinal = clone(payload);
-  bothFinal.data.stations[1].acceptance = clone(payload.data.stations[0].acceptance);
-  await page.evaluate((data) => window.renderDashboard(data), bothFinal.data);
-  assert.deepStrictEqual(
-    await page.locator(".station-section").evaluateAll((sections) => sections.map((section) => [...section.querySelectorAll(".acceptance-result-row")].map((row) => row.dataset.series))),
-    [SERIES_IDS, SERIES_IDS],
-  );
 
   const malformedCases = [];
   const extraTop = clone(payload); extraTop.data.debug = true; malformedCases.push(["extra_top", extraTop]);
@@ -520,6 +641,35 @@ function pathCoordinates(pathData) {
   assert.ok(apiRequests.every((item) => !item.headers.cookie && item.headers.authorization === "Bearer current-user-token" && !item.headers.referer));
   assert.ok(apiRequests.every((item) => !/must-not-send|must-not-forward|example\.invalid/.test(JSON.stringify(item.headers))));
 
+  customPayload = weeklyEvidenceFixture();
+  await page.locator("#run-button").click();
+  await page.locator("#result-model-meta").getByText("3 个连续有效周 · 负载周期 7 天 · 15 分钟粒度").waitFor();
+  assert.deepStrictEqual(await page.locator(".load-wape-value").allTextContents(), ["10.00%", "10.00%"]);
+  assert.deepStrictEqual(await page.locator(".load-mae-value").allTextContents(), ["8.00", "8.00"]);
+  assert.ok((await page.locator(".load-mape-value").allTextContents()).every((value) => value === "11.00%"));
+  assert.ok((await page.locator(".baseline-value").allTextContents()).every((value) => value === "12.50%"));
+  assert.ok((await page.locator(".improvement-value").allTextContents()).every((value) => value === "20.00%"));
+  assert.match(await page.locator(".current-model-name").first().innerText(), /场站总负荷：WeeklyWeighted2 · 储能 SOC：SeasonalNaive（状态锚定）/);
+  assert.match(await page.locator(".candidate[data-model='WeeklyMedian3'] .candidate-state").innerText(), /跳过：无可评分点/);
+  assert.ok((await page.locator(".load-chart .axis-label").allTextContents()).includes("08/31 12:15"));
+  await page.locator(".load-chart").evaluate((svg) => {
+    const bounds = svg.getBoundingClientRect();
+    const firstTargetX = 54 + 15 / (24 * 60) * (1180 - 54 - 22);
+    svg.onpointermove({ clientX: bounds.left + firstTargetX / 1180 * bounds.width });
+  });
+  assert.match(
+    await page.locator(".load-chart").evaluate((svg) => svg.closest(".chart-viewport").querySelector(".chart-tooltip").textContent),
+    /2026\/08\/31 12:30/,
+  );
+  customPayload = warmingEvidenceFixture();
+  await page.locator("#run-button").click();
+  await page.locator("#result-model-meta").getByText("1 个连续有效周 · 负载周期 7 天 · 15 分钟粒度").waitFor();
+  assert.match(await page.locator(".current-model-name").first().innerText(), /场站总负荷：WeeklyNaive/);
+  for (const selector of [".load-wape-value", ".load-mae-value", ".load-mape-value", ".baseline-value", ".improvement-value"]) {
+    assert.ok((await page.locator(selector).allTextContents()).every((value) => value === "—"), selector);
+  }
+  assert.match(await page.locator(".candidate[data-model='WeeklyNaive'] .candidate-state").innerText(), /预热：暂无回测分数/);
+
   await page.screenshot({ path: "/tmp/m3-task6-desktop.png", fullPage: true });
   assert.strictEqual(await page.locator("#error-state").isHidden(), true);
   assert.strictEqual(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true);
@@ -529,8 +679,8 @@ function pathCoordinates(pathData) {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.waitForTimeout(50);
   assert.strictEqual(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true);
-  assert.strictEqual(await page.locator(".station-section:visible .chart-grid").evaluate((node) => getComputedStyle(node).gridTemplateColumns.split(" ").length), 1);
-  assert.strictEqual(await page.locator(".chart-viewport").count(), 4);
+  assert.strictEqual(await page.locator(".station-section:visible .result-grid").evaluate((node) => getComputedStyle(node).gridTemplateColumns.split(" ").length), 1);
+  assert.strictEqual(await page.locator(".chart-viewport").count(), 2);
   assert.strictEqual(await page.locator(".station-section:visible .chart-viewport").count(), 2);
   for (const viewport of await page.locator(".station-section:visible .chart-viewport").all()) {
     const metrics = await viewport.evaluate((node) => {
@@ -554,8 +704,8 @@ function pathCoordinates(pathData) {
     }), true);
   }
   assert.strictEqual(await page.locator("#error-state").isHidden(), true);
-  assert.strictEqual(await page.locator(".station-section").count(), 2);
-  assert.strictEqual(await page.locator(".series-card").count(), 4);
+  assert.strictEqual(await page.locator(".station-section").count(), 1);
+  assert.strictEqual(await page.locator(".series-card").count(), 2);
   await page.screenshot({ path: "/tmp/m3-task6-mobile.png", fullPage: true });
   assert.deepStrictEqual(consoleErrors, []);
   assert.deepStrictEqual(pageErrors, []);
@@ -594,6 +744,8 @@ function pathCoordinates(pathData) {
   assert.deepStrictEqual(await wrapperPage.evaluate(() => [localStorage.length, sessionStorage.length]), [0, 0]);
   await wrapperPage.close();
 
+  customPayload = null;
+  await page.evaluate(() => sessionStorage.clear());
   servedHtml = htmlText.replace(
     "  <script>\n    (() => {",
     `  <script>window.__M3_DASHBOARD_AUTH_MODE__ = "server_token"; window.__M3_NOCOBASE_PARENT_ORIGIN__ = ${JSON.stringify(origin)};</script>\n  <script>\n    (() => {`,

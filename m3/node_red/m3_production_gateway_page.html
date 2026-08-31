@@ -400,7 +400,7 @@
     .rule { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; padding: 10px 12px; color: var(--muted); border: 1px solid var(--item-line); border-radius: 10px; background: var(--panel); font-size: 11px; }
     .rule strong { color: var(--ink); }
     .rule-dot { width: 9px; height: 9px; flex: 0 0 auto; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 4px rgb(25 138 93 / 11%); }
-    .candidates { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 9px; }
+    .candidates { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 9px; }
     .candidate { position: relative; min-height: 94px; padding: 12px; border: 1px solid var(--item-line); border-radius: 11px; background: var(--panel); }
     .candidate.selected { border-color: rgb(71 125 240 / 45%); background: rgb(71 125 240 / 6%); box-shadow: inset 0 0 0 1px rgb(71 125 240 / 10%); }
     .candidate.disabled { opacity: .48; }
@@ -491,9 +491,10 @@
       <div class="model-summary">
         <div class="model-summary-main"><div class="model-badge current-model-name">—</div><div class="model-summary-copy"><strong>当前预测模型</strong><span id="result-model-meta">历史范围待设置 · 15 分钟粒度 · 96 点 / 天</span></div></div>
         <div class="model-summary-metrics">
+          <div class="model-mini"><span>负载 WAPE</span><strong class="load-wape-value">—</strong></div>
+          <div class="model-mini"><span>负载 MAE</span><strong class="load-mae-value">—</strong></div>
           <div class="model-mini"><span>负载 MAPE</span><strong class="load-mape-value">—</strong></div>
-          <div class="model-mini"><span>SOC MAPE</span><strong class="soc-mape-value">—</strong></div>
-          <div class="model-mini"><span>SeasonalNaive</span><strong class="baseline-value">—</strong></div>
+          <div class="model-mini"><span>WeeklyNaive WAPE</span><strong class="baseline-value">—</strong></div>
           <div class="model-mini good"><span>负载相对提升</span><strong class="improvement-value">—</strong></div>
         </div>
       </div>
@@ -523,9 +524,10 @@
       <header class="zone-head"><span class="zone-index">03</span><div><div class="zone-title" id="performance-zone-title">模型表现</div><div class="zone-subtitle" id="performance-zone-subtitle">先看当前模型是否优于同配置基线，再看近 7 日稳定性</div></div></header>
       <section class="card performance-card">
         <div class="performance-top">
-          <article class="performance-metric"><div class="performance-label">负载预测 MAPE</div><div class="performance-value model-current-mape load-mape-value">—</div><div class="performance-note current-mape-note">尚无已完成评估窗口</div></article>
-          <article class="performance-metric"><div class="performance-label">SOC 预测 MAPE</div><div class="performance-value model-soc-mape soc-mape-value">—</div><div class="performance-note soc-mape-note">尚无已完成评估窗口</div></article>
-          <article class="performance-metric"><div class="performance-label">SeasonalNaive 基线</div><div class="performance-value model-baseline-mape baseline-value">—</div><div class="performance-note baseline-mape-note">负载预测同配置、同目标点基线</div></article>
+          <article class="performance-metric"><div class="performance-label">负载预测 WAPE</div><div class="performance-value model-current-wape load-wape-value">—</div><div class="performance-note current-mape-note">本次任务留出周回测</div></article>
+          <article class="performance-metric"><div class="performance-label">负载预测 MAE</div><div class="performance-value model-current-mae load-mae-value">—</div><div class="performance-note load-mae-note">本次任务留出周回测</div></article>
+          <article class="performance-metric"><div class="performance-label">负载预测 MAPE</div><div class="performance-value model-current-mape load-mape-value">—</div><div class="performance-note load-mape-note">本次任务留出周回测</div></article>
+          <article class="performance-metric"><div class="performance-label">WeeklyNaive WAPE</div><div class="performance-value model-baseline-wape baseline-value">—</div><div class="performance-note baseline-mape-note">同一留出周负载基线</div></article>
           <article class="performance-metric"><div class="performance-label">负载相对基线提升</div><div class="performance-value good model-improvement improvement-value">—</div><div class="performance-note improvement-note">获得同窗基线后自动计算</div></article>
         </div>
         <div class="compare-bars">
@@ -559,11 +561,12 @@
               <div class="config-item"><span>总预测点数</span><strong id="total-points">96</strong><small>每个预测序列</small></div>
               <div class="config-item"><span>季节周期</span><strong id="season-value">日 96 · 周 672</strong><small>随输出粒度自动变化</small></div>
               <div class="config-item"><span>负载聚合</span><strong>时间均值</strong><small>原始数据 → 输出粒度</small></div>
-              <div class="config-item"><span>SOC 聚合</span><strong>窗口末值</strong><small>保持状态量含义</small></div>
+              <div class="config-item"><span>负载周期</span><strong>负载周期：7 天</strong><small>以连续有效周提供候选资格</small></div>
+              <div class="config-item"><span>SOC 后处理</span><strong>SOC 后处理：最后真实状态锚定</strong><small>预测起点承接最后一个真实 SOC</small></div>
             </div></div>
             <div class="selection-panel"><div class="panel-title">选模策略与候选模型</div><div class="rule"><span class="rule-dot"></span><span><strong id="policy-name">等待数据</strong> · <span id="policy-copy">载入历史长度后显示选模策略</span></span></div>
-              <div class="candidates"><div class="candidate" data-model="SeasonalNaive"><div class="candidate-name">SeasonalNaive</div><div class="candidate-role">季节性朴素预测<br>同时作为性能基线</div><div class="candidate-state">基线 + 候选</div></div><div class="candidate" data-model="AutoETS"><div class="candidate-name">AutoETS</div><div class="candidate-role">趋势与季节项的<br>指数平滑模型</div><div class="candidate-state">参与选模</div></div><div class="candidate" data-model="AutoARIMA"><div class="candidate-name">AutoARIMA</div><div class="candidate-role">自回归与差分结构<br>自动参数搜索</div><div class="candidate-state">参与选模</div></div><div class="candidate" data-model="MSTL"><div class="candidate-name">MSTL</div><div class="candidate-role">多季节周期分解<br>适合日 / 周周期</div><div class="candidate-state">参与选模</div></div></div>
-              <div class="model-foot"><span>模型选择依据：同配置滚动回测 MAPE / MAE</span><span>策略版本：<strong>m3-policy-v2</strong></span></div>
+              <div class="candidates"><div class="candidate" data-model="WeeklyNaive"><div class="candidate-name">WeeklyNaive</div><div class="candidate-role">上一连续有效周<br>同刻度负载基线</div><div class="candidate-state">1 周起可用</div></div><div class="candidate" data-model="WeeklyWeighted2"><div class="candidate-name">WeeklyWeighted2</div><div class="candidate-role">最近两个连续有效周<br>加权负载轮廓</div><div class="candidate-state">3 周起可用</div></div><div class="candidate" data-model="WeeklyMedian3"><div class="candidate-name">WeeklyMedian3</div><div class="candidate-role">最近三个连续有效周<br>中位数负载轮廓</div><div class="candidate-state">4 周起可用</div></div><div class="candidate" data-model="AutoARIMA"><div class="candidate-name">AutoARIMA</div><div class="candidate-role">周季节自回归模型<br>仅 5 分钟及以上粒度</div><div class="candidate-state">4 周起可用</div></div><div class="candidate" data-model="MSTL"><div class="candidate-name">MSTL</div><div class="candidate-role">日 / 周季节分解<br>仅 5 分钟及以上粒度</div><div class="candidate-state">4 周起可用</div></div></div>
+              <div class="model-foot"><span>模型选择依据：留出周 WAPE → MAE → MAPE</span><span>策略版本：<strong id="policy-version">weekly_load_v1</strong></span></div>
             </div>
           </div>
         </div>
@@ -591,7 +594,24 @@
       const ALLOWED_INTERVALS = [30, 60, 300, 900, 1800, 3600];
       const RUN_STORAGE_KEY = "vifa.m3.customForecastRuns.v1";
       const DANGEROUS_KEYS = new Set(["__proto__", "prototype", "constructor"]);
+      const LOAD_SELECTION_POLICY = "weekly_load_v1";
+      const LOAD_CANDIDATE_RULES = Object.freeze({
+        WeeklyNaive: { weeks: 1, minimumInterval: 0 },
+        WeeklyWeighted2: { weeks: 3, minimumInterval: 0 },
+        WeeklyMedian3: { weeks: 4, minimumInterval: 0 },
+        AutoARIMA: { weeks: 4, minimumInterval: 300 },
+        MSTL: { weeks: 4, minimumInterval: 300 },
+      });
+      const LOAD_SKIP_REASON_LABELS = Object.freeze({
+        no_scorable_points: "无可评分点",
+        wape_unavailable: "WAPE 不可用",
+      });
       const SVG_NS = "http://www.w3.org/2000/svg";
+      const SHANGHAI_DATE_TIME = new Intl.DateTimeFormat("zh-CN", {
+        timeZone: "Asia/Shanghai",
+        year: "numeric", month: "2-digit", day: "2-digit",
+        hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+      });
       const root = document.querySelector("#forecast-dashboard");
       const errorState = root.querySelector("#error-state");
       const stationPicker = root.querySelector("#station-picker");
@@ -755,11 +775,12 @@
         const days = Math.max(1, Math.min(7, Number(forecastDays.value) || 1));
         forecastDays.value = String(days);
         const total = pointsPerDay * days;
-        const fullSelection = historyDays !== null && historyDays >= 28;
+        const usableWeeks = historyDays === null ? null : Math.floor(historyDays / 7);
+        const candidates = configuredLoadCandidates(usableWeeks, seconds);
         text(root.querySelector("#history-hint"), historyDays === null ? "日期范围无效" : `共 ${historyDays} 天`);
         text(root.querySelector("#history-days-inline"), historyDays === null ? "—" : `${historyDays} 天`);
         text(root.querySelector("#history-days-value"), historyDays === null ? "—" : `${historyDays} 天`);
-        text(root.querySelector("#history-policy-hint"), historyDays === null ? "等待任务参数" : fullSelection ? "达到完整选模门槛" : "仅使用 SeasonalNaive");
+        text(root.querySelector("#history-policy-hint"), usableWeeks === null ? "等待任务参数" : `${usableWeeks} 个可用周`);
         text(root.querySelector("#points-hint"), `${formatInteger(pointsPerDay)} 点 / 天`);
         text(root.querySelector("#total-points-inline"), formatInteger(total));
         text(root.querySelector("#interval-value"), intervalLabel(seconds));
@@ -769,21 +790,40 @@
         text(root.querySelector("#details-history"), historyDays === null ? "历史范围待设置" : `${historyDays} 天训练`);
         text(root.querySelector("#details-interval"), `${intervalLabel(seconds)}粒度`);
         text(root.querySelector("#details-points"), `${formatInteger(pointsPerDay)} 点 / 天`);
-        text(root.querySelector("#result-model-meta"), `${historyDays === null ? "历史范围待设置" : `${historyDays} 天训练`} · ${intervalLabel(seconds)}粒度 · ${formatInteger(pointsPerDay)} 点 / 天`);
-        text(root.querySelector("#details-policy"), historyDays === null ? "等待数据" : fullSelection ? "自动选模" : "短历史策略");
-        text(root.querySelector("#policy-name"), historyDays === null ? "等待数据" : fullSelection ? "完整选模" : "短历史策略");
-        text(root.querySelector("#policy-copy"), historyDays === null
-          ? "载入历史长度后显示选模策略"
-          : fullSelection
-            ? "历史数据达到 28 天，启用全部候选模型并选择回测表现最佳者"
-            : "历史数据少于 28 天，仅使用 SeasonalNaive");
+        if (!customResults.has(stationPicker.value)) {
+          text(root.querySelector("#result-model-meta"), `${historyDays === null ? "历史范围待设置" : `${historyDays} 天训练`} · ${intervalLabel(seconds)}粒度 · ${formatInteger(pointsPerDay)} 点 / 天`);
+        }
+        text(root.querySelector("#details-policy"), usableWeeks === null ? "等待数据" : `负载 ${usableWeeks} 周`);
+        text(root.querySelector("#policy-name"), usableWeeks === null ? "等待数据" : LOAD_SELECTION_POLICY);
+        text(root.querySelector("#policy-copy"), usableWeeks === null
+          ? "载入历史长度后显示连续有效周与候选资格"
+          : candidates.size
+            ? `${usableWeeks} 个配置周可用；完成后按留出周 WAPE 选择负载模型`
+            : "至少需要 1 个连续有效周才能生成负载预测");
         root.querySelectorAll(".candidate").forEach((candidate) => {
-          const enabled = fullSelection || candidate.dataset.model === "SeasonalNaive";
+          const model = candidate.dataset.model;
+          const rule = LOAD_CANDIDATE_RULES[model];
+          const enabled = candidates.has(model);
           candidate.classList.toggle("disabled", !enabled);
-          if (!enabled) text(candidate.querySelector(".candidate-state"), "历史不足，未启用");
-          else if (!candidate.classList.contains("selected")) text(candidate.querySelector(".candidate-state"), candidate.dataset.model === "SeasonalNaive" ? "基线 + 候选" : "参与选模");
+          if (!enabled) {
+            const reason = usableWeeks === null || usableWeeks < rule.weeks
+              ? `需 ${rule.weeks} 个连续有效周`
+              : "当前粒度不支持";
+            text(candidate.querySelector(".candidate-state"), reason);
+          } else if (!candidate.classList.contains("selected")) {
+            text(candidate.querySelector(".candidate-state"), model === "WeeklyNaive" ? "基线 + 候选" : "参与选模");
+          }
         });
         updateRunAvailability(taskConfiguration());
+      }
+
+      function configuredLoadCandidates(usableWeeks, intervalSeconds) {
+        const candidates = new Set();
+        if (!Number.isInteger(usableWeeks) || !Number.isInteger(intervalSeconds)) return candidates;
+        Object.entries(LOAD_CANDIDATE_RULES).forEach(([model, rule]) => {
+          if (usableWeeks >= rule.weeks && intervalSeconds >= rule.minimumInterval) candidates.add(model);
+        });
+        return candidates;
       }
 
       function configuredAuthMode(value) {
@@ -1009,19 +1049,28 @@
       function text(node, value) { node.textContent = value; }
       function dateTime(value) {
         if (value === null) return "—";
-        const parts = value.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
-        return `${parts[1]}/${parts[2]}/${parts[3]} ${parts[4]}:${parts[5]}`;
+        const date = new Date(value);
+        if (!Number.isFinite(date.getTime())) return "—";
+        const parts = Object.fromEntries(
+          SHANGHAI_DATE_TIME.formatToParts(date)
+            .filter((part) => part.type !== "literal")
+            .map((part) => [part.type, part.value]),
+        );
+        return `${parts.year}/${parts.month}/${parts.day} ${parts.hour}:${parts.minute}`;
       }
       function timeOnly(value) {
-        if (value === null) return "—";
-        const parts = value.match(/^\d{4}-\d{2}-\d{2}T(\d{2}):(\d{2})/);
-        return `${parts[1]}:${parts[2]}`;
+        const formatted = dateTime(value);
+        return formatted === "—" ? formatted : formatted.slice(-5);
+      }
+      function axisDateTime(value) {
+        const formatted = dateTime(value);
+        return formatted === "—" ? formatted : formatted.slice(5);
       }
       function valueText(uniqueId, value) {
         if (!finite(value)) return "—";
         return uniqueId === "station_total_load" ? `${Math.round(value)} kW` : `${value.toFixed(1)} %`;
       }
-      function metric(value) { return value === null ? "—" : Number(value).toFixed(2); }
+      function metric(value) { return finite(value) ? Number(value).toFixed(2) : "—"; }
 
       function validActual(series) { return series.actual.filter((point) => point.value !== null); }
       function extremeForecast(series, direction) {
@@ -1063,7 +1112,7 @@
         [".metric-peak-load", ".metric-current-soc", ".metric-minimum-soc", ".peak-time", ".minimum-soc-time",
           ".summary-peak-title", ".summary-peak-copy", ".summary-soc-title", ".summary-soc-copy",
           ".summary-low-title", ".summary-low-copy"].forEach((selector) => text(section.querySelector(selector), "—"));
-        [".load-mape-value", ".soc-mape-value", ".baseline-value", ".improvement-value", ".model-soc-mae"].forEach((selector) => root.querySelectorAll(selector).forEach((node) => text(node, "—")));
+        [".load-wape-value", ".load-mae-value", ".load-mape-value", ".soc-mape-value", ".baseline-value", ".improvement-value", ".model-soc-mae"].forEach((selector) => root.querySelectorAll(selector).forEach((node) => text(node, "—")));
         root.querySelectorAll(".performance-value").forEach((node) => node.removeAttribute("data-state"));
         text(root.querySelector("#performance-zone-subtitle"), "先看当前模型是否优于同配置基线，再看近 7 日稳定性");
         text(root.querySelector(".current-mape-note"), "尚无已完成评估窗口");
@@ -1159,9 +1208,7 @@
             "text-anchor": index === 0 ? "start" : index === 4 ? "end" : "middle",
             class: "axis-label",
           });
-          const date = new Date(tickTime);
-          const formatter = new Intl.DateTimeFormat("zh-CN", { timeZone: "Asia/Shanghai", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false });
-          text(label, formatter.format(date).replace("/", "/"));
+          text(label, axisDateTime(new Date(tickTime).toISOString()));
           svg.append(label);
         }
         const dividerX = x(range.now_separator);
@@ -1188,10 +1235,6 @@
         const hoverLine = svgNode("line", { x1: left, y1: top, x2: left, y2: height - bottom, class: "chart-hover-line" });
         hoverLine.style.visibility = "hidden";
         svg.append(hoverLine);
-        const tooltipTime = new Intl.DateTimeFormat("zh-CN", {
-          timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit",
-          hour: "2-digit", minute: "2-digit", hour12: false,
-        });
         const hideTooltip = () => {
           tooltip.hidden = true;
           hoverLine.style.visibility = "hidden";
@@ -1215,7 +1258,7 @@
           hoverLine.setAttribute("x1", sampleX.toFixed(2));
           hoverLine.setAttribute("x2", sampleX.toFixed(2));
           hoverLine.style.visibility = "visible";
-          text(tooltip, `${tooltipTime.format(new Date(sample.time))}\n实际：${valueText(series.unique_id, sample.actual)}\n预测：${valueText(series.unique_id, sample.forecast)}`);
+          text(tooltip, `${dateTime(new Date(sample.time).toISOString())}\n实际：${valueText(series.unique_id, sample.actual)}\n预测：${valueText(series.unique_id, sample.forecast)}`);
           const viewportBounds = viewport.getBoundingClientRect();
           const visibleX = event.clientX - viewportBounds.left;
           tooltip.style.left = `${viewport.scrollLeft + visibleX}px`;
@@ -1230,7 +1273,7 @@
         const body = root.querySelector(".station-acceptance tbody");
         const socMae = root.querySelector(".model-soc-mae");
         body.replaceChildren();
-        [".load-mape-value", ".soc-mape-value", ".baseline-value", ".improvement-value"].forEach((selector) => root.querySelectorAll(selector).forEach((node) => text(node, "—")));
+        [".load-wape-value", ".load-mae-value", ".load-mape-value", ".soc-mape-value", ".baseline-value", ".improvement-value"].forEach((selector) => root.querySelectorAll(selector).forEach((node) => text(node, "—")));
         text(socMae, "—");
         text(root.querySelector(".compare-model-value"), "—");
         text(root.querySelector(".compare-baseline-value"), "—");
@@ -1328,6 +1371,11 @@
           : "预测窗口暂无足够的有效负载数据。");
       }
 
+      function displayModelName(uniqueId, modelName) {
+        if (modelName === null) return "—";
+        return uniqueId === "storage_soc" ? `${modelName}（状态锚定）` : modelName;
+      }
+
       function renderStation(station) {
         const section = root.querySelector(".station-section");
         section.dataset.station = station.station_key;
@@ -1347,7 +1395,7 @@
           text(card.querySelector(".actual-value"), valueText(series.unique_id, latestActual?.value ?? null));
           text(card.querySelector(".actual-time"), timeOnly(latestActual?.data_time ?? null));
           text(card.querySelector(".forecast-value"), valueText(series.unique_id, series.forecast.length ? series.forecast[0].value : null));
-          text(card.querySelector(".model-name"), series.model_name ?? "—");
+          text(card.querySelector(".model-name"), displayModelName(series.unique_id, series.model_name));
           text(card.querySelector(".fallback"), `回退：${series.fallback_reason ?? "无"}`);
           renderChart(section, series, station.range);
         });
@@ -1602,10 +1650,105 @@
         }
       }
 
+      function objectValue(value) {
+        return value !== null && typeof value === "object" && !Array.isArray(value) ? value : null;
+      }
+
+      function loadEvidenceFor(run) {
+        const manifest = objectValue(run.model_manifest);
+        if (manifest === null || manifest.selection_policy !== LOAD_SELECTION_POLICY) return null;
+        const series = objectValue(manifest.series);
+        const load = series === null ? null : objectValue(series.station_total_load);
+        if (load === null || !safeText(load.model_name)) return null;
+        const source = objectValue(run.source_manifest);
+        const sourceSeries = source === null ? null : objectValue(source.series);
+        const sourceLoad = sourceSeries === null ? null : objectValue(sourceSeries.station_total_load);
+        const usableWeeks = sourceLoad?.usable_week_count;
+        return {
+          load,
+          usableWeeks: Number.isInteger(usableWeeks) && usableWeeks >= 0 ? usableWeeks : null,
+          candidateScores: Array.isArray(load.candidate_scores) ? load.candidate_scores : [],
+        };
+      }
+
+      function candidateScoreByName(scores, modelName) {
+        return scores.find((score) => objectValue(score)?.model_name === modelName) || null;
+      }
+
+      function nonnegativeMetric(value) {
+        return finite(value) && value >= 0 ? value : null;
+      }
+
+      function percentMetric(value) {
+        const number = nonnegativeMetric(value);
+        return number === null ? "—" : `${metric(number)}%`;
+      }
+
+      function safeSkipReason(value) {
+        return typeof value === "string" && Object.hasOwn(LOAD_SKIP_REASON_LABELS, value)
+          ? LOAD_SKIP_REASON_LABELS[value]
+          : "候选不可用";
+      }
+
+      function renderCustomEvidence(run) {
+        const evidence = loadEvidenceFor(run);
+        if (evidence === null) return false;
+        const selected = candidateScoreByName(evidence.candidateScores, evidence.load.model_name);
+        const baseline = candidateScoreByName(evidence.candidateScores, "WeeklyNaive");
+        const selectedWape = selected === null ? null : nonnegativeMetric(selected.wape_percent);
+        const selectedMae = selected === null ? null : nonnegativeMetric(selected.mae);
+        const selectedMape = selected === null ? null : nonnegativeMetric(selected.mape_percent);
+        const baselineWape = baseline === null ? null : nonnegativeMetric(baseline.wape_percent);
+        const improvement = selectedWape !== null && baselineWape !== null && baselineWape !== 0
+          ? (baselineWape - selectedWape) / baselineWape * 100
+          : null;
+
+        root.querySelectorAll(".load-wape-value").forEach((node) => text(node, percentMetric(selectedWape)));
+        root.querySelectorAll(".load-mae-value").forEach((node) => text(node, metric(selectedMae)));
+        root.querySelectorAll(".load-mape-value").forEach((node) => text(node, percentMetric(selectedMape)));
+        root.querySelectorAll(".baseline-value").forEach((node) => text(node, percentMetric(baselineWape)));
+        root.querySelectorAll(".improvement-value").forEach((node) => text(node, improvement === null ? "—" : `${metric(improvement)}%`));
+        text(root.querySelector(".compare-model-value"), percentMetric(selectedWape));
+        text(root.querySelector(".compare-baseline-value"), percentMetric(baselineWape));
+        text(root.querySelector(".baseline-note-value"), percentMetric(baselineWape));
+        text(root.querySelector("#performance-zone-subtitle"), "本次任务使用留出周即时回测；近 7 日汇总在后续任务评估后更新");
+        text(root.querySelector(".current-mape-note"), selectedWape === null ? "当前有效周尚未形成可评分留出周" : "选定负载模型的留出周 WAPE");
+        text(root.querySelector(".load-mae-note"), selectedMae === null ? "当前有效周尚未形成可评分留出周" : "选定负载模型的留出周 MAE");
+        text(root.querySelector(".load-mape-note"), selectedMape === null ? "当前有效周尚未形成可评分留出周" : "选定负载模型的留出周 MAPE");
+        text(root.querySelector(".baseline-mape-note"), baselineWape === null ? "WeeklyNaive 尚无可评分留出周" : "WeeklyNaive 同一留出周 WAPE");
+        text(root.querySelector(".improvement-note"), improvement === null ? "基线 WAPE 为 0 或尚无评分，无法计算" : "(WeeklyNaive WAPE − 当前 WAPE) / WeeklyNaive WAPE");
+
+        text(root.querySelector("#policy-name"), LOAD_SELECTION_POLICY);
+        text(root.querySelector("#policy-version"), LOAD_SELECTION_POLICY);
+        text(root.querySelector("#details-policy"), evidence.usableWeeks === null ? "留出周选模" : `负载 ${evidence.usableWeeks} 个连续有效周`);
+        text(root.querySelector("#policy-copy"), evidence.load.selection_status === "warming_up"
+          ? "连续有效周积累中；WeeklyNaive 可用，回测分数暂不可用"
+          : `以 ${evidence.load.selection_metric === "wape_percent" ? "WAPE" : "留出周指标"} 选择负载模型`);
+
+        root.querySelectorAll(".candidate").forEach((candidate) => {
+          const modelName = candidate.dataset.model;
+          const score = candidateScoreByName(evidence.candidateScores, modelName);
+          const selectedModel = modelName === evidence.load.model_name;
+          candidate.classList.toggle("selected", selectedModel);
+          candidate.classList.toggle("disabled", score === null && !selectedModel);
+          if (score === null) {
+            text(candidate.querySelector(".candidate-state"), selectedModel && evidence.load.selection_status === "warming_up" ? "预热：暂无回测分数" : "本次未参与");
+          } else if (score.skip_reason !== null && score.skip_reason !== undefined) {
+            text(candidate.querySelector(".candidate-state"), `跳过：${safeSkipReason(score.skip_reason)}`);
+          } else {
+            text(candidate.querySelector(".candidate-state"), percentMetric(score.wape_percent) === "—" ? "WAPE —" : `WAPE ${percentMetric(score.wape_percent)}`);
+          }
+        });
+        return true;
+      }
+
       function renderCustomPerformance(performance, run) {
         const load = performance.series[0];
         const soc = performance.series[1];
         const formatPercent = (value) => value === null ? "—" : `${metric(value)}%`;
+        root.querySelectorAll(".load-wape-value, .load-mae-value").forEach((node) => text(node, "—"));
+        text(root.querySelector(".load-mae-note"), "尚无本次留出周评分");
+        text(root.querySelector(".load-mape-note"), "尚无本次留出周评分");
         const loadPending = load.run_count === 0;
         const socPending = soc.run_count === 0;
         const loadMape = loadPending ? "待评估" : formatPercent(load.mape_percent);
@@ -1629,13 +1772,15 @@
           [socPerformanceValue, socPending],
           [baselinePerformanceValue, loadPending],
           [improvementPerformanceValue, loadPending],
-        ].forEach(([node, pending]) => { node.dataset.state = pending ? "pending" : "ready"; });
+        ].forEach(([node, pending]) => {
+          if (node !== null) node.dataset.state = pending ? "pending" : "ready";
+        });
         if (loadPending) {
           text(loadPerformanceValue, "待实际值完整回填");
           text(baselinePerformanceValue, "暂无已完成评估任务");
           text(improvementPerformanceValue, "评估完成后计算");
         }
-        if (socPending) text(socPerformanceValue, "待实际值完整回填");
+        if (socPending && socPerformanceValue !== null) text(socPerformanceValue, "待实际值完整回填");
         text(root.querySelector("#performance-zone-subtitle"), loadPending && socPending ? "近 7 日暂无同配置可比任务" : "先看当前模型是否优于同配置基线，再看近 7 日稳定性");
         text(root.querySelector(".current-mape-note"), loadPending ? expectedEvaluation : `${load.run_count} 个同配置任务 · ${formatInteger(load.scorable_point_count)} 个有效点`);
         text(root.querySelector(".soc-mape-note"), socPending ? expectedEvaluation : `${soc.run_count} 个同配置任务 · ${formatInteger(soc.scorable_point_count)} 个有效点`);
@@ -1676,12 +1821,21 @@
         };
         renderStation(station);
         const section = root.querySelector(".station-section");
-        const modelSummary = result.series.map((series) => `${SERIES_LABELS[series.unique_id]}：${series.model_name}`).join(" · ");
+        const evidence = loadEvidenceFor(run);
+        const modelSummary = result.series.map((series) => {
+          const modelName = series.unique_id === "station_total_load" && evidence !== null
+            ? evidence.load.model_name
+            : series.model_name;
+          return `${SERIES_LABELS[series.unique_id]}：${displayModelName(series.unique_id, modelName)}`;
+        }).join(" · ");
         root.querySelectorAll(".current-model-name").forEach((node) => text(node, modelSummary));
         text(section.querySelector(".history-window"), `${dateTime(run.history_start)} — ${dateTime(run.history_end)}`);
         text(section.querySelector(".station-status"), CUSTOM_RUN_LABELS[run.status]);
-        text(root.querySelector("#result-model-meta"), `${run.history_days} 天训练 · ${intervalLabel(run.interval_seconds)}粒度 · ${formatInteger(run.points_per_day)} 点 / 天`);
+        text(root.querySelector("#result-model-meta"), evidence !== null && evidence.usableWeeks !== null
+          ? `${evidence.usableWeeks} 个连续有效周 · 负载周期 7 天 · ${intervalLabel(run.interval_seconds)}粒度`
+          : `${run.history_days} 天训练 · ${intervalLabel(run.interval_seconds)}粒度`);
         renderCustomPerformance(performance, run);
+        renderCustomEvidence(run);
         errorState.hidden = true;
       }
 

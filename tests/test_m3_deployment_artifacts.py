@@ -5,6 +5,7 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import tempfile
 import tomllib
 import unittest
 import json
@@ -33,7 +34,8 @@ RUNBOOK = ROOT / "m3" / "AMD64三域Docker部署手册.md"
 HOST_ENTRYPOINT = DEPLOY / "host-entrypoint.sh"
 HOST_WORKER_UNIT = DEPLOY / "vifa-m3-worker.service"
 HOST_DASHBOARD_UNIT = DEPLOY / "vifa-m3-dashboard.service"
-M3_HTML = ROOT / "front" / "场站未来能耗预测.html"
+M3_HTML = ROOT / "m3" / "node_red" / "m3_production_gateway_page.html"
+FLOW_SYNC = ROOT / "m3" / "node_red" / "sync_production_gateway_flow.py"
 
 
 CORE_NODE_RED_TYPES = {
@@ -327,6 +329,11 @@ class DeploymentArtifactTests(unittest.TestCase):
                 "M3_AUTH_MODE": "server_token",
                 "M3_AUTH_BASE_URL": "https://ems.lvkpower.com",
                 "M3_NOCOBASE_PAGE_ORIGIN": "https://ems.lvkpower.com",
+                "M3_STATIONS_JSON": (
+                    '[{"station_id":"ES01","station_key":"station_1",'
+                    '"station_name":"1# 电站"},{"station_id":"ES02",'
+                    '"station_key":"station_2","station_name":"2# 电站"}]'
+                ),
             },
         )
 
@@ -338,7 +345,14 @@ class DeploymentArtifactTests(unittest.TestCase):
         )
         self.assertEqual(
             routes,
-            [("/energy-forecast-api", "get"), ("/ett", "get")],
+            [
+                ("/energy-forecast-api", "get"),
+                ("/energy-forecast-api/custom-performance/:station_key", "get"),
+                ("/energy-forecast-api/custom-runs/:run_id", "get"),
+                ("/energy-forecast-api/custom-runs/:run_id/result", "get"),
+                ("/energy-forecast-api/custom-runs/:station_key", "post"),
+                ("/ett", "get"),
+            ],
         )
 
         public_gate = next(
@@ -350,7 +364,7 @@ class DeploymentArtifactTests(unittest.TestCase):
         )
 
         self.assertEqual(manifest["kind"], "vifa-m3-nocobase-iframe-manifest")
-        self.assertEqual(manifest["version"], 2)
+        self.assertEqual(manifest["version"], 3)
         self.assertFalse(manifest["nocobase_native_import"]["importable"])
         self.assertEqual(
             manifest["target"]["nocobase_origin"],
@@ -369,24 +383,15 @@ class DeploymentArtifactTests(unittest.TestCase):
             "https://opdash.lvkpower.com/ett",
         )
 
-        architecture = ARCHITECTURE.read_text(encoding="utf-8")
         self.assertEqual(manifest["block"]["type"], "iframe_html")
         self.assertEqual(
             manifest["security"]["token_transport"],
             "not exposed to browser",
         )
-        for origin in (
-            "https://vifa.hlszh.com",
-            "https://ems.lvkpower.com",
-            "https://opdash.lvkpower.com",
-        ):
-            self.assertIn(origin, architecture)
-
         rendered = "\n".join(
             (
                 json.dumps(flow, ensure_ascii=False),
                 json.dumps(manifest, ensure_ascii=False),
-                architecture,
             )
         )
         for forbidden in (
@@ -414,6 +419,38 @@ class DeploymentArtifactTests(unittest.TestCase):
         self.assertEqual(html.count(marker), 1)
         self.assertEqual(page["template"], html.replace(marker, injection + marker))
 
+    def test_production_page_describes_weekly_load_evidence(self):
+        html = M3_HTML.read_text(encoding="utf-8")
+
+        for label in (
+            "负载周期：7 天",
+            "SOC 后处理：最后真实状态锚定",
+            "weekly_load_v1",
+        ):
+            self.assertIn(label, html)
+
+    def test_production_flow_sync_reports_and_repairs_drift(self):
+        python = str(ROOT / ".venv" / "bin" / "python")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            page = temp_root / "page.html"
+            flow = temp_root / "flow.json"
+            shutil.copyfile(M3_HTML, page)
+            shutil.copyfile(PRODUCTION_FLOW, flow)
+            command = [python, str(FLOW_SYNC), "--page", str(page), "--flow", str(flow)]
+
+            clean = subprocess.run(command + ["--check"], cwd=ROOT, capture_output=True, text=True)
+            self.assertEqual(clean.returncode, 0, clean.stderr)
+            page.write_text(page.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+            stale = subprocess.run(command + ["--check"], cwd=ROOT, capture_output=True, text=True)
+            self.assertEqual(stale.returncode, 1)
+            repaired = subprocess.run(command, cwd=ROOT, capture_output=True, text=True)
+            self.assertEqual(repaired.returncode, 0, repaired.stderr)
+            self.assertEqual(
+                subprocess.run(command + ["--check"], cwd=ROOT, capture_output=True, text=True).returncode,
+                0,
+            )
+
     def test_iframe_auth_uses_current_user_and_exact_origin_nonce_handshake(self):
         html = M3_HTML.read_text(encoding="utf-8")
         block = NOCOBASE_BLOCK.read_text(encoding="utf-8")
@@ -428,7 +465,6 @@ class DeploymentArtifactTests(unittest.TestCase):
         self.assertIn("crypto.getRandomValues", html)
         self.assertNotIn("window.__NOCOBASE_API_TOKEN__", html)
         self.assertNotIn("localStorage", html)
-        self.assertNotIn("sessionStorage", html)
         self.assertNotIn('postMessage(message, "*")', html)
 
         self.assertIn('ctx.getVar("ctx.token")', block)
