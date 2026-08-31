@@ -143,7 +143,7 @@ class LoadMetricTests(unittest.TestCase):
         actual = pd.DataFrame(
             {
                 "ds": times,
-                "y": [100.0, 50.0, 0.0, float("nan"), 999.0],
+                "y": [100.0, 50.0, 0.0, float("nan"), float("nan")],
             }
         )
         predicted = [90.0, 60.0, 10.0, 20.0, float("inf")]
@@ -175,8 +175,38 @@ class LoadMetricTests(unittest.TestCase):
         second = load_candidate_score("WeeklyWeighted2", actual, [2.0, 2.0], frozenset())
 
         self.assertIsNone(first.wape_percent)
-        self.assertEqual(first.skip_reason, "wape_unavailable")
+        self.assertIsNone(first.skip_reason)
         self.assertLess(load_candidate_comparison_key(first), load_candidate_comparison_key(second))
+
+    def test_partial_prediction_is_rejected_before_ranking_against_complete_candidate(self):
+        """Dropping one non-finite prediction would let a one-point fit win unfairly."""
+        actual = pd.DataFrame(
+            {
+                "ds": [START, START + timedelta(days=1)],
+                "y": [100.0, 100.0],
+            }
+        )
+        partial = load_candidate_score(
+            "WeeklyNaive", actual, [100.0, float("nan")], frozenset()
+        )
+        complete = load_candidate_score(
+            "WeeklyWeighted2", actual, [120.0, 120.0], frozenset()
+        )
+
+        self.assertEqual(partial.scorable_point_count, 2)
+        self.assertIsNone(partial.wape_percent)
+        self.assertIsNone(partial.mae)
+        self.assertIsNone(partial.mape_percent)
+        self.assertEqual(partial.skip_reason, "non_finite_prediction")
+        self.assertEqual(complete.scorable_point_count, 2)
+        self.assertEqual(complete.wape_percent, 20.0)
+        self.assertEqual(
+            min(
+                (score for score in (partial, complete) if score.mae is not None),
+                key=load_candidate_comparison_key,
+            ).model_name,
+            "WeeklyWeighted2",
+        )
 
     def test_fixed_model_order_breaks_exact_metric_ties(self):
         scores = [

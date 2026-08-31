@@ -90,6 +90,15 @@ async function invalidSvgLineCoordinates(page) {
   })));
 }
 
+async function inlineBarPercent(page, selector) {
+  return page.locator(selector).evaluate((node) => {
+    if (!node.style.width.endsWith("%")) throw new TypeError("bar width must be a percentage");
+    const value = Number.parseFloat(node.style.width);
+    if (!Number.isFinite(value)) throw new TypeError("bar width must be finite");
+    return value;
+  });
+}
+
 function weeklyEvidenceFixture() {
   const forecastStart = "2026-08-31T12:15:00+08:00";
   const firstTargetMs = Date.parse(forecastStart);
@@ -117,6 +126,9 @@ function weeklyEvidenceFixture() {
       series: {
         station_total_load: {
           model_name: "WeeklyWeighted2",
+          realized_model_name: "WeeklyWeighted2",
+          realized_status: "ok",
+          realized_fallback_reason: null,
           selection_metric: "wape_percent",
           selection_reason: null,
           selection_status: null,
@@ -198,10 +210,39 @@ function warmingEvidenceFixture() {
   fixture.run.model_manifest.series.station_total_load.selection_metric = null;
   fixture.run.model_manifest.series.station_total_load.selection_reason = "fewer_than_three_usable_weeks";
   fixture.run.model_manifest.series.station_total_load.selection_status = "warming_up";
+  fixture.run.model_manifest.series.station_total_load.realized_model_name = "WeeklyNaive";
+  fixture.run.model_manifest.series.station_total_load.realized_status = "warming_up";
+  fixture.run.model_manifest.series.station_total_load.realized_fallback_reason = null;
   fixture.run.model_manifest.series.station_total_load.candidate_scores = [];
   fixture.run.source_manifest.series.station_total_load.usable_week_count = 1;
   fixture.result.run = fixture.run;
   fixture.result.series[0].model_name = "WeeklyNaive";
+  return fixture;
+}
+
+function realizedFallbackFixture() {
+  const fixture = weeklyEvidenceFixture();
+  fixture.run.run_id = "weekly-realized-fallback-run";
+  const load = fixture.run.model_manifest.series.station_total_load;
+  load.realized_model_name = "WeeklyNaive";
+  load.realized_status = "degraded";
+  load.realized_fallback_reason = "RuntimeError";
+  fixture.result.run = fixture.run;
+  fixture.result.series[0].model_name = "WeeklyNaive";
+  return fixture;
+}
+
+function maeSelectionFixture() {
+  const fixture = weeklyEvidenceFixture();
+  fixture.run.run_id = "weekly-mae-selection-run";
+  const load = fixture.run.model_manifest.series.station_total_load;
+  load.selection_metric = "mae";
+  load.selection_reason = "wape_unavailable";
+  load.candidate_scores = [
+    { model_name: "WeeklyNaive", wape_percent: null, mae: 2, mape_percent: null, scorable_point_count: 96, skip_reason: null },
+    { model_name: "WeeklyWeighted2", wape_percent: null, mae: 1, mape_percent: null, scorable_point_count: 96, skip_reason: null },
+  ];
+  fixture.result.run = fixture.run;
   return fixture;
 }
 
@@ -370,7 +411,18 @@ function legacyNullManifestFixture() {
 
   async function waitForCustomResultModelMeta(expectedText, requestStart, responseStart) {
     try {
-      await page.locator("#result-model-meta").getByText(expectedText).waitFor({ timeout: 3000 });
+      const deadline = Date.now() + 3000;
+      while (Date.now() < deadline) {
+        const receivedNewResult = apiResponses.slice(responseStart).some(
+          (response) => response.path.startsWith(`${API_PATH}/custom-`)
+            && response.path.endsWith("/result")
+            && response.status === 200,
+        );
+        const renderedMeta = await page.locator("#result-model-meta").innerText();
+        if (receivedNewResult && renderedMeta === expectedText) return;
+        await page.waitForTimeout(10);
+      }
+      throw new Error("new custom result did not reach the expected rendered state");
     } catch (error) {
       const pageState = await page.evaluate(() => {
         const errorState = document.querySelector("#error-state");
@@ -809,6 +861,10 @@ function legacyNullManifestFixture() {
   assert.ok((await page.locator(".load-mape-value").allTextContents()).every((value) => value === "11.00%"));
   assert.ok((await page.locator(".baseline-value").allTextContents()).every((value) => value === "12.50%"));
   assert.ok((await page.locator(".improvement-value").allTextContents()).every((value) => value === "20.00%"));
+  assert.strictEqual(await page.locator(".compare-model-label").innerText(), "选定模型留出周 WAPE");
+  assert.strictEqual(await page.locator(".compare-baseline-label").innerText(), "WeeklyNaive 留出周 WAPE");
+  assert.strictEqual(await inlineBarPercent(page, ".model-bar"), 80);
+  assert.strictEqual(await inlineBarPercent(page, ".baseline-bar"), 100);
   assert.match(await page.locator(".current-model-name").first().innerText(), /电站总负荷：WeeklyWeighted2 · 储能 SOC：SeasonalNaive（状态锚定）/);
   assert.match(await page.locator(".candidate[data-model='WeeklyMedian3'] .candidate-state").innerText(), /跳过：无可评分点/);
   await page.locator("#granularity").selectOption("60");
@@ -830,6 +886,36 @@ function legacyNullManifestFixture() {
     /2026\/08\/31 12:30/,
   );
   assert.deepStrictEqual(await invalidSvgLineCoordinates(page), [], "custom charts must not render invalid SVG line coordinates");
+
+  customPayload = realizedFallbackFixture();
+  const fallbackRequestStart = apiRequests.length;
+  const fallbackResponseStart = apiResponses.length;
+  await page.locator("#run-button").click();
+  await waitForCustomResultModelMeta("3 个连续有效周 · 负载周期 7 天 · 15 分钟粒度", fallbackRequestStart, fallbackResponseStart);
+  assert.match(await page.locator(".current-model-name").first().innerText(), /电站总负荷：WeeklyNaive · 储能 SOC：SeasonalNaive（状态锚定）/);
+  assert.strictEqual(await page.locator(".candidate[data-model='WeeklyWeighted2']").evaluate((node) => node.classList.contains("selected")), true);
+  assert.strictEqual(await page.locator(".series-card[data-series='station_total_load'] .model-name").innerText(), "WeeklyNaive");
+  assert.strictEqual(await page.locator(".series-card[data-series='station_total_load'] .series-status").innerText(), "降级");
+  assert.strictEqual(await page.locator(".series-card[data-series='station_total_load'] .fallback").innerText(), "回退：RuntimeError");
+  assert.strictEqual((await page.locator("body").innerText()).includes("password"), false);
+
+  customPayload = maeSelectionFixture();
+  const maeRequestStart = apiRequests.length;
+  const maeResponseStart = apiResponses.length;
+  await page.locator("#run-button").click();
+  await waitForCustomResultModelMeta("3 个连续有效周 · 负载周期 7 天 · 15 分钟粒度", maeRequestStart, maeResponseStart);
+  assert.ok((await page.locator(".load-wape-value").allTextContents()).every((value) => value === "—"));
+  assert.ok((await page.locator(".load-mae-value").allTextContents()).every((value) => value === "1.00"));
+  assert.strictEqual(await page.locator(".compare-model-label").innerText(), "选定模型留出周 MAE");
+  assert.strictEqual(await page.locator(".compare-baseline-label").innerText(), "WeeklyNaive 留出周 MAE");
+  assert.strictEqual(await page.locator(".compare-model-value").innerText(), "1.00");
+  assert.strictEqual(await page.locator(".compare-baseline-value").innerText(), "2.00");
+  assert.strictEqual(await inlineBarPercent(page, ".model-bar"), 50);
+  assert.strictEqual(await inlineBarPercent(page, ".baseline-bar"), 100);
+  assert.match(await page.locator("#policy-copy").innerText(), /MAE/);
+  assert.match(await page.locator(".candidate[data-model='WeeklyWeighted2'] .candidate-state").innerText(), /MAE 1.00/);
+  assert.doesNotMatch(await page.locator(".candidate[data-model='WeeklyWeighted2'] .candidate-state").innerText(), /跳过/);
+
   customPayload = warmingEvidenceFixture();
   const warmingRequestStart = apiRequests.length;
   const warmingResponseStart = apiResponses.length;
@@ -853,6 +939,16 @@ function legacyNullManifestFixture() {
   assert.deepStrictEqual(await page.locator(".compare-model-value").allTextContents(), ["13.00%"]);
   assert.deepStrictEqual(await page.locator(".compare-baseline-value").allTextContents(), ["16.00%"]);
   assert.deepStrictEqual(await page.locator(".baseline-note-value").allTextContents(), ["16.00%"]);
+  assert.strictEqual(await page.locator(".compare-model-label").innerText(), "当前模型 MAPE");
+  assert.strictEqual(await page.locator(".compare-baseline-label").innerText(), "SeasonalNaive 基线");
+  assert.strictEqual(await page.locator(".baseline-note-label").innerText(), "SeasonalNaive 同配置基线");
+  assert.strictEqual(await inlineBarPercent(page, ".model-bar"), 81.3);
+  assert.strictEqual(await inlineBarPercent(page, ".baseline-bar"), 100);
+  assert.strictEqual(await page.locator("#policy-name").innerText(), "旧版日周期策略");
+  assert.strictEqual(await page.locator("#policy-version").innerText(), "无周选模证据");
+  assert.match(await page.locator("#policy-copy").innerText(), /未记录 weekly_load_v1 选模证据/);
+  assert.ok(await page.locator(".candidate").evaluateAll((nodes) => nodes.every((node) => node.classList.contains("disabled") && !node.classList.contains("selected"))));
+  assert.ok((await page.locator(".candidate-state").allTextContents()).every((value) => value === "旧任务无周候选证据"));
 
   customPayload = legacyNullManifestFixture();
   const legacyNullRequestStart = apiRequests.length;

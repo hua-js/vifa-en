@@ -5,6 +5,7 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import tomllib
 import unittest
@@ -431,11 +432,14 @@ class DeploymentArtifactTests(unittest.TestCase):
             "负载周期：7 天",
             "SOC 后处理：最后真实状态锚定",
             "weekly_load_v1",
+            "compare-model-label",
+            "compare-baseline-label",
+            "baseline-note-label",
         ):
             self.assertIn(label, html)
 
     def test_production_flow_sync_reports_and_repairs_drift(self):
-        python = str(ROOT / ".venv" / "bin" / "python")
+        python = sys.executable
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_root = Path(temp_dir)
             page = temp_root / "page.html"

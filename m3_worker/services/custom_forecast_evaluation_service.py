@@ -309,7 +309,7 @@ class CustomForecastEvaluationService:
         series_results = []
         run_cache: dict[str, StoredCustomRun | None] = {}
 
-        def uses_weekly_load_policy(row: dict[str, Any]) -> bool:
+        def uses_comparable_weekly_run(row: dict[str, Any]) -> bool:
             run_id = row.get("run_id")
             if type(run_id) is not str:
                 return False
@@ -320,6 +320,7 @@ class CustomForecastEvaluationService:
             return (
                 type(manifest) is dict
                 and manifest.get("selection_policy") == LOAD_SELECTION_POLICY
+                and run.config.history_days == history_days
             )
 
         for unique_id in SERIES_IDS:
@@ -331,7 +332,7 @@ class CustomForecastEvaluationService:
                 model_policy=policy,
                 calculated_since=since,
             )
-            rows = [row for row in rows if uses_weekly_load_policy(row)]
+            rows = [row for row in rows if uses_comparable_weekly_run(row)]
             usable = [
                 row
                 for row in rows

@@ -1,5 +1,6 @@
 """Regression tests for idempotent custom forecast point persistence."""
 
+from dataclasses import replace
 from datetime import datetime, timedelta
 import unittest
 
@@ -116,6 +117,39 @@ class AmbiguousCommitApi:
 
 
 class CustomForecastRepositoryTests(unittest.TestCase):
+    def test_persists_realized_point_model_when_selection_evidence_differs(self):
+        """Point rows remain authoritative for a selected-winner final fallback."""
+        run = replace(
+            make_run(),
+            model_manifest={
+                "selection_policy": "weekly_load_v1",
+                "series": {
+                    "station_total_load": {
+                        "model_name": "WeeklyWeighted2",
+                        "realized_model_name": "WeeklyNaive",
+                        "realized_status": "degraded",
+                        "realized_fallback_reason": "RuntimeError",
+                    }
+                },
+            },
+        )
+        series = [
+            make_series("station_total_load", model_name="WeeklyNaive"),
+            make_series("storage_soc", model_name="SeasonalNaive"),
+        ]
+        baselines = [
+            make_series("station_total_load", model_name="WeeklyNaive"),
+            make_series("storage_soc", model_name="SeasonalNaive"),
+        ]
+
+        values = CustomForecastRepository._point_values(run, series, baselines)
+
+        load_rows = [
+            value for value in values if value["unique_id"] == "station_total_load"
+        ]
+        self.assertEqual(len(load_rows), 24)
+        self.assertEqual({value["model_name"] for value in load_rows}, {"WeeklyNaive"})
+
     def test_requires_weekly_naive_load_baseline_and_seasonal_naive_soc_baseline(self):
         """Changing either fixed baseline model must reject the persistence payload."""
         run = make_run()

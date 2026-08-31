@@ -82,6 +82,9 @@ def weekly_naive_champion(
     selection_reason: str | None = None,
     selection_status: str | None = None,
 ) -> CustomChampion:
+    resolved_status = selection_status
+    if resolved_status is None and 0 < len(dataset.usable_weeks) < 3:
+        resolved_status = "warming_up"
     return CustomChampion(
         model_name="WeeklyNaive",
         cv_mape_percent=None,
@@ -90,7 +93,7 @@ def weekly_naive_champion(
         training_end=pd.Timestamp(dataset.end),
         statsforecast_version=version("statsforecast"),
         selection_reason=selection_reason,
-        selection_status=selection_status,
+        selection_status=resolved_status,
     )
 
 
@@ -187,6 +190,9 @@ def select_load_champion(
     if not viable_scores:
         raise M3Error("model_selection_failed", "all load candidates failed")
     winner = min(viable_scores, key=lambda score: score.comparison_key)
+    selection_metric = (
+        "wape_percent" if winner.wape_percent is not None else "mae"
+    )
     return CustomChampion(
         model_name=winner.model_name,
         cv_mape_percent=winner.mape_percent,
@@ -194,8 +200,11 @@ def select_load_champion(
         training_start=pd.Timestamp(dataset.start),
         training_end=pd.Timestamp(dataset.end),
         statsforecast_version=version("statsforecast"),
+        selection_reason=(
+            None if winner.wape_percent is not None else "wape_unavailable"
+        ),
         candidate_scores=tuple(scores),
-        selection_metric="wape_percent",
+        selection_metric=selection_metric,
     )
 
 
@@ -504,7 +513,7 @@ def forecast_custom_series(
     elif champion.selection_status:
         status = champion.selection_status
         public_fallback_reason = None
-    elif champion.selection_reason:
+    elif champion.selection_reason and champion.selection_reason != "wape_unavailable":
         status = "degraded"
         public_fallback_reason = champion.selection_reason
     else:

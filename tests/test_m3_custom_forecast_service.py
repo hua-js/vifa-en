@@ -3,15 +3,22 @@
 from dataclasses import replace
 from datetime import datetime, timedelta
 import unittest
+from unittest.mock import patch
 
 from m3_worker.custom_forecast_contracts import (
     CustomForecastConfig,
     CustomObservationPoint,
     CustomRunRecord,
 )
-from m3_worker.domain.custom_load_profiles import LoadCandidateScore
+from m3_worker.domain.custom_load_profiles import (
+    LoadCandidateScore,
+    weekly_profile_values as real_weekly_profile_values,
+)
 from m3_worker.domain.custom_training_data import CustomWeekSummary
-from m3_worker.services.custom_forecast_repository import StoredCustomRun
+from m3_worker.services.custom_forecast_repository import (
+    CustomForecastRepository,
+    StoredCustomRun,
+)
 from m3_worker.services.custom_forecast_service import CustomForecastService
 
 
@@ -20,25 +27,30 @@ HISTORY_END = HISTORY_START + timedelta(days=7)
 NOW = datetime.fromisoformat("2026-08-31T00:00:00+08:00")
 
 
-def make_run() -> StoredCustomRun:
+def make_run(
+    *, history_days: int = 7, run_id: str = "weekly-evidence-run"
+) -> StoredCustomRun:
+    history_start = HISTORY_END - timedelta(days=history_days)
     config = CustomForecastConfig(
-        history_start=HISTORY_START,
+        history_start=history_start,
         history_end=HISTORY_END,
-        history_days=7,
+        history_days=history_days,
         forecast_start=HISTORY_END,
         forecast_end=HISTORY_END + timedelta(days=1),
         forecast_days=1,
         interval_seconds=3600,
         points_per_day=24,
         expected_points_per_series=24,
-        model_policy="seasonal_naive_only",
+        model_policy=(
+            "seasonal_naive_only" if history_days < 28 else "full_selection"
+        ),
     )
     return StoredCustomRun(
         record_id=1,
         record=CustomRunRecord(
-            run_id="weekly-evidence-run",
+            run_id=run_id,
             station_id="ES01",
-            idempotency_key="weekly-evidence-key",
+            idempotency_key=f"{run_id}-key",
             config=config,
             status="queued",
         ),
@@ -53,26 +65,40 @@ def make_run() -> StoredCustomRun:
     )
 
 
-def make_observations() -> list[CustomObservationPoint]:
+def make_observations(
+    *,
+    history_days: int = 7,
+    load_week_values: list[float] | None = None,
+    missing_load_index: int | None = None,
+) -> list[CustomObservationPoint]:
+    history_start = HISTORY_END - timedelta(days=history_days)
+    if load_week_values is not None and len(load_week_values) * 7 != history_days:
+        raise ValueError("load_week_values must cover complete history weeks")
     points: list[CustomObservationPoint] = []
-    for index in range(7 * 24):
-        timestamp = HISTORY_START + timedelta(hours=index)
-        points.extend(
-            (
+    for index in range(history_days * 24):
+        timestamp = history_start + timedelta(hours=index)
+        if index != missing_load_index:
+            load_value = (
+                load_week_values[index // (7 * 24)]
+                if load_week_values is not None
+                else 800.0 + index
+            )
+            points.append(
                 CustomObservationPoint(
                     unique_id="station_total_load",
                     ds=timestamp,
-                    y=800.0 + index,
+                    y=load_value,
                     quality="valid",
                     source_revision=1,
-                ),
-                CustomObservationPoint(
-                    unique_id="storage_soc",
-                    ds=timestamp,
-                    y=55.0,
-                    quality="valid",
-                    source_revision=1,
-                ),
+                )
+            )
+        points.append(
+            CustomObservationPoint(
+                unique_id="storage_soc",
+                ds=timestamp,
+                y=55.0,
+                quality="valid",
+                source_revision=1,
             )
         )
     return points
@@ -101,6 +127,7 @@ class InMemoryRepository:
     def __init__(self, run: StoredCustomRun) -> None:
         self.run = run
         self.captured_baselines = {}
+        self.captured_series = {}
 
     def get_by_run_id(self, run_id: str) -> StoredCustomRun | None:
         return self.run if run_id == self.run.run_id else None
@@ -122,6 +149,8 @@ class InMemoryRepository:
         return self.run
 
     def store_points(self, run, series, baseline_series) -> str:
+        CustomForecastRepository._point_values(run, series, baseline_series)
+        self.captured_series = {item.unique_id: item for item in series}
         self.captured_baselines = {
             item.unique_id: item for item in baseline_series
         }
@@ -213,6 +242,9 @@ class CustomForecastServiceTests(unittest.TestCase):
                 "selection_reason",
                 "selection_status",
                 "candidate_scores",
+                "realized_model_name",
+                "realized_status",
+                "realized_fallback_reason",
                 "training_start",
                 "training_end",
                 "statsforecast_version",
@@ -246,6 +278,114 @@ class CustomForecastServiceTests(unittest.TestCase):
         self.assertEqual(
             repository.captured_baselines["storage_soc"].model_name,
             "SeasonalNaive",
+        )
+
+    def test_execute_accepts_one_imputation_in_minimum_weekly_load_baseline(self):
+        """The baseline must share the primary load path's usable-week warming status."""
+        run = make_run(run_id="minimum-week-run")
+        repository = InMemoryRepository(run)
+        service = CustomForecastService(
+            repository,
+            InMemorySource(make_observations(missing_load_index=72)),
+            now=lambda: NOW,
+            station_ids=("ES01",),
+        )
+        self.addCleanup(service.close)
+        self.assertTrue(service._capacity.acquire(blocking=False))
+
+        service._execute(run.run_id)
+
+        self.assertEqual(repository.run.status, "succeeded")
+        self.assertEqual(
+            repository.run.source_manifest["series"]["station_total_load"][
+                "usable_week_count"
+            ],
+            1,
+        )
+        self.assertEqual(
+            repository.run.source_manifest["series"]["station_total_load"]["mode"],
+            "insufficient",
+        )
+        baseline = repository.captured_baselines["station_total_load"]
+        self.assertEqual(baseline.model_name, "WeeklyNaive")
+        self.assertEqual(baseline.status, "warming_up")
+        self.assertEqual(len(baseline.points), 24)
+
+    def test_execute_persists_selected_and_realized_load_fallback_evidence(self):
+        """Selection evidence must not overwrite the model that produced stored points."""
+        run = make_run(history_days=21, run_id="realized-fallback-run")
+        repository = InMemoryRepository(run)
+
+        def fail_only_selected_final_forecast(dataset, model_name, *, origin, periods):
+            if model_name == "WeeklyWeighted2" and origin == run.config.forecast_start:
+                raise RuntimeError("database password must stay private")
+            return real_weekly_profile_values(
+                dataset, model_name, origin=origin, periods=periods
+            )
+
+        service = CustomForecastService(
+            repository,
+            InMemorySource(
+                make_observations(
+                    history_days=21, load_week_values=[50.0, 80.0, 70.0]
+                )
+            ),
+            now=lambda: NOW,
+            station_ids=("ES01",),
+        )
+        self.addCleanup(service.close)
+        self.assertTrue(service._capacity.acquire(blocking=False))
+
+        with patch(
+            "m3_worker.domain.custom_forecasting.weekly_profile_values",
+            side_effect=fail_only_selected_final_forecast,
+        ):
+            service._execute(run.run_id)
+
+        self.assertEqual(repository.run.status, "succeeded")
+        load_manifest = repository.run.model_manifest["series"]["station_total_load"]
+        self.assertEqual(load_manifest["model_name"], "WeeklyWeighted2")
+        self.assertEqual(load_manifest["realized_model_name"], "WeeklyNaive")
+        self.assertEqual(load_manifest["realized_status"], "degraded")
+        self.assertEqual(load_manifest["realized_fallback_reason"], "RuntimeError")
+        self.assertNotIn("password", str(load_manifest))
+        realized = repository.captured_series["station_total_load"]
+        self.assertEqual(realized.model_name, "WeeklyNaive")
+        self.assertEqual(realized.status, "degraded")
+        self.assertEqual(realized.fallback_reason, "RuntimeError")
+
+    def test_execute_persists_mae_when_holdout_wape_is_unavailable(self):
+        """A zero-load holdout is a scored MAE selection, not a skipped candidate set."""
+        run = make_run(history_days=21, run_id="mae-fallback-run")
+        repository = InMemoryRepository(run)
+        service = CustomForecastService(
+            repository,
+            InMemorySource(
+                make_observations(
+                    history_days=21, load_week_values=[10.0, 20.0, 0.0]
+                )
+            ),
+            now=lambda: NOW,
+            station_ids=("ES01",),
+        )
+        self.addCleanup(service.close)
+        self.assertTrue(service._capacity.acquire(blocking=False))
+
+        service._execute(run.run_id)
+
+        self.assertEqual(repository.run.status, "succeeded")
+        load_manifest = repository.run.model_manifest["series"]["station_total_load"]
+        self.assertEqual(load_manifest["selection_metric"], "mae")
+        self.assertEqual(load_manifest["selection_reason"], "wape_unavailable")
+        self.assertTrue(load_manifest["candidate_scores"])
+        self.assertTrue(
+            all(score["mae"] is not None for score in load_manifest["candidate_scores"])
+        )
+        self.assertTrue(
+            all(
+                score["skip_reason"] is None
+                for score in load_manifest["candidate_scores"]
+            )
         )
 
 

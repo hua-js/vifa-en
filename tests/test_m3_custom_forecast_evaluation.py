@@ -17,19 +17,22 @@ NOW = datetime.fromisoformat("2026-08-31T00:00:00+08:00")
 
 
 def make_run(
-    run_id: str, model_manifest: object
+    run_id: str, model_manifest: object, *, history_days: int = 28
 ) -> StoredCustomRun:
+    history_end = NOW - timedelta(days=1)
     config = CustomForecastConfig(
-        history_start=NOW - timedelta(days=29),
-        history_end=NOW - timedelta(days=1),
-        history_days=28,
-        forecast_start=NOW - timedelta(days=1),
+        history_start=history_end - timedelta(days=history_days),
+        history_end=history_end,
+        history_days=history_days,
+        forecast_start=history_end,
         forecast_end=NOW,
         forecast_days=1,
         interval_seconds=900,
         points_per_day=96,
         expected_points_per_series=96,
-        model_policy="full_selection",
+        model_policy=(
+            "seasonal_naive_only" if history_days < 28 else "full_selection"
+        ),
     )
     return StoredCustomRun(
         record_id=1,
@@ -86,6 +89,46 @@ class InMemoryEvaluationRepository:
 
 
 class CustomForecastEvaluationServiceTests(unittest.TestCase):
+    def test_performance_matches_exact_history_days_and_caches_mixed_run_lookups(self):
+        """The broad full-selection policy must not mix 28/60/90-day evidence."""
+        runs = [
+            make_run(
+                f"weekly-{history_days}",
+                {"selection_policy": "weekly_load_v1"},
+                history_days=history_days,
+            )
+            for history_days in (28, 60, 90)
+        ]
+        repository = InMemoryEvaluationRepository(
+            runs,
+            [
+                evaluation("weekly-28", 28.0),
+                evaluation("weekly-60", 6.0),
+                evaluation("weekly-90", 9.0),
+            ],
+            reject_repeat_run_lookup=True,
+        )
+        service = CustomForecastEvaluationService(
+            repository, source=object(), now=lambda: NOW
+        )
+
+        performance = service.performance(
+            station_id="ES01",
+            interval_seconds=900,
+            forecast_days=1,
+            history_days=60,
+            now=NOW,
+        )
+
+        self.assertEqual(
+            [(item["run_count"], item["mape_percent"]) for item in performance["series"]],
+            [(1, 6.0), (1, 6.0)],
+        )
+        self.assertEqual(
+            repository._looked_up_run_ids,
+            {"weekly-28", "weekly-60", "weekly-90"},
+        )
+
     def test_performance_excludes_old_daily_policy_evaluations(self):
         """Removing the run-manifest policy gate would mix the old 20% MAPE."""
         old_run = make_run("daily-run", {"series": {}})

@@ -249,6 +249,27 @@ class LoadDispatchSelectionTests(unittest.TestCase):
         self.assertEqual(champion.model_name, "WeeklyWeighted2")
         self.assertEqual(champion.selection_metric, "wape_percent")
 
+    def test_zero_load_holdout_persists_mae_selection_without_skipping_scores(self):
+        """A zero WAPE denominator still yields a scored, deterministic MAE winner."""
+        champion = select_custom_champion(
+            load_dataset_with_weeks(3, week_values=[10.0, 20.0, 0.0]),
+            make_selection_config(21),
+        )
+
+        self.assertEqual(champion.model_name, "WeeklyWeighted2")
+        self.assertEqual(champion.selection_metric, "mae")
+        self.assertEqual(champion.selection_reason, "wape_unavailable")
+        self.assertTrue(champion.candidate_scores)
+        self.assertTrue(
+            all(score.wape_percent is None for score in champion.candidate_scores)
+        )
+        self.assertTrue(
+            all(score.mae is not None for score in champion.candidate_scores)
+        )
+        self.assertTrue(
+            all(score.skip_reason is None for score in champion.candidate_scores)
+        )
+
     @patch("m3_worker.domain.custom_forecasting.StatsForecast")
     def test_soc_still_uses_existing_daily_candidate_pool(self, statsforecast_type):
         engines = [Mock() for _ in range(4)]

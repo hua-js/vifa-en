@@ -9,7 +9,10 @@ from threading import BoundedSemaphore, Lock
 from typing import Callable
 
 from m3_worker.contracts import SERIES_IDS
-from m3_worker.custom_forecast_contracts import CustomForecastRequest
+from m3_worker.custom_forecast_contracts import (
+    CustomForecastRequest,
+    CustomForecastSeries,
+)
 from m3_worker.domain.custom_forecasting import (
     CustomChampion,
     forecast_custom_series,
@@ -42,7 +45,9 @@ DIAGNOSTIC_INTEGER_FIELDS = (
     "status_code",
     "elapsed_ms",
 )
-SAFE_LOAD_SKIP_REASONS = frozenset({"no_scorable_points", "wape_unavailable"})
+SAFE_LOAD_SKIP_REASONS = frozenset(
+    {"no_scorable_points", "non_finite_prediction", "wape_unavailable"}
+)
 
 
 def _safe_error_code(error: BaseException) -> str:
@@ -246,8 +251,28 @@ class CustomForecastService:
             "imputation_ratio": week.imputation_ratio,
         }
 
+    @staticmethod
+    def _safe_realized_fallback_reason(value: object) -> str | None:
+        if value is None:
+            return None
+        if type(value) is not str:
+            return "unknown"
+        if value in SAFE_LOAD_SKIP_REASONS:
+            return value
+        if (
+            value
+            and value[0].isupper()
+            and SAFE_DIAGNOSTIC_TEXT.fullmatch(value) is not None
+        ):
+            return value
+        return "unknown"
+
     @classmethod
-    def _load_champion_manifest(cls, champion: CustomChampion) -> dict[str, object]:
+    def _load_champion_manifest(
+        cls,
+        champion: CustomChampion,
+        realized: CustomForecastSeries,
+    ) -> dict[str, object]:
         return {
             "model_name": champion.model_name,
             "selection_metric": champion.selection_metric,
@@ -257,6 +282,11 @@ class CustomForecastService:
                 cls._candidate_score_manifest(score)
                 for score in champion.candidate_scores
             ],
+            "realized_model_name": realized.model_name,
+            "realized_status": realized.status,
+            "realized_fallback_reason": cls._safe_realized_fallback_reason(
+                realized.fallback_reason
+            ),
             "training_start": champion.training_start.isoformat(),
             "training_end": champion.training_end.isoformat(),
             "statsforecast_version": champion.statsforecast_version,
@@ -301,6 +331,7 @@ class CustomForecastService:
                 )
                 for unique_id in SERIES_IDS
             ]
+            series_by_id = {item.unique_id: item for item in series}
             baseline_series = [
                 forecast_custom_series(
                     datasets["station_total_load"],
@@ -340,7 +371,8 @@ class CustomForecastService:
                 "weekly_season_length": run.config.weekly_season_length,
                 "series": {
                     "station_total_load": self._load_champion_manifest(
-                        champions["station_total_load"]
+                        champions["station_total_load"],
+                        series_by_id["station_total_load"],
                     ),
                     "storage_soc": self._soc_champion_manifest(
                         champions["storage_soc"]

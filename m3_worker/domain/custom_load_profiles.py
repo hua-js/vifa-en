@@ -158,20 +158,19 @@ def load_candidate_score(
         raise ValueError("actual and predicted must have equal length")
     excluded = _excluded_datetimes(excluded_times)
     actual_values: list[float] = []
-    prediction_values: list[float] = []
+    raw_predictions: list[object] = []
     for row, forecast in zip(actual.itertuples(index=False), predicted, strict=True):
         timestamp = _as_datetime(getattr(row, "ds"))
         if timestamp is None or timestamp in excluded:
             continue
         try:
             actual_value = float(getattr(row, "y"))
-            forecast_value = float(forecast)
         except (TypeError, ValueError, OverflowError):
             continue
-        if not math.isfinite(actual_value) or not math.isfinite(forecast_value):
+        if not math.isfinite(actual_value):
             continue
         actual_values.append(actual_value)
-        prediction_values.append(forecast_value)
+        raw_predictions.append(forecast)
 
     scorable_count = len(actual_values)
     if not actual_values:
@@ -182,6 +181,22 @@ def load_candidate_score(
             None,
             0,
             "no_scorable_points",
+        )
+
+    try:
+        prediction_values = [float(value) for value in raw_predictions]
+    except (TypeError, ValueError, OverflowError):
+        prediction_values = []
+    if len(prediction_values) != scorable_count or not all(
+        math.isfinite(value) for value in prediction_values
+    ):
+        return LoadCandidateScore(
+            model_name,
+            None,
+            None,
+            None,
+            scorable_count,
+            "non_finite_prediction",
         )
 
     errors = [abs(actual_value - forecast) for actual_value, forecast in zip(actual_values, prediction_values, strict=True)]
@@ -200,7 +215,7 @@ def load_candidate_score(
         mae,
         mape,
         scorable_count,
-        None if wape is not None else "wape_unavailable",
+        None,
     )
 
 
