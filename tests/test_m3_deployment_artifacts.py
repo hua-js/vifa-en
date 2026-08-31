@@ -446,10 +446,13 @@ class DeploymentArtifactTests(unittest.TestCase):
             html,
         )
 
-    def test_production_page_marks_legacy_performance_as_incomparable(self):
+    def test_production_page_rejects_legacy_custom_runs(self):
         html = M3_HTML.read_text(encoding="utf-8")
 
-        self.assertIn("旧任务无同策略可比汇总", html)
+        self.assertIn("任务版本已失效，请重新预测", html)
+        self.assertNotIn("旧任务无同策略可比汇总", html)
+        self.assertNotIn("旧版日周期策略", html)
+        self.assertNotIn("renderLegacyCustomPolicy", html)
 
     def test_production_flow_sync_reports_and_repairs_drift(self):
         python = sys.executable

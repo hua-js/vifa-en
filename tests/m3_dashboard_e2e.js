@@ -932,35 +932,20 @@ function legacyNullManifestFixture() {
   const legacyRequestStart = apiRequests.length;
   const legacyResponseStart = apiResponses.length;
   await page.locator("#run-button").click();
-  await waitForCustomResultModelMeta("28 天训练 · 15 分钟粒度", legacyRequestStart, legacyResponseStart);
-  for (const selector of [
-    ".load-wape-value",
-    ".load-mae-value",
-    ".load-mape-value",
-    ".legacy-load-mape-value",
-    ".soc-mape-value",
-    ".model-soc-mae",
-    ".baseline-value",
-    ".improvement-value",
-    ".compare-model-value",
-    ".compare-baseline-value",
-    ".baseline-note-value",
-  ]) {
-    assert.ok((await page.locator(selector).allTextContents()).every((value) => value === "—"), `legacy run ${selector} must suppress weekly-policy aggregates`);
-  }
-  assert.strictEqual(await page.locator(".compare-model-label").innerText(), "当前模型 MAPE");
-  assert.strictEqual(await page.locator(".compare-baseline-label").innerText(), "SeasonalNaive 基线");
-  assert.strictEqual(await page.locator(".baseline-note-label").innerText(), "SeasonalNaive 同配置基线");
-  assert.strictEqual(await inlineBarPercent(page, ".model-bar"), 0);
-  assert.strictEqual(await inlineBarPercent(page, ".baseline-bar"), 0);
-  assert.strictEqual(await page.locator("#performance-zone-subtitle").innerText(), "旧任务无同策略可比汇总；未显示 weekly_load_v1 历史指标");
-  assert.strictEqual(await page.locator(".acceptance-summary").innerText(), "无同策略汇总");
-  assert.match(await page.locator(".current-model-name").first().innerText(), /电站总负荷：SeasonalNaive · 储能 SOC：SeasonalNaive（状态锚定）/);
-  assert.strictEqual(await page.locator("#policy-name").innerText(), "旧版日周期策略");
-  assert.strictEqual(await page.locator("#policy-version").innerText(), "无周选模证据");
-  assert.match(await page.locator("#policy-copy").innerText(), /未记录 weekly_load_v1 选模证据/);
-  assert.ok(await page.locator(".candidate").evaluateAll((nodes) => nodes.every((node) => node.classList.contains("disabled") && !node.classList.contains("selected"))));
-  assert.ok((await page.locator(".candidate-state").allTextContents()).every((value) => value === "旧任务无周候选证据"));
+  await page.locator("#task-state").getByText("任务版本已失效，请重新预测", { exact: true }).waitFor();
+  assert.strictEqual(await page.locator("#error-state").innerText(), "任务版本已失效，请重新预测");
+  assert.strictEqual(await page.locator("#result-model-meta").innerText(), "1 个连续有效周 · 负载周期 7 天 · 15 分钟粒度");
+  assert.match(await page.locator(".current-model-name").first().innerText(), /电站总负荷：WeeklyNaive/);
+  assert.strictEqual(await page.evaluate(() => sessionStorage.getItem("vifa.m3.customForecastRuns.v1")), null);
+  assert.deepStrictEqual(
+    apiRequests.slice(legacyRequestStart).map((request) => [request.method, new URL(request.url).pathname]),
+    [["POST", `${API_PATH}/custom-runs/station_1`]],
+    "an incompatible terminal run must be rejected before result/performance reads",
+  );
+  assert.deepStrictEqual(
+    apiResponses.slice(legacyResponseStart).map((response) => [response.method, response.path, response.status]),
+    [["POST", `${API_PATH}/custom-runs/station_1`, 200]],
+  );
   assert.strictEqual(
     preResultSelectionBasis,
     "模型选择依据：留出周 WAPE → MAE → 固定模型顺序",
@@ -971,13 +956,24 @@ function legacyNullManifestFixture() {
   const legacyNullRequestStart = apiRequests.length;
   const legacyNullResponseStart = apiResponses.length;
   await page.locator("#run-button").click();
-  await waitForCustomResultModelMeta("28 天训练 · 15 分钟粒度", legacyNullRequestStart, legacyNullResponseStart);
-  for (const selector of [".load-wape-value", ".load-mae-value", ".load-mape-value", ".legacy-load-mape-value", ".soc-mape-value", ".baseline-value", ".improvement-value"]) {
-    assert.ok((await page.locator(selector).allTextContents()).every((value) => value === "—"), `legacy null manifests ${selector} must suppress weekly-policy aggregates`);
-  }
-  assert.strictEqual(await inlineBarPercent(page, ".model-bar"), 0);
-  assert.strictEqual(await inlineBarPercent(page, ".baseline-bar"), 0);
-  assert.strictEqual(await page.locator("#performance-zone-subtitle").innerText(), "旧任务无同策略可比汇总；未显示 weekly_load_v1 历史指标");
+  await page.locator("#task-state").getByText("任务版本已失效，请重新预测", { exact: true }).waitFor();
+  assert.strictEqual(await page.locator("#error-state").innerText(), "任务版本已失效，请重新预测");
+  assert.strictEqual(await page.evaluate(() => sessionStorage.getItem("vifa.m3.customForecastRuns.v1")), null);
+  assert.deepStrictEqual(
+    apiRequests.slice(legacyNullRequestStart).map((request) => [request.method, new URL(request.url).pathname]),
+    [["POST", `${API_PATH}/custom-runs/station_1`]],
+  );
+  assert.deepStrictEqual(
+    apiResponses.slice(legacyNullResponseStart).map((response) => [response.method, response.path, response.status]),
+    [["POST", `${API_PATH}/custom-runs/station_1`, 200]],
+  );
+
+  customPayload = weeklyEvidenceFixture();
+  const replacementRequestStart = apiRequests.length;
+  const replacementResponseStart = apiResponses.length;
+  await page.locator("#run-button").click();
+  await waitForCustomResultModelMeta("3 个连续有效周 · 负载周期 7 天 · 15 分钟粒度", replacementRequestStart, replacementResponseStart);
+  assert.strictEqual(await page.locator("#error-state").isHidden(), true);
 
   await page.screenshot({ path: "/tmp/m3-task6-desktop.png", fullPage: true });
   assert.strictEqual(await page.locator("#error-state").isHidden(), true);

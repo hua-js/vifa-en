@@ -592,6 +592,7 @@
       const CUSTOM_RUN_LABELS = { queued: "排队中", running: "预测中", succeeded: "预测完成", evaluated: "预测完成 · 已评估", failed: "预测失败" };
       const ALLOWED_INTERVALS = [30, 60, 300, 900, 1800, 3600];
       const RUN_STORAGE_KEY = "vifa.m3.customForecastRuns.v1";
+      const INCOMPATIBLE_RUN_MESSAGE = "任务版本已失效，请重新预测";
       const DANGEROUS_KEYS = new Set(["__proto__", "prototype", "constructor"]);
       const LOAD_SELECTION_POLICY = "weekly_load_v1";
       const LOAD_CANDIDATE_RULES = Object.freeze({
@@ -778,7 +779,6 @@
         const usableWeeks = historyDays === null ? null : Math.floor(historyDays / 7);
         const candidates = configuredLoadCandidates(usableWeeks, seconds);
         const selectedResult = customResults.get(stationPicker.value);
-        const selectedEvidence = selectedResult === undefined ? null : loadEvidenceFor(selectedResult.result.run);
         text(root.querySelector("#history-hint"), historyDays === null ? "日期范围无效" : `共 ${historyDays} 天`);
         text(root.querySelector("#history-days-inline"), historyDays === null ? "—" : `${historyDays} 天`);
         text(root.querySelector("#history-days-value"), historyDays === null ? "—" : `${historyDays} 天`);
@@ -817,8 +817,6 @@
               text(candidate.querySelector(".candidate-state"), model === "WeeklyNaive" ? "基线 + 候选" : "参与选模");
             }
           });
-        } else if (selectedEvidence === null) {
-          renderLegacyCustomPolicy(selectedResult.result.run);
         }
         updateRunAvailability(taskConfiguration());
       }
@@ -1455,6 +1453,14 @@
         try { sessionStorage.setItem(RUN_STORAGE_KEY, JSON.stringify(customRunIds)); } catch (_error) { /* persistence is best effort */ }
       }
 
+      function clearStoredRunId(stationKey) {
+        delete customRunIds[stationKey];
+        try {
+          if (Object.keys(customRunIds).length === 0) sessionStorage.removeItem(RUN_STORAGE_KEY);
+          else sessionStorage.setItem(RUN_STORAGE_KEY, JSON.stringify(customRunIds));
+        } catch (_error) { /* persistence is best effort */ }
+      }
+
       function validateCustomRun(value) {
         const fields = [
           "run_id", "station_id", "status", "history_start", "history_end", "history_days",
@@ -1614,6 +1620,13 @@
           scheduleCustomPoll(stationKey, run.run_id);
           return;
         }
+        if (loadEvidenceFor(run) === null) {
+          stopCustomPolling();
+          clearStoredRunId(stationKey);
+          setCustomBusy(false, INCOMPATIBLE_RUN_MESSAGE);
+          renderRefreshError(INCOMPATIBLE_RUN_MESSAGE);
+          return;
+        }
         stopCustomPolling();
         setCustomBusy(true, "正在读取预测结果");
         const query = new URLSearchParams({
@@ -1731,20 +1744,6 @@
           : `${Math.min(100, baseline / maximum * 100).toFixed(1)}%`;
       }
 
-      function renderLegacyCustomPolicy(run) {
-        text(root.querySelector("#details-policy"), "旧版日周期策略");
-        text(root.querySelector("#policy-name"), "旧版日周期策略");
-        text(root.querySelector("#policy-version"), "无周选模证据");
-        text(root.querySelector("#policy-copy"), `该旧任务使用 ${run.model_policy}，未记录 weekly_load_v1 选模证据`);
-        text(root.querySelector("#history-policy-hint"), "旧任务未记录连续有效周");
-        text(root.querySelector(".selection-basis"), "模型选择依据：旧任务未记录周选模证据");
-        root.querySelectorAll(".candidate").forEach((candidate) => {
-          candidate.classList.remove("selected");
-          candidate.classList.add("disabled");
-          text(candidate.querySelector(".candidate-state"), "旧任务无周候选证据");
-        });
-      }
-
       function realizedLoadPresentation(evidence, resultModelName) {
         if (evidence === null || evidence.load.realized_model_name !== resultModelName) {
           return { status: "ok", fallbackReason: null };
@@ -1833,7 +1832,7 @@
         return true;
       }
 
-      function renderCustomPerformance(performance, run) {
+      function renderCustomPerformance(performance) {
         const load = performance.series[0];
         const soc = performance.series[1];
         const formatPercent = (value) => value === null ? "—" : `${metric(value)}%`;
@@ -1846,20 +1845,6 @@
         text(root.querySelector(".load-mape-note"), "仅 weekly_load_v1 任务提供留出周 MAPE");
         text(root.querySelector(".baseline-mape-note"), "仅 weekly_load_v1 任务提供 WeeklyNaive WAPE");
         text(root.querySelector(".improvement-note"), "仅 weekly_load_v1 任务提供相对 WAPE 提升");
-        if (loadEvidenceFor(run) === null) {
-          root.querySelectorAll(".legacy-load-mape-value, .soc-mape-value, .model-soc-mae, .compare-model-value, .compare-baseline-value, .baseline-note-value").forEach((node) => text(node, "—"));
-          const socPerformanceValue = root.querySelector(".performance-value.soc-mape-value");
-          if (socPerformanceValue !== null) socPerformanceValue.removeAttribute("data-state");
-          text(root.querySelector("#performance-zone-subtitle"), "旧任务无同策略可比汇总；未显示 weekly_load_v1 历史指标");
-          text(root.querySelector(".current-mape-note"), "旧任务无同策略可比汇总");
-          text(root.querySelector(".load-mae-note"), "旧任务无同策略可比汇总");
-          text(root.querySelector(".load-mape-note"), "旧任务无同策略可比汇总");
-          text(root.querySelector(".baseline-mape-note"), "旧任务无同策略可比汇总");
-          text(root.querySelector(".improvement-note"), "旧任务无同策略可比汇总");
-          text(root.querySelector(".acceptance-summary"), "无同策略汇总");
-          setComparisonBars(null, null);
-          return;
-        }
         const loadPending = load.run_count === 0;
         const socPending = soc.run_count === 0;
         const loadMape = loadPending ? "待评估" : formatPercent(load.mape_percent);
@@ -1882,6 +1867,7 @@
         const { stationKey, result, performance } = value;
         const run = result.run;
         const evidence = loadEvidenceFor(run);
+        assert(evidence !== null, "custom run policy invalid");
         const loadResult = result.series.find((series) => series.unique_id === "station_total_load");
         const loadPresentation = realizedLoadPresentation(evidence, loadResult?.model_name ?? null);
         const actualTimes = result.series.flatMap((series) => series.points.filter((point) => point.actual_quality === "valid").map((point) => point.target_time));
@@ -1916,11 +1902,11 @@
         root.querySelectorAll(".current-model-name").forEach((node) => text(node, modelSummary));
         text(section.querySelector(".history-window"), `${dateTime(run.history_start)} — ${dateTime(run.history_end)}`);
         text(section.querySelector(".station-status"), CUSTOM_RUN_LABELS[run.status]);
-        text(root.querySelector("#result-model-meta"), evidence !== null && evidence.usableWeeks !== null
+        text(root.querySelector("#result-model-meta"), evidence.usableWeeks !== null
           ? `${evidence.usableWeeks} 个连续有效周 · 负载周期 7 天 · ${intervalLabel(run.interval_seconds)}粒度`
           : `${run.history_days} 天训练 · ${intervalLabel(run.interval_seconds)}粒度`);
-        renderCustomPerformance(performance, run);
-        if (!renderCustomEvidence(run)) renderLegacyCustomPolicy(run);
+        renderCustomPerformance(performance);
+        renderCustomEvidence(run);
         errorState.hidden = true;
       }
 
