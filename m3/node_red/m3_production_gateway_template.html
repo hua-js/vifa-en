@@ -615,6 +615,7 @@
       let customBusy = false;
       let customPollTimer = null;
       let selectedPollRunId = null;
+      let customRefreshInFlight = null;
       const customRunIds = loadStoredRunIds();
       const customResults = new Map();
       let disposed = false;
@@ -1708,6 +1709,35 @@
         setCustomBusy(false, CUSTOM_RUN_LABELS[run.status]);
       }
 
+      async function refreshSelectedCustomResult() {
+        if (customRefreshInFlight !== null || customBusy) return customRefreshInFlight;
+        if (authMode !== "server_token" && (authMode !== "postmessage" || apiToken === null)) return null;
+        const stationKey = stationPicker.value;
+        const cached = customResults.get(stationKey);
+        if (cached === undefined) return null;
+        const run = cached.result.run;
+        const runId = run.run_id;
+        const query = new URLSearchParams({
+          interval_seconds: String(run.interval_seconds),
+          forecast_days: String(run.forecast_days),
+          history_days: String(run.history_days),
+        });
+        customRefreshInFlight = Promise.all([
+          customRequest(`${CUSTOM_RUN_PATH}/${encodeURIComponent(runId)}/result`, { timeout: 60_000 }),
+          customRequest(`${CUSTOM_PERFORMANCE_PATH}/${encodeURIComponent(stationKey)}?${query}`),
+        ]).then(([resultValue, performanceValue]) => {
+          const result = validateCustomResult(resultValue);
+          const performance = validateCustomPerformance(performanceValue);
+          if (disposed || customRunIds[stationKey] !== runId || result.run.run_id !== runId) return;
+          const rendered = { stationKey, result, performance };
+          customResults.set(stationKey, rendered);
+          if (stationPicker.value === stationKey) renderCustomResult(rendered);
+        }).catch(() => {
+          if (!disposed && stationPicker.value === stationKey) renderRefreshError("预测结果刷新失败");
+        }).finally(() => { customRefreshInFlight = null; });
+        return customRefreshInFlight;
+      }
+
       async function startCustomForecast() {
         const configuration = taskConfiguration();
         if (configuration === null || customBusy || (authMode !== "server_token" && (authMode !== "postmessage" || apiToken === null))) {
@@ -2112,7 +2142,10 @@
       function startRefreshTimer() {
         if (refreshTimer !== null) return;
         refreshTimer = window.setInterval(() => {
-          if (document.visibilityState === "visible") void loadDashboard();
+          if (document.visibilityState === "visible") {
+            void loadDashboard();
+            void refreshSelectedCustomResult();
+          }
         }, 60_000);
       }
 

@@ -250,6 +250,26 @@ function weeklyEvidenceFixture() {
   };
 }
 
+function pendingPerformanceFixture() {
+  const fixture = weeklyEvidenceFixture();
+  fixture.run.run_id = "pending-performance-run";
+  fixture.result.run = fixture.run;
+  fixture.performance.calculated_at = "2026-08-31T12:16:00+08:00";
+  fixture.performance.series.forEach((series) => {
+    series.mape_percent = null;
+    series.baseline_mape_percent = null;
+    series.relative_baseline_improvement_percent = null;
+    series.scorable_point_count = 0;
+    series.run_count = 0;
+    series.daily.forEach((day) => {
+      day.mape_percent = null;
+      day.scorable_point_count = 0;
+      day.run_count = 0;
+    });
+  });
+  return fixture;
+}
+
 function warmingEvidenceFixture() {
   const fixture = weeklyEvidenceFixture();
   fixture.run.run_id = "weekly-warming-run";
@@ -1015,6 +1035,31 @@ function legacyNullManifestFixture() {
     /2026\/08\/31 12:30/,
   );
   assert.deepStrictEqual(await invalidSvgLineCoordinates(page), [], "custom charts must not render invalid SVG line coordinates");
+
+  customPayload = pendingPerformanceFixture();
+  const pendingRequestStart = apiRequests.length;
+  const pendingResponseStart = apiResponses.length;
+  await page.locator("#run-button").click();
+  await waitForCustomResultModelMeta("3 个连续有效周 · 负载周期 7 天 · 15 分钟粒度", pendingRequestStart, pendingResponseStart);
+  assert.ok((await page.locator(".mape-value").allTextContents()).every((value) => value === "—"));
+  const forecastPathBeforeRefresh = await page.locator(".load-chart .chart-line[data-kind='forecast']").getAttribute("d");
+  const evaluatedPayload = weeklyEvidenceFixture();
+  customPayload.run.status = "evaluated";
+  customPayload.run.evaluated_at = "2026-09-01T12:17:00+08:00";
+  customPayload.run.updated_at = "2026-09-01T12:17:00+08:00";
+  customPayload.result.run = customPayload.run;
+  customPayload.result.series[1].points.forEach((point, index) => {
+    point.actual_value = 60 + index / 10;
+    point.actual_quality = "valid";
+    point.absolute_percentage_error = Math.abs(point.actual_value - point.forecast_value) / point.actual_value * 100;
+  });
+  customPayload.performance = evaluatedPayload.performance;
+  await page.evaluate(async () => window.__m3AdvanceIntervals(60_000));
+  await page.waitForFunction(() => document.querySelector(".mape-panel .mape-value")?.textContent === "—"
+    && [...document.querySelectorAll(".mape-panel .mape-value")].some((node) => node.textContent === "5.10%"), null, { timeout: 1000 });
+  assert.strictEqual(await page.locator("#task-state").innerText(), "预测完成 · 已评估");
+  assert.strictEqual(await page.locator(".series-card[data-series='storage_soc'] .actual-value").innerText(), "69.5 %");
+  assert.strictEqual(await page.locator(".load-chart .chart-line[data-kind='forecast']").getAttribute("d"), forecastPathBeforeRefresh);
 
   customPayload = realizedFallbackFixture();
   const fallbackRequestStart = apiRequests.length;
