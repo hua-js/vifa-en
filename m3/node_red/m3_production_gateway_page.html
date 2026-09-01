@@ -1184,7 +1184,10 @@
         if (points.length <= maximum) return points;
         const step = Math.ceil((points.length - 1) / (maximum - 1));
         const sampled = [];
-        for (let index = 0; index < points.length; index += step) sampled.push(points[index]);
+        for (let index = 0; index < points.length; index += step) {
+          const bucket = points.slice(index, Math.min(index + step, points.length));
+          sampled.push(bucket.find((point) => point.value !== null) ?? bucket[0]);
+        }
         if (sampled.at(-1) !== points.at(-1)) sampled.push(points.at(-1));
         return sampled;
       }

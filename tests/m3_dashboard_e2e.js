@@ -830,7 +830,26 @@ function legacyNullManifestFixture() {
   assert.strictEqual(await page.locator("#total-points-inline").innerText(), "1,440");
   assert.strictEqual(await page.locator(".summary-average-load-note").innerText(), "按 1440 个有效预测点计算");
   assert.strictEqual(await page.locator("#task-state").innerText(), "预测完成");
+  await page.waitForFunction(() => !document.querySelector("#run-button")?.disabled);
   assert.strictEqual(await page.evaluate(() => sessionStorage.getItem("vifa.m3.customForecastRuns.v1") !== null), true);
+  latestCustomPayload.result.series.forEach((series, seriesIndex) => {
+    const base = seriesIndex === 0 ? 715 : 57;
+    series.points.forEach((point, index) => {
+      const hasActual = index < 1100 && index % 2 === 1;
+      point.actual_value = hasActual ? base + index / 100 : null;
+      point.actual_quality = hasActual ? "valid" : null;
+      point.absolute_percentage_error = hasActual
+        ? Math.abs(point.actual_value - point.forecast_value) / Math.abs(point.actual_value) * 100
+        : null;
+    });
+  });
+  await page.evaluate(async () => window.__m3AdvanceIntervals(60_000));
+  await page.waitForFunction(() => document.querySelector(".series-card[data-series='station_total_load'] .actual-value")?.textContent === "726 kW");
+  const sparseMinuteActualPath = await page.locator(".load-chart path[data-kind='actual']").getAttribute("d");
+  assert.ok(
+    sparseMinuteActualPath?.includes("L"),
+    `a one-minute chart must draw actuals sampled every two minutes: ${sparseMinuteActualPath}`,
+  );
   latestCustomPayload = null;
   await stationPicker.selectOption("station_1");
   await page.locator("#granularity").selectOption("900");
