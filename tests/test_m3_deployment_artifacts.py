@@ -483,19 +483,19 @@ class DeploymentArtifactTests(unittest.TestCase):
             "SOC 周差分：周一至周六生产 · 周日休息",
             "同星期同刻度 ΔSOC · 最后真实状态锚定",
             "weekly_load_v2",
-            "compare-model-label",
-            "compare-baseline-label",
-            "baseline-note-label",
+            'id="theme-toggle"',
+            'id="performance-zone-title">预测摘要',
+            'class="prediction-summary-sentence"',
+            'class="dual-mape"',
+            'class="candidate-name">周期校准',
         ):
             self.assertIn(label, html)
         self.assertIn(
-            '<span class="selection-basis">模型选择依据：留出周 WAPE → MAE → 固定模型顺序</span>',
+            '<span class="selection-basis">模型选择依据：留出周评分 → 固定模型顺序</span>',
             html,
         )
-        self.assertNotIn(
-            '<span class="selection-basis">模型选择依据：留出周 WAPE → MAE → MAPE</span>',
-            html,
-        )
+        for hidden_metric in ("compare-model-label", "compare-baseline-label", "baseline-note-label", "load-wape-value", "load-mae-value"):
+            self.assertNotIn(hidden_metric, html)
 
     def test_production_page_rejects_legacy_custom_runs(self):
         html = M3_HTML.read_text(encoding="utf-8")

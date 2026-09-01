@@ -143,7 +143,7 @@ function weeklyEvidenceFixture() {
           statsforecast_version: "1.0.0",
         },
         storage_soc: {
-          model_name: "SeasonalNaive",
+          model_name: "SOCWeeklyDelta",
           cv_mape_percent: null,
           selected_at: "2026-08-31T12:15:00+08:00",
           training_start: "2026-08-02T12:15:00+08:00",
@@ -196,7 +196,7 @@ function weeklyEvidenceFixture() {
   };
   const series = [
     ["station_total_load", "kW", "WeeklyRegimeAdjusted", 500],
-    ["storage_soc", "%", "SeasonalNaive", 60],
+    ["storage_soc", "%", "SOCWeeklyDelta", 60],
   ].map(([unique_id, unit, model_name, base]) => ({
     unique_id,
     unit,
@@ -469,7 +469,7 @@ function legacyNullManifestFixture() {
             && response.path.endsWith("/result")
             && response.status === 200,
         );
-        const renderedMeta = await page.locator("#result-model-meta").innerText();
+        const renderedMeta = await page.locator("#result-model-meta").textContent();
         if (receivedNewResult && renderedMeta === expectedText) return;
         await page.waitForTimeout(10);
       }
@@ -659,6 +659,24 @@ function legacyNullManifestFixture() {
   assert.strictEqual(await page.locator(".series-card").count(), 2);
   assert.strictEqual(await page.locator("svg.forecast-chart").count(), 2);
   assert.deepStrictEqual(await page.locator(".station-section h2").allTextContents(), ["1# 电站"]);
+  assert.strictEqual(await page.locator("#task-zone-title").innerText(), "预测任务");
+  assert.strictEqual(await page.locator("#history-start").count(), 1);
+  assert.strictEqual(await page.locator("#history-end").count(), 1);
+  assert.strictEqual(await page.locator("#forecast-days").count(), 1);
+  assert.strictEqual(await page.locator("#granularity").count(), 1);
+  assert.strictEqual(await page.locator("#run-button").count(), 1);
+  assert.strictEqual(await page.locator(".model-summary").count(), 0, "result model strip must be removed");
+  assert.strictEqual(await page.locator("#performance-zone-title").innerText(), "预测摘要");
+  assert.strictEqual(await page.locator(".selection-metric-display").count(), 0, "holdout metrics must stay hidden");
+  assert.strictEqual(await page.locator(".dual-mape").count(), 1, "7-day load/SOC MAPE must remain visible");
+  assert.deepStrictEqual(
+    await page.locator(".candidate-name").allTextContents(),
+    ["周周期", "双周加权", "周期校准", "三周中位", "自动 ARIMA", "多周期分解"],
+  );
+  assert.strictEqual(
+    await page.locator(".candidate[data-model='WeeklyRegimeAdjusted']").getAttribute("title"),
+    "完整模型名称：WeeklyRegimeAdjusted",
+  );
   const themeToggle = page.locator("#theme-toggle");
   assert.strictEqual(await themeToggle.count(), 1, "theme toggle must exist");
   assert.strictEqual(await page.locator("html").getAttribute("data-theme"), "light");
@@ -710,8 +728,8 @@ function legacyNullManifestFixture() {
   assert.strictEqual(await page.locator("[data-station='station_1'] .metric-current-soc").innerText(), `${currentSoc.toFixed(1)} %`);
   assert.strictEqual(await page.locator("[data-station='station_1'] .metric-minimum-soc").innerText(), `${minimumSoc.toFixed(1)} %`);
   assert.strictEqual(await page.locator(".legacy-load-mape-value").innerText(), "2.50%");
-  assert.strictEqual(await page.locator(".model-baseline-wape").innerText(), "—");
-  assert.strictEqual(await page.locator(".model-improvement").innerText(), "—");
+  assert.strictEqual(await page.locator(".current-day-mape-value").innerText(), "2.50%");
+  assert.strictEqual(await page.locator(".selection-metric-display").count(), 0);
   await stationPicker.selectOption("station_2");
   assert.strictEqual(await page.locator(".station-section").getAttribute("data-station"), "station_2");
   const secondLoad = payload.data.stations[1].series[0].actual.filter((point) => point.value !== null).at(-1).value;
@@ -920,46 +938,34 @@ function legacyNullManifestFixture() {
   );
   assert.strictEqual(
     await page.locator(".readiness-hint").innerText(),
-    "连续有效周：3 周 · 下一级 WeeklyMedian3 / AutoARIMA / MSTL：至少还需 7 天完整数据（需 4 周） · 起始无数据 0 桶（已排除） · 负负载无效 0 桶",
+    "连续有效周：3 周 · 下一级 三周中位 / 自动 ARIMA / 多周期分解：至少还需 7 天完整数据（需 4 周） · 起始无数据 0 桶（已排除） · 负负载无效 0 桶",
   );
   assert.strictEqual(await inlineBarPercent(page, ".readiness-track span"), 75);
   assert.strictEqual(await page.locator(".current-day-mape-value").innerText(), "0.00%");
   assert.strictEqual(await page.locator(".current-day-mape-note").innerText(), "96 / 96 个实际点 · 完整结果");
-  assert.ok((await page.locator(".performance-label").allTextContents()).includes("当前预测日 MAPE"));
-  assert.ok((await page.locator(".performance-label").allTextContents()).includes("留出周 WAPE（选模指标）"));
-  assert.ok((await page.locator(".performance-label").allTextContents()).includes("留出周 MAPE"));
-  assert.deepStrictEqual(await page.locator(".load-wape-value").allTextContents(), ["8.00%", "8.00%"]);
-  assert.deepStrictEqual(await page.locator(".load-mae-value").allTextContents(), ["7.00", "7.00"]);
-  assert.ok((await page.locator(".load-mape-value").allTextContents()).every((value) => value === "9.00%"));
-  assert.ok((await page.locator(".baseline-value").allTextContents()).every((value) => value === "12.50%"));
-  assert.ok((await page.locator(".improvement-value").allTextContents()).every((value) => value === "36.00%"));
-  assert.strictEqual(await page.locator(".compare-model-label").innerText(), "选定模型留出周 WAPE");
-  assert.strictEqual(await page.locator(".compare-baseline-label").innerText(), "WeeklyNaive 留出周 WAPE");
-  assert.strictEqual(await inlineBarPercent(page, ".model-bar"), 64);
-  assert.strictEqual(await inlineBarPercent(page, ".baseline-bar"), 100);
-  assert.match(await page.locator(".current-model-name").first().innerText(), /电站总负荷：WeeklyRegimeAdjusted · 储能 SOC：SeasonalNaive（状态锚定）/);
+  assert.strictEqual(await page.locator(".summary-average-load").innerText(), "504.8 kW");
+  assert.strictEqual(await page.locator(".summary-peak-load").innerText(), "509.5 kW");
+  assert.match(await page.locator(".summary-peak-load-note").innerText(), /2026\/09\/01 12:00/);
+  assert.strictEqual(await page.locator(".summary-min-load").innerText(), "500.0 kW");
+  assert.strictEqual(await page.locator(".summary-min-soc").innerText(), "60.0 %");
+  assert.strictEqual(await page.locator(".summary-coverage").innerText(), "96 点");
+  assert.match(await page.locator(".prediction-summary-sentence").innerText(), /预计负载峰值为 509\.5 kW；最低 SOC 为 60\.0 %/);
+  assert.strictEqual(await page.locator(".current-model-name").first().innerText(), "负载：周期校准 · SOC：周差分");
   assert.strictEqual(await page.locator(".candidate[data-model='WeeklyRegimeAdjusted']").evaluate((node) => node.classList.contains("selected")), true);
-  assert.match(await page.locator(".candidate[data-model='WeeklyRegimeAdjusted'] .candidate-state").innerText(), /WAPE 8.00%/);
-  assert.match(await page.locator(".candidate[data-model='WeeklyMedian3'] .candidate-state").innerText(), /跳过：无可评分点/);
+  assert.strictEqual(await page.locator(".candidate[data-model='WeeklyRegimeAdjusted'] .candidate-state").innerText(), "已选定");
+  assert.strictEqual(await page.locator(".candidate[data-model='WeeklyMedian3'] .candidate-state").innerText(), "本次未参与");
   await page.locator("#granularity").selectOption("60");
-  assert.match(await page.locator(".candidate[data-model='WeeklyMedian3'] .candidate-state").innerText(), /跳过：无可评分点/);
+  assert.strictEqual(await page.locator(".candidate[data-model='WeeklyMedian3'] .candidate-state").innerText(), "本次未参与");
   await page.locator("#granularity").selectOption("900");
   await stationPicker.selectOption("station_2");
   assert.strictEqual(await page.locator(".station-section").getAttribute("data-station"), "station_2");
   assert.strictEqual(await page.locator("#task-state").innerText(), "尚未提交任务");
-  assert.strictEqual(
-    await page.locator("#performance-zone-subtitle").innerText(),
-    "先看当前模型是否优于同配置基线，再看近 7 日稳定性",
-  );
-  assert.ok((await page.locator(".load-wape-value").allTextContents()).every((value) => value === "—"));
-  assert.doesNotMatch(
-    await page.locator(".candidate[data-model='WeeklyMedian3'] .candidate-state").innerText(),
-    /跳过：无可评分点/,
-  );
+  assert.strictEqual(await page.locator(".prediction-summary-sentence").innerText(), "预计负载峰值为 730.0 kW；最低 SOC 为 54.0 %");
+  assert.strictEqual(await page.locator(".candidate[data-model='WeeklyMedian3'] .candidate-state").innerText(), "可参与");
   await stationPicker.selectOption("station_1");
   assert.strictEqual(await page.locator(".station-section").getAttribute("data-station"), "station_1");
   assert.strictEqual(await page.locator("#task-state").innerText(), "预测完成");
-  assert.match(await page.locator(".candidate[data-model='WeeklyMedian3'] .candidate-state").innerText(), /跳过：无可评分点/);
+  assert.strictEqual(await page.locator(".candidate[data-model='WeeklyMedian3'] .candidate-state").innerText(), "本次未参与");
   assert.ok((await page.locator(".load-chart .axis-label").allTextContents()).includes("08/31 12:15"));
   await page.locator(".load-chart").evaluate((svg) => {
     const bounds = svg.getBoundingClientRect();
@@ -977,9 +983,9 @@ function legacyNullManifestFixture() {
   const fallbackResponseStart = apiResponses.length;
   await page.locator("#run-button").click();
   await waitForCustomResultModelMeta("3 个连续有效周 · 负载周期 7 天 · 15 分钟粒度", fallbackRequestStart, fallbackResponseStart);
-  assert.match(await page.locator(".current-model-name").first().innerText(), /电站总负荷：WeeklyNaive · 储能 SOC：SeasonalNaive（状态锚定）/);
+  assert.strictEqual(await page.locator(".current-model-name").first().innerText(), "负载：周周期 · SOC：周差分");
   assert.strictEqual(await page.locator(".candidate[data-model='WeeklyRegimeAdjusted']").evaluate((node) => node.classList.contains("selected")), true);
-  assert.strictEqual(await page.locator(".series-card[data-series='station_total_load'] .model-name").innerText(), "WeeklyNaive");
+  assert.strictEqual(await page.locator(".series-card[data-series='station_total_load'] .model-name").innerText(), "周周期");
   assert.strictEqual(await page.locator(".series-card[data-series='station_total_load'] .series-status").innerText(), "降级");
   assert.strictEqual(await page.locator(".series-card[data-series='station_total_load'] .fallback").innerText(), "回退：RuntimeError");
   assert.strictEqual((await page.locator("body").innerText()).includes("password"), false);
@@ -989,32 +995,20 @@ function legacyNullManifestFixture() {
   const maeResponseStart = apiResponses.length;
   await page.locator("#run-button").click();
   await waitForCustomResultModelMeta("3 个连续有效周 · 负载周期 7 天 · 15 分钟粒度", maeRequestStart, maeResponseStart);
-  assert.ok((await page.locator(".load-wape-value").allTextContents()).every((value) => value === "—"));
-  assert.ok((await page.locator(".load-mae-value").allTextContents()).every((value) => value === "1.00"));
-  assert.strictEqual(await page.locator(".compare-model-label").innerText(), "选定模型留出周 MAE");
-  assert.strictEqual(await page.locator(".compare-baseline-label").innerText(), "WeeklyNaive 留出周 MAE");
-  assert.strictEqual(await page.locator(".compare-model-value").innerText(), "1.00");
-  assert.strictEqual(await page.locator(".compare-baseline-value").innerText(), "2.00");
-  assert.strictEqual(await inlineBarPercent(page, ".model-bar"), 50);
-  assert.strictEqual(await inlineBarPercent(page, ".baseline-bar"), 100);
-  assert.match(await page.locator("#policy-copy").innerText(), /MAE/);
-  assert.match(await page.locator(".candidate[data-model='WeeklyWeighted2'] .candidate-state").innerText(), /MAE 1.00/);
-  assert.doesNotMatch(await page.locator(".candidate[data-model='WeeklyWeighted2'] .candidate-state").innerText(), /跳过/);
+  assert.strictEqual(await page.locator("#policy-copy").innerText(), "主评分不可用；按备用评分选择负载模型");
+  assert.strictEqual(await page.locator(".candidate[data-model='WeeklyWeighted2'] .candidate-state").innerText(), "已选定");
 
   customPayload = warmingEvidenceFixture();
   const warmingRequestStart = apiRequests.length;
   const warmingResponseStart = apiResponses.length;
   await page.locator("#run-button").click();
   await waitForCustomResultModelMeta("1 个连续有效周 · 负载周期 7 天 · 15 分钟粒度", warmingRequestStart, warmingResponseStart);
-  assert.match(await page.locator(".current-model-name").first().innerText(), /电站总负荷：WeeklyNaive/);
+  assert.match(await page.locator(".current-model-name").first().innerText(), /负载：周周期/);
   assert.strictEqual(
     await page.locator(".readiness-hint").innerText(),
-    "连续有效周：1 周 · 下一级 WeeklyWeighted2 / WeeklyRegimeAdjusted：至少还需 14 天完整数据（需 3 周） · 起始无数据 0 桶（已排除） · 负负载无效 0 桶",
+    "连续有效周：1 周 · 下一级 双周加权 / 周期校准：至少还需 14 天完整数据（需 3 周） · 起始无数据 0 桶（已排除） · 负负载无效 0 桶",
   );
-  for (const selector of [".load-wape-value", ".load-mae-value", ".load-mape-value", ".baseline-value", ".improvement-value"]) {
-    assert.ok((await page.locator(selector).allTextContents()).every((value) => value === "—"), selector);
-  }
-  assert.match(await page.locator(".candidate[data-model='WeeklyNaive'] .candidate-state").innerText(), /预热：暂无回测分数/);
+  assert.strictEqual(await page.locator(".candidate[data-model='WeeklyNaive'] .candidate-state").innerText(), "预热中");
 
   customPayload = degradedReconstructedWeekFixture();
   const degradedRequestStart = apiRequests.length;
@@ -1023,11 +1017,11 @@ function legacyNullManifestFixture() {
   await waitForCustomResultModelMeta("0 个连续有效周 · 负载周期 7 天 · 15 分钟粒度", degradedRequestStart, degradedResponseStart);
   assert.strictEqual(
     await page.locator("#policy-copy").innerText(),
-    "最近一周缺失较多；使用插补后的 WeeklyNaive 降级预测",
+    "最近一周缺失较多；使用插补后的周周期模型降级预测",
   );
   assert.strictEqual(
     await page.locator(".candidate[data-model='WeeklyNaive'] .candidate-state").innerText(),
-    "降级：最近一周缺失较多",
+    "降级预测",
   );
   assert.strictEqual(
     await page.locator(".series-card[data-series='station_total_load'] .series-status").innerText(),
@@ -1035,7 +1029,7 @@ function legacyNullManifestFixture() {
   );
   assert.strictEqual(
     await page.locator(".readiness-hint").innerText(),
-    "连续有效周：0 周 · 下一级 WeeklyNaive：至少还需 7 天完整数据（需 1 周） · 起始无数据 0 桶（已排除） · 负负载无效 0 桶",
+    "连续有效周：0 周 · 下一级 周周期：至少还需 7 天完整数据（需 1 周） · 起始无数据 0 桶（已排除） · 负负载无效 0 桶",
   );
   assert.strictEqual(
     await page.locator(".readiness-selected").innerText(),
@@ -1053,8 +1047,8 @@ function legacyNullManifestFixture() {
   await page.locator("#run-button").click();
   await page.locator("#task-state").getByText("任务版本已失效，请重新预测", { exact: true }).waitFor();
   assert.strictEqual(await page.locator("#error-state").innerText(), "任务版本已失效，请重新预测");
-  assert.strictEqual(await page.locator("#result-model-meta").innerText(), "0 个连续有效周 · 负载周期 7 天 · 15 分钟粒度");
-  assert.match(await page.locator(".current-model-name").first().innerText(), /电站总负荷：WeeklyNaive/);
+  assert.strictEqual(await page.locator("#result-model-meta").textContent(), "0 个连续有效周 · 负载周期 7 天 · 15 分钟粒度");
+  assert.match(await page.locator(".current-model-name").first().innerText(), /负载：周周期/);
   assert.strictEqual(await page.evaluate(() => sessionStorage.getItem("vifa.m3.customForecastRuns.v1")), null);
   assert.deepStrictEqual(
     apiRequests.slice(legacyRequestStart).map((request) => [request.method, new URL(request.url).pathname]),
@@ -1067,7 +1061,7 @@ function legacyNullManifestFixture() {
   );
   assert.strictEqual(
     preResultSelectionBasis,
-    "模型选择依据：留出周 WAPE → MAE → 固定模型顺序",
+    "模型选择依据：留出周评分 → 固定模型顺序",
     "pre-result policy copy must name the deterministic final tie-break",
   );
 
