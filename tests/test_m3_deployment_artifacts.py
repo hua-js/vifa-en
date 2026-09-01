@@ -36,6 +36,10 @@ HOST_ENTRYPOINT = DEPLOY / "host-entrypoint.sh"
 HOST_WORKER_UNIT = DEPLOY / "vifa-m3-worker.service"
 HOST_DASHBOARD_UNIT = DEPLOY / "vifa-m3-dashboard.service"
 M3_HTML = ROOT / "m3" / "node_red" / "m3_production_gateway_page.html"
+M3_NODE_RED_HTML = (
+    ROOT / "m3" / "node_red" / "m3_production_gateway_template.html"
+)
+M3_NODE_RED_README = ROOT / "m3" / "node_red" / "README.md"
 FLOW_SYNC = ROOT / "m3" / "node_red" / "sync_production_gateway_flow.py"
 
 
@@ -459,6 +463,17 @@ class DeploymentArtifactTests(unittest.TestCase):
             self.assertEqual(template, page["template"])
             self.assertEqual(template.count("{{{m3DashboardAuthModeJson}}}"), 1)
             self.assertEqual(template.count("{{{m3NocobaseParentOriginJson}}}"), 1)
+
+    def test_node_red_readme_distinguishes_source_from_deployment_html(self):
+        self.assertTrue(M3_NODE_RED_README.is_file())
+        note = M3_NODE_RED_README.read_text(encoding="utf-8")
+        deployed = M3_NODE_RED_HTML.read_text(encoding="utf-8")
+
+        self.assertIn("m3_production_gateway_template.html", note)
+        self.assertIn("生产 Node-RED Template 节点", note)
+        self.assertIn("不得粘贴 `m3_production_gateway_page.html`", note)
+        self.assertEqual(deployed.count("{{{m3DashboardAuthModeJson}}}"), 1)
+        self.assertEqual(deployed.count("{{{m3NocobaseParentOriginJson}}}"), 1)
 
     def test_production_page_describes_weekly_load_evidence(self):
         html = M3_HTML.read_text(encoding="utf-8")
