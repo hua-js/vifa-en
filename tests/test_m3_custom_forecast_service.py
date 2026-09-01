@@ -5,16 +5,22 @@ from datetime import datetime, timedelta
 import unittest
 from unittest.mock import patch
 
+import pandas as pd
+
 from m3_worker.custom_forecast_contracts import (
     CustomForecastConfig,
+    CustomForecastPoint,
+    CustomForecastSeries,
     CustomObservationPoint,
     CustomRunRecord,
 )
+from m3_worker.domain.custom_forecasting import CustomChampion
 from m3_worker.domain.custom_load_profiles import (
     LoadCandidateScore,
     weekly_profile_values as real_weekly_profile_values,
 )
 from m3_worker.domain.custom_training_data import CustomWeekSummary
+from m3_worker.domain.custom_training_data import CustomTrainingDataset
 from m3_worker.services.custom_forecast_repository import (
     CustomForecastRepository,
     StoredCustomRun,
@@ -28,9 +34,13 @@ NOW = datetime.fromisoformat("2026-08-31T00:00:00+08:00")
 
 
 def make_run(
-    *, history_days: int = 7, run_id: str = "weekly-evidence-run"
+    *,
+    history_days: int = 7,
+    run_id: str = "weekly-evidence-run",
+    interval_seconds: int = 3600,
 ) -> StoredCustomRun:
     history_start = HISTORY_END - timedelta(days=history_days)
+    points_per_day = 86_400 // interval_seconds
     config = CustomForecastConfig(
         history_start=history_start,
         history_end=HISTORY_END,
@@ -38,9 +48,9 @@ def make_run(
         forecast_start=HISTORY_END,
         forecast_end=HISTORY_END + timedelta(days=1),
         forecast_days=1,
-        interval_seconds=3600,
-        points_per_day=24,
-        expected_points_per_series=24,
+        interval_seconds=interval_seconds,
+        points_per_day=points_per_day,
+        expected_points_per_series=points_per_day,
         model_policy=(
             "seasonal_naive_only" if history_days < 28 else "full_selection"
         ),
@@ -129,6 +139,100 @@ class InMemorySource:
         ]
 
 
+class RecordingMultiIntervalSource:
+    def __init__(self) -> None:
+        self.calls: list[int] = []
+
+    def list_custom_observations(
+        self,
+        station_id: str,
+        start: datetime,
+        end: datetime,
+        *,
+        interval_seconds: int,
+    ) -> list[CustomObservationPoint]:
+        if station_id != "ES01":
+            raise AssertionError("unexpected station")
+        self.calls.append(interval_seconds)
+        return [
+            CustomObservationPoint(
+                unique_id=unique_id,
+                ds=start,
+                y=value,
+                quality="valid",
+                source_state="valid",
+                source_revision=1,
+            )
+            for unique_id, value in (
+                ("station_total_load", 500.0),
+                ("storage_soc", 10.0),
+            )
+        ]
+
+
+def stub_dataset(unique_id: str, config: CustomForecastConfig) -> CustomTrainingDataset:
+    timestamp = config.history_end - config.interval
+    frame = pd.DataFrame(
+        {"unique_id": [unique_id], "ds": [timestamp], "y": [10.0]}
+    )
+    return CustomTrainingDataset(
+        frame=frame,
+        imputed_keys=frozenset(),
+        source_available_start=timestamp,
+        source_available_points=1,
+        leading_no_data_points=0,
+        invalid_points=0,
+        negative_invalid_points=0,
+        start=timestamp,
+        end=timestamp,
+        mode="full",
+        interval_seconds=config.interval_seconds,
+        points_per_day=config.points_per_day,
+    )
+
+
+def stub_champion(dataset: CustomTrainingDataset, config: CustomForecastConfig) -> CustomChampion:
+    unique_id = dataset.frame["unique_id"].iloc[0]
+    return CustomChampion(
+        model_name=("WeeklyNaive" if unique_id == "station_total_load" else "SOCWeeklyDelta"),
+        cv_mape_percent=0.0,
+        selected_at=NOW,
+        training_start=dataset.start,
+        training_end=dataset.end,
+        statsforecast_version="test",
+    )
+
+
+def stub_forecast(
+    dataset: CustomTrainingDataset,
+    champion: CustomChampion,
+    config: CustomForecastConfig,
+) -> CustomForecastSeries:
+    unique_id = dataset.frame["unique_id"].iloc[0]
+    values = (
+        [500.0] * config.expected_points_per_series
+        if unique_id == "station_total_load"
+        else [10.0 + index / 100 for index in range(config.expected_points_per_series)]
+    )
+    return CustomForecastSeries(
+        unique_id=unique_id,
+        unit="kW" if unique_id == "station_total_load" else "%",
+        model_name=champion.model_name,
+        status="ok",
+        points=[
+            CustomForecastPoint(
+                target_time=config.forecast_start + index * config.interval,
+                horizon_step=index + 1,
+                raw_forecast=value,
+                forecast_value=value,
+                is_clipped=False,
+            )
+            for index, value in enumerate(values)
+        ],
+        fallback_reason=None,
+    )
+
+
 class InMemoryRepository:
     def __init__(self, run: StoredCustomRun) -> None:
         self.run = run
@@ -169,6 +273,67 @@ class InMemoryRepository:
 
 
 class CustomForecastServiceTests(unittest.TestCase):
+    def test_one_minute_run_models_soc_on_five_minutes_then_interpolates_output(self):
+        """One-minute output must not select SOC models on sparse minute buckets."""
+        run = make_run(
+            history_days=28,
+            run_id="one-minute-soc-run",
+            interval_seconds=60,
+        )
+        repository = InMemoryRepository(run)
+        source = RecordingMultiIntervalSource()
+        service = CustomForecastService(
+            repository,
+            source,
+            now=lambda: NOW,
+            station_ids=("ES01",),
+        )
+        self.addCleanup(service.close)
+        self.assertTrue(service._capacity.acquire(blocking=False))
+
+        with (
+            patch(
+                "m3_worker.services.custom_forecast_service.build_custom_training_dataset",
+                side_effect=lambda _points, unique_id, config: stub_dataset(
+                    unique_id, config
+                ),
+            ),
+            patch(
+                "m3_worker.services.custom_forecast_service.select_custom_champion",
+                side_effect=stub_champion,
+            ),
+            patch(
+                "m3_worker.services.custom_forecast_service.forecast_custom_series",
+                side_effect=stub_forecast,
+            ),
+        ):
+            service._execute(run.run_id)
+
+        self.assertEqual(repository.run.status, "succeeded")
+        self.assertEqual(source.calls.count(60), 4)
+        self.assertEqual(source.calls.count(300), 4)
+        soc = repository.captured_series["storage_soc"]
+        self.assertEqual(soc.model_name, "SOCWeeklyDelta5mLinear")
+        self.assertEqual(len(soc.points), 1440)
+        self.assertEqual(
+            [soc.points[index].forecast_value for index in range(0, 30, 5)],
+            [10.0, 10.01, 10.02, 10.03, 10.04, 10.05],
+        )
+        self.assertEqual(
+            repository.captured_baselines["storage_soc"].model_name,
+            "SeasonalNaive5mLinear",
+        )
+        soc_model = repository.run.model_manifest["series"]["storage_soc"]
+        self.assertEqual(soc_model["model_interval_seconds"], 300)
+        self.assertEqual(soc_model["output_interval_seconds"], 60)
+        self.assertEqual(soc_model["output_interpolation"], "linear")
+        self.assertEqual(
+            repository.run.source_manifest["series"]["storage_soc"][
+                "interval_seconds"
+            ],
+            300,
+        )
+
     def test_latest_uses_station_output_configuration_and_current_policy(self):
         """Cross-browser lookup must not depend on the task's training window."""
         repository = InMemoryRepository(make_run())
@@ -313,6 +478,10 @@ class CustomForecastServiceTests(unittest.TestCase):
             set(run.model_manifest["series"]["storage_soc"]),
             {
                 "model_name",
+                "realized_model_name",
+                "model_interval_seconds",
+                "output_interval_seconds",
+                "output_interpolation",
                 "cv_mape_percent",
                 "selected_at",
                 "selection_metric",
@@ -336,6 +505,7 @@ class CustomForecastServiceTests(unittest.TestCase):
         self.assertEqual(
             run.source_manifest["series"]["station_total_load"],
             {
+                "interval_seconds": 3600,
                 "source_available_start": "2026-08-24T00:00:00+08:00",
                 "training_start": "2026-08-24T00:00:00+08:00",
                 "source_available_points": 168,

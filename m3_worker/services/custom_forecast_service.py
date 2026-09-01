@@ -11,12 +11,14 @@ from typing import Callable
 
 from m3_worker.contracts import SERIES_IDS
 from m3_worker.custom_forecast_contracts import (
+    CustomForecastConfig,
     CustomForecastRequest,
     CustomForecastSeries,
 )
 from m3_worker.domain.custom_forecasting import (
     CustomChampion,
     forecast_custom_series,
+    interpolate_soc_forecast,
     seasonal_naive_champion,
     select_custom_champion,
     weekly_naive_champion,
@@ -206,16 +208,19 @@ class CustomForecastService:
         )
         return run, points
 
-    def _history(self, run: StoredCustomRun) -> list:
+    def _history(
+        self, run: StoredCustomRun, config: CustomForecastConfig | None = None
+    ) -> list:
+        selected_config = config or run.config
         points = []
-        cursor = run.config.history_start
-        while cursor < run.config.history_end:
-            end = min(cursor + timedelta(days=7), run.config.history_end)
+        cursor = selected_config.history_start
+        while cursor < selected_config.history_end:
+            end = min(cursor + timedelta(days=7), selected_config.history_end)
             chunk = self._source.list_custom_observations(
                 run.station_id,
                 cursor,
                 end,
-                interval_seconds=run.config.interval_seconds,
+                interval_seconds=selected_config.interval_seconds,
             )
             if type(chunk) is not list:
                 raise M3Error(
@@ -224,6 +229,18 @@ class CustomForecastService:
             points.extend(chunk)
             cursor = end
         return points
+
+    @staticmethod
+    def _soc_model_config(config: CustomForecastConfig) -> CustomForecastConfig:
+        if config.interval_seconds != 60:
+            return config
+        values = config.model_dump(mode="python")
+        values.update(
+            interval_seconds=300,
+            points_per_day=288,
+            expected_points_per_series=288 * config.forecast_days,
+        )
+        return CustomForecastConfig.model_validate(values)
 
     @staticmethod
     def _candidate_score_manifest(score: LoadCandidateScore) -> dict[str, object]:
@@ -313,10 +330,22 @@ class CustomForecastService:
 
     @classmethod
     def _soc_champion_manifest(
-        cls, champion: CustomChampion
+        cls,
+        champion: CustomChampion,
+        realized: CustomForecastSeries,
+        model_config: CustomForecastConfig,
+        output_config: CustomForecastConfig,
     ) -> dict[str, object]:
         return {
             "model_name": champion.model_name,
+            "realized_model_name": realized.model_name,
+            "model_interval_seconds": model_config.interval_seconds,
+            "output_interval_seconds": output_config.interval_seconds,
+            "output_interpolation": (
+                "linear"
+                if model_config.interval_seconds != output_config.interval_seconds
+                else None
+            ),
             "cv_mape_percent": champion.cv_mape_percent,
             "selected_at": champion.selected_at.isoformat(),
             "selection_metric": champion.selection_metric,
@@ -339,9 +368,27 @@ class CustomForecastService:
                 return
             run = self._repository.transition(run, "running", at=self._now())
             observations = self._history(run)
+            model_configs = {
+                "station_total_load": run.config,
+                "storage_soc": self._soc_model_config(run.config),
+            }
+            soc_requires_interpolation = (
+                model_configs["storage_soc"].interval_seconds
+                != run.config.interval_seconds
+            )
+            observations_by_series = {
+                "station_total_load": observations,
+                "storage_soc": (
+                    self._history(run, model_configs["storage_soc"])
+                    if soc_requires_interpolation
+                    else observations
+                ),
+            }
             datasets = {
                 unique_id: build_custom_training_dataset(
-                    observations, unique_id, run.config
+                    observations_by_series[unique_id],
+                    unique_id,
+                    model_configs[unique_id],
                 )
                 for unique_id in SERIES_IDS
             }
@@ -357,7 +404,7 @@ class CustomForecastService:
                 )
                 try:
                     champions[unique_id] = select_custom_champion(
-                        datasets[unique_id], run.config
+                        datasets[unique_id], model_configs[unique_id]
                     )
                 except Exception as error:
                     LOGGER.warning(
@@ -381,14 +428,31 @@ class CustomForecastService:
                     champions[unique_id].model_name,
                     int((monotonic() - selection_started) * 1000),
                 )
-            series = [
-                forecast_custom_series(
-                    datasets[unique_id], champions[unique_id], run.config
+            series = []
+            for unique_id in SERIES_IDS:
+                model_series = forecast_custom_series(
+                    datasets[unique_id],
+                    champions[unique_id],
+                    model_configs[unique_id],
                 )
-                for unique_id in SERIES_IDS
-            ]
+                series.append(
+                    interpolate_soc_forecast(
+                        model_series, model_configs[unique_id], run.config
+                    )
+                    if unique_id == "storage_soc" and soc_requires_interpolation
+                    else model_series
+                )
             series_by_id = {item.unique_id: item for item in series}
             selected_load_champion = champions["station_total_load"]
+            soc_baseline = forecast_custom_series(
+                datasets["storage_soc"],
+                seasonal_naive_champion(datasets["storage_soc"]),
+                model_configs["storage_soc"],
+            )
+            if soc_requires_interpolation:
+                soc_baseline = interpolate_soc_forecast(
+                    soc_baseline, model_configs["storage_soc"], run.config
+                )
             baseline_series = [
                 forecast_custom_series(
                     datasets["station_total_load"],
@@ -399,11 +463,7 @@ class CustomForecastService:
                     ),
                     run.config,
                 ),
-                forecast_custom_series(
-                    datasets["storage_soc"],
-                    seasonal_naive_champion(datasets["storage_soc"]),
-                    run.config,
-                ),
+                soc_baseline,
             ]
             source_manifest = {
                 "history_start": run.config.history_start.isoformat(),
@@ -412,6 +472,7 @@ class CustomForecastService:
                 "observation_count": len(observations),
                 "series": {
                     unique_id: {
+                        "interval_seconds": datasets[unique_id].interval_seconds,
                         "source_available_start": datasets[
                             unique_id
                         ].source_available_start.isoformat(),
@@ -450,7 +511,10 @@ class CustomForecastService:
                         series_by_id["station_total_load"],
                     ),
                     "storage_soc": self._soc_champion_manifest(
-                        champions["storage_soc"]
+                        champions["storage_soc"],
+                        series_by_id["storage_soc"],
+                        model_configs["storage_soc"],
+                        run.config,
                     ),
                 },
             }

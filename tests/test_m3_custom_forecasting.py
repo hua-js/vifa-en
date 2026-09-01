@@ -7,7 +7,12 @@ from unittest.mock import Mock, patch
 
 import pandas as pd
 
-from m3_worker.custom_forecast_contracts import CustomForecastConfig
+from m3_worker.custom_forecast_contracts import (
+    CustomForecastConfig,
+    CustomForecastPoint,
+    CustomForecastSeries,
+)
+from m3_worker.domain import custom_forecasting
 from m3_worker.domain.custom_forecasting import (
     forecast_custom_series,
     seasonal_naive_champion,
@@ -243,6 +248,49 @@ def model_frame(values: list[float]) -> pd.DataFrame:
 
 
 class CustomForecastAnchoringTests(unittest.TestCase):
+    def test_one_minute_soc_output_interpolates_five_minute_anchors(self):
+        """Fine output must preserve every model anchor instead of refitting SOC."""
+        base_config = make_selection_config(28, interval_seconds=300)
+        output_config = make_selection_config(28, interval_seconds=60)
+        base_values = [10.0, 20.0] + [20.0] * 286
+        base_series = CustomForecastSeries(
+            unique_id="storage_soc",
+            unit="%",
+            model_name="SOCWeeklyDelta",
+            status="ok",
+            points=[
+                CustomForecastPoint(
+                    target_time=base_config.forecast_start
+                    + index * base_config.interval,
+                    horizon_step=index + 1,
+                    raw_forecast=value,
+                    forecast_value=value,
+                    is_clipped=False,
+                )
+                for index, value in enumerate(base_values)
+            ],
+            fallback_reason=None,
+        )
+        interpolate = getattr(custom_forecasting, "interpolate_soc_forecast", None)
+        self.assertIsNotNone(interpolate, "SOC interpolation behavior is missing")
+
+        result = interpolate(base_series, base_config, output_config)
+
+        self.assertEqual(result.model_name, "SOCWeeklyDelta5mLinear")
+        self.assertEqual(len(result.points), 1440)
+        self.assertEqual(
+            [point.forecast_value for point in result.points[:6]],
+            [10.0, 12.0, 14.0, 16.0, 18.0, 20.0],
+        )
+        self.assertEqual(
+            [result.points[index].forecast_value for index in range(0, 1440, 5)],
+            base_values,
+        )
+        self.assertEqual(
+            [point.forecast_value for point in result.points[-5:]],
+            [20.0] * 5,
+        )
+
     @patch("m3_worker.domain.custom_forecasting._forecast_frame")
     def test_soc_starts_at_last_real_history_value_and_preserves_shape(
         self, forecast_frame

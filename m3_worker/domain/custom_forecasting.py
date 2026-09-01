@@ -33,6 +33,7 @@ logger = logging.getLogger(__name__)
 
 
 SOC_WEEKLY_DELTA_MODEL = "SOCWeeklyDelta"
+SOC_FIVE_MINUTE_LINEAR_SUFFIX = "5mLinear"
 SOC_MODEL_ORDER = (
     SOC_WEEKLY_DELTA_MODEL,
     "SeasonalNaive",
@@ -742,3 +743,61 @@ def forecast_custom_series(
     )
     validate_custom_series_for_config(series, config)
     return series
+
+
+def interpolate_soc_forecast(
+    series: CustomForecastSeries,
+    base_config: CustomForecastConfig,
+    output_config: CustomForecastConfig,
+) -> CustomForecastSeries:
+    """Expand five-minute SOC anchors onto a one-minute output grid."""
+
+    if series.unique_id != "storage_soc":
+        raise ValueError("SOC interpolation requires the storage SOC series")
+    if base_config.interval_seconds != 300 or output_config.interval_seconds != 60:
+        raise ValueError("SOC interpolation requires five-minute to one-minute grids")
+    if (
+        base_config.history_start != output_config.history_start
+        or base_config.history_end != output_config.history_end
+        or base_config.forecast_start != output_config.forecast_start
+        or base_config.forecast_end != output_config.forecast_end
+        or base_config.forecast_days != output_config.forecast_days
+        or base_config.model_policy != output_config.model_policy
+    ):
+        raise ValueError("SOC interpolation configurations do not share one window")
+    validate_custom_series_for_config(series, base_config)
+    if not series.points:
+        return series.model_copy(
+            update={"model_name": f"{series.model_name}{SOC_FIVE_MINUTE_LINEAR_SUFFIX}"}
+        )
+
+    ratio = base_config.interval_seconds // output_config.interval_seconds
+    points: list[CustomForecastPoint] = []
+    for index in range(output_config.expected_points_per_series):
+        left_index = min(index // ratio, len(series.points) - 1)
+        right_index = min(left_index + 1, len(series.points) - 1)
+        fraction = (index % ratio) / ratio if right_index != left_index else 0.0
+        left = series.points[left_index]
+        right = series.points[right_index]
+        raw_value = left.raw_forecast + fraction * (
+            right.raw_forecast - left.raw_forecast
+        )
+        raw, published, clipped = _clip("storage_soc", raw_value)
+        points.append(
+            CustomForecastPoint(
+                target_time=output_config.forecast_start
+                + index * output_config.interval,
+                horizon_step=index + 1,
+                raw_forecast=raw,
+                forecast_value=published,
+                is_clipped=clipped,
+            )
+        )
+    output = series.model_copy(
+        update={
+            "model_name": f"{series.model_name}{SOC_FIVE_MINUTE_LINEAR_SUFFIX}",
+            "points": points,
+        }
+    )
+    validate_custom_series_for_config(output, output_config)
+    return output

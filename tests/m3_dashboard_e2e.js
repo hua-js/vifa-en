@@ -290,6 +290,9 @@ function oneMinuteCrossBrowserFixture() {
   }
   fixture.result.run = run;
   fixture.result.series.forEach((series, seriesIndex) => {
+    if (series.unique_id === "storage_soc") {
+      series.model_name = "SOCWeeklyDelta5mLinear";
+    }
     const base = seriesIndex === 0 ? 720 : 58;
     series.points = Array.from({ length: 1440 }, (_, index) => ({
       target_time: new Date(startMs + index * 60_000).toISOString().replace(".000Z", "Z"),
@@ -827,6 +830,10 @@ function legacyNullManifestFixture() {
   releaseLatestLookup();
   holdLatestLookup = false;
   await page.waitForFunction(() => document.querySelector("#result-model-meta")?.textContent === "3 个连续有效周 · 负载周期 7 天 · 1 分钟粒度");
+  assert.strictEqual(
+    await page.locator(".current-model-name").first().innerText(),
+    "负载：周期校准 · SOC：周差分（5分钟基准）",
+  );
   assert.strictEqual(await page.locator("#total-points-inline").innerText(), "1,440");
   assert.strictEqual(await page.locator(".summary-average-load-note").innerText(), "按 1440 个有效预测点计算");
   assert.strictEqual(await page.locator("#task-state").innerText(), "预测完成");
