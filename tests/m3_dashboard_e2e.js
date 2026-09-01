@@ -774,6 +774,10 @@ function legacyNullManifestFixture() {
   assert.strictEqual(await page.locator(".station-section").count(), 1);
   assert.strictEqual(await page.locator(".series-card").count(), 2);
   assert.strictEqual(await page.locator("svg.forecast-chart").count(), 2);
+  assert.strictEqual(await page.title(), "能耗预测");
+  assert.strictEqual(await page.getByRole("heading", { level: 1, name: "能耗预测", exact: true }).count(), 1);
+  assert.strictEqual(await page.locator(".brand-icon svg[aria-hidden='true']").count(), 1);
+  assert.strictEqual(await page.getByText("手动预测", { exact: true }).count(), 0);
   assert.deepStrictEqual(await page.locator(".station-section h2").allTextContents(), ["1# 电站"]);
   assert.strictEqual(await page.locator("#task-zone-title").innerText(), "预测任务");
   assert.strictEqual(await page.locator("#history-start").count(), 1);
@@ -1178,7 +1182,8 @@ function legacyNullManifestFixture() {
   await stationPicker.selectOption("station_1");
   assert.strictEqual(await page.locator(".station-section").getAttribute("data-station"), "station_1");
   await page.waitForFunction(() => document.querySelector("#task-state")?.textContent === "预测完成"
-    && document.querySelector(".candidate[data-model='WeeklyRegimeAdjusted']")?.classList.contains("selected"));
+    && document.querySelector(".candidate[data-model='WeeklyRegimeAdjusted']")?.classList.contains("selected")
+    && !document.querySelector("#run-button")?.disabled);
   assert.strictEqual(await page.locator("#task-state").innerText(), "预测完成");
   assert.strictEqual(await page.locator(".candidate[data-model='WeeklyMedian3'] .candidate-state").innerText(), "本次未参与");
   assert.ok((await page.locator(".load-chart .axis-label").allTextContents()).includes("08/31 12:15"));

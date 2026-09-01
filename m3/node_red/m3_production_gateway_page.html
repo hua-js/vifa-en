@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark light">
-  <title>M3 能耗预测</title>
+  <title>能耗预测</title>
   <style>
     :root {
       color-scheme: dark;
@@ -249,6 +249,14 @@
     /* Approved M3 information architecture: task → result → performance → model. */
     main.app { width: min(1480px, 100%); margin: 0; padding: 28px; }
     .top { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; margin-bottom: 20px; }
+    .brand { display: flex; align-items: center; gap: 12px; }
+    .brand-icon {
+      display: grid; place-items: center; width: 42px; height: 42px; flex: 0 0 auto;
+      color: #fff; border: 1px solid rgb(255 255 255 / 18%); border-radius: 13px;
+      background: linear-gradient(135deg, var(--blue), var(--green));
+      box-shadow: 0 10px 24px rgb(71 125 240 / 20%);
+    }
+    .brand-icon svg { width: 25px; height: 25px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
     .brand h1 { margin: 0; font-size: 28px; line-height: 1.2; letter-spacing: -.03em; }
     .brand p { margin: 7px 0 0; color: var(--muted); font-size: 13px; }
     .tools { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 9px; }
@@ -433,12 +441,11 @@
   <main id="forecast-dashboard" class="app" data-state="loading" data-window-hours="48" aria-labelledby="page-title">
     <header class="top">
       <div class="brand">
-        <h1 id="page-title">M3 · 能耗预测</h1>
-        <p>负载预测 · 储能 SOC 趋势预测</p>
+        <span class="brand-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 13h4l2.2-5 3.4 9 2.2-5H21"></path><circle cx="21" cy="12" r="1" fill="currentColor" stroke="none"></circle></svg></span>
+        <div><h1 id="page-title">能耗预测</h1><p>负载预测 · 储能 SOC 趋势预测</p></div>
       </div>
       <div class="tools">
         <select id="station-picker" aria-label="选择电站"><option value="station_1">1# 电站</option><option value="station_2">2# 电站</option></select>
-        <span class="pill">手动预测</span>
         <span class="pill" role="status" aria-live="polite"><strong id="system-state">加载中</strong>&nbsp;<span id="healthy-count">—</span>/<span id="station-count">—</span></span>
         <time class="pill" id="generated-at">最近更新：—</time>
         <button class="pill" id="theme-toggle" type="button" aria-pressed="true"><span aria-hidden="true">☾</span><span class="theme-label">黑夜模式</span></button>
