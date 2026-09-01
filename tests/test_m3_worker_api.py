@@ -1,6 +1,6 @@
 """FastAPI operations surface, lifecycle, and resource assembly tests."""
 
-from datetime import datetime
+from datetime import datetime, timedelta
 import importlib
 import logging
 import os
@@ -122,6 +122,56 @@ AUTH = {"Authorization": "Bearer admin-secret"}
 
 
 class WorkerApiTests(unittest.TestCase):
+    def test_latest_custom_forecast_is_selected_by_station_interval_and_horizon(self):
+        """A browser without local run state can recover the newest matching result."""
+        resources = FakeResources()
+        config = SimpleNamespace(
+            history_start=NOW - timedelta(days=28),
+            history_end=NOW,
+            history_days=28,
+            forecast_start=NOW,
+            forecast_end=NOW + timedelta(days=1),
+            forecast_days=1,
+            interval_seconds=60,
+            points_per_day=1440,
+            expected_points_per_series=1440,
+            model_policy="full_selection",
+        )
+        run = SimpleNamespace(
+            run_id="latest-minute-run",
+            station_id=ES02,
+            status="evaluated",
+            config=config,
+            model_manifest={"selection_policy": "weekly_load_v2"},
+            source_manifest={},
+            record=SimpleNamespace(error_code=None),
+            started_at=NOW,
+            completed_at=NOW + timedelta(minutes=1),
+            evaluated_at=NOW + timedelta(minutes=2),
+            created_at=NOW,
+            updated_at=NOW + timedelta(minutes=2),
+        )
+        calls = []
+
+        def latest(station_id, *, interval_seconds, forecast_days):
+            calls.append((station_id, interval_seconds, forecast_days))
+            return run
+
+        resources.custom_forecasts = SimpleNamespace(latest=latest)
+        app = create_app(settings(), resources, start_scheduler=False)
+
+        with TestClient(app) as client:
+            response = client.get(
+                f"/v1/stations/{ES02}/custom-forecast-runs/latest",
+                params={"interval_seconds": 60, "forecast_days": 1},
+                headers=AUTH,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["run_id"], "latest-minute-run")
+        self.assertEqual(response.json()["expected_points_per_series"], 1440)
+        self.assertEqual(calls, [(ES02, 60, 1)])
+
     def test_worker_info_logging_uses_the_uvicorn_handler(self):
         m3_logger = Mock(handlers=[], propagate=True)
         uvicorn_handler = logging.NullHandler()
@@ -151,7 +201,7 @@ class WorkerApiTests(unittest.TestCase):
         finally:
             os.environ.update(old)
 
-    def test_openapi_has_only_five_paths_and_manual_schema_forbids_properties(self):
+    def test_openapi_has_only_approved_paths_and_manual_schema_forbids_properties(self):
         """An accidental inbound data/URL endpoint would violate the active-pull boundary."""
         app = create_app(settings(), FakeResources(), start_scheduler=False)
         schema = app.openapi()
@@ -160,7 +210,12 @@ class WorkerApiTests(unittest.TestCase):
             sorted(schema["paths"]),
             [
                 "/health",
+                "/v1/custom-forecast-runs/{run_id}",
+                "/v1/custom-forecast-runs/{run_id}/result",
                 "/v1/jobs/{job_id}",
+                "/v1/stations/{station_id}/custom-forecast-performance",
+                "/v1/stations/{station_id}/custom-forecast-runs/latest",
+                "/v1/stations/{station_id}/runs/custom-forecast",
                 "/v1/stations/{station_id}/runs/forecast",
                 "/v1/stations/{station_id}/runs/model-selection",
                 "/v1/stations/{station_id}/state",

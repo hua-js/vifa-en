@@ -12,6 +12,7 @@ from m3_worker.custom_forecast_contracts import (
 )
 from m3_worker.errors import M3Error
 from m3_worker.services.custom_forecast_repository import (
+    RUN_FIELDS,
     CustomForecastRepository,
     StoredCustomRun,
 )
@@ -116,7 +117,99 @@ class AmbiguousCommitApi:
             raise AssertionError(collection)
 
 
+def persisted_run_row(
+    *,
+    run_id: str,
+    status: str,
+    completed_at: str,
+    selection_policy: str,
+) -> dict:
+    return {
+        "id": len(run_id),
+        "run_id": run_id,
+        "station_id": "ES02",
+        "idempotency_key": f"{run_id}-key",
+        "history_start": "2026-08-04T00:00:00+08:00",
+        "history_end": "2026-09-01T00:00:00+08:00",
+        "history_days": 28,
+        "forecast_start": "2026-09-01T00:00:00+08:00",
+        "forecast_end": "2026-09-02T00:00:00+08:00",
+        "forecast_days": 1,
+        "interval_seconds": 60,
+        "points_per_day": 1440,
+        "expected_points_per_series": 1440,
+        "model_policy": "full_selection",
+        "status": status,
+        "model_manifest": {"selection_policy": selection_policy},
+        "source_manifest": {},
+        "content_hash": "a" * 64,
+        "error_code": None,
+        "requested_by": "m3_operations_api",
+        "started_at": "2026-09-01T00:00:00+08:00",
+        "completed_at": completed_at,
+        "evaluated_at": completed_at if status == "evaluated" else None,
+        "createdAt": completed_at,
+        "updatedAt": completed_at,
+    }
+
+
+class LatestRunsApi:
+    def __init__(self, rows: list[dict]) -> None:
+        self.rows = rows
+
+    def list_records(self, collection, *, filter, fields, sort=None):
+        if collection != "energy_forecast_manual_runs":
+            raise AssertionError(collection)
+        if filter != {
+            "station_id": "ES02",
+            "interval_seconds": 60,
+            "forecast_days": 1,
+            "status": {"$in": ["succeeded", "evaluated"]},
+        }:
+            raise AssertionError(filter)
+        if fields != RUN_FIELDS:
+            raise AssertionError(fields)
+        if sort != ["-completed_at", "-createdAt"]:
+            raise AssertionError(sort)
+        return [dict(row) for row in self.rows]
+
+
 class CustomForecastRepositoryTests(unittest.TestCase):
+    def test_latest_usable_run_skips_newer_incompatible_terminal_runs(self):
+        """A stale task format must not hide the newest usable matching forecast."""
+        api = LatestRunsApi(
+            [
+                persisted_run_row(
+                    run_id="newer-legacy-run",
+                    status="succeeded",
+                    completed_at="2026-09-01T12:02:00+08:00",
+                    selection_policy="weekly_load_v1",
+                ),
+                persisted_run_row(
+                    run_id="latest-minute-run",
+                    status="evaluated",
+                    completed_at="2026-09-01T12:01:00+08:00",
+                    selection_policy="weekly_load_v2",
+                ),
+                persisted_run_row(
+                    run_id="older-minute-run",
+                    status="succeeded",
+                    completed_at="2026-09-01T12:00:00+08:00",
+                    selection_policy="weekly_load_v2",
+                ),
+            ]
+        )
+
+        run = CustomForecastRepository(api).latest_usable(
+            "ES02",
+            interval_seconds=60,
+            forecast_days=1,
+            selection_policy="weekly_load_v2",
+        )
+
+        self.assertIsNotNone(run)
+        self.assertEqual(run.run_id, "latest-minute-run")
+
     def test_persists_realized_point_model_when_selection_evidence_differs(self):
         """Point rows remain authoritative for a selected-winner final fallback."""
         run = replace(

@@ -270,6 +270,41 @@ function pendingPerformanceFixture() {
   return fixture;
 }
 
+function oneMinuteCrossBrowserFixture() {
+  const fixture = weeklyEvidenceFixture();
+  const run = fixture.run;
+  const startMs = Date.parse(run.forecast_start);
+  run.run_id = "latest-station-2-minute-run";
+  run.station_id = "plant-beta-ES02";
+  run.interval_seconds = 60;
+  run.points_per_day = 1440;
+  run.expected_points_per_series = 1440;
+  run.model_manifest.interval_seconds = 60;
+  run.model_manifest.daily_season_length = 1440;
+  run.model_manifest.weekly_season_length = 10080;
+  run.source_manifest.interval_seconds = 60;
+  run.source_manifest.observation_count = 41760;
+  for (const source of Object.values(run.source_manifest.series)) {
+    source.source_available_points = 41760;
+    source.retained_points = 41760;
+  }
+  fixture.result.run = run;
+  fixture.result.series.forEach((series, seriesIndex) => {
+    const base = seriesIndex === 0 ? 720 : 58;
+    series.points = Array.from({ length: 1440 }, (_, index) => ({
+      target_time: new Date(startMs + index * 60_000).toISOString().replace(".000Z", "Z"),
+      horizon_step: index + 1,
+      forecast_value: base + index / 100,
+      actual_value: null,
+      actual_quality: null,
+      absolute_percentage_error: null,
+    }));
+  });
+  fixture.performance.station_id = run.station_id;
+  fixture.performance.interval_seconds = 60;
+  return fixture;
+}
+
 function warmingEvidenceFixture() {
   const fixture = weeklyEvidenceFixture();
   fixture.run.run_id = "weekly-warming-run";
@@ -445,6 +480,10 @@ function legacyNullManifestFixture() {
   let responsePayload = payload;
   let responseMode = "payload";
   let customPayload = null;
+  let latestCustomPayload = null;
+  let holdLatestLookup = false;
+  let latestLookupStartedResolve;
+  let releaseLatestLookup;
   let releaseDelayed;
   let timeoutRequestStartedResolve;
 
@@ -610,11 +649,41 @@ function legacyNullManifestFixture() {
       releaseDelayed = undefined;
     }
     const requestUrl = new URL(route.request().url());
-    if (customPayload !== null && requestUrl.pathname.startsWith(`${API_PATH}/custom-`)) {
+    const latestMatch = new RegExp(`^${API_PATH}/custom-runs/(station_[12])/latest$`).exec(requestUrl.pathname);
+    if (latestMatch !== null) {
+      const candidate = latestMatch[1] === "station_2" ? latestCustomPayload : customPayload;
+      const matchesFixture = candidate !== null
+        && requestUrl.searchParams.get("interval_seconds") === String(candidate.run.interval_seconds)
+        && requestUrl.searchParams.get("forecast_days") === String(candidate.run.forecast_days);
+      if (holdLatestLookup && matchesFixture) {
+        latestLookupStartedResolve?.();
+        latestLookupStartedResolve = undefined;
+        await new Promise((resolve) => { releaseLatestLookup = resolve; });
+        releaseLatestLookup = undefined;
+      }
+      await fulfillApi(route, matchesFixture ? {
+        status: 200,
+        contentType: "application/json; charset=utf-8",
+        headers: { "Cache-Control": "no-store" },
+        body: JSON.stringify({ status: "ok", data: candidate.run }),
+      } : {
+        status: 404,
+        contentType: "application/json; charset=utf-8",
+        headers: { "Cache-Control": "no-store" },
+        body: JSON.stringify({ status: "error", error: { code: "not_found", message: "预测任务不存在" } }),
+      });
+      return;
+    }
+    const routedCustomPayload = latestCustomPayload !== null && (
+      requestUrl.pathname.includes(latestCustomPayload.run.run_id)
+      || requestUrl.pathname === `${API_PATH}/custom-performance/station_2`
+    ) ? latestCustomPayload : customPayload;
+    if (routedCustomPayload !== null && requestUrl.pathname.startsWith(`${API_PATH}/custom-`)) {
       let data;
-      if (route.request().method() === "POST") data = customPayload.run;
-      else if (requestUrl.pathname.endsWith("/result")) data = customPayload.result;
-      else if (requestUrl.pathname.startsWith(`${API_PATH}/custom-performance/`)) data = customPayload.performance;
+      if (route.request().method() === "POST") data = routedCustomPayload.run;
+      else if (requestUrl.pathname.endsWith("/result")) data = routedCustomPayload.result;
+      else if (requestUrl.pathname.startsWith(`${API_PATH}/custom-performance/`)) data = routedCustomPayload.performance;
+      else if (requestUrl.pathname === `${API_PATH}/custom-runs/${routedCustomPayload.run.run_id}`) data = routedCustomPayload.run;
       else throw new Error(`unexpected custom route ${route.request().method()} ${requestUrl.pathname}`);
       await fulfillApi(route, {
         status: 200,
@@ -683,8 +752,10 @@ function legacyNullManifestFixture() {
   }, { allowedOrigin: origin, nonce: readyMessage.data.nonce });
   await waitForInitialDashboardReady();
 
+  await page.waitForFunction(() => document.querySelector("#task-state")?.textContent === "暂无匹配预测结果");
   assert.deepStrictEqual(apiRequests.map((item) => [item.method, new URL(item.url).pathname, new URL(item.url).search, item.postData]), [
     ["GET", API_PATH, "", null],
+    ["GET", `${API_PATH}/custom-runs/station_1/latest`, "?interval_seconds=900&forecast_days=1", null],
   ]);
   assert.strictEqual(new URL(apiRequests[0].url).origin, origin);
   assert.strictEqual(apiRequests[0].headers.authorization, "Bearer current-user-token");
@@ -744,6 +815,27 @@ function legacyNullManifestFixture() {
   await page.locator("#granularity").selectOption("60");
   assert.strictEqual(await page.locator(".candidate[data-model='AutoARIMA']").evaluate((node) => node.classList.contains("disabled")), true);
   await page.locator("#granularity").selectOption("900");
+
+  latestCustomPayload = oneMinuteCrossBrowserFixture();
+  holdLatestLookup = true;
+  const latestLookupStarted = new Promise((resolve) => { latestLookupStartedResolve = resolve; });
+  await stationPicker.selectOption("station_2");
+  await page.locator("#granularity").selectOption("60");
+  await latestLookupStarted;
+  assert.strictEqual(await page.locator("#task-state").innerText(), "正在加载预测任务…");
+  assert.strictEqual(await page.locator("#run-button").isDisabled(), true);
+  releaseLatestLookup();
+  holdLatestLookup = false;
+  await page.waitForFunction(() => document.querySelector("#result-model-meta")?.textContent === "3 个连续有效周 · 负载周期 7 天 · 1 分钟粒度");
+  assert.strictEqual(await page.locator("#total-points-inline").innerText(), "1,440");
+  assert.strictEqual(await page.locator(".summary-average-load-note").innerText(), "按 1440 个有效预测点计算");
+  assert.strictEqual(await page.locator("#task-state").innerText(), "预测完成");
+  assert.strictEqual(await page.evaluate(() => sessionStorage.getItem("vifa.m3.customForecastRuns.v1") !== null), true);
+  latestCustomPayload = null;
+  await stationPicker.selectOption("station_1");
+  await page.locator("#granularity").selectOption("900");
+  await page.waitForFunction(() => document.querySelector("#task-state")?.textContent === "暂无匹配预测结果");
+  assert.notStrictEqual(await page.locator("#total-points-inline").innerText(), "1,440");
   const firstStation = payload.data.stations[0];
   const firstLoad = firstStation.series[0];
   const firstSoc = firstStation.series[1];
@@ -962,8 +1054,15 @@ function legacyNullManifestFixture() {
     await window.__m3AdvanceIntervals(60_000);
   });
   await responsePromise;
-  assert.strictEqual(apiRequests.length, beforePoll + 1);
-  assert.ok(apiRequests.every((item) => item.method === "GET" && new URL(item.url).pathname === API_PATH && new URL(item.url).search === "" && item.postData === null));
+  await page.waitForFunction(() => document.querySelector("#task-state")?.textContent === "暂无匹配预测结果");
+  assert.deepStrictEqual(
+    apiRequests.slice(beforePoll).map((item) => [item.method, new URL(item.url).pathname, new URL(item.url).search, item.postData]),
+    [
+      ["GET", API_PATH, "", null],
+      ["GET", `${API_PATH}/custom-runs/station_1/latest`, "?interval_seconds=900&forecast_days=1", null],
+    ],
+  );
+  assert.ok(apiRequests.every((item) => item.method === "GET" && new URL(item.url).origin === origin && item.postData === null));
   assert.ok(apiRequests.every((item) => !item.headers.cookie && item.headers.authorization === "Bearer current-user-token" && !item.headers.referer));
   assert.ok(apiRequests.every((item) => !/must-not-send|must-not-forward|example\.invalid/.test(JSON.stringify(item.headers))));
 
@@ -1012,16 +1111,19 @@ function legacyNullManifestFixture() {
   assert.strictEqual(await page.locator(".candidate[data-model='WeeklyRegimeAdjusted'] .candidate-state").innerText(), "已选定");
   assert.strictEqual(await page.locator(".candidate[data-model='WeeklyMedian3'] .candidate-state").innerText(), "本次未参与");
   await page.locator("#granularity").selectOption("60");
-  assert.strictEqual(await page.locator(".candidate[data-model='WeeklyMedian3'] .candidate-state").innerText(), "本次未参与");
+  assert.strictEqual(await page.locator(".candidate[data-model='WeeklyMedian3'] .candidate-state").innerText(), "等待当前电站数据");
   await page.locator("#granularity").selectOption("900");
+  await page.waitForFunction(() => document.querySelector("#task-state")?.textContent === "预测完成");
   await stationPicker.selectOption("station_2");
   assert.strictEqual(await page.locator(".station-section").getAttribute("data-station"), "station_2");
-  assert.strictEqual(await page.locator("#task-state").innerText(), "尚未提交任务");
+  await page.waitForFunction(() => document.querySelector("#task-state")?.textContent === "暂无匹配预测结果");
   assert.strictEqual(await page.locator(".prediction-summary-sentence").innerText(), "预计负载峰值为 730.0 kW；最低 SOC 为 54.0 %");
   assert.ok((await page.locator(".mape-value").allTextContents()).every((value) => value === "—"), "station switch must clear daily MAPE from the previous station");
   assert.strictEqual(await page.locator(".candidate[data-model='WeeklyMedian3'] .candidate-state").innerText(), "可参与");
   await stationPicker.selectOption("station_1");
   assert.strictEqual(await page.locator(".station-section").getAttribute("data-station"), "station_1");
+  await page.waitForFunction(() => document.querySelector("#task-state")?.textContent === "预测完成"
+    && document.querySelector(".candidate[data-model='WeeklyRegimeAdjusted']")?.classList.contains("selected"));
   assert.strictEqual(await page.locator("#task-state").innerText(), "预测完成");
   assert.strictEqual(await page.locator(".candidate[data-model='WeeklyMedian3'] .candidate-state").innerText(), "本次未参与");
   assert.ok((await page.locator(".load-chart .axis-label").allTextContents()).includes("08/31 12:15"));
@@ -1209,22 +1311,25 @@ function legacyNullManifestFixture() {
   assert.strictEqual(await page.locator(".station-section").count(), 1);
   assert.strictEqual(await page.locator(".series-card").count(), 2);
   await page.screenshot({ path: "/tmp/m3-task6-mobile.png", fullPage: true });
-  assert.deepStrictEqual(consoleErrors, []);
+  assert.ok(consoleErrors.every((message) => /status of 404 \(Not Found\)/.test(message)), JSON.stringify(consoleErrors));
   assert.deepStrictEqual(pageErrors, []);
 
   const wrapperPage = await context.newPage();
   const wrapperApiRequests = [];
-  await wrapperPage.route("**/energy-forecast-api*", async (route) => {
+  await wrapperPage.route(/\/energy-forecast-api(?:\/|$|\?)/, async (route) => {
     wrapperApiRequests.push({
       url: route.request().url(),
       method: route.request().method(),
       headers: await route.request().allHeaders(),
     });
+    const latest = new URL(route.request().url()).pathname.endsWith("/latest");
     await route.fulfill({
-      status: 200,
+      status: latest ? 404 : 200,
       contentType: "application/json; charset=utf-8",
       headers: { "Cache-Control": "no-store" },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(latest
+        ? { status: "error", error: { code: "not_found", message: "预测任务不存在" } }
+        : payload),
     });
   });
   await wrapperPage.goto(`${origin}/nocobase-host`, { waitUntil: "domcontentloaded" });
@@ -1234,8 +1339,9 @@ function legacyNullManifestFixture() {
   assert.strictEqual(await iframe.getAttribute("sandbox"), "allow-scripts allow-same-origin");
   assert.strictEqual(await iframe.getAttribute("referrerpolicy"), "no-referrer");
   await wrapperPage.frameLocator("#m3-block iframe").locator("#forecast-dashboard[data-state='ready']").waitFor({ timeout: 3000 });
+  await wrapperPage.frameLocator("#m3-block iframe").locator("#task-state").getByText("暂无匹配预测结果", { exact: true }).waitFor();
   assert.deepStrictEqual(await wrapperPage.evaluate(() => window.__m3CtxVarNames), ["ctx.token"]);
-  assert.strictEqual(wrapperApiRequests.length, 1);
+  assert.strictEqual(wrapperApiRequests.length, 2);
   assert.strictEqual(wrapperApiRequests[0].method, "GET");
   assert.strictEqual(new URL(wrapperApiRequests[0].url).pathname, API_PATH);
   assert.strictEqual(new URL(wrapperApiRequests[0].url).search, "");
@@ -1255,12 +1361,19 @@ function legacyNullManifestFixture() {
   const requestsBeforeServerTokenMode = apiRequests.length;
   await page.goto(`${origin}/ett`, { waitUntil: "domcontentloaded" });
   await page.locator("#forecast-dashboard[data-state='ready']").waitFor({ timeout: 3000 });
-  assert.strictEqual(apiRequests.length, requestsBeforeServerTokenMode + 1);
-  const serverTokenRequest = apiRequests.at(-1);
+  await page.waitForFunction(() => document.querySelector("#task-state")?.textContent === "暂无匹配预测结果");
+  const serverTokenRequests = apiRequests.slice(requestsBeforeServerTokenMode);
+  assert.strictEqual(
+    serverTokenRequests.length,
+    2,
+    JSON.stringify(serverTokenRequests.map(requestDiagnostic)),
+  );
+  const serverTokenRequest = serverTokenRequests[0];
   assert.strictEqual(serverTokenRequest.method, "GET");
   assert.strictEqual(new URL(serverTokenRequest.url).pathname, API_PATH);
   assert.strictEqual(serverTokenRequest.headers.authorization, undefined);
   assert.strictEqual(serverTokenRequest.headers.cookie, undefined);
+  assert.ok(serverTokenRequests.every((request) => request.headers.authorization === undefined && request.headers.cookie === undefined));
   assert.deepStrictEqual(
     await page.evaluate(() => window.__m3AuthMessages.filter((item) => item.data?.type === "vifa-m3-auth-ready")),
     [],

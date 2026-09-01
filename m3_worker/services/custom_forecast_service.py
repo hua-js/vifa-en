@@ -178,6 +178,21 @@ class CustomForecastService:
     def get(self, run_id: str) -> StoredCustomRun | None:
         return self._repository.get_by_run_id(run_id)
 
+    def latest(
+        self,
+        station_id: str,
+        *,
+        interval_seconds: int,
+        forecast_days: int,
+    ) -> StoredCustomRun | None:
+        self._require_station(station_id)
+        return self._repository.latest_usable(
+            station_id,
+            interval_seconds=interval_seconds,
+            forecast_days=forecast_days,
+            selection_policy=LOAD_SELECTION_POLICY,
+        )
+
     def result(
         self, run_id: str
     ) -> tuple[StoredCustomRun, list[dict[str, object]]] | None:

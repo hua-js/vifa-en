@@ -1,4 +1,4 @@
-"""The five approved M3 Worker operations endpoints."""
+"""The approved M3 Worker operations endpoints."""
 
 from datetime import timedelta
 import math
@@ -308,6 +308,32 @@ def custom_forecast_state(
         return _custom_run_response(request, run)
     except M3Error as error:
         raise _custom_service_error(error) from error
+
+
+@router.get("/stations/{station_id}/custom-forecast-runs/latest")
+def latest_custom_forecast(
+    request: Request,
+    station_id: StationDep,
+    interval_seconds: Annotated[int, Query()],
+    forecast_days: Annotated[int, Query(ge=1, le=7)],
+) -> CustomRunResponse:
+    if interval_seconds not in ALLOWED_INTERVAL_SECONDS:
+        raise HTTPException(status_code=422, detail="request_invalid")
+    try:
+        run = request.app.state.resources.custom_forecasts.latest(
+            station_id,
+            interval_seconds=interval_seconds,
+            forecast_days=forecast_days,
+        )
+        if run is None:
+            raise HTTPException(status_code=404, detail="not_found")
+        return _custom_run_response(request, run)
+    except HTTPException:
+        raise
+    except M3Error as error:
+        raise _custom_service_error(error) from error
+    except Exception as error:
+        raise HTTPException(status_code=500, detail="internal_error") from error
 
 
 @router.get("/custom-forecast-runs/{run_id}/result")

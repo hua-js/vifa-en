@@ -134,9 +134,14 @@ class InMemoryRepository:
         self.run = run
         self.captured_baselines = {}
         self.captured_series = {}
+        self.latest_query = None
 
     def get_by_run_id(self, run_id: str) -> StoredCustomRun | None:
         return self.run if run_id == self.run.run_id else None
+
+    def latest_usable(self, station_id: str, **query) -> StoredCustomRun | None:
+        self.latest_query = (station_id, query)
+        return self.run
 
     def transition(self, run: StoredCustomRun, status: str, *, at: datetime, **values):
         record = run.record.model_copy(
@@ -164,6 +169,32 @@ class InMemoryRepository:
 
 
 class CustomForecastServiceTests(unittest.TestCase):
+    def test_latest_uses_station_output_configuration_and_current_policy(self):
+        """Cross-browser lookup must not depend on the task's training window."""
+        repository = InMemoryRepository(make_run())
+        service = CustomForecastService(
+            repository,
+            InMemorySource(make_observations()),
+            now=lambda: NOW,
+            station_ids=("ES01",),
+        )
+        self.addCleanup(service.close)
+
+        run = service.latest("ES01", interval_seconds=3600, forecast_days=1)
+
+        self.assertIs(run, repository.run)
+        self.assertEqual(
+            repository.latest_query,
+            (
+                "ES01",
+                {
+                    "interval_seconds": 3600,
+                    "forecast_days": 1,
+                    "selection_policy": "weekly_load_v2",
+                },
+            ),
+        )
+
     def test_evidence_serializers_keep_only_safe_candidate_values(self):
         """Non-finite metrics and arbitrary skip text must not enter run JSON."""
         score = LoadCandidateScore(

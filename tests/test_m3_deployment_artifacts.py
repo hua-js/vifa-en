@@ -354,6 +354,7 @@ class DeploymentArtifactTests(unittest.TestCase):
                 ("/energy-forecast-api/custom-runs/:run_id", "get"),
                 ("/energy-forecast-api/custom-runs/:run_id/result", "get"),
                 ("/energy-forecast-api/custom-runs/:station_key", "post"),
+                ("/energy-forecast-api/custom-runs/:station_key/latest", "get"),
                 ("/ett", "get"),
             ],
         )

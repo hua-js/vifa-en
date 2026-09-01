@@ -372,6 +372,34 @@ class CustomForecastRepository:
         )
         return [self._parse_run(row) for row in rows]
 
+    def latest_usable(
+        self,
+        station_id: str,
+        *,
+        interval_seconds: int,
+        forecast_days: int,
+        selection_policy: str,
+    ) -> StoredCustomRun | None:
+        rows = self._api.list_records(
+            RUNS,
+            filter={
+                "station_id": station_id,
+                "interval_seconds": interval_seconds,
+                "forecast_days": forecast_days,
+                "status": {"$in": ["succeeded", "evaluated"]},
+            },
+            fields=RUN_FIELDS,
+            sort=["-completed_at", "-createdAt"],
+        )
+        for row in rows:
+            run = self._parse_run(row)
+            if (
+                run.model_manifest is not None
+                and run.model_manifest.get("selection_policy") == selection_policy
+            ):
+                return run
+        return None
+
     def transition(
         self,
         run: StoredCustomRun,

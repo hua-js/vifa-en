@@ -616,6 +616,7 @@
       let customPollTimer = null;
       let selectedPollRunId = null;
       let customRefreshInFlight = null;
+      let latestLookupToken = 0;
       const customRunIds = loadStoredRunIds();
       const customResults = new Map();
       let disposed = false;
@@ -632,8 +633,9 @@
         applyTheme(document.documentElement.dataset.theme === "light" ? "dark" : "light");
       }
 
-      function selectStation(stationKey) {
+      function selectStation(stationKey, loadLatest = true) {
         if (!STATION_KEYS.includes(stationKey)) return;
+        const lookupToken = loadLatest ? ++latestLookupToken : latestLookupToken;
         stationPicker.value = stationKey;
         stopCustomPolling();
         customBusy = false;
@@ -644,28 +646,33 @@
           candidate.classList.remove("selected", "disabled");
           text(candidate.querySelector(".candidate-state"), "等待当前电站数据");
         });
+        const outputConfiguration = selectedOutputConfiguration();
         const cached = customResults.get(stationKey);
-        if (cached !== undefined) renderCustomResult(cached);
+        const matchingCached = cached !== undefined
+          && outputConfiguration !== null
+          && runMatchesOutput(cached.result.run, outputConfiguration);
+        if (matchingCached) renderCustomResult(cached);
         else if (lastDashboard !== null) {
           const station = lastDashboard.stations.find((item) => item.station_key === stationKey);
           if (station) renderStation(station);
         }
-        if (cached === undefined) {
-          text(taskState, customRunIds[stationKey] ? "正在恢复任务" : "尚未提交任务");
-        }
+        if (!matchingCached && loadLatest) text(taskState, outputConfiguration === null ? "请检查任务参数" : "正在加载预测任务…");
         updateTaskConfiguration();
-        void resumeSelectedRun();
+        if (loadLatest) void loadLatestMatchingRun(stationKey, outputConfiguration, lookupToken, !matchingCached);
       }
 
       function changeStation() { selectStation(stationPicker.value); }
+
+      function changeOutputConfiguration() { selectStation(stationPicker.value); }
 
       themeToggle.addEventListener("click", toggleTheme);
       stationPicker.addEventListener("change", changeStation);
       detailsToggle.addEventListener("click", toggleDetails);
       runButton.addEventListener("click", startCustomForecast);
-      [historyStart, historyEnd, forecastDays, granularity].forEach((control) => control.addEventListener("change", updateTaskConfiguration));
+      [historyStart, historyEnd].forEach((control) => control.addEventListener("change", updateTaskConfiguration));
+      [forecastDays, granularity].forEach((control) => control.addEventListener("change", changeOutputConfiguration));
       applyTheme("light");
-      selectStation(stationPicker.value);
+      selectStation(stationPicker.value, false);
       updateTaskConfiguration();
 
       function toggleDetails() {
@@ -728,6 +735,19 @@
           forecast_days: days,
           interval_seconds: seconds,
         };
+      }
+
+      function selectedOutputConfiguration() {
+        const days = Number(forecastDays.value);
+        const seconds = Number(granularity.value);
+        if (!integer(days, 1, 7) || !ALLOWED_INTERVALS.includes(seconds)) return null;
+        return { forecast_days: days, interval_seconds: seconds };
+      }
+
+      function runMatchesOutput(run, configuration = selectedOutputConfiguration()) {
+        return configuration !== null
+          && run.forecast_days === configuration.forecast_days
+          && run.interval_seconds === configuration.interval_seconds;
       }
 
       function updateRunAvailability(configuration) {
@@ -1623,7 +1643,9 @@
           if (!response.ok) {
             const code = envelope && envelope.error && safeText(envelope.error.code, true) ? envelope.error.code : null;
             const labels = { invalid_request: "任务参数无效", unauthorized: "登录状态无效", conflict: "同一任务标识与参数冲突", job_capacity_exceeded: "当前预测任务较多，请稍后重试", not_found: "预测任务不存在" };
-            throw new Error(labels[code] || "预测服务暂不可用");
+            const requestError = new Error(labels[code] || "预测服务暂不可用");
+            requestError.code = code;
+            throw requestError;
           }
           exactObject(envelope, ["status", "data"], "custom response envelope");
           assert(envelope.status === "ok", "custom response status invalid");
@@ -1670,7 +1692,7 @@
       }
 
       async function handleCustomRun(stationKey, run) {
-        if (stationPicker.value !== stationKey) return;
+        if (stationPicker.value !== stationKey || !runMatchesOutput(run)) return;
         text(taskState, CUSTOM_RUN_LABELS[run.status]);
         if (run.status === "failed") {
           stopCustomPolling();
@@ -1704,7 +1726,7 @@
         const performance = validateCustomPerformance(performanceValue);
         const rendered = { stationKey, result, performance };
         customResults.set(stationKey, rendered);
-        if (stationPicker.value !== stationKey) return;
+        if (stationPicker.value !== stationKey || !runMatchesOutput(result.run)) return;
         renderCustomResult(rendered);
         setCustomBusy(false, CUSTOM_RUN_LABELS[run.status]);
       }
@@ -1714,7 +1736,15 @@
         if (authMode !== "server_token" && (authMode !== "postmessage" || apiToken === null)) return null;
         const stationKey = stationPicker.value;
         const cached = customResults.get(stationKey);
-        if (cached === undefined) return null;
+        if (cached === undefined || !runMatchesOutput(cached.result.run)) {
+          const configuration = selectedOutputConfiguration();
+          return loadLatestMatchingRun(
+            stationKey,
+            configuration,
+            ++latestLookupToken,
+            false,
+          );
+        }
         const run = cached.result.run;
         const runId = run.run_id;
         const query = new URLSearchParams({
@@ -1745,6 +1775,7 @@
           return;
         }
         const stationKey = stationPicker.value;
+        ++latestLookupToken;
         setCustomBusy(true, "正在提交任务");
         errorState.hidden = true;
         try {
@@ -1770,22 +1801,48 @@
         }
       }
 
-      async function resumeSelectedRun() {
-        const stationKey = stationPicker.value;
+      async function resumeStoredRun(stationKey, configuration, lookupToken) {
         const runId = customRunIds[stationKey];
-        if (!runId || customBusy || (authMode !== "server_token" && (authMode !== "postmessage" || apiToken === null))) return;
-        const cached = customResults.get(stationKey);
-        if (cached && cached.result.run.run_id === runId) {
-          renderCustomResult(cached);
-          return;
+        if (!runId) return false;
+        const run = validateCustomRun(await customRequest(`${CUSTOM_RUN_PATH}/${encodeURIComponent(runId)}`));
+        if (lookupToken !== latestLookupToken || stationPicker.value !== stationKey) return false;
+        if (!runMatchesOutput(run, configuration)) {
+          clearStoredRunId(stationKey);
+          return false;
         }
+        await handleCustomRun(stationKey, run);
+        return true;
+      }
+
+      async function loadLatestMatchingRun(stationKey, configuration, lookupToken, showLoading = true) {
+        if (configuration === null || customBusy || (authMode !== "server_token" && (authMode !== "postmessage" || apiToken === null))) return;
+        if (showLoading) setCustomBusy(true, "正在加载预测任务…");
+        const query = new URLSearchParams({
+          interval_seconds: String(configuration.interval_seconds),
+          forecast_days: String(configuration.forecast_days),
+        });
         try {
-          const run = validateCustomRun(await customRequest(`${CUSTOM_RUN_PATH}/${encodeURIComponent(runId)}`));
-          if (stationPicker.value !== stationKey) return;
+          const run = validateCustomRun(await customRequest(
+            `${CUSTOM_RUN_PATH}/${encodeURIComponent(stationKey)}/latest?${query}`,
+          ));
+          if (lookupToken !== latestLookupToken || stationPicker.value !== stationKey || !runMatchesOutput(run, configuration)) return;
+          storeRunId(stationKey, run.run_id);
           await handleCustomRun(stationKey, run);
         } catch (error) {
-          if (stationPicker.value !== stationKey) return;
-          text(taskState, error instanceof Error ? error.message : "历史任务恢复失败");
+          if (lookupToken !== latestLookupToken || stationPicker.value !== stationKey) return;
+          if (error instanceof Error && error.code === "not_found") {
+            try {
+              if (await resumeStoredRun(stationKey, configuration, lookupToken)) return;
+            } catch (_storedError) {
+              clearStoredRunId(stationKey);
+            }
+            customResults.delete(stationKey);
+            setCustomBusy(false, "暂无匹配预测结果");
+            return;
+          }
+          const message = error instanceof Error ? error.message : "预测任务加载失败";
+          setCustomBusy(false, message);
+          renderRefreshError(message);
         }
       }
 
@@ -2082,7 +2139,7 @@
           text(root.querySelector("#generated-at"), `最近更新：${dateTime(dashboard.system.generated_at)}`);
           lastDashboard = dashboard;
           initializeTaskDates(dashboard.system.generated_at);
-          selectStation(stationPicker.value);
+          selectStation(stationPicker.value, !hasRenderedDashboard);
           hasRenderedDashboard = true;
           return true;
         } catch (_error) {
@@ -2197,7 +2254,8 @@
         stationPicker.removeEventListener("change", changeStation);
         detailsToggle.removeEventListener("click", toggleDetails);
         runButton.removeEventListener("click", startCustomForecast);
-        [historyStart, historyEnd, forecastDays, granularity].forEach((control) => control.removeEventListener("change", updateTaskConfiguration));
+        [historyStart, historyEnd].forEach((control) => control.removeEventListener("change", updateTaskConfiguration));
+        [forecastDays, granularity].forEach((control) => control.removeEventListener("change", changeOutputConfiguration));
         window.removeEventListener("message", receiveAuthentication);
       }, { once: true });
       if (parentOrigin === null || authMode === null) renderError("页面配置不可用");
