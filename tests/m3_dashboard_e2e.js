@@ -118,15 +118,15 @@ function weeklyEvidenceFixture() {
     expected_points_per_series: 96,
     model_policy: "full_selection",
     model_manifest: {
-      selection_policy: "weekly_load_v1",
+      selection_policy: "weekly_load_v2",
       model_policy: "full_selection",
       interval_seconds: 900,
       daily_season_length: 96,
       weekly_season_length: 672,
       series: {
         station_total_load: {
-          model_name: "WeeklyWeighted2",
-          realized_model_name: "WeeklyWeighted2",
+          model_name: "WeeklyRegimeAdjusted",
+          realized_model_name: "WeeklyRegimeAdjusted",
           realized_status: "ok",
           realized_fallback_reason: null,
           selection_metric: "wape_percent",
@@ -135,6 +135,7 @@ function weeklyEvidenceFixture() {
           candidate_scores: [
             { model_name: "WeeklyNaive", wape_percent: 12.5, mae: 10, mape_percent: 13, scorable_point_count: 96, skip_reason: null },
             { model_name: "WeeklyWeighted2", wape_percent: 10, mae: 8, mape_percent: 11, scorable_point_count: 96, skip_reason: null },
+            { model_name: "WeeklyRegimeAdjusted", wape_percent: 8, mae: 7, mape_percent: 9, scorable_point_count: 96, skip_reason: null },
             { model_name: "WeeklyMedian3", wape_percent: null, mae: null, mape_percent: null, scorable_point_count: 0, skip_reason: "no_scorable_points" },
           ],
           training_start: "2026-08-02T12:15:00+08:00",
@@ -194,7 +195,7 @@ function weeklyEvidenceFixture() {
     updated_at: "2026-08-31T12:16:00+08:00",
   };
   const series = [
-    ["station_total_load", "kW", "WeeklyWeighted2", 500],
+    ["station_total_load", "kW", "WeeklyRegimeAdjusted", 500],
     ["storage_soc", "%", "SeasonalNaive", 60],
   ].map(([unique_id, unit, model_name, base]) => ({
     unique_id,
@@ -204,9 +205,9 @@ function weeklyEvidenceFixture() {
       target_time: toUtc(index),
       horizon_step: index + 1,
       forecast_value: base + index / 10,
-      actual_value: null,
-      actual_quality: null,
-      absolute_percentage_error: null,
+      actual_value: unique_id === "station_total_load" ? base + index / 10 : null,
+      actual_quality: unique_id === "station_total_load" ? "valid" : null,
+      absolute_percentage_error: unique_id === "station_total_load" ? 0 : null,
     })),
   }));
   return {
@@ -283,6 +284,8 @@ function maeSelectionFixture() {
   const fixture = weeklyEvidenceFixture();
   fixture.run.run_id = "weekly-mae-selection-run";
   const load = fixture.run.model_manifest.series.station_total_load;
+  load.model_name = "WeeklyWeighted2";
+  load.realized_model_name = "WeeklyWeighted2";
   load.selection_metric = "mae";
   load.selection_reason = "wape_unavailable";
   load.candidate_scores = [
@@ -290,6 +293,7 @@ function maeSelectionFixture() {
     { model_name: "WeeklyWeighted2", wape_percent: null, mae: 1, mape_percent: null, scorable_point_count: 96, skip_reason: null },
   ];
   fixture.result.run = fixture.run;
+  fixture.result.series[0].model_name = "WeeklyWeighted2";
   return fixture;
 }
 
@@ -675,6 +679,7 @@ function legacyNullManifestFixture() {
   assert.strictEqual(await page.locator("[data-station='station_1']").isVisible(), true);
   assert.strictEqual(await page.locator(".candidate[data-model='WeeklyNaive']").evaluate((node) => node.classList.contains("disabled")), false);
   assert.strictEqual(await page.locator(".candidate[data-model='WeeklyWeighted2']").evaluate((node) => node.classList.contains("disabled")), false);
+  assert.strictEqual(await page.locator(".candidate[data-model='WeeklyRegimeAdjusted']").evaluate((node) => node.classList.contains("disabled")), false);
   assert.strictEqual(await page.locator(".candidate[data-model='AutoARIMA']").evaluate((node) => node.classList.contains("disabled")), false);
   await page.locator("#granularity").selectOption("60");
   assert.strictEqual(await page.locator(".candidate[data-model='AutoARIMA']").evaluate((node) => node.classList.contains("disabled")), true);
@@ -918,16 +923,23 @@ function legacyNullManifestFixture() {
     "连续有效周：3 周 · 下一级 WeeklyMedian3 / AutoARIMA / MSTL：至少还需 7 天完整数据（需 4 周） · 起始无数据 0 桶（已排除） · 负负载无效 0 桶",
   );
   assert.strictEqual(await inlineBarPercent(page, ".readiness-track span"), 75);
-  assert.deepStrictEqual(await page.locator(".load-wape-value").allTextContents(), ["10.00%", "10.00%"]);
-  assert.deepStrictEqual(await page.locator(".load-mae-value").allTextContents(), ["8.00", "8.00"]);
-  assert.ok((await page.locator(".load-mape-value").allTextContents()).every((value) => value === "11.00%"));
+  assert.strictEqual(await page.locator(".current-day-mape-value").innerText(), "0.00%");
+  assert.strictEqual(await page.locator(".current-day-mape-note").innerText(), "96 / 96 个实际点 · 完整结果");
+  assert.ok((await page.locator(".performance-label").allTextContents()).includes("当前预测日 MAPE"));
+  assert.ok((await page.locator(".performance-label").allTextContents()).includes("留出周 WAPE（选模指标）"));
+  assert.ok((await page.locator(".performance-label").allTextContents()).includes("留出周 MAPE"));
+  assert.deepStrictEqual(await page.locator(".load-wape-value").allTextContents(), ["8.00%", "8.00%"]);
+  assert.deepStrictEqual(await page.locator(".load-mae-value").allTextContents(), ["7.00", "7.00"]);
+  assert.ok((await page.locator(".load-mape-value").allTextContents()).every((value) => value === "9.00%"));
   assert.ok((await page.locator(".baseline-value").allTextContents()).every((value) => value === "12.50%"));
-  assert.ok((await page.locator(".improvement-value").allTextContents()).every((value) => value === "20.00%"));
+  assert.ok((await page.locator(".improvement-value").allTextContents()).every((value) => value === "36.00%"));
   assert.strictEqual(await page.locator(".compare-model-label").innerText(), "选定模型留出周 WAPE");
   assert.strictEqual(await page.locator(".compare-baseline-label").innerText(), "WeeklyNaive 留出周 WAPE");
-  assert.strictEqual(await inlineBarPercent(page, ".model-bar"), 80);
+  assert.strictEqual(await inlineBarPercent(page, ".model-bar"), 64);
   assert.strictEqual(await inlineBarPercent(page, ".baseline-bar"), 100);
-  assert.match(await page.locator(".current-model-name").first().innerText(), /电站总负荷：WeeklyWeighted2 · 储能 SOC：SeasonalNaive（状态锚定）/);
+  assert.match(await page.locator(".current-model-name").first().innerText(), /电站总负荷：WeeklyRegimeAdjusted · 储能 SOC：SeasonalNaive（状态锚定）/);
+  assert.strictEqual(await page.locator(".candidate[data-model='WeeklyRegimeAdjusted']").evaluate((node) => node.classList.contains("selected")), true);
+  assert.match(await page.locator(".candidate[data-model='WeeklyRegimeAdjusted'] .candidate-state").innerText(), /WAPE 8.00%/);
   assert.match(await page.locator(".candidate[data-model='WeeklyMedian3'] .candidate-state").innerText(), /跳过：无可评分点/);
   await page.locator("#granularity").selectOption("60");
   assert.match(await page.locator(".candidate[data-model='WeeklyMedian3'] .candidate-state").innerText(), /跳过：无可评分点/);
@@ -966,7 +978,7 @@ function legacyNullManifestFixture() {
   await page.locator("#run-button").click();
   await waitForCustomResultModelMeta("3 个连续有效周 · 负载周期 7 天 · 15 分钟粒度", fallbackRequestStart, fallbackResponseStart);
   assert.match(await page.locator(".current-model-name").first().innerText(), /电站总负荷：WeeklyNaive · 储能 SOC：SeasonalNaive（状态锚定）/);
-  assert.strictEqual(await page.locator(".candidate[data-model='WeeklyWeighted2']").evaluate((node) => node.classList.contains("selected")), true);
+  assert.strictEqual(await page.locator(".candidate[data-model='WeeklyRegimeAdjusted']").evaluate((node) => node.classList.contains("selected")), true);
   assert.strictEqual(await page.locator(".series-card[data-series='station_total_load'] .model-name").innerText(), "WeeklyNaive");
   assert.strictEqual(await page.locator(".series-card[data-series='station_total_load'] .series-status").innerText(), "降级");
   assert.strictEqual(await page.locator(".series-card[data-series='station_total_load'] .fallback").innerText(), "回退：RuntimeError");
@@ -997,7 +1009,7 @@ function legacyNullManifestFixture() {
   assert.match(await page.locator(".current-model-name").first().innerText(), /电站总负荷：WeeklyNaive/);
   assert.strictEqual(
     await page.locator(".readiness-hint").innerText(),
-    "连续有效周：1 周 · 下一级 WeeklyWeighted2：至少还需 14 天完整数据（需 3 周） · 起始无数据 0 桶（已排除） · 负负载无效 0 桶",
+    "连续有效周：1 周 · 下一级 WeeklyWeighted2 / WeeklyRegimeAdjusted：至少还需 14 天完整数据（需 3 周） · 起始无数据 0 桶（已排除） · 负负载无效 0 桶",
   );
   for (const selector of [".load-wape-value", ".load-mae-value", ".load-mape-value", ".baseline-value", ".improvement-value"]) {
     assert.ok((await page.locator(selector).allTextContents()).every((value) => value === "—"), selector);

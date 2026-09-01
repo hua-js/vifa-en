@@ -482,7 +482,7 @@ class DeploymentArtifactTests(unittest.TestCase):
             "负载周期：7 天",
             "SOC 周差分：周一至周六生产 · 周日休息",
             "同星期同刻度 ΔSOC · 最后真实状态锚定",
-            "weekly_load_v1",
+            "weekly_load_v2",
             "compare-model-label",
             "compare-baseline-label",
             "baseline-note-label",
@@ -511,9 +511,20 @@ class DeploymentArtifactTests(unittest.TestCase):
             temp_root = Path(temp_dir)
             page = temp_root / "page.html"
             flow = temp_root / "flow.json"
+            template = temp_root / "template.html"
             shutil.copyfile(M3_HTML, page)
             shutil.copyfile(PRODUCTION_FLOW, flow)
-            command = [python, str(FLOW_SYNC), "--page", str(page), "--flow", str(flow)]
+            shutil.copyfile(M3_NODE_RED_HTML, template)
+            command = [
+                python,
+                str(FLOW_SYNC),
+                "--page",
+                str(page),
+                "--flow",
+                str(flow),
+                "--template-html",
+                str(template),
+            ]
 
             clean = subprocess.run(command + ["--check"], cwd=ROOT, capture_output=True, text=True)
             self.assertEqual(clean.returncode, 0, clean.stderr)

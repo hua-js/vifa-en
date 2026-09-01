@@ -445,7 +445,12 @@ class LoadDispatchSelectionTests(unittest.TestCase):
 
         self.assertIn(
             champion.model_name,
-            {"WeeklyNaive", "WeeklyWeighted2", "WeeklyMedian3"},
+            {
+                "WeeklyNaive",
+                "WeeklyWeighted2",
+                "WeeklyRegimeAdjusted",
+                "WeeklyMedian3",
+            },
         )
         self.assertNotIn(
             "AutoARIMA", [score.model_name for score in champion.candidate_scores]
@@ -486,7 +491,14 @@ class LoadDispatchSelectionTests(unittest.TestCase):
         self.assertEqual(champion.model_name, "AutoARIMA")
         self.assertEqual(
             [score.model_name for score in champion.candidate_scores],
-            ["WeeklyNaive", "WeeklyWeighted2", "WeeklyMedian3", "AutoARIMA", "MSTL"],
+            [
+                "WeeklyNaive",
+                "WeeklyWeighted2",
+                "WeeklyRegimeAdjusted",
+                "WeeklyMedian3",
+                "AutoARIMA",
+                "MSTL",
+            ],
         )
         self.assertEqual(statsforecast_type.call_count, 2)
         autoarima = statsforecast_type.call_args_list[0].kwargs["models"][0]

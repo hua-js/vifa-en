@@ -16,10 +16,11 @@ import pandas as pd
 from m3_worker.domain.custom_training_data import CustomTrainingDataset
 
 
-LOAD_SELECTION_POLICY = "weekly_load_v1"
+LOAD_SELECTION_POLICY = "weekly_load_v2"
 MODEL_ORDER = (
     "WeeklyNaive",
     "WeeklyWeighted2",
+    "WeeklyRegimeAdjusted",
     "WeeklyMedian3",
     "AutoARIMA",
     "MSTL",
@@ -49,7 +50,7 @@ def eligible_load_models(
 
     names = ["WeeklyNaive"] if usable_week_count >= 1 else []
     if usable_week_count >= 3:
-        names.append("WeeklyWeighted2")
+        names.extend(("WeeklyWeighted2", "WeeklyRegimeAdjusted"))
     if usable_week_count >= 4:
         names.append("WeeklyMedian3")
         if interval_seconds >= 300:
@@ -74,7 +75,7 @@ def _as_datetime(value: object) -> datetime | None:
 def _profile_lags(model_name: str) -> tuple[int, ...]:
     if model_name == "WeeklyNaive":
         return (1,)
-    if model_name == "WeeklyWeighted2":
+    if model_name in {"WeeklyWeighted2", "WeeklyRegimeAdjusted"}:
         return (1, 2)
     if model_name == "WeeklyMedian3":
         return (1, 2, 3)
@@ -130,10 +131,32 @@ def weekly_profile_values(
                 ) from exc
         if model_name == "WeeklyNaive":
             values.append(lag_values[0])
-        elif model_name == "WeeklyWeighted2":
+        elif model_name in {"WeeklyWeighted2", "WeeklyRegimeAdjusted"}:
             values.append(2 / 3 * lag_values[0] + 1 / 3 * lag_values[1])
         else:
             values.append(float(median(lag_values)))
+    if model_name == "WeeklyRegimeAdjusted" and values:
+        lower, low_ceiling, upper = np.percentile(values, (10, 40, 90))
+        separated = upper > 0 and (lower <= 0 or upper >= lower * 3)
+        recent_values = [
+            value
+            for timestamp, value in source_values.items()
+            if origin - timedelta(days=3) <= timestamp < origin
+        ]
+        low_values = [value for value in values if value <= low_ceiling]
+        if separated and recent_values and low_values:
+            recent_ceiling = float(np.percentile(recent_values, 25))
+            recent_low_values = [
+                value for value in recent_values if value <= recent_ceiling
+            ]
+            base_standby = float(median(low_values))
+            recent_standby = float(median(recent_low_values))
+            if base_standby > 0:
+                ratio = min(1.5, max(0.5, recent_standby / base_standby))
+                values = [
+                    value * ratio if value <= low_ceiling else value
+                    for value in values
+                ]
     return values
 
 

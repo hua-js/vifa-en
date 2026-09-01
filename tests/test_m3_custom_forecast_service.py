@@ -253,7 +253,7 @@ class CustomForecastServiceTests(unittest.TestCase):
                     for message in logs.output
                 )
             )
-        self.assertEqual(run.model_manifest["selection_policy"], "weekly_load_v1")
+        self.assertEqual(run.model_manifest["selection_policy"], "weekly_load_v2")
         self.assertEqual(
             run.model_manifest["series"]["station_total_load"]["model_name"],
             "WeeklyNaive",

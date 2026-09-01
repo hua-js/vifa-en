@@ -6,6 +6,7 @@ import unittest
 import pandas as pd
 
 from m3_worker.domain.custom_load_profiles import (
+    LOAD_SELECTION_POLICY,
     MODEL_ORDER,
     LoadCandidateScore,
     eligible_load_models,
@@ -48,6 +49,17 @@ def make_dataset(
     )
 
 
+def make_regime_shift_dataset() -> CustomTrainingDataset:
+    values: dict[datetime, float] = {}
+    current = START - timedelta(days=14)
+    while current < START:
+        active = 8 <= current.hour < 18
+        recent = current >= START - timedelta(days=3)
+        values[current] = 500.0 if active else 9.0 if recent else 15.0
+        current += timedelta(hours=1)
+    return make_dataset(values, interval_seconds=3600)
+
+
 class WeeklyProfileTests(unittest.TestCase):
     def test_weekly_naive_uses_exactly_seven_day_lag(self):
         values = {
@@ -83,6 +95,24 @@ class WeeklyProfileTests(unittest.TestCase):
 
         self.assertEqual(result, [50.0])
 
+    def test_regime_adjusted_uses_recent_standby_level(self):
+        dataset = make_regime_shift_dataset()
+
+        result = weekly_profile_values(
+            dataset, "WeeklyRegimeAdjusted", origin=START, periods=24
+        )
+
+        self.assertAlmostEqual(result[0], 9.0)
+
+    def test_regime_adjusted_preserves_active_load(self):
+        dataset = make_regime_shift_dataset()
+
+        result = weekly_profile_values(
+            dataset, "WeeklyRegimeAdjusted", origin=START, periods=24
+        )
+
+        self.assertAlmostEqual(result[8], 500.0)
+
     def test_profile_does_not_read_source_at_or_after_origin(self):
         values = {
             START - timedelta(days=7) + timedelta(days=index): 10.0
@@ -111,10 +141,18 @@ class WeeklyProfileTests(unittest.TestCase):
 
 
 class EligibilityTests(unittest.TestCase):
+    def test_regime_candidate_uses_a_new_selection_policy_version(self):
+        self.assertEqual(LOAD_SELECTION_POLICY, "weekly_load_v2")
+
     def test_high_frequency_models_are_lightweight_only(self):
         self.assertEqual(
             eligible_load_models(4, 30),
-            ("WeeklyNaive", "WeeklyWeighted2", "WeeklyMedian3"),
+            (
+                "WeeklyNaive",
+                "WeeklyWeighted2",
+                "WeeklyRegimeAdjusted",
+                "WeeklyMedian3",
+            ),
         )
 
     def test_eligibility_tiers_at_sixty_seconds(self):
@@ -122,8 +160,13 @@ class EligibilityTests(unittest.TestCase):
             0: (),
             1: ("WeeklyNaive",),
             2: ("WeeklyNaive",),
-            3: ("WeeklyNaive", "WeeklyWeighted2"),
-            4: ("WeeklyNaive", "WeeklyWeighted2", "WeeklyMedian3"),
+            3: ("WeeklyNaive", "WeeklyWeighted2", "WeeklyRegimeAdjusted"),
+            4: (
+                "WeeklyNaive",
+                "WeeklyWeighted2",
+                "WeeklyRegimeAdjusted",
+                "WeeklyMedian3",
+            ),
         }
         for usable_weeks, names in expected.items():
             with self.subTest(usable_weeks=usable_weeks):
@@ -134,8 +177,15 @@ class EligibilityTests(unittest.TestCase):
             0: (),
             1: ("WeeklyNaive",),
             2: ("WeeklyNaive",),
-            3: ("WeeklyNaive", "WeeklyWeighted2"),
-            4: ("WeeklyNaive", "WeeklyWeighted2", "WeeklyMedian3", "AutoARIMA", "MSTL"),
+            3: ("WeeklyNaive", "WeeklyWeighted2", "WeeklyRegimeAdjusted"),
+            4: (
+                "WeeklyNaive",
+                "WeeklyWeighted2",
+                "WeeklyRegimeAdjusted",
+                "WeeklyMedian3",
+                "AutoARIMA",
+                "MSTL",
+            ),
         }
         for usable_weeks, names in expected.items():
             with self.subTest(usable_weeks=usable_weeks):

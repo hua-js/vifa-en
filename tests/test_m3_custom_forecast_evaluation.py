@@ -94,7 +94,7 @@ class CustomForecastEvaluationServiceTests(unittest.TestCase):
         runs = [
             make_run(
                 f"weekly-{history_days}",
-                {"selection_policy": "weekly_load_v1"},
+                {"selection_policy": "weekly_load_v2"},
                 history_days=history_days,
             )
             for history_days in (28, 60, 90)
@@ -132,7 +132,7 @@ class CustomForecastEvaluationServiceTests(unittest.TestCase):
     def test_performance_excludes_old_daily_policy_evaluations(self):
         """Removing the run-manifest policy gate would mix the old 20% MAPE."""
         old_run = make_run("daily-run", {"series": {}})
-        weekly_run = make_run("weekly-run", {"selection_policy": "weekly_load_v1"})
+        weekly_run = make_run("weekly-run", {"selection_policy": "weekly_load_v2"})
         repository = InMemoryEvaluationRepository(
             [old_run, weekly_run],
             [evaluation("daily-run", 20.0), evaluation("weekly-run", 8.0)],
@@ -154,7 +154,7 @@ class CustomForecastEvaluationServiceTests(unittest.TestCase):
 
     def test_performance_caches_run_lookups_and_ignores_invalid_manifest_runs(self):
         """A repeated lookup or unsafe manifest access would break aggregation."""
-        weekly_run = make_run("weekly-run", {"selection_policy": "weekly_load_v1"})
+        weekly_run = make_run("weekly-run", {"selection_policy": "weekly_load_v2"})
         old_run = make_run("old-run", {"series": {}})
         null_manifest_run = make_run("null-manifest-run", None)
         malformed_manifest_run = make_run("malformed-manifest-run", [])

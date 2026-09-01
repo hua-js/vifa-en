@@ -334,7 +334,7 @@
     .model-mini.good strong { color: var(--green); }
 
     .performance-card { padding: 18px; }
-    .performance-top { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 14px; }
+    .performance-top { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 14px; }
     .performance-metric {
       min-width: 0; padding: 15px 17px; border: 1px solid var(--item-line);
       border-radius: 12px; background: var(--panel-soft);
@@ -524,9 +524,10 @@
       <header class="zone-head"><span class="zone-index">03</span><div><div class="zone-title" id="performance-zone-title">模型表现</div><div class="zone-subtitle" id="performance-zone-subtitle">先看当前模型是否优于同配置基线，再看近 7 日稳定性</div></div></header>
       <section class="card performance-card">
         <div class="performance-top">
-          <article class="performance-metric"><div class="performance-label">负载预测 WAPE</div><div class="performance-value model-current-wape load-wape-value">—</div><div class="performance-note current-mape-note">本次任务留出周回测</div></article>
-          <article class="performance-metric"><div class="performance-label">负载预测 MAE</div><div class="performance-value model-current-mae load-mae-value">—</div><div class="performance-note load-mae-note">本次任务留出周回测</div></article>
-          <article class="performance-metric"><div class="performance-label">负载预测 MAPE</div><div class="performance-value model-current-mape load-mape-value">—</div><div class="performance-note load-mape-note">本次任务留出周回测</div></article>
+          <article class="performance-metric"><div class="performance-label">当前预测日 MAPE</div><div class="performance-value current-day-mape-value">—</div><div class="performance-note current-day-mape-note">等待实际值回填</div></article>
+          <article class="performance-metric"><div class="performance-label">留出周 WAPE（选模指标）</div><div class="performance-value model-current-wape load-wape-value">—</div><div class="performance-note load-wape-note">本次任务留出周回测</div></article>
+          <article class="performance-metric"><div class="performance-label">留出周 MAE</div><div class="performance-value model-current-mae load-mae-value">—</div><div class="performance-note load-mae-note">本次任务留出周回测</div></article>
+          <article class="performance-metric"><div class="performance-label">留出周 MAPE</div><div class="performance-value model-current-mape load-mape-value">—</div><div class="performance-note load-mape-note">低负载时可能被放大，仅作诊断</div></article>
           <article class="performance-metric"><div class="performance-label">WeeklyNaive WAPE</div><div class="performance-value model-baseline-wape baseline-value">—</div><div class="performance-note baseline-mape-note">同一留出周负载基线</div></article>
           <article class="performance-metric"><div class="performance-label">负载相对基线提升</div><div class="performance-value good model-improvement improvement-value">—</div><div class="performance-note improvement-note">获得同窗基线后自动计算</div></article>
         </div>
@@ -565,8 +566,8 @@
               <div class="config-item"><span>SOC 周期</span><strong>SOC 周差分：周一至周六生产 · 周日休息</strong><small>同星期同刻度 ΔSOC · 最后真实状态锚定</small></div>
             </div></div>
             <div class="selection-panel"><div class="panel-title">选模策略与候选模型</div><div class="rule"><span class="rule-dot"></span><span><strong id="policy-name">等待数据</strong> · <span id="policy-copy">载入历史长度后显示选模策略</span></span></div>
-              <div class="candidates"><div class="candidate" data-model="WeeklyNaive"><div class="candidate-name">WeeklyNaive</div><div class="candidate-role">上一连续有效周<br>同刻度负载基线</div><div class="candidate-state">1 周起可用</div></div><div class="candidate" data-model="WeeklyWeighted2"><div class="candidate-name">WeeklyWeighted2</div><div class="candidate-role">最近两个连续有效周<br>加权负载轮廓</div><div class="candidate-state">3 周起可用</div></div><div class="candidate" data-model="WeeklyMedian3"><div class="candidate-name">WeeklyMedian3</div><div class="candidate-role">最近三个连续有效周<br>中位数负载轮廓</div><div class="candidate-state">4 周起可用</div></div><div class="candidate" data-model="AutoARIMA"><div class="candidate-name">AutoARIMA</div><div class="candidate-role">受限日季节自回归<br>仅 5 分钟及以上粒度</div><div class="candidate-state">4 周起可用</div></div><div class="candidate" data-model="MSTL"><div class="candidate-name">MSTL</div><div class="candidate-role">日 / 周季节分解<br>仅 5 分钟及以上粒度</div><div class="candidate-state">4 周起可用</div></div></div>
-              <div class="model-foot"><span class="selection-basis">模型选择依据：留出周 WAPE → MAE → 固定模型顺序</span><span>策略版本：<strong id="policy-version">weekly_load_v1</strong></span></div>
+              <div class="candidates"><div class="candidate" data-model="WeeklyNaive"><div class="candidate-name">WeeklyNaive</div><div class="candidate-role">上一连续有效周<br>同刻度负载基线</div><div class="candidate-state">1 周起可用</div></div><div class="candidate" data-model="WeeklyWeighted2"><div class="candidate-name">WeeklyWeighted2</div><div class="candidate-role">最近两个连续有效周<br>加权负载轮廓</div><div class="candidate-state">3 周起可用</div></div><div class="candidate" data-model="WeeklyRegimeAdjusted"><div class="candidate-name">WeeklyRegimeAdjusted</div><div class="candidate-role">近期待机基线校准<br>高负载保持周加权</div><div class="candidate-state">3 周起可用</div></div><div class="candidate" data-model="WeeklyMedian3"><div class="candidate-name">WeeklyMedian3</div><div class="candidate-role">最近三个连续有效周<br>中位数负载轮廓</div><div class="candidate-state">4 周起可用</div></div><div class="candidate" data-model="AutoARIMA"><div class="candidate-name">AutoARIMA</div><div class="candidate-role">受限日季节自回归<br>仅 5 分钟及以上粒度</div><div class="candidate-state">4 周起可用</div></div><div class="candidate" data-model="MSTL"><div class="candidate-name">MSTL</div><div class="candidate-role">日 / 周季节分解<br>仅 5 分钟及以上粒度</div><div class="candidate-state">4 周起可用</div></div></div>
+              <div class="model-foot"><span class="selection-basis">模型选择依据：留出周 WAPE → MAE → 固定模型顺序</span><span>策略版本：<strong id="policy-version">weekly_load_v2</strong></span></div>
             </div>
           </div>
         </div>
@@ -595,10 +596,11 @@
       const RUN_STORAGE_KEY = "vifa.m3.customForecastRuns.v1";
       const INCOMPATIBLE_RUN_MESSAGE = "任务版本已失效，请重新预测";
       const DANGEROUS_KEYS = new Set(["__proto__", "prototype", "constructor"]);
-      const LOAD_SELECTION_POLICY = "weekly_load_v1";
+      const LOAD_SELECTION_POLICY = "weekly_load_v2";
       const LOAD_CANDIDATE_RULES = Object.freeze({
         WeeklyNaive: { weeks: 1, minimumInterval: 0 },
         WeeklyWeighted2: { weeks: 3, minimumInterval: 0 },
+        WeeklyRegimeAdjusted: { weeks: 3, minimumInterval: 0 },
         WeeklyMedian3: { weeks: 4, minimumInterval: 0 },
         AutoARIMA: { weeks: 4, minimumInterval: 300 },
         MSTL: { weeks: 4, minimumInterval: 300 },
@@ -1140,10 +1142,11 @@
         [".metric-peak-load", ".metric-current-soc", ".metric-minimum-soc", ".peak-time", ".minimum-soc-time",
           ".summary-peak-title", ".summary-peak-copy", ".summary-soc-title", ".summary-soc-copy",
           ".summary-low-title", ".summary-low-copy"].forEach((selector) => text(section.querySelector(selector), "—"));
-        [".load-wape-value", ".load-mae-value", ".load-mape-value", ".legacy-load-mape-value", ".soc-mape-value", ".baseline-value", ".improvement-value", ".model-soc-mae"].forEach((selector) => root.querySelectorAll(selector).forEach((node) => text(node, "—")));
+        [".current-day-mape-value", ".load-wape-value", ".load-mae-value", ".load-mape-value", ".legacy-load-mape-value", ".soc-mape-value", ".baseline-value", ".improvement-value", ".model-soc-mae"].forEach((selector) => root.querySelectorAll(selector).forEach((node) => text(node, "—")));
         root.querySelectorAll(".performance-value").forEach((node) => node.removeAttribute("data-state"));
         text(root.querySelector("#performance-zone-subtitle"), "先看当前模型是否优于同配置基线，再看近 7 日稳定性");
-        text(root.querySelector(".current-mape-note"), "尚无已完成评估窗口");
+        text(root.querySelector(".current-day-mape-note"), "等待实际值回填");
+        text(root.querySelector(".load-wape-note"), "尚无留出周回测");
         text(root.querySelector(".load-mae-note"), "尚无已完成评估窗口");
         text(root.querySelector(".load-mape-note"), "尚无已完成评估窗口");
         text(root.querySelector(".baseline-mape-note"), "负载预测同配置、同目标点基线");
@@ -1317,7 +1320,8 @@
         text(root.querySelector(".compare-baseline-label"), "SeasonalNaive 基线");
         text(root.querySelector(".baseline-note-label"), "SeasonalNaive 同配置基线");
         text(root.querySelector(".baseline-note-value"), "—");
-        text(root.querySelector(".current-mape-note"), "尚无已完成评估窗口");
+        text(root.querySelector(".current-day-mape-note"), "等待实际值回填");
+        text(root.querySelector(".load-wape-note"), "尚无留出周回测");
         root.querySelector(".model-bar").style.width = "0%";
         root.querySelector(".baseline-bar").style.width = "0%";
         if (acceptance === null) { text(summary, "数据积累中"); return; }
@@ -1331,7 +1335,7 @@
         const currentMapeValue = loadResult && loadResult.mape_percent !== null ? `${metric(loadResult.mape_percent)}%` : "—";
         root.querySelectorAll(".legacy-load-mape-value").forEach((node) => text(node, currentMapeValue));
         text(root.querySelector(".compare-model-value"), currentMapeValue);
-        text(root.querySelector(".current-mape-note"), loadResult ? `${loadResult.valid_count} / ${loadResult.expected_count} 个有效对比点` : "尚无已完成评估窗口");
+        text(root.querySelector(".current-day-mape-note"), loadResult ? `${loadResult.valid_count} / ${loadResult.expected_count} 个有效对比点` : "等待实际值回填");
         const socMapeValue = socResult && socResult.mape_percent !== null ? `${metric(socResult.mape_percent)}%` : "—";
         root.querySelectorAll(".soc-mape-value").forEach((node) => text(node, socMapeValue));
         text(socMae, socResult ? `${metric(socResult.mae)}%` : "—");
@@ -1803,7 +1807,7 @@
           nextModelName = "WeeklyNaive";
           nextModelRequiredWeeks = 1;
         } else if (usableWeeks < 3) {
-          nextModelName = "WeeklyWeighted2";
+          nextModelName = "WeeklyWeighted2 / WeeklyRegimeAdjusted";
           nextModelRequiredWeeks = 3;
         } else if (usableWeeks < 4) {
           nextModelName = run.interval_seconds >= 300
@@ -1879,7 +1883,7 @@
         return { status, fallbackReason };
       }
 
-      function renderCustomEvidence(run) {
+      function renderCustomEvidence(run, loadResult) {
         const evidence = loadEvidenceFor(run);
         if (evidence === null) return false;
         const selected = candidateScoreByName(evidence.candidateScores, evidence.load.model_name);
@@ -1897,7 +1901,26 @@
         const comparisonBaseline = selectionMetric === "mae" ? baselineMae : baselineWape;
         const comparisonValue = selectionMetric === "mae" ? metric : percentMetric;
         const comparisonLabel = selectionMetric === "mae" ? "MAE" : "WAPE";
+        const actualPoints = loadResult.points.filter((point) =>
+          point.actual_quality === "valid"
+          && finite(point.actual_value)
+          && finite(point.forecast_value)
+        );
+        const scorablePoints = actualPoints.filter((point) => point.actual_value !== 0);
+        const currentDayMape = scorablePoints.length === 0
+          ? null
+          : scorablePoints.reduce(
+            (sum, point) => sum + Math.abs(point.forecast_value - point.actual_value) / Math.abs(point.actual_value) * 100,
+            0,
+          ) / scorablePoints.length;
+        const actualState = actualPoints.length === 0
+          ? "等待回填"
+          : actualPoints.length === run.expected_points_per_series
+            ? "完整结果"
+            : "临时结果";
 
+        text(root.querySelector(".current-day-mape-value"), percentMetric(currentDayMape));
+        text(root.querySelector(".current-day-mape-note"), `${actualPoints.length} / ${run.expected_points_per_series} 个实际点 · ${actualState}`);
         root.querySelectorAll(".load-wape-value").forEach((node) => text(node, percentMetric(selectedWape)));
         root.querySelectorAll(".load-mae-value").forEach((node) => text(node, metric(selectedMae)));
         root.querySelectorAll(".load-mape-value").forEach((node) => text(node, percentMetric(selectedMape)));
@@ -1910,8 +1933,8 @@
         text(root.querySelector(".baseline-note-label"), `WeeklyNaive 留出周 ${comparisonLabel}`);
         text(root.querySelector(".baseline-note-value"), comparisonValue(comparisonBaseline));
         setComparisonBars(comparisonCurrent, comparisonBaseline);
-        text(root.querySelector("#performance-zone-subtitle"), "本次任务使用留出周即时回测；近 7 日汇总在后续任务评估后更新");
-        text(root.querySelector(".current-mape-note"), selectionMetric === "mae" ? "留出周 WAPE 分母为 0，当前按 MAE 评分" : selectedWape === null ? "当前有效周尚未形成可评分留出周" : "选定负载模型的留出周 WAPE");
+        text(root.querySelector("#performance-zone-subtitle"), "当前预测结果按目标时刻实绩计算；留出周指标仅用于模型选择");
+        text(root.querySelector(".load-wape-note"), selectionMetric === "mae" ? "留出周 WAPE 分母为 0，当前按 MAE 评分" : selectedWape === null ? "当前有效周尚未形成可评分留出周" : "选定负载模型的留出周 WAPE");
         text(root.querySelector(".load-mae-note"), selectedMae === null ? "当前有效周尚未形成可评分留出周" : "选定负载模型的留出周 MAE");
         text(root.querySelector(".load-mape-note"), selectedMape === null ? "当前有效周尚未形成可评分留出周" : "选定负载模型的留出周 MAPE");
         text(root.querySelector(".baseline-mape-note"), selectionMetric === "mae" ? "WeeklyNaive 同一留出周按 MAE 评分" : baselineWape === null ? "WeeklyNaive 尚无可评分留出周" : "WeeklyNaive 同一留出周 WAPE");
@@ -1970,12 +1993,13 @@
         text(root.querySelector(".compare-model-label"), "当前模型 MAPE");
         text(root.querySelector(".compare-baseline-label"), "SeasonalNaive 基线");
         text(root.querySelector(".baseline-note-label"), "SeasonalNaive 同配置基线");
-        root.querySelectorAll(".load-wape-value, .load-mae-value, .load-mape-value, .baseline-value, .improvement-value").forEach((node) => text(node, "—"));
-        text(root.querySelector(".current-mape-note"), "仅 weekly_load_v1 任务提供留出周 WAPE");
-        text(root.querySelector(".load-mae-note"), "仅 weekly_load_v1 任务提供留出周 MAE");
-        text(root.querySelector(".load-mape-note"), "仅 weekly_load_v1 任务提供留出周 MAPE");
-        text(root.querySelector(".baseline-mape-note"), "仅 weekly_load_v1 任务提供 WeeklyNaive WAPE");
-        text(root.querySelector(".improvement-note"), "仅 weekly_load_v1 任务提供相对 WAPE 提升");
+        root.querySelectorAll(".current-day-mape-value, .load-wape-value, .load-mae-value, .load-mape-value, .baseline-value, .improvement-value").forEach((node) => text(node, "—"));
+        text(root.querySelector(".current-day-mape-note"), "等待实际值回填");
+        text(root.querySelector(".load-wape-note"), "仅 weekly_load_v2 任务提供留出周 WAPE");
+        text(root.querySelector(".load-mae-note"), "仅 weekly_load_v2 任务提供留出周 MAE");
+        text(root.querySelector(".load-mape-note"), "仅 weekly_load_v2 任务提供留出周 MAPE");
+        text(root.querySelector(".baseline-mape-note"), "仅 weekly_load_v2 任务提供 WeeklyNaive WAPE");
+        text(root.querySelector(".improvement-note"), "仅 weekly_load_v2 任务提供相对 WAPE 提升");
         const loadPending = load.run_count === 0;
         const socPending = soc.run_count === 0;
         const loadMape = loadPending ? "待评估" : formatPercent(load.mape_percent);
@@ -1989,7 +2013,7 @@
         const socPerformanceValue = root.querySelector(".performance-value.soc-mape-value");
         if (socPerformanceValue !== null) socPerformanceValue.dataset.state = socPending ? "pending" : "ready";
         if (socPending && socPerformanceValue !== null) text(socPerformanceValue, "待实际值完整回填");
-        text(root.querySelector("#performance-zone-subtitle"), loadPending && socPending ? "近 7 日暂无同配置可比任务" : "历史任务保留近 7 日 MAPE 汇总；留出周 WAPE 仅用于 weekly_load_v1");
+        text(root.querySelector("#performance-zone-subtitle"), loadPending && socPending ? "近 7 日暂无同配置可比任务" : "历史任务保留近 7 日 MAPE 汇总；留出周 WAPE 仅用于 weekly_load_v2");
         text(root.querySelector(".acceptance-summary"), loadPending ? "0 个任务" : `${load.run_count} 个任务`);
         setComparisonBars(load.mape_percent, load.baseline_mape_percent);
       }
@@ -2038,7 +2062,7 @@
           ? `${evidence.usableWeeks} 个连续有效周 · 负载周期 7 天 · ${intervalLabel(run.interval_seconds)}粒度`
           : `${run.history_days} 天训练 · ${intervalLabel(run.interval_seconds)}粒度`);
         renderCustomPerformance(performance);
-        renderCustomEvidence(run);
+        renderCustomEvidence(run, loadResult);
         errorState.hidden = true;
       }
 
