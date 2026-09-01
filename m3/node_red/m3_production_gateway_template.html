@@ -303,7 +303,7 @@
     .task-foot strong { color: var(--ink); }
     .integration-note { color: var(--orange); }
 
-    .station-section { min-width: 0; }
+    .station-section { position: relative; min-width: 0; }
     .result-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
     .chart-panel { min-height: 330px; padding: 18px 18px 12px; }
     .chart-head { margin-bottom: 6px; }
@@ -317,6 +317,23 @@
     }
     .status-strip strong { color: var(--ink); }
     .station-data { display: none; }
+    .result-progress-overlay {
+      position: absolute; inset: 0; z-index: 8; display: grid; place-items: center; min-height: 260px;
+      border: 1px solid var(--line); border-radius: var(--radius);
+      background: color-mix(in srgb, var(--paper) 76%, transparent);
+      -webkit-backdrop-filter: blur(5px); backdrop-filter: blur(5px);
+    }
+    .result-progress-card {
+      display: flex; align-items: center; gap: 12px; max-width: calc(100% - 32px); padding: 14px 17px;
+      color: var(--ink); border: 1px solid var(--line-hover); border-radius: 12px;
+      background: var(--panel); box-shadow: var(--shadow-soft); font-size: 13px; font-weight: 720;
+    }
+    .result-progress-spinner {
+      width: 20px; height: 20px; flex: 0 0 auto; border: 2px solid var(--line-hover);
+      border-top-color: var(--blue); border-radius: 50%; animation: result-progress-spin .8s linear infinite;
+    }
+    @keyframes result-progress-spin { to { transform: rotate(360deg); } }
+    @media (prefers-reduced-motion: reduce) { .result-progress-spinner { animation-duration: 1.6s; } }
 
     .performance-card { padding: 18px; }
     .prediction-summary-hero { display: flex; justify-content: space-between; gap: 24px; padding: 17px 18px; border: 1px solid rgb(71 125 240 / 14%); border-radius: 13px; background: linear-gradient(90deg, rgb(71 125 240 / 8%), rgb(25 138 93 / 4%)); }
@@ -463,8 +480,9 @@
 
     <section class="zone" aria-labelledby="result-zone-title">
       <header class="zone-head"><span class="zone-index">02</span><div><div class="zone-title" id="result-zone-title">预测结果</div><div class="zone-subtitle">预测目标时刻与对应实际值按相同时间刻度叠加</div></div></header>
-      <section class="station-section" data-station="station_1" data-state="loading" aria-labelledby="selected-station-title">
+      <section class="station-section" data-station="station_1" data-state="loading" aria-labelledby="selected-station-title" aria-busy="false">
         <h2 class="sr-only" id="selected-station-title">1# 电站</h2>
+        <div class="result-progress-overlay" id="result-progress-overlay" role="status" aria-live="polite" hidden><div class="result-progress-card"><span class="result-progress-spinner" aria-hidden="true"></span><span id="result-progress-label">正在处理预测任务…</span></div></div>
         <div class="result-grid">
           <article class="card chart-panel">
             <header class="chart-head"><div><h3 class="title">电站总负荷 · 同时间轴</h3><p class="desc">预测值与对应目标时刻的实际值叠加展示；尚未到达的时刻不显示实际值</p></div><div class="chart-legend"><span class="legend-line" data-kind="actual">实际负载</span><span class="legend-line" data-kind="forecast">预测负载</span></div></header>
@@ -601,6 +619,9 @@
       const runButton = root.querySelector("#run-button");
       const runHint = root.querySelector("#run-hint");
       const taskState = root.querySelector("#task-state");
+      const resultSection = root.querySelector(".station-section");
+      const resultProgressOverlay = root.querySelector("#result-progress-overlay");
+      const resultProgressLabel = root.querySelector("#result-progress-label");
       const injectedAuthMode = window.__M3_DASHBOARD_AUTH_MODE__;
       const injectedParentOrigin = window.__M3_NOCOBASE_PARENT_ORIGIN__;
       if (!Reflect.deleteProperty(window, "__M3_DASHBOARD_AUTH_MODE__")) window.__M3_DASHBOARD_AUTH_MODE__ = undefined;
@@ -641,6 +662,8 @@
         stationPicker.value = stationKey;
         stopCustomPolling();
         customBusy = false;
+        resultSection.setAttribute("aria-busy", "false");
+        resultProgressOverlay.hidden = true;
         text(runButton, "开始预测");
         errorState.hidden = true;
         clearSection(root.querySelector(".station-section"));
@@ -1306,6 +1329,25 @@
         svg.onpointerleave = hideTooltip;
       }
 
+      function synchronizeChartScroll(section) {
+        const viewports = [...section.querySelectorAll(".chart-viewport")];
+        let synchronizing = false;
+        viewports.forEach((source) => {
+          source.onscroll = () => {
+            if (synchronizing) return;
+            synchronizing = true;
+            const sourceMaximum = source.scrollWidth - source.clientWidth;
+            const progress = sourceMaximum > 0 ? source.scrollLeft / sourceMaximum : 0;
+            viewports.forEach((target) => {
+              if (target === source) return;
+              const targetMaximum = target.scrollWidth - target.clientWidth;
+              target.scrollLeft = progress * Math.max(0, targetMaximum);
+            });
+            synchronizing = false;
+          };
+        });
+      }
+
       function renderAcceptance(section, acceptance) {
         const summary = root.querySelector(".acceptance-summary");
         const socSummary = root.querySelector(".soc-run-summary");
@@ -1473,6 +1515,10 @@
 
       function renderStation(station, custom = false) {
         const section = root.querySelector(".station-section");
+        const hasActual = station.series.some((series) => validActual(series).length > 0);
+        const chartRange = hasActual
+          ? station.range
+          : { ...station.range, history_start: station.range.forecast_start, now_separator: station.range.forecast_start };
         section.dataset.station = station.station_key;
         section.dataset.state = station.system.state;
         text(section.querySelector("h2"), station.station_name);
@@ -1492,8 +1538,9 @@
           text(card.querySelector(".forecast-value"), valueText(series.unique_id, series.forecast.length ? series.forecast[0].value : null));
           text(card.querySelector(".model-name"), displayModelName(series.unique_id, series.model_name));
           text(card.querySelector(".fallback"), `回退：${series.fallback_reason ?? "无"}`);
-          renderChart(section, series, station.range);
+          renderChart(section, series, chartRange);
         });
+        synchronizeChartScroll(section);
         const loadModel = station.series.find((series) => series.unique_id === "station_total_load")?.model_name ?? null;
         const socModel = station.series.find((series) => series.unique_id === "storage_soc")?.model_name ?? null;
         const currentModel = loadModel ?? socModel ?? "—";
@@ -1662,6 +1709,9 @@
 
       function setCustomBusy(busy, label = null) {
         customBusy = busy;
+        resultSection.setAttribute("aria-busy", String(busy));
+        resultProgressOverlay.hidden = !busy;
+        if (busy) text(resultProgressLabel, label ?? taskState.textContent);
         text(runButton, busy ? "处理中…" : "开始预测");
         if (label !== null) text(taskState, label);
         updateTaskConfiguration();

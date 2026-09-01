@@ -811,6 +811,30 @@ function legacyNullManifestFixture() {
   assert.deepStrictEqual(await stationPicker.locator("option").allTextContents(), ["1# 电站", "2# 电站"]);
   assert.strictEqual(await stationPicker.inputValue(), "station_1");
   assert.strictEqual(await page.locator("[data-station='station_1']").isVisible(), true);
+  const noActualDashboard = clone(payload.data);
+  const noActualStation = noActualDashboard.stations[0];
+  noActualStation.range.actual_latest = null;
+  noActualStation.series.forEach((series) => { series.actual = []; });
+  assert.strictEqual(await page.evaluate((dashboard) => window.renderDashboard(dashboard), noActualDashboard), true);
+  const noActualTimeAxes = await page.locator("svg.forecast-chart").evaluateAll((charts) => charts.map((chart) =>
+    [...chart.querySelectorAll(".axis-label")].slice(-5).map((label) => label.textContent),
+  ));
+  assert.deepStrictEqual(noActualTimeAxes[0], noActualTimeAxes[1], "load and SOC must share one time axis");
+  assert.strictEqual(noActualTimeAxes[0][0], "08/26 10:00", "empty actuals must not reserve a historical gap");
+  await page.setViewportSize({ width: 600, height: 720 });
+  await page.locator(".load-chart").evaluate((chart) => {
+    const viewport = chart.closest(".chart-viewport");
+    viewport.scrollLeft = 180;
+    viewport.dispatchEvent(new Event("scroll"));
+  });
+  await page.waitForTimeout(25);
+  assert.strictEqual(
+    await page.locator(".soc-chart").evaluate((chart) => chart.closest(".chart-viewport").scrollLeft),
+    180,
+    "load and SOC charts must stay on the same visible timestamp",
+  );
+  await page.setViewportSize({ width: 1280, height: 720 });
+  assert.strictEqual(await page.evaluate((dashboard) => window.renderDashboard(dashboard), payload.data), true);
   assert.strictEqual(await page.locator(".candidate[data-model='WeeklyNaive']").evaluate((node) => node.classList.contains("disabled")), false);
   assert.strictEqual(await page.locator(".candidate[data-model='WeeklyWeighted2']").evaluate((node) => node.classList.contains("disabled")), false);
   assert.strictEqual(await page.locator(".candidate[data-model='WeeklyRegimeAdjusted']").evaluate((node) => node.classList.contains("disabled")), false);
@@ -827,6 +851,9 @@ function legacyNullManifestFixture() {
   await latestLookupStarted;
   assert.strictEqual(await page.locator("#task-state").innerText(), "正在加载预测任务…");
   assert.strictEqual(await page.locator("#run-button").isDisabled(), true);
+  assert.strictEqual(await page.locator("#result-progress-overlay").isVisible(), true);
+  assert.strictEqual(await page.locator("#result-progress-label").innerText(), "正在加载预测任务…");
+  assert.strictEqual(await page.locator(".station-section").getAttribute("aria-busy"), "true");
   releaseLatestLookup();
   holdLatestLookup = false;
   await page.waitForFunction(() => document.querySelector("#result-model-meta")?.textContent === "3 个连续有效周 · 负载周期 7 天 · 1 分钟粒度");
@@ -837,6 +864,8 @@ function legacyNullManifestFixture() {
   assert.strictEqual(await page.locator("#total-points-inline").innerText(), "1,440");
   assert.strictEqual(await page.locator(".summary-average-load-note").innerText(), "按 1440 个有效预测点计算");
   assert.strictEqual(await page.locator("#task-state").innerText(), "预测完成");
+  assert.strictEqual(await page.locator("#result-progress-overlay").isHidden(), true);
+  assert.strictEqual(await page.locator(".station-section").getAttribute("aria-busy"), "false");
   await page.waitForFunction(() => !document.querySelector("#run-button")?.disabled);
   assert.strictEqual(await page.evaluate(() => sessionStorage.getItem("vifa.m3.customForecastRuns.v1") !== null), true);
   latestCustomPayload.result.series.forEach((series, seriesIndex) => {
