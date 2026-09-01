@@ -544,7 +544,7 @@
             <div class="baseline-note"><span class="rule-dot"></span><span>当前窗口 SOC MAPE：<strong class="soc-mape-value">—</strong></span></div>
           </section>
         </div>
-        <div class="readiness-track" aria-hidden="true"><span></span></div><div class="readiness-copy"><span class="readiness-hint" hidden>—</span><span class="readiness-meta" hidden>—</span></div>
+        <div class="readiness-track" aria-hidden="true"><span></span></div><div class="readiness-copy"><span class="readiness-selected" hidden>—</span><span class="readiness-meta" hidden>—</span><span class="readiness-hint" hidden>—</span></div>
         <section class="station-acceptance"><table class="acceptance-table"><thead><tr><th>序列</th><th>有效点</th><th>零实绩</th><th>MAPE</th><th>MAE</th><th>SMAPE</th><th>WAPE</th><th>中位 APE</th><th>P90 APE</th><th>结果</th></tr></thead><tbody></tbody></table></section>
       </section>
     </section>
@@ -1113,7 +1113,7 @@
       function clearSection(section) {
         section.dataset.state = "error";
         text(section.querySelector(".station-status"), "—");
-        [".readiness-hint", ".readiness-meta"].forEach((selector) => {
+        [".readiness-selected", ".readiness-hint", ".readiness-meta"].forEach((selector) => {
           const node = root.querySelector(selector);
           text(node, "—");
           node.hidden = true;
@@ -1341,28 +1341,42 @@
       }
 
       function renderReadiness(section, station, custom = false) {
+        const selected = root.querySelector(".readiness-selected");
         const hint = root.querySelector(".readiness-hint");
         const meta = root.querySelector(".readiness-meta");
         const progress = root.querySelector(".readiness-track span");
         const visible = station.readiness !== null
           && (custom || ["ready", "initializing"].includes(station.system.state));
         if (!visible) {
+          text(selected, "—");
           text(hint, "—");
           text(meta, "—");
+          selected.hidden = true;
           hint.hidden = true;
           meta.hidden = true;
           progress.style.width = "0%";
           return;
         }
-        text(
-          hint,
-          station.readiness.remaining_days === 0
-            ? "已达到 Ready 条件"
-            : custom
-              ? `有效数据还差 ${station.readiness.remaining_days.toFixed(1)} 天达到 Ready`
+        if (custom) {
+          text(selected, `所选历史范围：${station.readiness.selected_days} 天`);
+          text(meta, `有效训练数据：${station.readiness.available_days.toFixed(1)} 天`);
+          text(
+            hint,
+            station.readiness.remaining_days === 0
+              ? `Ready 门槛：已达到（要求 ${station.readiness.required_days} 天）`
+              : `Ready 门槛：还差 ${station.readiness.remaining_days.toFixed(1)} 天（要求 ${station.readiness.required_days} 天）`,
+          );
+          selected.hidden = false;
+        } else {
+          text(
+            hint,
+            station.readiness.remaining_days === 0
+              ? "已达到 Ready 条件"
               : `距离 Ready 约 ${station.readiness.remaining_days.toFixed(1)} 天`,
-        );
-        text(meta, `有效历史 ${station.readiness.available_days.toFixed(1)} / ${station.readiness.required_days} 天`);
+          );
+          text(meta, `有效历史 ${station.readiness.available_days.toFixed(1)} / ${station.readiness.required_days} 天`);
+          selected.hidden = true;
+        }
         progress.style.width = `${Math.min(100, station.readiness.available_days / station.readiness.required_days * 100).toFixed(1)}%`;
         hint.hidden = false;
         meta.hidden = false;
@@ -1732,9 +1746,10 @@
           if (!integer(retained, 0) || !integer(imputed, 0, retained)) return null;
           availableDays.push((retained - imputed) / run.points_per_day);
         }
-        const available = Math.round(Math.min(28, ...availableDays) * 10) / 10;
+        const available = Math.round(Math.min(...availableDays) * 10) / 10;
         return {
           required_days: 28,
+          selected_days: run.history_days,
           available_days: available,
           remaining_days: Math.round(Math.max(0, 28 - available) * 10) / 10,
         };

@@ -107,9 +107,9 @@ function weeklyEvidenceFixture() {
     run_id: "weekly-evidence-run",
     station_id: "plant-alpha-ES01",
     status: "succeeded",
-    history_start: "2026-08-03T12:15:00+08:00",
+    history_start: "2026-08-02T12:15:00+08:00",
     history_end: forecastStart,
-    history_days: 28,
+    history_days: 29,
     forecast_start: forecastStart,
     forecast_end: "2026-09-01T12:15:00+08:00",
     forecast_days: 1,
@@ -137,7 +137,7 @@ function weeklyEvidenceFixture() {
             { model_name: "WeeklyWeighted2", wape_percent: 10, mae: 8, mape_percent: 11, scorable_point_count: 96, skip_reason: null },
             { model_name: "WeeklyMedian3", wape_percent: null, mae: null, mape_percent: null, scorable_point_count: 0, skip_reason: "no_scorable_points" },
           ],
-          training_start: "2026-08-03T12:15:00+08:00",
+          training_start: "2026-08-02T12:15:00+08:00",
           training_end: forecastStart,
           statsforecast_version: "1.0.0",
         },
@@ -145,7 +145,7 @@ function weeklyEvidenceFixture() {
           model_name: "SeasonalNaive",
           cv_mape_percent: null,
           selected_at: "2026-08-31T12:15:00+08:00",
-          training_start: "2026-08-03T12:15:00+08:00",
+          training_start: "2026-08-02T12:15:00+08:00",
           training_end: forecastStart,
           statsforecast_version: "1.0.0",
           selection_reason: null,
@@ -153,13 +153,13 @@ function weeklyEvidenceFixture() {
       },
     },
     source_manifest: {
-      history_start: "2026-08-03T12:15:00+08:00",
+      history_start: "2026-08-02T12:15:00+08:00",
       history_end: forecastStart,
       interval_seconds: 900,
-      observation_count: 2688,
+      observation_count: 2784,
       series: {
-        station_total_load: { retained_points: 2688, imputed_points: 0, mode: "ready", usable_week_count: 3, weeks: [] },
-        storage_soc: { retained_points: 2688, imputed_points: 0, mode: "ready", usable_week_count: 3, weeks: [] },
+        station_total_load: { retained_points: 2784, imputed_points: 0, mode: "ready", usable_week_count: 3, weeks: [] },
+        storage_soc: { retained_points: 2784, imputed_points: 0, mode: "ready", usable_week_count: 3, weeks: [] },
       },
     },
     error_code: null,
@@ -880,8 +880,10 @@ function legacyNullManifestFixture() {
   const weeklyResponseStart = apiResponses.length;
   await page.locator("#run-button").click();
   await waitForCustomResultModelMeta("3 个连续有效周 · 负载周期 7 天 · 15 分钟粒度", weeklyRequestStart, weeklyResponseStart);
-  assert.strictEqual(await page.locator(".readiness-hint").innerText(), "已达到 Ready 条件");
-  assert.strictEqual(await page.locator(".readiness-meta").innerText(), "有效历史 28.0 / 28 天");
+  assert.strictEqual(await page.locator(".readiness-selected").count(), 1);
+  assert.strictEqual(await page.locator(".readiness-selected").innerText(), "所选历史范围：29 天");
+  assert.strictEqual(await page.locator(".readiness-meta").innerText(), "有效训练数据：29.0 天");
+  assert.strictEqual(await page.locator(".readiness-hint").innerText(), "Ready 门槛：已达到（要求 28 天）");
   assert.strictEqual(await inlineBarPercent(page, ".readiness-track span"), 100);
   assert.deepStrictEqual(await page.locator(".load-wape-value").allTextContents(), ["10.00%", "10.00%"]);
   assert.deepStrictEqual(await page.locator(".load-mae-value").allTextContents(), ["8.00", "8.00"]);
@@ -973,11 +975,15 @@ function legacyNullManifestFixture() {
   );
   assert.strictEqual(
     await page.locator(".readiness-hint").innerText(),
-    "有效数据还差 4.5 天达到 Ready",
+    "Ready 门槛：还差 4.5 天（要求 28 天）",
+  );
+  assert.strictEqual(
+    await page.locator(".readiness-selected").innerText(),
+    "所选历史范围：29 天",
   );
   assert.strictEqual(
     await page.locator(".readiness-meta").innerText(),
-    "有效历史 23.5 / 28 天",
+    "有效训练数据：23.5 天",
   );
   assert.strictEqual(await inlineBarPercent(page, ".readiness-track span"), 83.9);
 
