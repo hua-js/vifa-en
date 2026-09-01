@@ -2,10 +2,11 @@
 
 from datetime import datetime
 import importlib
+import logging
 import os
 from types import SimpleNamespace
 import unittest
-from unittest.mock import ANY, patch
+from unittest.mock import ANY, Mock, patch
 
 from fastapi.testclient import TestClient
 from pydantic import HttpUrl, SecretStr, TypeAdapter
@@ -13,6 +14,7 @@ from pydantic import HttpUrl, SecretStr, TypeAdapter
 from m3_worker.config import Settings, StationBinding
 from m3_worker.contracts import JobState
 from m3_worker.errors import M3Error
+import m3_worker.main as worker_main
 from m3_worker.main import WorkerResources, build_resources, create_app
 
 
@@ -120,6 +122,25 @@ AUTH = {"Authorization": "Bearer admin-secret"}
 
 
 class WorkerApiTests(unittest.TestCase):
+    def test_worker_info_logging_uses_the_uvicorn_handler(self):
+        m3_logger = Mock(handlers=[], propagate=True)
+        uvicorn_handler = logging.NullHandler()
+        uvicorn_logger = Mock(handlers=[uvicorn_handler])
+
+        with patch.object(
+            worker_main.logging,
+            "getLogger",
+            side_effect=lambda name: {
+                "m3_worker": m3_logger,
+                "uvicorn": uvicorn_logger,
+            }[name],
+        ):
+            worker_main._configure_worker_logging()
+
+        m3_logger.setLevel.assert_called_once_with(logging.INFO)
+        m3_logger.addHandler.assert_called_once_with(uvicorn_handler)
+        self.assertFalse(m3_logger.propagate)
+
     def test_import_without_production_environment_is_safe(self):
         """Importing the uvicorn target must not eagerly read missing secrets."""
         names = [name for name in os.environ if name.startswith("M3_")]

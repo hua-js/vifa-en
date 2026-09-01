@@ -47,6 +47,19 @@ SHANGHAI = ZoneInfo("Asia/Shanghai")
 SAFE_ALERT_NAME = re.compile(r"[a-z][a-z0-9_]{0,63}\Z")
 
 
+def _configure_worker_logging() -> None:
+    """Route M3 INFO progress records through Uvicorn's configured handler."""
+
+    m3_logger = logging.getLogger("m3_worker")
+    m3_logger.setLevel(logging.INFO)
+    uvicorn_handlers = logging.getLogger("uvicorn").handlers
+    for handler in uvicorn_handlers:
+        if handler not in m3_logger.handlers:
+            m3_logger.addHandler(handler)
+    if uvicorn_handlers:
+        m3_logger.propagate = False
+
+
 def _safe_code(error: BaseException) -> str:
     code = error.code if isinstance(error, M3Error) else "internal_error"
     if (
@@ -378,6 +391,7 @@ def create_app(
             if lifecycle_used:
                 raise RuntimeError("application lifespan already used")
             lifecycle_used = True
+        _configure_worker_logging()
         owned_resources = resources
         owned_settings = settings
         if owned_settings is None:
