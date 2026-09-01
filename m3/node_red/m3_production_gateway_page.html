@@ -1339,11 +1339,12 @@
         });
       }
 
-      function renderReadiness(section, station) {
+      function renderReadiness(section, station, custom = false) {
         const hint = root.querySelector(".readiness-hint");
         const meta = root.querySelector(".readiness-meta");
         const progress = root.querySelector(".readiness-track span");
-        const visible = station.readiness !== null && ["ready", "initializing"].includes(station.system.state);
+        const visible = station.readiness !== null
+          && (custom || ["ready", "initializing"].includes(station.system.state));
         if (!visible) {
           text(hint, "—");
           text(meta, "—");
@@ -1354,9 +1355,11 @@
         }
         text(
           hint,
-          station.system.state === "ready"
+          station.readiness.remaining_days === 0
             ? "已达到 Ready 条件"
-            : `距离 Ready 约 ${station.readiness.remaining_days.toFixed(1)} 天`,
+            : custom
+              ? `有效数据还差 ${station.readiness.remaining_days.toFixed(1)} 天达到 Ready`
+              : `距离 Ready 约 ${station.readiness.remaining_days.toFixed(1)} 天`,
         );
         text(meta, `有效历史 ${station.readiness.available_days.toFixed(1)} / ${station.readiness.required_days} 天`);
         progress.style.width = `${Math.min(100, station.readiness.available_days / station.readiness.required_days * 100).toFixed(1)}%`;
@@ -1399,13 +1402,13 @@
         return uniqueId === "storage_soc" ? `${modelName}（状态锚定）` : modelName;
       }
 
-      function renderStation(station) {
+      function renderStation(station, custom = false) {
         const section = root.querySelector(".station-section");
         section.dataset.station = station.station_key;
         section.dataset.state = station.system.state;
         text(section.querySelector("h2"), station.station_name);
         text(section.querySelector(".station-status"), STATE_LABELS[station.system.state]);
-        renderReadiness(section, station);
+        renderReadiness(section, station, custom);
         text(section.querySelector(".history-window"), station.range.history_start ? `${dateTime(station.range.history_start)} — ${dateTime(station.range.history_end)}` : "—");
         text(section.querySelector(".forecast-start"), dateTime(station.range.forecast_start));
         text(section.querySelector(".actual-latest"), dateTime(station.range.actual_latest));
@@ -1715,6 +1718,27 @@
         };
       }
 
+      function customReadinessFor(run) {
+        const source = objectValue(run.source_manifest);
+        const series = source === null ? null : objectValue(source.series);
+        if (series === null) return null;
+        const availableDays = [];
+        for (const uniqueId of SERIES_IDS) {
+          const evidence = objectValue(series[uniqueId]);
+          if (evidence === null) return null;
+          const retained = evidence.retained_points;
+          const imputed = evidence.imputed_points;
+          if (!integer(retained, 0) || !integer(imputed, 0, retained)) return null;
+          availableDays.push((retained - imputed) / run.points_per_day);
+        }
+        const available = Math.round(Math.min(28, ...availableDays) * 10) / 10;
+        return {
+          required_days: 28,
+          available_days: available,
+          remaining_days: Math.round(Math.max(0, 28 - available) * 10) / 10,
+        };
+      }
+
       function candidateScoreByName(scores, modelName) {
         return scores.find((score) => objectValue(score)?.model_name === modelName) || null;
       }
@@ -1894,7 +1918,7 @@
             interval_seconds: run.interval_seconds, history_hours: 0, forecast_hours: run.forecast_days * 24,
             display_hours: run.forecast_days * 24, now_separator: actualLatest || run.forecast_start,
           },
-          readiness: null,
+          readiness: customReadinessFor(run),
           series: result.series.map((series) => ({
             unique_id: series.unique_id,
             unit: series.unit,
@@ -1906,7 +1930,7 @@
           })),
           acceptance: null,
         };
-        renderStation(station);
+        renderStation(station, true);
         const section = root.querySelector(".station-section");
         const modelSummary = result.series.map((series) =>
           `${SERIES_LABELS[series.unique_id]}：${displayModelName(series.unique_id, series.model_name)}`

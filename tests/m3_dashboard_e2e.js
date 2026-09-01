@@ -233,7 +233,11 @@ function degradedReconstructedWeekFixture() {
   load.realized_fallback_reason = "latest_week_high_imputation";
   load.candidate_scores = [];
   fixture.run.source_manifest.series.station_total_load.usable_week_count = 0;
+  fixture.run.source_manifest.series.station_total_load.retained_points = 2304;
+  fixture.run.source_manifest.series.station_total_load.imputed_points = 48;
   fixture.run.source_manifest.series.station_total_load.weeks = [];
+  fixture.run.source_manifest.series.storage_soc.retained_points = 2304;
+  fixture.run.source_manifest.series.storage_soc.imputed_points = 0;
   fixture.result.run = fixture.run;
   fixture.result.series[0].model_name = "WeeklyNaive";
   return fixture;
@@ -876,6 +880,9 @@ function legacyNullManifestFixture() {
   const weeklyResponseStart = apiResponses.length;
   await page.locator("#run-button").click();
   await waitForCustomResultModelMeta("3 个连续有效周 · 负载周期 7 天 · 15 分钟粒度", weeklyRequestStart, weeklyResponseStart);
+  assert.strictEqual(await page.locator(".readiness-hint").innerText(), "已达到 Ready 条件");
+  assert.strictEqual(await page.locator(".readiness-meta").innerText(), "有效历史 28.0 / 28 天");
+  assert.strictEqual(await inlineBarPercent(page, ".readiness-track span"), 100);
   assert.deepStrictEqual(await page.locator(".load-wape-value").allTextContents(), ["10.00%", "10.00%"]);
   assert.deepStrictEqual(await page.locator(".load-mae-value").allTextContents(), ["8.00", "8.00"]);
   assert.ok((await page.locator(".load-mape-value").allTextContents()).every((value) => value === "11.00%"));
@@ -964,6 +971,15 @@ function legacyNullManifestFixture() {
     await page.locator(".series-card[data-series='station_total_load'] .series-status").innerText(),
     "降级",
   );
+  assert.strictEqual(
+    await page.locator(".readiness-hint").innerText(),
+    "有效数据还差 4.5 天达到 Ready",
+  );
+  assert.strictEqual(
+    await page.locator(".readiness-meta").innerText(),
+    "有效历史 23.5 / 28 天",
+  );
+  assert.strictEqual(await inlineBarPercent(page, ".readiness-track span"), 83.9);
 
   customPayload = legacyPerformanceFixture();
   const legacyRequestStart = apiRequests.length;
