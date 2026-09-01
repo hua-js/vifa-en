@@ -661,14 +661,24 @@
       function selectStation(stationKey) {
         if (!STATION_KEYS.includes(stationKey)) return;
         stationPicker.value = stationKey;
-        if (customResults.has(stationKey)) renderCustomResult(customResults.get(stationKey));
+        stopCustomPolling();
+        customBusy = false;
+        text(runButton, "开始预测");
+        errorState.hidden = true;
+        clearSection(root.querySelector(".station-section"));
+        root.querySelectorAll(".candidate").forEach((candidate) => {
+          candidate.classList.remove("selected", "disabled");
+          text(candidate.querySelector(".candidate-state"), "等待当前电站数据");
+        });
+        const cached = customResults.get(stationKey);
+        if (cached !== undefined) renderCustomResult(cached);
         else if (lastDashboard !== null) {
           const station = lastDashboard.stations.find((item) => item.station_key === stationKey);
           if (station) renderStation(station);
         }
-        stopCustomPolling();
-        customBusy = false;
-        text(runButton, "开始预测");
+        if (cached === undefined) {
+          text(taskState, customRunIds[stationKey] ? "正在恢复任务" : "尚未提交任务");
+        }
         updateTaskConfiguration();
         void resumeSelectedRun();
       }
@@ -1112,6 +1122,7 @@
       function clearSection(section) {
         section.dataset.state = "error";
         text(section.querySelector(".station-status"), "—");
+        root.querySelectorAll(".current-model-name").forEach((node) => text(node, "—"));
         [".readiness-selected", ".readiness-hint", ".readiness-meta"].forEach((selector) => {
           const node = root.querySelector(selector);
           text(node, "—");
@@ -1132,6 +1143,8 @@
         root.querySelectorAll(".performance-value").forEach((node) => node.removeAttribute("data-state"));
         text(root.querySelector("#performance-zone-subtitle"), "先看当前模型是否优于同配置基线，再看近 7 日稳定性");
         text(root.querySelector(".current-mape-note"), "尚无已完成评估窗口");
+        text(root.querySelector(".load-mae-note"), "尚无已完成评估窗口");
+        text(root.querySelector(".load-mape-note"), "尚无已完成评估窗口");
         text(root.querySelector(".baseline-mape-note"), "负载预测同配置、同目标点基线");
         text(root.querySelector(".improvement-note"), "获得同窗基线后自动计算");
         text(root.querySelector(".compare-model-value"), "—");
@@ -1618,14 +1631,17 @@
         if (disposed || stationPicker.value !== stationKey || selectedPollRunId !== runId) return;
         try {
           const run = validateCustomRun(await customRequest(`${CUSTOM_RUN_PATH}/${encodeURIComponent(runId)}`));
+          if (stationPicker.value !== stationKey) return;
           await handleCustomRun(stationKey, run);
         } catch (error) {
+          if (stationPicker.value !== stationKey) return;
           setCustomBusy(false, error instanceof Error ? error.message : "预测任务查询失败");
           renderRefreshError(error instanceof Error ? error.message : "预测任务查询失败");
         }
       }
 
       async function handleCustomRun(stationKey, run) {
+        if (stationPicker.value !== stationKey) return;
         text(taskState, CUSTOM_RUN_LABELS[run.status]);
         if (run.status === "failed") {
           stopCustomPolling();
@@ -1659,7 +1675,8 @@
         const performance = validateCustomPerformance(performanceValue);
         const rendered = { stationKey, result, performance };
         customResults.set(stationKey, rendered);
-        if (stationPicker.value === stationKey) renderCustomResult(rendered);
+        if (stationPicker.value !== stationKey) return;
+        renderCustomResult(rendered);
         setCustomBusy(false, CUSTOM_RUN_LABELS[run.status]);
       }
 
@@ -1687,6 +1704,7 @@
           storeRunId(stationKey, run.run_id);
           await handleCustomRun(stationKey, run);
         } catch (error) {
+          if (stationPicker.value !== stationKey) return;
           const message = error instanceof Error ? error.message : "预测任务提交失败";
           stopCustomPolling();
           setCustomBusy(false, message);
@@ -1705,8 +1723,10 @@
         }
         try {
           const run = validateCustomRun(await customRequest(`${CUSTOM_RUN_PATH}/${encodeURIComponent(runId)}`));
+          if (stationPicker.value !== stationKey) return;
           await handleCustomRun(stationKey, run);
         } catch (error) {
+          if (stationPicker.value !== stationKey) return;
           text(taskState, error instanceof Error ? error.message : "历史任务恢复失败");
         }
       }
@@ -1917,6 +1937,7 @@
       function renderCustomResult(value) {
         const { stationKey, result, performance } = value;
         const run = result.run;
+        text(taskState, CUSTOM_RUN_LABELS[run.status]);
         const evidence = loadEvidenceFor(run);
         assert(evidence !== null, "custom run policy invalid");
         const loadResult = result.series.find((series) => series.unique_id === "station_total_load");

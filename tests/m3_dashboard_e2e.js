@@ -901,8 +901,19 @@ function legacyNullManifestFixture() {
   await page.locator("#granularity").selectOption("900");
   await stationPicker.selectOption("station_2");
   assert.strictEqual(await page.locator(".station-section").getAttribute("data-station"), "station_2");
+  assert.strictEqual(await page.locator("#task-state").innerText(), "尚未提交任务");
+  assert.strictEqual(
+    await page.locator("#performance-zone-subtitle").innerText(),
+    "先看当前模型是否优于同配置基线，再看近 7 日稳定性",
+  );
+  assert.ok((await page.locator(".load-wape-value").allTextContents()).every((value) => value === "—"));
+  assert.doesNotMatch(
+    await page.locator(".candidate[data-model='WeeklyMedian3'] .candidate-state").innerText(),
+    /跳过：无可评分点/,
+  );
   await stationPicker.selectOption("station_1");
   assert.strictEqual(await page.locator(".station-section").getAttribute("data-station"), "station_1");
+  assert.strictEqual(await page.locator("#task-state").innerText(), "预测完成");
   assert.match(await page.locator(".candidate[data-model='WeeklyMedian3'] .candidate-state").innerText(), /跳过：无可评分点/);
   assert.ok((await page.locator(".load-chart .axis-label").allTextContents()).includes("08/31 12:15"));
   await page.locator(".load-chart").evaluate((svg) => {
