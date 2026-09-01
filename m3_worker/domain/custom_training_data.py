@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 
 import pandas as pd
 
-from m3_worker.contracts import SeriesId
+from m3_worker.contracts import SeriesId, is_load_series
 from m3_worker.custom_forecast_contracts import (
     CustomForecastConfig,
     CustomObservationPoint,
@@ -30,6 +30,11 @@ class CustomWeekSummary:
 class CustomTrainingDataset:
     frame: pd.DataFrame
     imputed_keys: frozenset[tuple[str, datetime]]
+    source_available_start: datetime
+    source_available_points: int
+    leading_no_data_points: int
+    invalid_points: int
+    negative_invalid_points: int
     start: datetime
     end: datetime
     mode: str
@@ -107,6 +112,21 @@ def build_custom_training_dataset(
     ):
         raise ValueError("observation time is not aligned to the configured interval")
 
+    leading_no_data_points = 0
+    if is_load_series(unique_id):
+        for point in selected:
+            if point.source_state != "no_rows":
+                break
+            leading_no_data_points += 1
+    selected = selected[leading_no_data_points:]
+    if not selected:
+        raise ValueError(f"no observations for {unique_id}")
+    source_available_start = selected[0].ds
+    invalid_points = sum(point.quality == "invalid" for point in selected)
+    negative_invalid_points = sum(
+        point.source_state == "negative" for point in selected
+    )
+
     rows = [
         {
             "unique_id": unique_id,
@@ -116,7 +136,7 @@ def build_custom_training_dataset(
         for point in selected
     ]
     full_index = pd.date_range(
-        start=config.history_start,
+        start=source_available_start,
         end=config.history_end - config.interval,
         freq=config.pandas_frequency,
     )
@@ -171,6 +191,11 @@ def build_custom_training_dataset(
     return CustomTrainingDataset(
         frame=frame[["unique_id", "ds", "y"]],
         imputed_keys=imputed_keys,
+        source_available_start=source_available_start,
+        source_available_points=len(full_index),
+        leading_no_data_points=leading_no_data_points,
+        invalid_points=invalid_points,
+        negative_invalid_points=negative_invalid_points,
         start=frame["ds"].iloc[0].to_pydatetime(),
         end=frame["ds"].iloc[-1].to_pydatetime(),
         mode=_history_mode(real_point_count, config.points_per_day),

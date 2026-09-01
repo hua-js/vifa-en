@@ -1370,14 +1370,26 @@
           return;
         }
         if (custom) {
-          text(selected, `所选历史范围：${station.readiness.selected_days} 天`);
-          text(meta, `有效训练数据：${station.readiness.available_days.toFixed(1)} 天`);
           text(
-            hint,
-            station.readiness.remaining_days === 0
-              ? `Ready 门槛：已达到（要求 ${station.readiness.required_days} 天）`
-              : `Ready 门槛：还差 ${station.readiness.remaining_days.toFixed(1)} 天（要求 ${station.readiness.required_days} 天）`,
+            selected,
+            `请求历史：${station.readiness.selected_days} 天 · 源数据覆盖：${station.readiness.source_available_days.toFixed(1)} 天（${station.readiness.source_available_weeks.toFixed(1)} 周）· 起点：${dateTime(station.readiness.source_available_start)}`,
           );
+          text(
+            meta,
+            `训练起点：${dateTime(station.readiness.training_start)} · 有效训练点折算：${station.readiness.training_days.toFixed(1)} 天`,
+          );
+          const qualityEvidence = `起始无数据 ${formatInteger(station.readiness.leading_no_data_points)} 桶（已排除） · 负负载无效 ${formatInteger(station.readiness.negative_invalid_points)} 桶`;
+          if (station.readiness.next_model_name === null) {
+            const completeState = station.readiness.interval_seconds >= 300
+              ? "完整选模已启用"
+              : "高频粒度已启用 WeeklyMedian3（AutoARIMA / MSTL 要求至少 5 分钟粒度）";
+            text(hint, `连续有效周：${station.readiness.usable_weeks} 周 · ${completeState} · ${qualityEvidence}`);
+          } else {
+            text(
+              hint,
+              `连续有效周：${station.readiness.usable_weeks} 周 · 下一级 ${station.readiness.next_model_name}：至少还需 ${station.readiness.days_to_next_model} 天完整数据（需 ${station.readiness.next_model_required_weeks} 周） · ${qualityEvidence}`,
+            );
+          }
           selected.hidden = false;
         } else {
           text(
@@ -1756,21 +1768,68 @@
         const source = objectValue(run.source_manifest);
         const series = source === null ? null : objectValue(source.series);
         if (series === null) return null;
-        const availableDays = [];
-        for (const uniqueId of SERIES_IDS) {
-          const evidence = objectValue(series[uniqueId]);
-          if (evidence === null) return null;
-          const retained = evidence.retained_points;
-          const imputed = evidence.imputed_points;
-          if (!integer(retained, 0) || !integer(imputed, 0, retained)) return null;
-          availableDays.push((retained - imputed) / run.points_per_day);
+        const load = objectValue(series.station_total_load);
+        if (load === null) return null;
+        const retained = load.retained_points;
+        const imputed = load.imputed_points;
+        const sourceAvailablePoints = load.source_available_points;
+        const leadingNoDataPoints = load.leading_no_data_points;
+        const invalidPoints = load.invalid_points;
+        const negativeInvalidPoints = load.negative_invalid_points;
+        const usableWeeks = load.usable_week_count;
+        const requestedPoints = run.history_days * run.points_per_day;
+        if (
+          !integer(retained, 0)
+          || !integer(imputed, 0, retained)
+          || !integer(sourceAvailablePoints, retained, requestedPoints)
+          || !integer(leadingNoDataPoints, 0, requestedPoints)
+          || leadingNoDataPoints + sourceAvailablePoints !== requestedPoints
+          || !integer(invalidPoints, 0, sourceAvailablePoints)
+          || !integer(negativeInvalidPoints, 0, invalidPoints)
+          || !integer(usableWeeks, 0, Math.floor(sourceAvailablePoints / run.points_per_day / 7))
+          || !instantTimestamp(load.source_available_start)
+          || !instantTimestamp(load.training_start)
+          || milliseconds(load.source_available_start) < milliseconds(run.history_start)
+          || milliseconds(load.training_start) < milliseconds(load.source_available_start)
+          || milliseconds(load.training_start) >= milliseconds(run.history_end)
+        ) return null;
+        const sourceAvailableDays = Math.round(sourceAvailablePoints / run.points_per_day * 10) / 10;
+        const sourceAvailableWeeks = Math.round(sourceAvailablePoints / run.points_per_day / 7 * 10) / 10;
+        const trainingDays = Math.round((retained - imputed) / run.points_per_day * 10) / 10;
+        let nextModelName = null;
+        let nextModelRequiredWeeks = null;
+        if (usableWeeks < 1) {
+          nextModelName = "WeeklyNaive";
+          nextModelRequiredWeeks = 1;
+        } else if (usableWeeks < 3) {
+          nextModelName = "WeeklyWeighted2";
+          nextModelRequiredWeeks = 3;
+        } else if (usableWeeks < 4) {
+          nextModelName = run.interval_seconds >= 300
+            ? "WeeklyMedian3 / AutoARIMA / MSTL"
+            : "WeeklyMedian3";
+          nextModelRequiredWeeks = 4;
         }
-        const available = Math.round(Math.min(...availableDays) * 10) / 10;
+        const readyDays = Math.min(28, usableWeeks * 7);
         return {
           required_days: 28,
           selected_days: run.history_days,
-          available_days: available,
-          remaining_days: Math.round(Math.max(0, 28 - available) * 10) / 10,
+          available_days: readyDays,
+          remaining_days: 28 - readyDays,
+          source_available_start: load.source_available_start,
+          source_available_days: sourceAvailableDays,
+          source_available_weeks: sourceAvailableWeeks,
+          training_start: load.training_start,
+          training_days: trainingDays,
+          leading_no_data_points: leadingNoDataPoints,
+          negative_invalid_points: negativeInvalidPoints,
+          usable_weeks: usableWeeks,
+          next_model_name: nextModelName,
+          next_model_required_weeks: nextModelRequiredWeeks,
+          days_to_next_model: nextModelRequiredWeeks === null
+            ? 0
+            : (nextModelRequiredWeeks - usableWeeks) * 7,
+          interval_seconds: run.interval_seconds,
         };
       }
 

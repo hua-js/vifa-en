@@ -154,6 +154,32 @@ class RawEnergySourceClientTests(unittest.TestCase):
         self.assertEqual([point.quality for point in points], ["invalid", "invalid"])
         self.assertEqual([point.y for point in points], [None, None])
 
+    def test_custom_load_points_distinguish_leading_no_rows_from_negative_load(self):
+        rows = minute_rows(
+            es_sn=STATION_2,
+            load_power=-40,
+            solar_power=0,
+            emus_soc=61,
+            start="2026-08-26T01:30:00.000Z",
+            count=15,
+        )
+
+        points = self.make_client(
+            lambda _request: httpx.Response(200, json=envelope(rows))
+        ).list_custom_observations(
+            STATION_2, START, START + timedelta(minutes=45),
+            interval_seconds=900,
+        )
+
+        load_points = [
+            point for point in points if point.unique_id == "station_total_load"
+        ]
+        self.assertEqual(
+            [point.source_state for point in load_points],
+            ["no_rows", "no_rows", "negative"],
+        )
+        self.assertTrue(all(point.quality == "invalid" for point in load_points))
+
     def test_earlier_out_of_range_soc_does_not_poison_final_soc(self):
         rows = minute_rows(
             es_sn=STATION_2, load_power=0, solar_power=0, emus_soc=0,

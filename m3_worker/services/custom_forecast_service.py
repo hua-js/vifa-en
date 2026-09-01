@@ -397,6 +397,20 @@ class CustomForecastService:
                 "observation_count": len(observations),
                 "series": {
                     unique_id: {
+                        "source_available_start": datasets[
+                            unique_id
+                        ].source_available_start.isoformat(),
+                        "training_start": datasets[unique_id].start.isoformat(),
+                        "source_available_points": datasets[
+                            unique_id
+                        ].source_available_points,
+                        "leading_no_data_points": datasets[
+                            unique_id
+                        ].leading_no_data_points,
+                        "invalid_points": datasets[unique_id].invalid_points,
+                        "negative_invalid_points": datasets[
+                            unique_id
+                        ].negative_invalid_points,
                         "retained_points": len(datasets[unique_id].frame),
                         "imputed_points": len(datasets[unique_id].imputed_keys),
                         "mode": datasets[unique_id].mode,

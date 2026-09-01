@@ -93,6 +93,7 @@ def make_observations(
                     ds=timestamp,
                     y=load_value,
                     quality="valid",
+                    source_state="valid",
                     source_revision=1,
                 )
             )
@@ -102,6 +103,7 @@ def make_observations(
                 ds=timestamp,
                 y=55.0,
                 quality="valid",
+                source_state="valid",
                 source_revision=1,
             )
         )
@@ -299,6 +301,31 @@ class CustomForecastServiceTests(unittest.TestCase):
         self.assertEqual(
             run.source_manifest["series"]["station_total_load"]["usable_week_count"],
             1,
+        )
+        self.assertEqual(
+            run.source_manifest["series"]["station_total_load"],
+            {
+                "source_available_start": "2026-08-24T00:00:00+08:00",
+                "training_start": "2026-08-24T00:00:00+08:00",
+                "source_available_points": 168,
+                "leading_no_data_points": 0,
+                "invalid_points": 0,
+                "negative_invalid_points": 0,
+                "retained_points": 168,
+                "imputed_points": 0,
+                "mode": "warming_up",
+                "usable_week_count": 1,
+                "weeks": [
+                    {
+                        "start": "2026-08-24T00:00:00+08:00",
+                        "end": "2026-08-31T00:00:00+08:00",
+                        "point_count": 168,
+                        "real_point_count": 168,
+                        "imputed_point_count": 0,
+                        "imputation_ratio": 0.0,
+                    }
+                ],
+            },
         )
         self.assertEqual(
             run.source_manifest["series"]["station_total_load"]["weeks"],

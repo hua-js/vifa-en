@@ -158,8 +158,32 @@ function weeklyEvidenceFixture() {
       interval_seconds: 900,
       observation_count: 2784,
       series: {
-        station_total_load: { retained_points: 2784, imputed_points: 0, mode: "ready", usable_week_count: 3, weeks: [] },
-        storage_soc: { retained_points: 2784, imputed_points: 0, mode: "ready", usable_week_count: 3, weeks: [] },
+        station_total_load: {
+          source_available_start: "2026-08-02T12:15:00+08:00",
+          training_start: "2026-08-02T12:15:00+08:00",
+          source_available_points: 2784,
+          leading_no_data_points: 0,
+          invalid_points: 0,
+          negative_invalid_points: 0,
+          retained_points: 2784,
+          imputed_points: 0,
+          mode: "ready",
+          usable_week_count: 3,
+          weeks: [],
+        },
+        storage_soc: {
+          source_available_start: "2026-08-02T12:15:00+08:00",
+          training_start: "2026-08-02T12:15:00+08:00",
+          source_available_points: 2784,
+          leading_no_data_points: 0,
+          invalid_points: 0,
+          negative_invalid_points: 0,
+          retained_points: 2784,
+          imputed_points: 0,
+          mode: "ready",
+          usable_week_count: 3,
+          weeks: [],
+        },
       },
     },
     error_code: null,
@@ -881,10 +905,19 @@ function legacyNullManifestFixture() {
   await page.locator("#run-button").click();
   await waitForCustomResultModelMeta("3 个连续有效周 · 负载周期 7 天 · 15 分钟粒度", weeklyRequestStart, weeklyResponseStart);
   assert.strictEqual(await page.locator(".readiness-selected").count(), 1);
-  assert.strictEqual(await page.locator(".readiness-selected").innerText(), "所选历史范围：29 天");
-  assert.strictEqual(await page.locator(".readiness-meta").innerText(), "有效训练数据：29.0 天");
-  assert.strictEqual(await page.locator(".readiness-hint").innerText(), "Ready 门槛：已达到（要求 28 天）");
-  assert.strictEqual(await inlineBarPercent(page, ".readiness-track span"), 100);
+  assert.strictEqual(
+    await page.locator(".readiness-selected").innerText(),
+    "请求历史：29 天 · 源数据覆盖：29.0 天（4.1 周）· 起点：2026/08/02 12:15",
+  );
+  assert.strictEqual(
+    await page.locator(".readiness-meta").innerText(),
+    "训练起点：2026/08/02 12:15 · 有效训练点折算：29.0 天",
+  );
+  assert.strictEqual(
+    await page.locator(".readiness-hint").innerText(),
+    "连续有效周：3 周 · 下一级 WeeklyMedian3 / AutoARIMA / MSTL：至少还需 7 天完整数据（需 4 周） · 起始无数据 0 桶（已排除） · 负负载无效 0 桶",
+  );
+  assert.strictEqual(await inlineBarPercent(page, ".readiness-track span"), 75);
   assert.deepStrictEqual(await page.locator(".load-wape-value").allTextContents(), ["10.00%", "10.00%"]);
   assert.deepStrictEqual(await page.locator(".load-mae-value").allTextContents(), ["8.00", "8.00"]);
   assert.ok((await page.locator(".load-mape-value").allTextContents()).every((value) => value === "11.00%"));
@@ -962,6 +995,10 @@ function legacyNullManifestFixture() {
   await page.locator("#run-button").click();
   await waitForCustomResultModelMeta("1 个连续有效周 · 负载周期 7 天 · 15 分钟粒度", warmingRequestStart, warmingResponseStart);
   assert.match(await page.locator(".current-model-name").first().innerText(), /电站总负荷：WeeklyNaive/);
+  assert.strictEqual(
+    await page.locator(".readiness-hint").innerText(),
+    "连续有效周：1 周 · 下一级 WeeklyWeighted2：至少还需 14 天完整数据（需 3 周） · 起始无数据 0 桶（已排除） · 负负载无效 0 桶",
+  );
   for (const selector of [".load-wape-value", ".load-mae-value", ".load-mape-value", ".baseline-value", ".improvement-value"]) {
     assert.ok((await page.locator(selector).allTextContents()).every((value) => value === "—"), selector);
   }
@@ -986,17 +1023,17 @@ function legacyNullManifestFixture() {
   );
   assert.strictEqual(
     await page.locator(".readiness-hint").innerText(),
-    "Ready 门槛：还差 4.5 天（要求 28 天）",
+    "连续有效周：0 周 · 下一级 WeeklyNaive：至少还需 7 天完整数据（需 1 周） · 起始无数据 0 桶（已排除） · 负负载无效 0 桶",
   );
   assert.strictEqual(
     await page.locator(".readiness-selected").innerText(),
-    "所选历史范围：29 天",
+    "请求历史：29 天 · 源数据覆盖：29.0 天（4.1 周）· 起点：2026/08/02 12:15",
   );
   assert.strictEqual(
     await page.locator(".readiness-meta").innerText(),
-    "有效训练数据：23.5 天",
+    "训练起点：2026/08/02 12:15 · 有效训练点折算：23.5 天",
   );
-  assert.strictEqual(await inlineBarPercent(page, ".readiness-track span"), 83.9);
+  assert.strictEqual(await inlineBarPercent(page, ".readiness-track span"), 0);
 
   customPayload = legacyPerformanceFixture();
   const legacyRequestStart = apiRequests.length;

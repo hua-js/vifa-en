@@ -50,6 +50,7 @@ def make_points(
                     ds=current,
                     y=None,
                     quality="invalid",
+                    source_state="coverage",
                     source_revision=1,
                 )
             )
@@ -60,6 +61,7 @@ def make_points(
                     ds=current,
                     y=800.0,
                     quality="valid",
+                    source_state="valid",
                     source_revision=1,
                 )
             )
@@ -126,6 +128,86 @@ class CustomTrainingDataUsableWeekTests(unittest.TestCase):
             dataset.usable_weeks[-1].end.isoformat(),
             "2026-08-31T00:00:00+08:00",
         )
+
+    def test_leading_no_row_buckets_do_not_count_as_source_available_history(self):
+        history_start = HISTORY_END - timedelta(days=28)
+        source_start = history_start + timedelta(days=2, hours=8)
+        points = []
+        current = history_start
+        while current < HISTORY_END:
+            leading = current < source_start
+            points.append(
+                CustomObservationPoint(
+                    unique_id=UNIQUE_ID,
+                    ds=current,
+                    y=None if leading else 800.0,
+                    quality="invalid" if leading else "valid",
+                    source_state="no_rows" if leading else "valid",
+                    source_revision=1,
+                )
+            )
+            current += timedelta(minutes=15)
+
+        dataset = build_custom_training_dataset(
+            points, UNIQUE_ID, make_config(history_start)
+        )
+
+        self.assertEqual(dataset.source_available_start, source_start)
+        self.assertEqual(dataset.leading_no_data_points, 224)
+        self.assertEqual(dataset.source_available_points, 2464)
+        self.assertEqual(dataset.invalid_points, 0)
+        self.assertEqual(dataset.negative_invalid_points, 0)
+
+    def test_negative_load_after_source_start_remains_invalid_evidence(self):
+        history_start = HISTORY_END - timedelta(days=8)
+        points = make_points(history_start, HISTORY_END)
+        negative_time = history_start + timedelta(days=1)
+        negative_index = next(
+            index for index, point in enumerate(points) if point.ds == negative_time
+        )
+        points[negative_index] = CustomObservationPoint(
+            unique_id=UNIQUE_ID,
+            ds=negative_time,
+            y=None,
+            quality="invalid",
+            source_state="negative",
+            source_revision=1,
+        )
+
+        dataset = build_custom_training_dataset(
+            points, UNIQUE_ID, make_config(history_start)
+        )
+
+        self.assertEqual(dataset.leading_no_data_points, 0)
+        self.assertEqual(dataset.invalid_points, 1)
+        self.assertEqual(dataset.negative_invalid_points, 1)
+        self.assertIn((UNIQUE_ID, negative_time), dataset.imputed_keys)
+
+    def test_leading_no_row_exclusion_does_not_change_soc_policy(self):
+        history_start = HISTORY_END - timedelta(days=8)
+        source_start = history_start + timedelta(days=1)
+        points = []
+        current = history_start
+        while current < HISTORY_END:
+            leading = current < source_start
+            points.append(
+                CustomObservationPoint(
+                    unique_id="storage_soc",
+                    ds=current,
+                    y=None if leading else 55.0,
+                    quality="invalid" if leading else "valid",
+                    source_state="no_rows" if leading else "valid",
+                    source_revision=1,
+                )
+            )
+            current += timedelta(minutes=15)
+
+        dataset = build_custom_training_dataset(
+            points, "storage_soc", make_config(history_start)
+        )
+
+        self.assertEqual(dataset.source_available_start, history_start)
+        self.assertEqual(dataset.leading_no_data_points, 0)
 
 
 if __name__ == "__main__":

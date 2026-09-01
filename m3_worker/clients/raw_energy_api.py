@@ -320,6 +320,26 @@ class RawEnergySourceClient:
             ]
             load_valid = self._covered(valid_load, bucket_start, bucket_end)
             soc_valid = self._covered(valid_soc, bucket_start, bucket_end)
+            if load_valid:
+                load_state = "valid"
+            elif not bucket:
+                load_state = "no_rows"
+            elif not load_values:
+                load_state = "no_numeric"
+            elif any(value < 0 for _, value in load_values):
+                load_state = "negative"
+            else:
+                load_state = "coverage"
+            if soc_valid:
+                soc_state = "valid"
+            elif not bucket:
+                soc_state = "no_rows"
+            elif not soc_values:
+                soc_state = "no_numeric"
+            elif not valid_soc:
+                soc_state = "out_of_range"
+            else:
+                soc_state = "coverage"
             points.extend(
                 (
                     CustomObservationPoint(
@@ -331,6 +351,7 @@ class RawEnergySourceClient:
                             else None
                         ),
                         quality="valid" if load_valid else "invalid",
+                        source_state=load_state,
                         source_revision=0,
                     ),
                     CustomObservationPoint(
@@ -338,6 +359,7 @@ class RawEnergySourceClient:
                         ds=bucket_start,
                         y=valid_soc[-1][1] if soc_valid else None,
                         quality="valid" if soc_valid else "invalid",
+                        source_state=soc_state,
                         source_revision=0,
                     ),
                 )

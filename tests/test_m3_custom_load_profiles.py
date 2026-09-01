@@ -35,6 +35,11 @@ def make_dataset(
     return CustomTrainingDataset(
         frame=frame,
         imputed_keys=imputed_keys,
+        source_available_start=min(values_by_time),
+        source_available_points=len(frame),
+        leading_no_data_points=0,
+        invalid_points=0,
+        negative_invalid_points=0,
         start=min(values_by_time),
         end=max(values_by_time),
         mode="full",

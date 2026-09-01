@@ -189,6 +189,14 @@ class CustomObservationPoint(StrictModel):
     ds: datetime
     y: float | None
     quality: Literal["valid", "invalid"]
+    source_state: Literal[
+        "valid",
+        "no_rows",
+        "no_numeric",
+        "negative",
+        "out_of_range",
+        "coverage",
+    ]
     source_revision: int = Field(strict=True, ge=0)
 
     @model_validator(mode="before")
@@ -196,7 +204,14 @@ class CustomObservationPoint(StrictModel):
     def validate_origins(cls, value: object) -> object:
         fields = _exact_mapping(
             value,
-            ("unique_id", "ds", "y", "quality", "source_revision"),
+            (
+                "unique_id",
+                "ds",
+                "y",
+                "quality",
+                "source_state",
+                "source_revision",
+            ),
             "custom observation point",
         )
         _exact_datetime_origin(fields["ds"], "ds")
@@ -209,6 +224,10 @@ class CustomObservationPoint(StrictModel):
     @model_validator(mode="after")
     def validate_point(self) -> "CustomObservationPoint":
         _validate_shanghai(self.ds, "ds")
+        if (self.quality == "valid") != (self.source_state == "valid"):
+            raise ValueError("quality and source_state must agree")
+        if self.source_state == "negative" and not is_load_series(self.unique_id):
+            raise ValueError("negative source state is only valid for load")
         if self.quality == "invalid" and self.y is not None:
             raise ValueError("invalid observations require y=null")
         if self.quality == "valid":
