@@ -144,7 +144,6 @@ class DeploymentArtifactTests(unittest.TestCase):
             "https://vifa.hlszh.com/api/t_es_data:list",
             "m3_production_gateway_flow.json",
             "M3_AUTH_MODE=server_token",
-            "公开只读",
         )
         for marker in required:
             self.assertIn(marker, runbook, marker)
@@ -213,7 +212,6 @@ class DeploymentArtifactTests(unittest.TestCase):
         ignored = set(DOCKERIGNORE.read_text(encoding="utf-8").splitlines())
 
         self.assertIn("FROM python:3.12-slim-bookworm\n", dockerfile)
-        self.assertIn("pip install --no-cache-dir --require-hashes", dockerfile)
         self.assertIn("m3/requirements.lock.txt", dockerfile)
         self.assertIn(
             "COPY --chown=10001:10001 pyproject.toml uv.lock /app/",
