@@ -99,6 +99,61 @@ class RawEnergySourceClientTests(unittest.TestCase):
         self.assertEqual(points[1].quality, "valid")
         self.assertEqual(points[1].y, 45.0)
 
+    def test_negative_load_samples_are_filtered_without_poisoning_covered_bucket(self):
+        rows = minute_rows(
+            es_sn=STATION_1, load_power=40, solar_power=0, emus_soc=61,
+        )
+        rows[0]["load_power"] = -90
+        rows[1]["load_power"] = -89
+
+        points = self.make_client(
+            lambda _request: httpx.Response(200, json=envelope(rows))
+        ).list_observations(STATION_1, START, END)
+
+        self.assertEqual(points[0].quality, "valid")
+        self.assertEqual(points[0].y, 40.0)
+
+    def test_custom_aggregation_accepts_mixed_one_and_two_minute_cadence(self):
+        rows = minute_rows(
+            es_sn=STATION_1, load_power=40, solar_power=0, emus_soc=61,
+            count=30,
+        )
+        mixed_cadence_rows = [
+            row for index, row in enumerate(rows)
+            if index < 10 or index % 2 == 0
+        ]
+
+        points = self.make_client(
+            lambda _request: httpx.Response(
+                200, json=envelope(mixed_cadence_rows)
+            )
+        ).list_custom_observations(
+            STATION_1, START, START + timedelta(minutes=30),
+            interval_seconds=1800,
+        )
+
+        self.assertEqual([point.quality for point in points], ["valid", "valid"])
+        self.assertEqual([point.y for point in points], [40.0, 61.0])
+
+    def test_custom_aggregation_rejects_long_internal_sampling_gap(self):
+        rows = minute_rows(
+            es_sn=STATION_1, load_power=40, solar_power=0, emus_soc=61,
+            count=30,
+        )
+        rows_with_gap = [
+            row for index, row in enumerate(rows) if not 12 <= index <= 17
+        ]
+
+        points = self.make_client(
+            lambda _request: httpx.Response(200, json=envelope(rows_with_gap))
+        ).list_custom_observations(
+            STATION_1, START, START + timedelta(minutes=30),
+            interval_seconds=1800,
+        )
+
+        self.assertEqual([point.quality for point in points], ["invalid", "invalid"])
+        self.assertEqual([point.y for point in points], [None, None])
+
     def test_earlier_out_of_range_soc_does_not_poison_final_soc(self):
         rows = minute_rows(
             es_sn=STATION_2, load_power=0, solar_power=0, emus_soc=0,

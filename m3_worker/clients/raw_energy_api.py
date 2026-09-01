@@ -4,7 +4,6 @@ from datetime import datetime, timedelta
 import json
 import math
 import re
-from statistics import median
 from zoneinfo import ZoneInfo
 
 import httpx
@@ -22,6 +21,8 @@ MAX_PAGES = 300
 MAX_RESPONSE_BYTES = 1_048_576
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 NUMBER_TEXT = re.compile(r"-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?\Z")
+MAX_SOURCE_CADENCE_SECONDS = 120
+MINIMUM_BUCKET_COVERAGE = 0.8
 
 
 class RawEnergySourceClient:
@@ -134,10 +135,25 @@ class RawEnergySourceClient:
     def _covered(
         samples: list[tuple[datetime, float]], bucket_start: datetime, bucket_end: datetime
     ) -> bool:
+        bucket_seconds = (bucket_end - bucket_start).total_seconds()
+        expected_samples = max(
+            1, math.ceil(bucket_seconds / MAX_SOURCE_CADENCE_SECONDS)
+        )
+        required_samples = max(
+            1, math.ceil(expected_samples * MINIMUM_BUCKET_COVERAGE)
+        )
+        boundary_tolerance = timedelta(seconds=MAX_SOURCE_CADENCE_SECONDS)
+        internal_gap_tolerance = timedelta(
+            seconds=MAX_SOURCE_CADENCE_SECONDS * 2
+        )
         return (
-            len(samples) >= 12
-            and samples[0][0] <= bucket_start + timedelta(minutes=2)
-            and samples[-1][0] >= bucket_end - timedelta(minutes=2)
+            len(samples) >= required_samples
+            and samples[0][0] <= bucket_start + boundary_tolerance
+            and samples[-1][0] >= bucket_end - boundary_tolerance
+            and all(
+                right[0] - left[0] <= internal_gap_tolerance
+                for left, right in zip(samples, samples[1:])
+            )
         )
 
     @staticmethod
@@ -238,9 +254,7 @@ class RawEnergySourceClient:
             ]
             valid_load = [(timestamp, value) for timestamp, value in load_values if value >= 0]
             valid_soc = [(timestamp, value) for timestamp, value in soc_values if 0 <= value <= 100]
-            load_valid = self._covered(valid_load, bucket_start, bucket_end) and not any(
-                value < 0 for _, value in load_values
-            )
+            load_valid = self._covered(valid_load, bucket_start, bucket_end)
             soc_valid = (
                 self._covered(valid_soc, bucket_start, bucket_end)
                 and bool(soc_values)
@@ -252,37 +266,6 @@ class RawEnergySourceClient:
             ))
             bucket_start = bucket_end
         return points
-
-    @staticmethod
-    def _source_cadence_seconds(
-        rows: list[tuple[datetime, dict[str, object]]], interval_seconds: int
-    ) -> float:
-        deltas = [
-            (right[0] - left[0]).total_seconds()
-            for left, right in zip(rows, rows[1:])
-            if 0 < (right[0] - left[0]).total_seconds() <= interval_seconds
-        ]
-        return float(median(deltas)) if deltas else float(interval_seconds)
-
-    @staticmethod
-    def _custom_covered(
-        samples: list[tuple[datetime, float]],
-        bucket_start: datetime,
-        bucket_end: datetime,
-        *,
-        source_cadence_seconds: float,
-    ) -> bool:
-        bucket_seconds = (bucket_end - bucket_start).total_seconds()
-        expected_samples = max(1, math.ceil(bucket_seconds / source_cadence_seconds))
-        required_samples = max(1, math.ceil(expected_samples * 0.8))
-        boundary_tolerance = timedelta(
-            seconds=min(bucket_seconds, source_cadence_seconds * 2)
-        )
-        return (
-            len(samples) >= required_samples
-            and samples[0][0] <= bucket_start + boundary_tolerance
-            and samples[-1][0] >= bucket_end - boundary_tolerance
-        )
 
     def list_custom_observations(
         self,
@@ -297,7 +280,6 @@ class RawEnergySourceClient:
         self._require_station(station_id)
         self._validate_custom_window(start, end, interval_seconds)
         rows = self._rows(station_id, start, end)
-        cadence = self._source_cadence_seconds(rows, interval_seconds)
         bucket_count = int((end - start).total_seconds() // interval_seconds)
         buckets: list[list[tuple[datetime, dict[str, object]]]] = [
             [] for _ in range(bucket_count)
@@ -336,18 +318,8 @@ class RawEnergySourceClient:
                 for timestamp, value in soc_values
                 if 0 <= value <= 100
             ]
-            load_valid = self._custom_covered(
-                valid_load,
-                bucket_start,
-                bucket_end,
-                source_cadence_seconds=cadence,
-            ) and not any(value < 0 for _, value in load_values)
-            soc_valid = self._custom_covered(
-                valid_soc,
-                bucket_start,
-                bucket_end,
-                source_cadence_seconds=cadence,
-            )
+            load_valid = self._covered(valid_load, bucket_start, bucket_end)
+            soc_valid = self._covered(valid_soc, bucket_start, bucket_end)
             points.extend(
                 (
                     CustomObservationPoint(
