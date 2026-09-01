@@ -3,7 +3,9 @@
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from importlib.metadata import version
+import logging
 from statistics import median
+from time import monotonic
 
 import numpy as np
 import pandas as pd
@@ -25,6 +27,9 @@ from m3_worker.domain.custom_load_profiles import (
 )
 from m3_worker.domain.custom_training_data import CustomTrainingDataset
 from m3_worker.errors import M3Error
+
+
+logger = logging.getLogger(__name__)
 
 
 SOC_WEEKLY_DELTA_MODEL = "SOCWeeklyDelta"
@@ -59,8 +64,7 @@ def _candidate_factories(config: CustomForecastConfig):
 
 
 def _soc_candidate_factories(config: CustomForecastConfig):
-    candidates = _candidate_factories(config)
-    return candidates if config.interval_seconds >= 300 else candidates[:1]
+    return _candidate_factories(config)[:1]
 
 
 @dataclass(frozen=True)
@@ -168,6 +172,12 @@ def select_load_champion(
     )
     scores: list[LoadCandidateScore] = []
     for model_name in eligible_load_models(usable_week_count, config.interval_seconds):
+        started = monotonic()
+        logger.info(
+            "m3_custom_forecast_candidate_started "
+            "series=station_total_load model=%s",
+            model_name,
+        )
         try:
             if model_name.startswith("Weekly"):
                 predictions = weekly_profile_values(
@@ -184,10 +194,16 @@ def select_load_champion(
                 )
                 forecast = engine.forecast(df=training.frame, h=len(holdout))
                 predictions = forecast[model_name].tolist()
-            scores.append(
-                load_candidate_score(
-                    model_name, holdout, predictions, excluded_times
-                )
+            score = load_candidate_score(
+                model_name, holdout, predictions, excluded_times
+            )
+            scores.append(score)
+            logger.info(
+                "m3_custom_forecast_candidate_finished "
+                "series=station_total_load "
+                "model=%s status=ok elapsed_ms=%d",
+                model_name,
+                int((monotonic() - started) * 1000),
             )
         except Exception as error:
             scores.append(
@@ -199,6 +215,14 @@ def select_load_champion(
                     0,
                     type(error).__name__,
                 )
+            )
+            logger.warning(
+                "m3_custom_forecast_candidate_finished "
+                "series=station_total_load "
+                "model=%s status=failed error_type=%s elapsed_ms=%d",
+                model_name,
+                type(error).__name__,
+                int((monotonic() - started) * 1000),
             )
 
     viable_scores = [score for score in scores if score.mae is not None]
@@ -225,17 +249,32 @@ def select_load_champion(
 
 def _load_automatic_model(name: str, config: CustomForecastConfig):
     if name == "AutoARIMA":
-        return AutoARIMA(
-            season_length=config.weekly_season_length,
+        return _bounded_autoarima(
+            season_length=config.daily_season_length,
             alias="AutoARIMA",
         )
     if name == "MSTL":
         return MSTL(
             season_length=[config.daily_season_length, config.weekly_season_length],
-            trend_forecaster=AutoARIMA(),
+            trend_forecaster=_bounded_autoarima(),
             alias="MSTL",
         )
     raise ValueError(f"unsupported load automatic model: {name}")
+
+
+def _bounded_autoarima(
+    *, season_length: int = 1, alias: str = "AutoARIMA"
+) -> AutoARIMA:
+    return AutoARIMA(
+        season_length=season_length,
+        approximation=True,
+        nmodels=20,
+        max_p=3,
+        max_q=3,
+        max_P=1,
+        max_Q=1,
+        alias=alias,
+    )
 
 
 def _select_soc_champion(

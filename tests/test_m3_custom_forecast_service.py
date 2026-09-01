@@ -229,10 +229,28 @@ class CustomForecastServiceTests(unittest.TestCase):
         self.addCleanup(service.close)
         self.assertTrue(service._capacity.acquire(blocking=False))
 
-        service._execute("weekly-evidence-run")
+        with self.assertLogs("m3_worker.custom_forecast", level="INFO") as logs:
+            service._execute("weekly-evidence-run")
 
         run = repository.run
         self.assertEqual(run.status, "succeeded")
+        for unique_id in ("station_total_load", "storage_soc"):
+            self.assertTrue(
+                any(
+                    "m3_custom_forecast_selection_started "
+                    f"run_id=weekly-evidence-run station_id=ES01 series={unique_id}"
+                    in message
+                    for message in logs.output
+                )
+            )
+            self.assertTrue(
+                any(
+                    "m3_custom_forecast_selection_finished "
+                    f"run_id=weekly-evidence-run station_id=ES01 series={unique_id}"
+                    in message
+                    for message in logs.output
+                )
+            )
         self.assertEqual(run.model_manifest["selection_policy"], "weekly_load_v1")
         self.assertEqual(
             run.model_manifest["series"]["station_total_load"]["model_name"],

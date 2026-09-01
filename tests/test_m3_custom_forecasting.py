@@ -333,18 +333,22 @@ class LoadDispatchSelectionTests(unittest.TestCase):
             all(score.skip_reason is None for score in champion.candidate_scores)
         )
 
+    @patch("m3_worker.domain.custom_forecasting.MSTL")
+    @patch("m3_worker.domain.custom_forecasting.AutoARIMA")
+    @patch("m3_worker.domain.custom_forecasting.AutoETS")
     @patch("m3_worker.domain.custom_forecasting.StatsForecast")
-    def test_soc_weekly_delta_wins_mae_and_keeps_sunday_flat(
-        self, statsforecast_type
+    def test_soc_compares_weekly_delta_only_with_daily_baseline(
+        self,
+        statsforecast_type,
+        autoets_type,
+        autoarima_type,
+        mstl_type,
     ):
-        engines = [Mock() for _ in range(4)]
-        for engine, model_name in zip(
-            engines, ("SeasonalNaive", "AutoETS", "AutoARIMA", "MSTL"), strict=True
-        ):
-            engine.forecast.return_value = pd.DataFrame(
-                {model_name: [50.0] * (7 * 24)}
-            )
-        statsforecast_type.side_effect = engines
+        engine = Mock()
+        engine.forecast.return_value = pd.DataFrame(
+            {"SeasonalNaive": [50.0] * (7 * 24)}
+        )
+        statsforecast_type.return_value = engine
 
         dataset = soc_dataset_with_weekly_pattern()
         config = make_selection_config(28, forecast_days=7)
@@ -358,11 +362,13 @@ class LoadDispatchSelectionTests(unittest.TestCase):
         self.assertEqual(champion.cv_mape_percent, 0.0)
         self.assertEqual(
             [score.model_name for score in champion.candidate_scores],
-            ["SOCWeeklyDelta", "SeasonalNaive", "AutoETS", "AutoARIMA", "MSTL"],
+            ["SOCWeeklyDelta", "SeasonalNaive"],
         )
-        self.assertEqual(statsforecast_type.call_count, 4)
-        for call in [engine.forecast.call_args for engine in engines]:
-            self.assertEqual(call.kwargs["h"], 7 * 24)
+        self.assertEqual(statsforecast_type.call_count, 1)
+        self.assertEqual(engine.forecast.call_args.kwargs["h"], 7 * 24)
+        autoets_type.assert_not_called()
+        autoarima_type.assert_not_called()
+        mstl_type.assert_not_called()
         self.assertEqual(series.points[0].forecast_value, 50.0)
         monday = [point.forecast_value for point in series.points[:24]]
         sunday = [point.forecast_value for point in series.points[6 * 24 :]]
@@ -452,7 +458,10 @@ class LoadDispatchSelectionTests(unittest.TestCase):
         statsforecast_type.side_effect = [autoarima_engine, mstl_engine]
 
         config = make_selection_config(28, interval_seconds=300)
-        champion = select_custom_champion(dataset, config)
+        with self.assertLogs(
+            "m3_worker.domain.custom_forecasting", level="INFO"
+        ) as captured_logs:
+            champion = select_custom_champion(dataset, config)
 
         self.assertEqual(champion.model_name, "AutoARIMA")
         self.assertEqual(
@@ -460,14 +469,38 @@ class LoadDispatchSelectionTests(unittest.TestCase):
             ["WeeklyNaive", "WeeklyWeighted2", "WeeklyMedian3", "AutoARIMA", "MSTL"],
         )
         self.assertEqual(statsforecast_type.call_count, 2)
-        self.assertEqual(
-            statsforecast_type.call_args_list[0].kwargs["models"][0].season_length,
-            config.weekly_season_length,
+        autoarima = statsforecast_type.call_args_list[0].kwargs["models"][0]
+        self.assertEqual(autoarima.season_length, config.daily_season_length)
+        self.assertTrue(autoarima.approximation)
+        self.assertEqual(autoarima.nmodels, 20)
+        self.assertEqual((autoarima.max_p, autoarima.max_q), (3, 3))
+        self.assertEqual((autoarima.max_P, autoarima.max_Q), (1, 1))
+        self.assertTrue(
+            any(
+                "m3_custom_forecast_candidate_started "
+                "series=station_total_load "
+                "model=AutoARIMA" in message
+                for message in captured_logs.output
+            )
+        )
+        self.assertTrue(
+            any(
+                "m3_custom_forecast_candidate_finished "
+                "series=station_total_load "
+                "model=AutoARIMA status=ok" in message
+                for message in captured_logs.output
+            )
         )
         self.assertEqual(
             statsforecast_type.call_args_list[1].kwargs["models"][0].season_length,
             [config.daily_season_length, config.weekly_season_length],
         )
+        mstl_trend = statsforecast_type.call_args_list[1].kwargs["models"][
+            0
+        ].trend_forecaster
+        self.assertTrue(mstl_trend.approximation)
+        self.assertEqual(mstl_trend.nmodels, 20)
+        self.assertEqual((mstl_trend.max_p, mstl_trend.max_q), (3, 3))
         for engine in (autoarima_engine, mstl_engine):
             training = engine.forecast.call_args.kwargs["df"]
             self.assertTrue((training["ds"] < latest_week.start).all())

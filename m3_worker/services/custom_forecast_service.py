@@ -6,6 +6,7 @@ import logging
 import math
 import re
 from threading import BoundedSemaphore, Lock
+from time import monotonic
 from typing import Callable
 
 from m3_worker.contracts import SERIES_IDS
@@ -329,12 +330,42 @@ class CustomForecastService:
                 )
                 for unique_id in SERIES_IDS
             }
-            champions = {
-                unique_id: select_custom_champion(
-                    datasets[unique_id], run.config
+            champions: dict[str, CustomChampion] = {}
+            for unique_id in SERIES_IDS:
+                selection_started = monotonic()
+                LOGGER.info(
+                    "m3_custom_forecast_selection_started "
+                    "run_id=%s station_id=%s series=%s",
+                    run.run_id,
+                    run.station_id,
+                    unique_id,
                 )
-                for unique_id in SERIES_IDS
-            }
+                try:
+                    champions[unique_id] = select_custom_champion(
+                        datasets[unique_id], run.config
+                    )
+                except Exception as error:
+                    LOGGER.warning(
+                        "m3_custom_forecast_selection_finished "
+                        "run_id=%s station_id=%s series=%s status=failed "
+                        "error_type=%s elapsed_ms=%d",
+                        run.run_id,
+                        run.station_id,
+                        unique_id,
+                        type(error).__name__,
+                        int((monotonic() - selection_started) * 1000),
+                    )
+                    raise
+                LOGGER.info(
+                    "m3_custom_forecast_selection_finished "
+                    "run_id=%s station_id=%s series=%s status=ok "
+                    "model=%s elapsed_ms=%d",
+                    run.run_id,
+                    run.station_id,
+                    unique_id,
+                    champions[unique_id].model_name,
+                    int((monotonic() - selection_started) * 1000),
+                )
             series = [
                 forecast_custom_series(
                     datasets[unique_id], champions[unique_id], run.config

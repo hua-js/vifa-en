@@ -105,11 +105,11 @@ y_hat(t) = median(
 
 ### AutoARIMA
 
-负载 AutoARIMA 使用周季节长度 `7 × points_per_day`。只有连续可用周不少于 4 且粒度不细于 5 分钟时才参与选模。
+负载 AutoARIMA 使用日季节长度 `points_per_day`，并启用近似拟合，将 stepwise 搜索限制为最多 20 个模型、非季节 AR/MA 阶数最多 3、季节 AR/MA 阶数最多 1。周周期由 WeeklyNaive、WeeklyWeighted2、WeeklyMedian3 和 MSTL 候选负责；避免在仅有约 3 个拟合周时对 `7 × points_per_day` 的超长季节周期执行无边界搜索。只有连续可用周不少于 4 且粒度不细于 5 分钟时才参与选模。
 
 ### MSTL
 
-负载 MSTL 同时使用日季节长度 `points_per_day` 和周季节长度 `7 × points_per_day`。只有连续可用周不少于 4 且粒度不细于 5 分钟时才参与选模。
+负载 MSTL 同时使用日季节长度 `points_per_day` 和周季节长度 `7 × points_per_day`，其趋势预测器使用与独立 AutoARIMA 候选相同的受限搜索参数。只有连续可用周不少于 4 且粒度不细于 5 分钟时才参与选模。
 
 不再把日周期 SeasonalNaive 或仅日周期的 AutoETS 作为负载候选模型。
 
