@@ -425,6 +425,41 @@ class DeploymentArtifactTests(unittest.TestCase):
         self.assertEqual(page["template"].count("{{{m3DashboardAuthModeJson}}}"), 1)
         self.assertEqual(page["template"].count("{{{m3NocobaseParentOriginJson}}}"), 1)
 
+    def test_flow_sync_exports_paste_ready_node_red_html(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary = Path(temporary_directory)
+            page_path = temporary / "page.html"
+            flow_path = temporary / "flow.json"
+            template_path = temporary / "template.html"
+            page_path.write_text(M3_HTML.read_text(encoding="utf-8"), encoding="utf-8")
+            flow_path.write_text(
+                PRODUCTION_FLOW.read_text(encoding="utf-8"), encoding="utf-8"
+            )
+
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(FLOW_SYNC),
+                    "--page",
+                    str(page_path),
+                    "--flow",
+                    str(flow_path),
+                    "--template-html",
+                    str(template_path),
+                ],
+                cwd=ROOT,
+                check=True,
+            )
+
+            flow = json.loads(flow_path.read_text(encoding="utf-8"))
+            template = template_path.read_text(encoding="utf-8")
+            page = next(
+                node for node in flow if node.get("id") == "m3_prod_page_template"
+            )
+            self.assertEqual(template, page["template"])
+            self.assertEqual(template.count("{{{m3DashboardAuthModeJson}}}"), 1)
+            self.assertEqual(template.count("{{{m3NocobaseParentOriginJson}}}"), 1)
+
     def test_production_page_describes_weekly_load_evidence(self):
         html = M3_HTML.read_text(encoding="utf-8")
 

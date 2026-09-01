@@ -19,6 +19,7 @@ AUTH_GLOBALS = (
 ROOT = Path(__file__).resolve().parents[2]
 PAGE = ROOT / "m3" / "node_red" / "m3_production_gateway_page.html"
 FLOW = ROOT / "m3" / "node_red" / "m3_production_gateway_flow.json"
+TEMPLATE_HTML = ROOT / "m3" / "node_red" / "m3_production_gateway_template.html"
 
 
 def expected_template(page_path: Path) -> str:
@@ -50,15 +51,22 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--check", action="store_true", help="fail if the Flow template is stale")
     parser.add_argument("--page", type=Path, default=PAGE, help=argparse.SUPPRESS)
     parser.add_argument("--flow", type=Path, default=FLOW, help=argparse.SUPPRESS)
+    parser.add_argument(
+        "--template-html", type=Path, default=TEMPLATE_HTML, help=argparse.SUPPRESS
+    )
     args = parser.parse_args(argv)
 
     flow = read_flow(args.flow)
     node = template_node(flow)
     expected = expected_template(args.page)
-    if node["template"] == expected:
+    template_html_current = (
+        args.template_html.exists()
+        and args.template_html.read_text(encoding="utf-8") == expected
+    )
+    if node["template"] == expected and template_html_current:
         return 0
     if args.check:
-        print("m3 production Flow template is out of sync", file=sys.stderr)
+        print("m3 production page artifacts are out of sync", file=sys.stderr)
         return 1
 
     node["template"] = expected
@@ -66,6 +74,7 @@ def main(argv: list[str] | None = None) -> int:
         json.dumps(flow, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
+    args.template_html.write_text(expected, encoding="utf-8")
     return 0
 
 
