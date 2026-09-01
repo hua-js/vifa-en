@@ -259,6 +259,26 @@ class CustomForecastServiceTests(unittest.TestCase):
             [],
         )
         self.assertEqual(
+            set(run.model_manifest["series"]["storage_soc"]),
+            {
+                "model_name",
+                "cv_mape_percent",
+                "selected_at",
+                "selection_metric",
+                "selection_reason",
+                "candidate_scores",
+                "training_start",
+                "training_end",
+                "statsforecast_version",
+            },
+        )
+        self.assertIsNone(
+            run.model_manifest["series"]["storage_soc"]["selection_metric"]
+        )
+        self.assertEqual(
+            run.model_manifest["series"]["storage_soc"]["candidate_scores"], []
+        )
+        self.assertEqual(
             run.source_manifest["series"]["station_total_load"]["usable_week_count"],
             1,
         )

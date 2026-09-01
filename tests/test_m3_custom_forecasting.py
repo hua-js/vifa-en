@@ -162,13 +162,46 @@ def reconstructed_load_week_above_quality_threshold() -> CustomTrainingDataset:
     )
 
 
-def soc_dataset_with_days(days: int = 28) -> CustomTrainingDataset:
+def soc_dataset_with_days(
+    days: int = 28, *, interval_seconds: int = 3600
+) -> CustomTrainingDataset:
+    points_per_day = 86_400 // interval_seconds
     times = pd.date_range(
-        FORECAST_START - timedelta(days=days), periods=days * 24, freq="1h"
+        FORECAST_START - timedelta(days=days),
+        periods=days * points_per_day,
+        freq=f"{interval_seconds}s",
     )
     return CustomTrainingDataset(
         frame=pd.DataFrame(
             {"unique_id": "storage_soc", "ds": times, "y": [50.0] * len(times)}
+        ),
+        imputed_keys=frozenset(),
+        start=times[0].to_pydatetime(),
+        end=times[-1].to_pydatetime(),
+        mode="full",
+        interval_seconds=interval_seconds,
+        points_per_day=points_per_day,
+    )
+
+
+def soc_dataset_with_weekly_pattern() -> CustomTrainingDataset:
+    """Four Shanghai weeks with production-day cycling and a flat Sunday."""
+
+    times = pd.date_range(
+        FORECAST_START - timedelta(days=28), periods=28 * 24, freq="1h"
+    )
+    values: list[float] = []
+    soc = 50.0
+    for timestamp in times:
+        if timestamp.weekday() != 6:
+            if 1 <= timestamp.hour <= 6:
+                soc += 2.0
+            elif 7 <= timestamp.hour <= 12:
+                soc -= 2.0
+        values.append(soc)
+    return CustomTrainingDataset(
+        frame=pd.DataFrame(
+            {"unique_id": "storage_soc", "ds": times, "y": values}
         ),
         imputed_keys=frozenset(),
         start=times[0].to_pydatetime(),
@@ -301,33 +334,78 @@ class LoadDispatchSelectionTests(unittest.TestCase):
         )
 
     @patch("m3_worker.domain.custom_forecasting.StatsForecast")
-    def test_soc_still_uses_existing_daily_candidate_pool(self, statsforecast_type):
+    def test_soc_weekly_delta_wins_mae_and_keeps_sunday_flat(
+        self, statsforecast_type
+    ):
         engines = [Mock() for _ in range(4)]
         for engine, model_name in zip(
             engines, ("SeasonalNaive", "AutoETS", "AutoARIMA", "MSTL"), strict=True
         ):
-            engine.cross_validation.return_value = pd.DataFrame(
-                {
-                    "unique_id": ["storage_soc"],
-                    "ds": [FORECAST_START - timedelta(days=1)],
-                    "y": [50.0],
-                    model_name: [50.0],
-                }
+            engine.forecast.return_value = pd.DataFrame(
+                {model_name: [50.0] * (7 * 24)}
             )
         statsforecast_type.side_effect = engines
 
+        dataset = soc_dataset_with_weekly_pattern()
+        config = make_selection_config(28, forecast_days=7)
         champion = select_custom_champion(
-            soc_dataset_with_days(), make_selection_config(28)
+            dataset, config
         )
+        series = forecast_custom_series(dataset, champion, config)
 
-        self.assertIn(
-            champion.model_name, {"SeasonalNaive", "AutoETS", "AutoARIMA", "MSTL"}
+        self.assertEqual(champion.model_name, "SOCWeeklyDelta")
+        self.assertEqual(champion.selection_metric, "mae")
+        self.assertEqual(champion.cv_mape_percent, 0.0)
+        self.assertEqual(
+            [score.model_name for score in champion.candidate_scores],
+            ["SOCWeeklyDelta", "SeasonalNaive", "AutoETS", "AutoARIMA", "MSTL"],
         )
         self.assertEqual(statsforecast_type.call_count, 4)
-        for call in [engine.cross_validation.call_args for engine in engines]:
-            self.assertEqual(call.kwargs["h"], 24)
-            self.assertEqual(call.kwargs["step_size"], 24)
-            self.assertEqual(call.kwargs["n_windows"], 7)
+        for call in [engine.forecast.call_args for engine in engines]:
+            self.assertEqual(call.kwargs["h"], 7 * 24)
+        self.assertEqual(series.points[0].forecast_value, 50.0)
+        monday = [point.forecast_value for point in series.points[:24]]
+        sunday = [point.forecast_value for point in series.points[6 * 24 :]]
+        self.assertGreater(max(monday), min(monday))
+        self.assertEqual(len(set(sunday)), 1)
+
+    @patch("m3_worker.domain.custom_forecasting.StatsForecast")
+    def test_full_policy_uses_soc_weekly_selection_even_with_warming_mode(
+        self, statsforecast_type
+    ):
+        statsforecast_type.side_effect = RuntimeError("candidate unavailable")
+        dataset = replace(soc_dataset_with_weekly_pattern(), mode="warming_up")
+
+        champion = select_custom_champion(dataset, make_selection_config(28))
+
+        self.assertEqual(champion.model_name, "SOCWeeklyDelta")
+
+    @patch("m3_worker.domain.custom_forecasting.MSTL")
+    @patch("m3_worker.domain.custom_forecasting.AutoARIMA")
+    @patch("m3_worker.domain.custom_forecasting.AutoETS")
+    @patch("m3_worker.domain.custom_forecasting.StatsForecast")
+    def test_thirty_second_soc_selection_skips_automatic_candidates(
+        self,
+        statsforecast_type,
+        autoets_type,
+        autoarima_type,
+        mstl_type,
+    ):
+        statsforecast_type.side_effect = RuntimeError("candidate unavailable")
+        dataset = soc_dataset_with_days(interval_seconds=30)
+
+        champion = select_custom_champion(
+            dataset, make_selection_config(28, interval_seconds=30)
+        )
+
+        self.assertEqual(champion.model_name, "SOCWeeklyDelta")
+        self.assertEqual(
+            [score.model_name for score in champion.candidate_scores],
+            ["SOCWeeklyDelta", "SeasonalNaive"],
+        )
+        autoets_type.assert_not_called()
+        autoarima_type.assert_not_called()
+        mstl_type.assert_not_called()
 
     @patch("m3_worker.domain.custom_forecasting.MSTL")
     @patch("m3_worker.domain.custom_forecasting.AutoARIMA")

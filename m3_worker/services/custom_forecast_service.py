@@ -295,12 +295,19 @@ class CustomForecastService:
             "statsforecast_version": champion.statsforecast_version,
         }
 
-    @staticmethod
-    def _soc_champion_manifest(champion: CustomChampion) -> dict[str, object]:
+    @classmethod
+    def _soc_champion_manifest(
+        cls, champion: CustomChampion
+    ) -> dict[str, object]:
         return {
             "model_name": champion.model_name,
             "cv_mape_percent": champion.cv_mape_percent,
             "selected_at": champion.selected_at.isoformat(),
+            "selection_metric": champion.selection_metric,
+            "candidate_scores": [
+                cls._candidate_score_manifest(score)
+                for score in champion.candidate_scores
+            ],
             "training_start": champion.training_start.isoformat(),
             "training_end": champion.training_end.isoformat(),
             "statsforecast_version": champion.statsforecast_version,

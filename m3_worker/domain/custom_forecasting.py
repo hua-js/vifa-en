@@ -1,7 +1,9 @@
 """StatsForecast selection and prediction for configurable M3 intervals."""
 
 from dataclasses import dataclass, replace
+from datetime import datetime, timedelta
 from importlib.metadata import version
+from statistics import median
 
 import numpy as np
 import pandas as pd
@@ -25,7 +27,14 @@ from m3_worker.domain.custom_training_data import CustomTrainingDataset
 from m3_worker.errors import M3Error
 
 
-MODEL_NAMES = ("SeasonalNaive", "AutoETS", "AutoARIMA", "MSTL")
+SOC_WEEKLY_DELTA_MODEL = "SOCWeeklyDelta"
+SOC_MODEL_ORDER = (
+    SOC_WEEKLY_DELTA_MODEL,
+    "SeasonalNaive",
+    "AutoETS",
+    "AutoARIMA",
+    "MSTL",
+)
 
 
 def _candidate_factories(config: CustomForecastConfig):
@@ -47,6 +56,11 @@ def _candidate_factories(config: CustomForecastConfig):
             ),
         ),
     ]
+
+
+def _soc_candidate_factories(config: CustomForecastConfig):
+    candidates = _candidate_factories(config)
+    return candidates if config.interval_seconds >= 300 else candidates[:1]
 
 
 @dataclass(frozen=True)
@@ -95,30 +109,6 @@ def weekly_naive_champion(
         selection_reason=selection_reason,
         selection_status=resolved_status,
     )
-
-
-def _model_mape(
-    cv: pd.DataFrame,
-    model_name: str,
-    imputed_keys: frozenset[tuple[str, object]],
-) -> float | None:
-    scorable = cv[(cv["y"] != 0) & cv["y"].notna()].copy()
-    scorable = scorable[
-        ~scorable.apply(
-            lambda row: (row["unique_id"], row["ds"].to_pydatetime())
-            in imputed_keys,
-            axis=1,
-        )
-    ]
-    if model_name not in scorable or scorable.empty:
-        return None
-    predictions = pd.to_numeric(scorable[model_name], errors="coerce")
-    if predictions.isna().any() or not np.isfinite(predictions).all():
-        return None
-    score = float(
-        (abs(scorable["y"] - predictions) / abs(scorable["y"])).mean() * 100
-    )
-    return score if np.isfinite(score) else None
 
 
 def select_load_champion(
@@ -257,37 +247,178 @@ def _select_soc_champion(
         raise M3Error(
             "insufficient_history", "fewer than seven complete training days"
         )
-    if config.model_policy == "seasonal_naive_only" or dataset.mode == "warming_up":
+    if config.model_policy == "seasonal_naive_only":
         return seasonal_naive_champion(dataset)
 
-    scores: dict[str, float] = {}
-    for model_name, factory in _candidate_factories(config):
+    holdout_start = config.history_end - timedelta(days=7)
+    holdout = dataset.frame[
+        (dataset.frame["ds"] >= holdout_start)
+        & (dataset.frame["ds"] < config.history_end)
+    ].copy()
+    expected_times = list(
+        pd.date_range(
+            holdout_start,
+            periods=config.weekly_season_length,
+            freq=config.pandas_frequency,
+        )
+    )
+    observed_times = [pd.Timestamp(value) for value in holdout["ds"]]
+    if (
+        len(holdout) != config.weekly_season_length
+        or observed_times != expected_times
+        or holdout["y"].isna().any()
+    ):
+        raise M3Error(
+            "model_selection_failed", "SOC holdout week is incomplete"
+        )
+    training_frame = dataset.frame[dataset.frame["ds"] < holdout_start].copy()
+    if training_frame.empty:
+        raise M3Error("model_selection_failed", "SOC holdout training is empty")
+    training = replace(
+        dataset,
+        frame=training_frame,
+        end=pd.Timestamp(training_frame["ds"].iloc[-1]).to_pydatetime(),
+    )
+    unique_id = dataset.frame["unique_id"].iloc[0]
+    excluded_times = frozenset(
+        timestamp
+        for key_unique_id, timestamp in dataset.imputed_keys
+        if key_unique_id == unique_id
+    )
+
+    scores: list[LoadCandidateScore] = []
+    try:
+        weekly_delta = _soc_weekly_delta_values(
+            training,
+            origin=holdout_start,
+            periods=len(holdout),
+        )
+        scores.append(
+            load_candidate_score(
+                SOC_WEEKLY_DELTA_MODEL,
+                holdout,
+                [min(max(value, 0.0), 100.0) for value in weekly_delta],
+                excluded_times,
+            )
+        )
+    except Exception as error:
+        scores.append(
+            LoadCandidateScore(
+                SOC_WEEKLY_DELTA_MODEL,
+                None,
+                None,
+                None,
+                0,
+                type(error).__name__,
+            )
+        )
+
+    for model_name, factory in _soc_candidate_factories(config):
         try:
             engine = StatsForecast(
                 models=[factory()], freq=config.pandas_frequency, n_jobs=1
             )
-            cv = engine.cross_validation(
-                df=dataset.frame,
-                h=config.points_per_day,
-                step_size=config.points_per_day,
-                n_windows=7,
+            forecast = engine.forecast(
+                df=training.frame,
+                h=len(holdout),
             )
-            score = _model_mape(cv, model_name, dataset.imputed_keys)
-        except Exception:
-            continue
-        if score is not None:
-            scores[model_name] = score
-    if not scores:
+            raw_values = list(pd.to_numeric(forecast[model_name], errors="raise"))
+            if len(raw_values) != len(holdout):
+                raise ValueError("SOC candidate horizon is incomplete")
+            offset = _last_real_value(training, unique_id) - float(raw_values[0])
+            predictions = [
+                min(max(float(value) + offset, 0.0), 100.0)
+                for value in raw_values
+            ]
+            scores.append(
+                load_candidate_score(
+                    model_name, holdout, predictions, excluded_times
+                )
+            )
+        except Exception as error:
+            scores.append(
+                LoadCandidateScore(
+                    model_name,
+                    None,
+                    None,
+                    None,
+                    0,
+                    type(error).__name__,
+                )
+            )
+
+    viable_scores = [score for score in scores if score.mae is not None]
+    if not viable_scores:
         raise M3Error("model_selection_failed", "all StatsForecast candidates failed")
-    winner = min(scores, key=lambda name: (scores[name], name))
+    winner = min(
+        viable_scores,
+        key=lambda score: (score.mae, SOC_MODEL_ORDER.index(score.model_name)),
+    )
     return CustomChampion(
-        model_name=winner,
-        cv_mape_percent=scores[winner],
+        model_name=winner.model_name,
+        cv_mape_percent=winner.mape_percent,
         selected_at=pd.Timestamp.now(tz="Asia/Shanghai"),
         training_start=pd.Timestamp(dataset.start),
         training_end=pd.Timestamp(dataset.end),
         statsforecast_version=version("statsforecast"),
+        candidate_scores=tuple(scores),
+        selection_metric="mae",
     )
+
+
+def _soc_weekly_delta_values(
+    dataset: CustomTrainingDataset,
+    *,
+    origin: datetime,
+    periods: int,
+) -> list[float]:
+    """Forecast SOC state from median same-weekday deltas over three weeks."""
+
+    if type(origin) is not datetime:
+        raise ValueError("origin must be a datetime")
+    if type(periods) is not int or periods < 0:
+        raise ValueError("periods must be a non-negative integer")
+    if periods == 0:
+        return []
+
+    unique_id = dataset.frame["unique_id"].iloc[0]
+    imputed = {
+        timestamp
+        for key_unique_id, timestamp in dataset.imputed_keys
+        if key_unique_id == unique_id
+    }
+    source_values: dict[datetime, float] = {}
+    for row in dataset.frame.itertuples(index=False):
+        timestamp = pd.Timestamp(row.ds).to_pydatetime()
+        try:
+            value = float(row.y)
+        except (TypeError, ValueError, OverflowError):
+            continue
+        if timestamp < origin and np.isfinite(value):
+            source_values[timestamp] = value
+
+    interval = timedelta(seconds=dataset.interval_seconds)
+    current = _last_real_value(dataset, unique_id)
+    values = [current]
+    for period in range(1, periods):
+        target = origin + period * interval
+        deltas: list[float] = []
+        for week_lag in (1, 2, 3):
+            source_time = target - timedelta(days=7 * week_lag)
+            previous_time = source_time - interval
+            if source_time in imputed or previous_time in imputed:
+                continue
+            if source_time in source_values and previous_time in source_values:
+                deltas.append(
+                    source_values[source_time] - source_values[previous_time]
+                )
+        if not deltas:
+            raise ValueError(
+                f"missing weekly SOC delta source for {target.isoformat()}"
+            )
+        current += float(median(deltas))
+        values.append(current)
+    return values
 
 
 def select_custom_champion(
@@ -335,6 +466,22 @@ def _forecast_frame(
     if is_load_series(unique_id):
         return _forecast_load_frame(dataset, champion, config)
     try:
+        if champion.model_name == SOC_WEEKLY_DELTA_MODEL:
+            values = _soc_weekly_delta_values(
+                dataset,
+                origin=config.forecast_start,
+                periods=config.expected_points_per_series,
+            )
+            return (
+                _load_frame(
+                    config,
+                    unique_id,
+                    SOC_WEEKLY_DELTA_MODEL,
+                    values,
+                ),
+                SOC_WEEKLY_DELTA_MODEL,
+                None,
+            )
         model = _model_by_name(champion.model_name, config)
         engine = StatsForecast(
             models=[model], freq=config.pandas_frequency, n_jobs=1

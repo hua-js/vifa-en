@@ -465,7 +465,8 @@ class DeploymentArtifactTests(unittest.TestCase):
 
         for label in (
             "负载周期：7 天",
-            "SOC 后处理：最后真实状态锚定",
+            "SOC 周差分：周一至周六生产 · 周日休息",
+            "同星期同刻度 ΔSOC · 最后真实状态锚定",
             "weekly_load_v1",
             "compare-model-label",
             "compare-baseline-label",
