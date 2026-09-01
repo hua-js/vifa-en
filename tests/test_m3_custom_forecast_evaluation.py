@@ -3,6 +3,7 @@
 from datetime import datetime, timedelta
 import unittest
 
+from m3_worker.api.models import CustomPerformanceResponse
 from m3_worker.custom_forecast_contracts import (
     CustomForecastConfig,
     CustomRunRecord,
@@ -54,14 +55,21 @@ def make_run(
     )
 
 
-def evaluation(run_id: str, mape_percent: float) -> dict[str, object]:
+def evaluation(
+    run_id: str,
+    mape_percent: float,
+    *,
+    window_end: str = "2026-08-31T00:00:00+08:00",
+    valid_count: int = 10,
+) -> dict[str, object]:
     return {
         "run_id": run_id,
         "outcome": "available",
         "mape_percent": mape_percent,
         "baseline_mape_percent": 10.0,
-        "valid_count": 10,
+        "valid_count": valid_count,
         "zero_actual_count": 0,
+        "window_end": window_end,
     }
 
 
@@ -89,6 +97,75 @@ class InMemoryEvaluationRepository:
 
 
 class CustomForecastEvaluationServiceTests(unittest.TestCase):
+    def test_performance_returns_seven_daily_buckets_ending_at_latest_evaluation(self):
+        """Dropping daily bucketing would leave all seven frontend cards empty."""
+        runs = [
+            make_run(run_id, {"selection_policy": "weekly_load_v2"})
+            for run_id in ("aug-28", "aug-30-a", "aug-30-b")
+        ]
+        repository = InMemoryEvaluationRepository(
+            runs,
+            [
+                evaluation(
+                    "aug-28",
+                    6.0,
+                    window_end="2026-08-29T00:00:00+08:00",
+                ),
+                evaluation(
+                    "aug-30-a",
+                    8.0,
+                    window_end="2026-08-31T00:00:00+08:00",
+                    valid_count=10,
+                ),
+                evaluation(
+                    "aug-30-b",
+                    4.0,
+                    window_end="2026-08-31T00:00:00+08:00",
+                    valid_count=30,
+                ),
+            ],
+        )
+        service = CustomForecastEvaluationService(
+            repository, source=object(), now=lambda: NOW
+        )
+
+        performance = service.performance(
+            station_id="ES01",
+            interval_seconds=900,
+            forecast_days=1,
+            history_days=28,
+            now=NOW,
+        )
+
+        load_daily = performance["series"][0]["daily"]
+        self.assertEqual(
+            [item["date"] for item in load_daily],
+            [
+                "2026-08-24",
+                "2026-08-25",
+                "2026-08-26",
+                "2026-08-27",
+                "2026-08-28",
+                "2026-08-29",
+                "2026-08-30",
+            ],
+        )
+        self.assertEqual(load_daily[4], {
+            "date": "2026-08-28",
+            "mape_percent": 6.0,
+            "scorable_point_count": 10,
+            "run_count": 1,
+        })
+        self.assertEqual(load_daily[-1], {
+            "date": "2026-08-30",
+            "mape_percent": 5.0,
+            "scorable_point_count": 40,
+            "run_count": 2,
+        })
+        self.assertEqual(load_daily[0]["mape_percent"], None)
+        response = CustomPerformanceResponse.model_validate(performance)
+        self.assertEqual(response.series[0].daily[-1].mape_percent, 5.0)
+
     def test_performance_matches_exact_history_days_and_caches_mixed_run_lookups(self):
         """The broad full-selection policy must not mix 28/60/90-day evidence."""
         runs = [

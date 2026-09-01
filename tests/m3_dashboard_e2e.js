@@ -221,8 +221,30 @@ function weeklyEvidenceFixture() {
       model_policy: "full_selection",
       calculated_at: "2026-08-31T12:16:00+08:00",
       series: [
-        { unique_id: "station_total_load", mape_percent: null, baseline_mape_percent: null, relative_baseline_improvement_percent: null, scorable_point_count: 0, run_count: 0 },
-        { unique_id: "storage_soc", mape_percent: null, baseline_mape_percent: null, relative_baseline_improvement_percent: null, scorable_point_count: 0, run_count: 0 },
+        {
+          unique_id: "station_total_load", mape_percent: 5.2, baseline_mape_percent: 7.1, relative_baseline_improvement_percent: 26.76, scorable_point_count: 240, run_count: 3,
+          daily: [
+            { date: "2026-08-24", mape_percent: null, scorable_point_count: 0, run_count: 0 },
+            { date: "2026-08-25", mape_percent: 6.0, scorable_point_count: 80, run_count: 1 },
+            { date: "2026-08-26", mape_percent: null, scorable_point_count: 0, run_count: 0 },
+            { date: "2026-08-27", mape_percent: 4.5, scorable_point_count: 80, run_count: 1 },
+            { date: "2026-08-28", mape_percent: null, scorable_point_count: 0, run_count: 0 },
+            { date: "2026-08-29", mape_percent: null, scorable_point_count: 0, run_count: 0 },
+            { date: "2026-08-30", mape_percent: 5.1, scorable_point_count: 80, run_count: 1 },
+          ],
+        },
+        {
+          unique_id: "storage_soc", mape_percent: 3.4, baseline_mape_percent: 4.2, relative_baseline_improvement_percent: 19.05, scorable_point_count: 240, run_count: 3,
+          daily: [
+            { date: "2026-08-24", mape_percent: null, scorable_point_count: 0, run_count: 0 },
+            { date: "2026-08-25", mape_percent: 3.8, scorable_point_count: 80, run_count: 1 },
+            { date: "2026-08-26", mape_percent: null, scorable_point_count: 0, run_count: 0 },
+            { date: "2026-08-27", mape_percent: 3.1, scorable_point_count: 80, run_count: 1 },
+            { date: "2026-08-28", mape_percent: null, scorable_point_count: 0, run_count: 0 },
+            { date: "2026-08-29", mape_percent: null, scorable_point_count: 0, run_count: 0 },
+            { date: "2026-08-30", mape_percent: 3.3, scorable_point_count: 80, run_count: 1 },
+          ],
+        },
       ],
     },
   };
@@ -895,7 +917,10 @@ function legacyNullManifestFixture() {
   releaseDelayed = null;
   const beforeConcurrent = apiRequests.length;
   const concurrent = page.evaluate(() => Promise.all([window.loadDashboard(), window.loadDashboard(), window.loadDashboard()]));
-  await page.waitForTimeout(25);
+  const concurrentDeadline = Date.now() + 1000;
+  while (apiRequests.length < beforeConcurrent + 1 && Date.now() < concurrentDeadline) {
+    await page.waitForTimeout(10);
+  }
   assert.strictEqual(apiRequests.length, beforeConcurrent + 1);
   assert.strictEqual(typeof releaseDelayed, "function");
   releaseDelayed();
@@ -951,6 +976,18 @@ function legacyNullManifestFixture() {
   assert.strictEqual(await page.locator(".summary-coverage").innerText(), "96 点");
   assert.match(await page.locator(".prediction-summary-sentence").innerText(), /预计负载峰值为 509\.5 kW；最低 SOC 为 60\.0 %/);
   assert.strictEqual(await page.locator(".current-model-name").first().innerText(), "负载：周期校准 · SOC：周差分");
+  assert.deepStrictEqual(
+    await page.locator(".mape-panel").first().locator(".mape-date").allTextContents(),
+    ["08/24", "08/25", "08/26", "08/27", "08/28", "08/29", "最新 08/30"],
+  );
+  assert.deepStrictEqual(
+    await page.locator(".mape-panel").first().locator(".mape-value").allTextContents(),
+    ["—", "6.00%", "—", "4.50%", "—", "—", "5.10%"],
+  );
+  assert.deepStrictEqual(
+    await page.locator(".mape-panel").nth(1).locator(".mape-value").allTextContents(),
+    ["—", "3.80%", "—", "3.10%", "—", "—", "3.30%"],
+  );
   assert.strictEqual(await page.locator(".candidate[data-model='WeeklyRegimeAdjusted']").evaluate((node) => node.classList.contains("selected")), true);
   assert.strictEqual(await page.locator(".candidate[data-model='WeeklyRegimeAdjusted'] .candidate-state").innerText(), "已选定");
   assert.strictEqual(await page.locator(".candidate[data-model='WeeklyMedian3'] .candidate-state").innerText(), "本次未参与");
@@ -961,6 +998,7 @@ function legacyNullManifestFixture() {
   assert.strictEqual(await page.locator(".station-section").getAttribute("data-station"), "station_2");
   assert.strictEqual(await page.locator("#task-state").innerText(), "尚未提交任务");
   assert.strictEqual(await page.locator(".prediction-summary-sentence").innerText(), "预计负载峰值为 730.0 kW；最低 SOC 为 54.0 %");
+  assert.ok((await page.locator(".mape-value").allTextContents()).every((value) => value === "—"), "station switch must clear daily MAPE from the previous station");
   assert.strictEqual(await page.locator(".candidate[data-model='WeeklyMedian3'] .candidate-state").innerText(), "可参与");
   await stationPicker.selectOption("station_1");
   assert.strictEqual(await page.locator(".station-section").getAttribute("data-station"), "station_1");

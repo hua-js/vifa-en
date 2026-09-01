@@ -305,8 +305,7 @@ class CustomForecastEvaluationService:
             raise M3Error("request_invalid", "Performance history_days is invalid")
         at = now or self._now()
         policy = "seasonal_naive_only" if history_days < 28 else "full_selection"
-        since = at - timedelta(days=7)
-        series_results = []
+        since = at - timedelta(days=8)
         run_cache: dict[str, StoredCustomRun | None] = {}
 
         def uses_comparable_weekly_run(row: dict[str, Any]) -> bool:
@@ -323,6 +322,7 @@ class CustomForecastEvaluationService:
                 and run.config.history_days == history_days
             )
 
+        usable_by_series: dict[str, list[dict[str, Any]]] = {}
         for unique_id in SERIES_IDS:
             rows = self._repository.list_comparable_evaluations(
                 station_id=station_id,
@@ -333,30 +333,77 @@ class CustomForecastEvaluationService:
                 calculated_since=since,
             )
             rows = [row for row in rows if uses_comparable_weekly_run(row)]
-            usable = [
+            usable_by_series[unique_id] = [
                 row
                 for row in rows
                 if row.get("outcome") == "available"
                 and row.get("mape_percent") is not None
                 and row.get("baseline_mape_percent") is not None
             ]
+
+        def evaluation_day(row: dict[str, Any]):
+            return (
+                _timestamp(row.get("window_end")) - timedelta(microseconds=1)
+            ).date()
+
+        evaluation_days = [
+            evaluation_day(row)
+            for rows in usable_by_series.values()
+            for row in rows
+        ]
+        latest_day = (
+            max(evaluation_days)
+            if evaluation_days
+            else at.date() - timedelta(days=1)
+        )
+        daily_dates = [
+            latest_day - timedelta(days=offset) for offset in range(6, -1, -1)
+        ]
+
+        def aggregate(
+            rows: list[dict[str, Any]],
+        ) -> tuple[float | None, float | None, int]:
             weights = [
                 int(row["valid_count"]) - int(row["zero_actual_count"])
-                for row in usable
+                for row in rows
             ]
             total_weight = sum(max(weight, 0) for weight in weights)
             if total_weight:
                 mape = sum(
                     float(row["mape_percent"]) * max(weight, 0)
-                    for row, weight in zip(usable, weights)
+                    for row, weight in zip(rows, weights)
                 ) / total_weight
                 baseline = sum(
                     float(row["baseline_mape_percent"]) * max(weight, 0)
-                    for row, weight in zip(usable, weights)
+                    for row, weight in zip(rows, weights)
                 ) / total_weight
             else:
                 mape = None
                 baseline = None
+            return mape, baseline, total_weight
+
+        series_results = []
+        for unique_id in SERIES_IDS:
+            usable = usable_by_series[unique_id]
+            rows_by_day = {
+                day: [row for row in usable if evaluation_day(row) == day]
+                for day in daily_dates
+            }
+            included = [row for rows in rows_by_day.values() for row in rows]
+            mape, baseline, total_weight = aggregate(included)
+            daily = []
+            for day in daily_dates:
+                daily_mape, _daily_baseline, daily_weight = aggregate(
+                    rows_by_day[day]
+                )
+                daily.append(
+                    {
+                        "date": day.isoformat(),
+                        "mape_percent": daily_mape,
+                        "scorable_point_count": daily_weight,
+                        "run_count": len(rows_by_day[day]),
+                    }
+                )
             improvement = (
                 (baseline - mape) / baseline * 100
                 if baseline not in {None, 0} and mape is not None
@@ -369,7 +416,8 @@ class CustomForecastEvaluationService:
                     "baseline_mape_percent": baseline,
                     "relative_baseline_improvement_percent": improvement,
                     "scorable_point_count": total_weight,
-                    "run_count": len(usable),
+                    "run_count": len(included),
+                    "daily": daily,
                 }
             )
         return {

@@ -1,6 +1,6 @@
 """Explicit public response models for the M3 operations API."""
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
@@ -97,6 +97,13 @@ class CustomRunResultResponse(ApiModel):
     series: list[CustomResultSeriesResponse]
 
 
+class CustomPerformanceDayResponse(ApiModel):
+    date: date
+    mape_percent: float | None
+    scorable_point_count: int
+    run_count: int
+
+
 class CustomPerformanceSeriesResponse(ApiModel):
     unique_id: SeriesId
     mape_percent: float | None
@@ -104,6 +111,7 @@ class CustomPerformanceSeriesResponse(ApiModel):
     relative_baseline_improvement_percent: float | None
     scorable_point_count: int
     run_count: int
+    daily: list[CustomPerformanceDayResponse]
 
 
 class CustomPerformanceResponse(ApiModel):
