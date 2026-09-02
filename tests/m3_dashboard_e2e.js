@@ -787,6 +787,17 @@ function legacyNullManifestFixture() {
   assert.strictEqual(await page.locator("#run-button").count(), 1);
   assert.strictEqual(await page.locator(".model-summary").count(), 0, "result model strip must be removed");
   assert.strictEqual(await page.locator("#performance-zone-title").innerText(), "预测摘要");
+  assert.deepStrictEqual(
+    await page.locator("[data-summary] .prediction-summary-label").allTextContents(),
+    [
+      "当前预测负载 MAPE",
+      "预测峰值负载",
+      "预测最低负载",
+      "当前预测 SOC MAPE",
+      "预测最高 SOC",
+      "预测最低 SOC",
+    ],
+  );
   assert.strictEqual(await page.locator(".selection-metric-display").count(), 0, "holdout metrics must stay hidden");
   assert.strictEqual(await page.locator(".dual-mape").count(), 1, "7-day load/SOC MAPE must remain visible");
   assert.deepStrictEqual(
@@ -866,7 +877,8 @@ function legacyNullManifestFixture() {
     "负载：周期校准 · SOC：周差分（5分钟基准）",
   );
   assert.strictEqual(await page.locator("#total-points-inline").innerText(), "1,440");
-  assert.strictEqual(await page.locator(".summary-average-load-note").innerText(), "按 1440 个有效预测点计算");
+  assert.strictEqual(await page.locator(".summary-peak-load").innerText(), "734.4 kW");
+  assert.strictEqual(await page.locator(".summary-max-soc").innerText(), "72.4 %");
   assert.strictEqual(await page.locator("#task-state").innerText(), "预测完成");
   assert.strictEqual(await page.locator("#result-progress-overlay").isHidden(), true);
   assert.strictEqual(await page.locator(".station-section").getAttribute("aria-busy"), "false");
@@ -901,6 +913,8 @@ function legacyNullManifestFixture() {
   const currentLoad = firstLoad.actual.filter((point) => point.value !== null).at(-1).value;
   const currentSoc = firstSoc.actual.filter((point) => point.value !== null).at(-1).value;
   const peakLoad = Math.max(...firstLoad.forecast.map((point) => point.value));
+  const minimumLoad = Math.min(...firstLoad.forecast.map((point) => point.value));
+  const maximumSoc = Math.max(...firstSoc.forecast.map((point) => point.value));
   const minimumSoc = Math.min(...firstSoc.forecast.map((point) => point.value));
   const firstStationDiagnostics = await page.locator("[data-station='station_1']").evaluate((station) => ({
     stationDataState: station.dataset.state ?? null,
@@ -922,6 +936,17 @@ function legacyNullManifestFixture() {
   assert.strictEqual(await page.locator("[data-station='station_1'] .metric-minimum-soc").innerText(), `${minimumSoc.toFixed(1)} %`);
   assert.strictEqual(await page.locator(".legacy-load-mape-value").innerText(), "2.50%");
   assert.strictEqual(await page.locator(".current-day-mape-value").innerText(), "2.50%");
+  assert.deepStrictEqual(
+    await page.locator("[data-summary] .prediction-summary-value").allTextContents(),
+    [
+      "2.50%",
+      `${peakLoad.toFixed(1)} kW`,
+      `${minimumLoad.toFixed(1)} kW`,
+      "2.50%",
+      `${maximumSoc.toFixed(1)} %`,
+      `${minimumSoc.toFixed(1)} %`,
+    ],
+  );
   assert.strictEqual(await page.locator(".selection-metric-display").count(), 0);
   await stationPicker.selectOption("station_2");
   assert.strictEqual(await page.locator(".station-section").getAttribute("data-station"), "station_2");
@@ -1126,6 +1151,11 @@ function legacyNullManifestFixture() {
   assert.ok(apiRequests.every((item) => !/must-not-send|must-not-forward|example\.invalid/.test(JSON.stringify(item.headers))));
 
   customPayload = weeklyEvidenceFixture();
+  customPayload.result.series.find((series) => series.unique_id === "storage_soc").points.forEach((point) => {
+    point.actual_value = point.forecast_value;
+    point.actual_quality = "valid";
+    point.absolute_percentage_error = 0;
+  });
   const weeklyRequestStart = apiRequests.length;
   const weeklyResponseStart = apiResponses.length;
   await page.locator("#run-button").click();
@@ -1146,12 +1176,13 @@ function legacyNullManifestFixture() {
   assert.strictEqual(await inlineBarPercent(page, ".readiness-track span"), 75);
   assert.strictEqual(await page.locator(".current-day-mape-value").innerText(), "0.00%");
   assert.strictEqual(await page.locator(".current-day-mape-note").innerText(), "96 / 96 个实际点 · 完整结果");
-  assert.strictEqual(await page.locator(".summary-average-load").innerText(), "504.8 kW");
   assert.strictEqual(await page.locator(".summary-peak-load").innerText(), "509.5 kW");
   assert.match(await page.locator(".summary-peak-load-note").innerText(), /2026\/09\/01 12:00/);
   assert.strictEqual(await page.locator(".summary-min-load").innerText(), "500.0 kW");
+  assert.strictEqual(await page.locator(".current-soc-mape-value").innerText(), "0.00%");
+  assert.strictEqual(await page.locator(".current-soc-mape-note").innerText(), "96 / 96 个实际点 · 完整结果");
+  assert.strictEqual(await page.locator(".summary-max-soc").innerText(), "69.5 %");
   assert.strictEqual(await page.locator(".summary-min-soc").innerText(), "60.0 %");
-  assert.strictEqual(await page.locator(".summary-coverage").innerText(), "96 点");
   assert.match(await page.locator(".prediction-summary-sentence").innerText(), /预计负载峰值为 509\.5 kW；最低 SOC 为 60\.0 %/);
   assert.strictEqual(await page.locator(".current-model-name").first().innerText(), "负载：周期校准 · SOC：周差分");
   assert.deepStrictEqual(
@@ -1179,8 +1210,15 @@ function legacyNullManifestFixture() {
   assert.strictEqual(await page.locator(".prediction-summary-sentence").innerText(), "预计负载峰值为 730.0 kW；最低 SOC 为 54.0 %");
   assert.ok((await page.locator(".mape-value").allTextContents()).every((value) => value === "—"), "station switch must clear daily MAPE from the previous station");
   assert.strictEqual(await page.locator(".candidate[data-model='WeeklyMedian3'] .candidate-state").innerText(), "可参与");
+  const stationOneReturnRequestStart = apiRequests.length;
+  const stationOneReturnResponseStart = apiResponses.length;
   await stationPicker.selectOption("station_1");
   assert.strictEqual(await page.locator(".station-section").getAttribute("data-station"), "station_1");
+  await waitForCustomResultModelMeta(
+    "3 个连续有效周 · 负载周期 7 天 · 15 分钟粒度",
+    stationOneReturnRequestStart,
+    stationOneReturnResponseStart,
+  );
   await page.waitForFunction(() => document.querySelector("#task-state")?.textContent === "预测完成"
     && document.querySelector(".candidate[data-model='WeeklyRegimeAdjusted']")?.classList.contains("selected")
     && !document.querySelector("#run-button")?.disabled);

@@ -519,12 +519,12 @@
           <div class="prediction-summary-window">目标区间：—<br>数据粒度：—</div>
         </div>
         <div class="prediction-summary-grid">
-          <article class="prediction-summary-item"><div class="prediction-summary-label">当前预测结果 MAPE</div><div class="prediction-summary-value current-day-mape-value">—</div><div class="prediction-summary-note current-day-mape-note">等待实际值回填</div></article>
-          <article class="prediction-summary-item"><div class="prediction-summary-label">平均预测负载</div><div class="prediction-summary-value summary-average-load">—</div><div class="prediction-summary-note summary-average-load-note">等待预测结果</div></article>
-          <article class="prediction-summary-item"><div class="prediction-summary-label">预测峰值负载</div><div class="prediction-summary-value summary-peak-load">—</div><div class="prediction-summary-note summary-peak-load-note">等待预测结果</div></article>
-          <article class="prediction-summary-item"><div class="prediction-summary-label">预测最低负载</div><div class="prediction-summary-value summary-min-load">—</div><div class="prediction-summary-note summary-min-load-note">等待预测结果</div></article>
-          <article class="prediction-summary-item"><div class="prediction-summary-label">预测最低 SOC</div><div class="prediction-summary-value summary-min-soc">—</div><div class="prediction-summary-note summary-min-soc-note">等待预测结果</div></article>
-          <article class="prediction-summary-item"><div class="prediction-summary-label">预测覆盖</div><div class="prediction-summary-value summary-coverage">—</div><div class="prediction-summary-note summary-coverage-note">等待预测结果</div></article>
+          <article class="prediction-summary-item" data-summary="load_mape"><div class="prediction-summary-label">当前预测负载 MAPE</div><div class="prediction-summary-value current-day-mape-value">—</div><div class="prediction-summary-note current-day-mape-note">等待实际值回填</div></article>
+          <article class="prediction-summary-item" data-summary="load_peak"><div class="prediction-summary-label">预测峰值负载</div><div class="prediction-summary-value summary-peak-load">—</div><div class="prediction-summary-note summary-peak-load-note">等待预测结果</div></article>
+          <article class="prediction-summary-item" data-summary="load_minimum"><div class="prediction-summary-label">预测最低负载</div><div class="prediction-summary-value summary-min-load">—</div><div class="prediction-summary-note summary-min-load-note">等待预测结果</div></article>
+          <article class="prediction-summary-item" data-summary="soc_mape"><div class="prediction-summary-label">当前预测 SOC MAPE</div><div class="prediction-summary-value current-soc-mape-value">—</div><div class="prediction-summary-note current-soc-mape-note">等待实际值回填</div></article>
+          <article class="prediction-summary-item" data-summary="soc_peak"><div class="prediction-summary-label">预测最高 SOC</div><div class="prediction-summary-value summary-max-soc">—</div><div class="prediction-summary-note summary-max-soc-note">等待预测结果</div></article>
+          <article class="prediction-summary-item" data-summary="soc_minimum"><div class="prediction-summary-label">预测最低 SOC</div><div class="prediction-summary-value summary-min-soc">—</div><div class="prediction-summary-note summary-min-soc-note">等待预测结果</div></article>
         </div>
         <div class="dual-mape">
           <section class="mape-panel"><div class="mape-head"><div><div class="title">近 7 日负载预测 MAPE</div><div class="desc">按预测窗口结束日汇总输出粒度、时长和模型策略相同的任务</div></div><div class="mape-summary"><div class="mape-summary-item"><span>7 日汇总</span><strong class="legacy-load-mape-value">—</strong></div><div class="mape-summary-item"><span>可比任务</span><strong class="acceptance-summary">—</strong></div></div></div>
@@ -1169,12 +1169,13 @@
         [".metric-peak-load", ".metric-current-soc", ".metric-minimum-soc", ".peak-time", ".minimum-soc-time",
           ".summary-peak-title", ".summary-peak-copy", ".summary-soc-title", ".summary-soc-copy",
           ".summary-low-title", ".summary-low-copy"].forEach((selector) => text(section.querySelector(selector), "—"));
-        [".current-day-mape-value", ".legacy-load-mape-value", ".soc-mape-value"].forEach((selector) => root.querySelectorAll(selector).forEach((node) => text(node, "—")));
+        [".current-day-mape-value", ".current-soc-mape-value", ".legacy-load-mape-value", ".soc-mape-value"].forEach((selector) => root.querySelectorAll(selector).forEach((node) => text(node, "—")));
         text(root.querySelector(".current-day-mape-note"), "等待实际值回填");
+        text(root.querySelector(".current-soc-mape-note"), "等待实际值回填");
         text(root.querySelector(".prediction-summary-sentence"), "等待预测结果");
         text(root.querySelector(".prediction-summary-window"), "目标区间：—\n数据粒度：—");
-        [".summary-average-load", ".summary-peak-load", ".summary-min-load", ".summary-min-soc", ".summary-coverage"].forEach((selector) => text(root.querySelector(selector), "—"));
-        [".summary-average-load-note", ".summary-peak-load-note", ".summary-min-load-note", ".summary-min-soc-note", ".summary-coverage-note"].forEach((selector) => text(root.querySelector(selector), "等待预测结果"));
+        [".summary-peak-load", ".summary-min-load", ".summary-max-soc", ".summary-min-soc"].forEach((selector) => text(root.querySelector(selector), "—"));
+        [".summary-peak-load-note", ".summary-min-load-note", ".summary-max-soc-note", ".summary-min-soc-note"].forEach((selector) => text(root.querySelector(selector), "等待预测结果"));
         root.querySelector(".readiness-track span").style.width = "0%";
         section.querySelectorAll("svg.forecast-chart").forEach((svg) => {
           svg.replaceChildren();
@@ -1376,6 +1377,8 @@
         root.querySelectorAll(".legacy-load-mape-value").forEach((node) => text(node, currentMapeValue));
         text(root.querySelector(".current-day-mape-note"), loadResult ? `${loadResult.valid_count} / ${loadResult.expected_count} 个有效对比点` : "等待实际值回填");
         const socMapeValue = socResult && socResult.mape_percent !== null ? `${metric(socResult.mape_percent)}%` : "—";
+        text(root.querySelector(".current-soc-mape-value"), socMapeValue);
+        text(root.querySelector(".current-soc-mape-note"), socResult ? `${socResult.valid_count} / ${socResult.expected_count} 个有效对比点` : "等待实际值回填");
         root.querySelectorAll(".soc-mape-value").forEach((node) => text(node, socMapeValue));
         acceptance.results.forEach((result) => {
           const row = document.createElement("tr");
@@ -1489,26 +1492,21 @@
         const soc = station.series.find((series) => series.unique_id === "storage_soc");
         const loadPoints = (load?.forecast ?? []).filter((point) => finite(point.value));
         const socPoints = (soc?.forecast ?? []).filter((point) => finite(point.value));
-        const averageLoad = loadPoints.length === 0
-          ? null
-          : loadPoints.reduce((sum, point) => sum + point.value, 0) / loadPoints.length;
         const peakLoad = loadPoints.length === 0 ? null : loadPoints.reduce((selected, point) => point.value > selected.value ? point : selected);
         const minimumLoad = loadPoints.length === 0 ? null : loadPoints.reduce((selected, point) => point.value < selected.value ? point : selected);
+        const maximumSoc = socPoints.length === 0 ? null : socPoints.reduce((selected, point) => point.value > selected.value ? point : selected);
         const minimumSoc = socPoints.length === 0 ? null : socPoints.reduce((selected, point) => point.value < selected.value ? point : selected);
         const intervalSeconds = station.range.interval_seconds;
-        const forecastHours = station.range.forecast_hours;
         const oneDecimal = (value, unit) => value === null ? "—" : `${value.toFixed(1)} ${unit}`;
 
-        text(root.querySelector(".summary-average-load"), oneDecimal(averageLoad, "kW"));
-        text(root.querySelector(".summary-average-load-note"), loadPoints.length === 0 ? "等待预测结果" : `按 ${loadPoints.length} 个有效预测点计算`);
         text(root.querySelector(".summary-peak-load"), oneDecimal(peakLoad?.value ?? null, "kW"));
         text(root.querySelector(".summary-peak-load-note"), peakLoad === null ? "等待预测结果" : `${dateTime(peakLoad.target_time)} 达到峰值`);
         text(root.querySelector(".summary-min-load"), oneDecimal(minimumLoad?.value ?? null, "kW"));
         text(root.querySelector(".summary-min-load-note"), minimumLoad === null ? "等待预测结果" : `${dateTime(minimumLoad.target_time)} 达到低点`);
+        text(root.querySelector(".summary-max-soc"), oneDecimal(maximumSoc?.value ?? null, "%"));
+        text(root.querySelector(".summary-max-soc-note"), maximumSoc === null ? "等待预测结果" : `${dateTime(maximumSoc.target_time)} 达到高点`);
         text(root.querySelector(".summary-min-soc"), oneDecimal(minimumSoc?.value ?? null, "%"));
         text(root.querySelector(".summary-min-soc-note"), minimumSoc === null ? "等待预测结果" : `${dateTime(minimumSoc.target_time)} 达到低点`);
-        text(root.querySelector(".summary-coverage"), loadPoints.length === 0 ? "—" : `${loadPoints.length} 点`);
-        text(root.querySelector(".summary-coverage-note"), loadPoints.length === 0 ? "等待预测结果" : `${formatInteger(forecastHours)} 小时 · ${intervalLabel(intervalSeconds)}粒度`);
         text(root.querySelector(".prediction-summary-window"), `目标区间：${dateTime(station.range.forecast_start)} — ${dateTime(station.range.forecast_end)}\n数据粒度：${intervalLabel(intervalSeconds)}`);
         text(root.querySelector(".prediction-summary-sentence"), peakLoad === null
           ? "等待预测结果"
@@ -1517,6 +1515,8 @@
             : `预计负载峰值为 ${oneDecimal(peakLoad.value, "kW")}；最低 SOC 为 ${oneDecimal(minimumSoc.value, "%")}`);
         text(root.querySelector(".current-day-mape-value"), "—");
         text(root.querySelector(".current-day-mape-note"), "等待实际值回填");
+        text(root.querySelector(".current-soc-mape-value"), "—");
+        text(root.querySelector(".current-soc-mape-note"), "等待实际值回填");
       }
 
       function renderStation(station, custom = false) {
@@ -2026,17 +2026,14 @@
         return { status, fallbackReason };
       }
 
-      function renderCustomEvidence(run, loadResult) {
-        const evidence = loadEvidenceFor(run);
-        if (evidence === null) return false;
-        const selectionMetric = evidence.load.selection_metric === "mae" ? "mae" : "wape_percent";
-        const actualPoints = loadResult.points.filter((point) =>
+      function renderCurrentPredictionMape(run, series, valueSelector, noteSelector) {
+        const actualPoints = (series?.points ?? []).filter((point) =>
           point.actual_quality === "valid"
           && finite(point.actual_value)
           && finite(point.forecast_value)
         );
         const scorablePoints = actualPoints.filter((point) => point.actual_value !== 0);
-        const currentDayMape = scorablePoints.length === 0
+        const currentMape = scorablePoints.length === 0
           ? null
           : scorablePoints.reduce(
             (sum, point) => sum + Math.abs(point.forecast_value - point.actual_value) / Math.abs(point.actual_value) * 100,
@@ -2047,10 +2044,14 @@
           : actualPoints.length === run.expected_points_per_series
             ? "完整结果"
             : "临时结果";
+        text(root.querySelector(valueSelector), percentMetric(currentMape));
+        text(root.querySelector(noteSelector), `${actualPoints.length} / ${run.expected_points_per_series} 个实际点 · ${actualState}`);
+      }
 
-        text(root.querySelector(".current-day-mape-value"), percentMetric(currentDayMape));
-        text(root.querySelector(".current-day-mape-note"), `${actualPoints.length} / ${run.expected_points_per_series} 个实际点 · ${actualState}`);
-
+      function renderCustomEvidence(run) {
+        const evidence = loadEvidenceFor(run);
+        if (evidence === null) return false;
+        const selectionMetric = evidence.load.selection_metric === "mae" ? "mae" : "wape_percent";
         text(root.querySelector("#policy-name"), LOAD_SELECTION_POLICY);
         text(root.querySelector("#policy-version"), LOAD_SELECTION_POLICY);
         text(root.querySelector(".selection-basis"), "模型选择依据：留出周评分 → 固定模型顺序");
@@ -2126,6 +2127,7 @@
         const evidence = loadEvidenceFor(run);
         assert(evidence !== null, "custom run policy invalid");
         const loadResult = result.series.find((series) => series.unique_id === "station_total_load");
+        const socResult = result.series.find((series) => series.unique_id === "storage_soc");
         const loadPresentation = realizedLoadPresentation(evidence, loadResult?.model_name ?? null);
         const actualTimes = result.series.flatMap((series) => series.points.filter((point) => point.actual_quality === "valid").map((point) => point.target_time));
         const actualLatest = actualTimes.length ? actualTimes.reduce((left, right) => milliseconds(left) > milliseconds(right) ? left : right) : null;
@@ -2163,7 +2165,9 @@
           ? `${evidence.usableWeeks} 个连续有效周 · 负载周期 7 天 · ${intervalLabel(run.interval_seconds)}粒度`
           : `${run.history_days} 天训练 · ${intervalLabel(run.interval_seconds)}粒度`);
         renderCustomPerformance(performance);
-        renderCustomEvidence(run, loadResult);
+        renderCurrentPredictionMape(run, loadResult, ".current-day-mape-value", ".current-day-mape-note");
+        renderCurrentPredictionMape(run, socResult, ".current-soc-mape-value", ".current-soc-mape-note");
+        renderCustomEvidence(run);
         errorState.hidden = true;
       }
 
