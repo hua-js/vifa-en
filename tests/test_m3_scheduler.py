@@ -41,14 +41,43 @@ class RecordingForecast:
 
 
 class RecordingAcceptance:
-    def __init__(self):
+    def __init__(self, backfill_failures=None):
         self.calls = []
+        self.backfill_failures = dict(backfill_failures or {})
 
     def run_baseline(self, station_id, as_of):
         self.calls.append(("baseline", station_id, as_of))
 
     def backfill_actuals(self, station_id, as_of):
         self.calls.append(("backfill", station_id, as_of))
+        failure = self.backfill_failures.get(station_id)
+        if failure is not None:
+            raise failure
+        return 0
+
+
+class RecordingEvaluation:
+    def __init__(self, failures=None):
+        self.calls = []
+        self.failures = dict(failures or {})
+
+    def evaluate_station(self, station_id, as_of):
+        self.calls.append(("evaluate", station_id, as_of))
+        failure = self.failures.get(station_id)
+        if failure is not None:
+            raise failure
+
+
+class RecordingDailyForecast:
+    def __init__(self, failures=None):
+        self.calls = []
+        self.failures = dict(failures or {})
+
+    def run_station(self, station_id, as_of):
+        self.calls.append(("daily", station_id, as_of))
+        failure = self.failures.get(station_id)
+        if failure is not None:
+            raise failure
         return 0
 
 
@@ -79,15 +108,19 @@ class SchedulerTests(unittest.TestCase):
         self.assertEqual(acceptance.calls, [("baseline", "station-1", T0102)])
         self.assertEqual(forecast.calls, [])
 
-    def test_acceptance_disabled_skips_baseline_and_backfill_but_keeps_forecasts(self):
+    def test_acceptance_disabled_skips_baseline_and_backfill_but_keeps_other_stages(self):
         """Phase-one production must not call missing acceptance endpoints."""
         forecast = RecordingForecast()
         acceptance = RecordingAcceptance()
+        evaluations = RecordingEvaluation()
+        daily = RecordingDailyForecast()
         runner = SchedulerRunner(
             ("station-1",),
             forecast,
             acceptance,
             acceptance_enabled=False,
+            custom_evaluation_service=evaluations,
+            daily_custom_forecast_service=daily,
         )
 
         runner.tick(T0102)
@@ -95,6 +128,10 @@ class SchedulerTests(unittest.TestCase):
         runner.tick(T0030)
 
         self.assertEqual(acceptance.calls, [])
+        self.assertEqual(
+            evaluations.calls, [("evaluate", "station-1", T0117)]
+        )
+        self.assertEqual(daily.calls, [("daily", "station-1", T0117)])
         self.assertEqual(
             forecast.calls,
             [
@@ -104,22 +141,126 @@ class SchedulerTests(unittest.TestCase):
             ],
         )
 
-    def test_failure_is_safe_deduped_and_does_not_stop_other_stations(self):
-        """One broken station must not retry in the same minute or starve healthy stations."""
+    def test_acceptance_failure_alerts_its_stage_and_continues_later_stages(self):
+        """A backfill outage must not suppress evaluation or daily forecast submission."""
+        forecast = RecordingForecast()
+        acceptance = RecordingAcceptance(
+            backfill_failures={
+                "station-1": M3Error(
+                    "sink_http_failed", "NocoBase action failed"
+                )
+            }
+        )
+        evaluations = RecordingEvaluation()
+        daily = RecordingDailyForecast()
+        alerts = []
+        runner = SchedulerRunner(
+            ("station-1",),
+            forecast,
+            acceptance,
+            alert_sink=lambda *args: alerts.append(args),
+            custom_evaluation_service=evaluations,
+            daily_custom_forecast_service=daily,
+        )
+
+        runner.tick(T0117)
+
+        self.assertEqual(forecast.calls, [("forecast", "station-1", T0117)])
+        self.assertEqual(acceptance.calls, [("backfill", "station-1", T0117)])
+        self.assertEqual(evaluations.calls, [("evaluate", "station-1", T0117)])
+        self.assertEqual(daily.calls, [("daily", "station-1", T0117)])
+        self.assertEqual(
+            alerts,
+            [("station-1", "acceptance_backfill", "sink_http_failed", T0117)],
+        )
+
+    def test_forecast_failure_alerts_its_stage_and_continues_other_three_stages(self):
+        """A rolling forecast failure must not serialize unrelated scheduled work."""
         forecast = RecordingForecast(
             failures={"station-1": RuntimeError("source-secret=https://internal")}
         )
         acceptance = RecordingAcceptance()
+        evaluations = RecordingEvaluation()
+        daily = RecordingDailyForecast()
+        alerts = []
+        runner = SchedulerRunner(
+            ("station-1",),
+            forecast,
+            acceptance,
+            alert_sink=lambda *args: alerts.append(args),
+            custom_evaluation_service=evaluations,
+            daily_custom_forecast_service=daily,
+        )
+
+        runner.tick(T0117)
+        runner.tick(T0117.replace(second=30))
+
+        self.assertEqual(forecast.calls, [("forecast", "station-1", T0117)])
+        self.assertEqual(acceptance.calls, [("backfill", "station-1", T0117)])
+        self.assertEqual(evaluations.calls, [("evaluate", "station-1", T0117)])
+        self.assertEqual(daily.calls, [("daily", "station-1", T0117)])
+        self.assertEqual(
+            alerts, [("station-1", "forecast", "internal_error", T0117)]
+        )
+        self.assertNotIn("source-secret", repr(alerts))
+
+    def test_evaluation_failure_alerts_its_stage_and_continues_daily_submission(self):
+        """A custom evaluation outage must not suppress the daily forecast sweep."""
+        evaluations = RecordingEvaluation(
+            failures={
+                "station-1": M3Error(
+                    "evaluation_failed", "custom evaluation failed"
+                )
+            }
+        )
+        daily = RecordingDailyForecast()
+        alerts = []
+        runner = SchedulerRunner(
+            ("station-1",),
+            RecordingForecast(),
+            RecordingAcceptance(),
+            alert_sink=lambda *args: alerts.append(args),
+            custom_evaluation_service=evaluations,
+            daily_custom_forecast_service=daily,
+        )
+
+        runner.tick(T0117)
+
+        self.assertEqual(daily.calls, [("daily", "station-1", T0117)])
+        self.assertEqual(
+            alerts,
+            [("station-1", "custom_evaluation", "evaluation_failed", T0117)],
+        )
+
+    def test_all_station_one_stage_failures_do_not_block_station_two(self):
+        """Every isolated failure at one station must leave the next station runnable."""
+        forecast = RecordingForecast(
+            failures={"station-1": M3Error("forecast_failed", "forecast failed")}
+        )
+        acceptance = RecordingAcceptance(
+            backfill_failures={
+                "station-1": M3Error("backfill_failed", "backfill failed")
+            }
+        )
+        evaluations = RecordingEvaluation(
+            failures={
+                "station-1": M3Error("evaluation_failed", "evaluation failed")
+            }
+        )
+        daily = RecordingDailyForecast(
+            failures={"station-1": M3Error("daily_failed", "daily failed")}
+        )
         alerts = []
         runner = SchedulerRunner(
             ("station-1", "station-2"),
             forecast,
             acceptance,
             alert_sink=lambda *args: alerts.append(args),
+            custom_evaluation_service=evaluations,
+            daily_custom_forecast_service=daily,
         )
 
         runner.tick(T0117)
-        runner.tick(T0117.replace(second=30))
 
         self.assertEqual(
             forecast.calls,
@@ -128,13 +269,61 @@ class SchedulerTests(unittest.TestCase):
                 ("forecast", "station-2", T0117),
             ],
         )
-        self.assertEqual(acceptance.calls, [("backfill", "station-2", T0117)])
         self.assertEqual(
-            alerts, [("station-1", "forecast", "internal_error", T0117)]
+            acceptance.calls,
+            [
+                ("backfill", "station-1", T0117),
+                ("backfill", "station-2", T0117),
+            ],
         )
-        self.assertNotIn("source-secret", repr(alerts))
+        self.assertEqual(
+            evaluations.calls,
+            [
+                ("evaluate", "station-1", T0117),
+                ("evaluate", "station-2", T0117),
+            ],
+        )
+        self.assertEqual(
+            daily.calls,
+            [
+                ("daily", "station-1", T0117),
+                ("daily", "station-2", T0117),
+            ],
+        )
+        self.assertEqual(
+            alerts,
+            [
+                ("station-1", "forecast", "forecast_failed", T0117),
+                ("station-1", "acceptance_backfill", "backfill_failed", T0117),
+                ("station-1", "custom_evaluation", "evaluation_failed", T0117),
+                ("station-1", "daily_custom_forecast", "daily_failed", T0117),
+            ],
+        )
 
-    def test_scheduled_and_manual_forecasts_share_one_station_lock_and_body(self):
+    def test_manual_forecast_failure_still_propagates_to_the_job_service(self):
+        """Manual jobs need raised failures so their terminal status remains truthful."""
+        failure = M3Error("forecast_failed", "manual forecast failed")
+        forecast = RecordingForecast(failures={"station-1": failure})
+        acceptance = RecordingAcceptance()
+        evaluations = RecordingEvaluation()
+        daily = RecordingDailyForecast()
+        runner = SchedulerRunner(
+            ("station-1",),
+            forecast,
+            acceptance,
+            custom_evaluation_service=evaluations,
+            daily_custom_forecast_service=daily,
+        )
+
+        with self.assertRaises(M3Error) as caught:
+            runner.run_manual("station-1", "forecast", T0117)
+
+        self.assertIs(caught.exception, failure)
+        self.assertEqual(acceptance.calls, [])
+        self.assertEqual(evaluations.calls, [])
+        self.assertEqual(daily.calls, [])
+
+    def test_scheduled_and_manual_forecasts_share_one_station_lock(self):
         """Separate manual locking would allow concurrent publication for one station."""
         entered = Event()
         release = Event()

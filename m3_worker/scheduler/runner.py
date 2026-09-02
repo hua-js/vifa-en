@@ -82,6 +82,7 @@ class SchedulerRunner:
         clock: Callable[[], datetime] | None = None,
         *,
         custom_evaluation_service=None,
+        daily_custom_forecast_service=None,
         poll_seconds: float = 15.0,
         stop_timeout_seconds: float | None = None,
         max_seen: int = 8192,
@@ -109,6 +110,7 @@ class SchedulerRunner:
         self._forecast = forecast_service
         self._acceptance = acceptance_service
         self._custom_evaluations = custom_evaluation_service
+        self._daily_custom_forecasts = daily_custom_forecast_service
         self._acceptance_enabled = acceptance_enabled
         self._alert_sink = alert_sink or (lambda *_args: None)
         self._clock = clock or (lambda: datetime.now(SHANGHAI))
@@ -267,6 +269,46 @@ class SchedulerRunner:
         with self._station_locks[station_id]:
             self._operation_body(station_id, task, checked_at)
 
+    def _run_scheduled_forecast(self, station_id: str, at: datetime) -> None:
+        stages = [
+            (
+                "forecast",
+                lambda: self._forecast.run_forecast(station_id, at),
+            )
+        ]
+        if self._acceptance_enabled:
+            stages.append(
+                (
+                    "acceptance_backfill",
+                    lambda: self._acceptance.backfill_actuals(station_id, at),
+                )
+            )
+        if self._custom_evaluations is not None:
+            stages.append(
+                (
+                    "custom_evaluation",
+                    lambda: self._custom_evaluations.evaluate_station(
+                        station_id, at
+                    ),
+                )
+            )
+        if self._daily_custom_forecasts is not None:
+            stages.append(
+                (
+                    "daily_custom_forecast",
+                    lambda: self._daily_custom_forecasts.run_station(
+                        station_id, at
+                    ),
+                )
+            )
+        for task, operation in stages:
+            try:
+                operation()
+            except Exception as error:
+                self._safe_alert(
+                    station_id, task, _safe_error_code(error), at
+                )
+
     def run_manual(self, station_id: str, task: str, now: datetime) -> None:
         """Run one allowlisted manual operation through the scheduled operation body."""
 
@@ -293,7 +335,16 @@ class SchedulerRunner:
                 if not self._reserve(key):
                     continue
                 try:
-                    self._run_locked(station_id, task, minute)
+                    if task == "forecast":
+                        checked_at = self._validate_operation(
+                            station_id, task, minute
+                        )
+                        with self._station_locks[station_id]:
+                            self._run_scheduled_forecast(
+                                station_id, checked_at
+                            )
+                    else:
+                        self._run_locked(station_id, task, minute)
                 except Exception as error:
                     self._safe_alert(
                         station_id, task, _safe_error_code(error), minute
