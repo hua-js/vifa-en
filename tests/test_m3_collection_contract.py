@@ -103,6 +103,99 @@ COLLECTION_FIELDS = {
         "outcome": ("text", False),
         "calculated_at": ("timestamptz", False),
     },
+    "energy_forecast_manual_runs": {
+        "id": ("bigint", False),
+        "run_id": ("text", False),
+        "station_id": ("text", False),
+        "idempotency_key": ("text", False),
+        "history_start": ("timestamptz", False),
+        "history_end": ("timestamptz", False),
+        "history_days": ("smallint", False),
+        "forecast_start": ("timestamptz", False),
+        "forecast_end": ("timestamptz", False),
+        "forecast_days": ("smallint", False),
+        "interval_seconds": ("integer", False),
+        "points_per_day": ("integer", False),
+        "expected_points_per_series": ("integer", False),
+        "model_policy": ("text", False),
+        "status": ("text", False),
+        "model_manifest": ("jsonb", True),
+        "source_manifest": ("jsonb", True),
+        "content_hash": ("text", True),
+        "error_code": ("text", True),
+        "requested_by": ("text", True),
+        "started_at": ("timestamptz", True),
+        "completed_at": ("timestamptz", True),
+        "evaluated_at": ("timestamptz", True),
+        "createdAt": ("timestamptz", True),
+        "createdBy": ("belongsTo", True),
+        "updatedAt": ("timestamptz", True),
+        "updatedBy": ("belongsTo", True),
+    },
+    "energy_forecast_manual_points": {
+        "id": ("bigint", False),
+        "run_pk": ("bigint", False),
+        "unique_id": ("text", False),
+        "target_time": ("timestamptz", False),
+        "horizon_step": ("integer", False),
+        "model_name": ("text", False),
+        "raw_forecast": ("numeric(14,6)", False),
+        "forecast_value": ("numeric(14,6)", False),
+        "baseline_forecast_value": ("numeric(14,6)", False),
+        "is_clipped": ("boolean", False),
+        "actual_value": ("numeric(14,6)", True),
+        "actual_quality": ("text", True),
+        "actual_source_revision": ("bigint", True),
+        "actual_recorded_at": ("timestamptz", True),
+        "evaluated_at": ("timestamptz", True),
+        "absolute_percentage_error": ("numeric(14,8)", True),
+        "createdAt": ("timestamptz", True),
+        "createdBy": ("belongsTo", True),
+        "updatedAt": ("timestamptz", True),
+        "updatedBy": ("belongsTo", True),
+    },
+    "energy_forecast_manual_evaluations": {
+        "id": ("bigint", False),
+        "run_pk": ("bigint", False),
+        "station_id": ("text", False),
+        "run_id": ("text", False),
+        "evaluation_key": ("text", False),
+        "interval_seconds": ("integer", False),
+        "forecast_days": ("smallint", False),
+        "model_policy": ("text", False),
+        "window_start": ("timestamptz", False),
+        "window_end": ("timestamptz", False),
+        "expected_count": ("integer", False),
+        "valid_count": ("integer", False),
+        "zero_actual_count": ("integer", False),
+        "mape_percent": ("numeric(10,6)", True),
+        "mae": ("numeric(14,6)", True),
+        "smape_percent": ("numeric(10,6)", True),
+        "wape_percent": ("numeric(10,6)", True),
+        "median_ape_percent": ("numeric(10,6)", True),
+        "p90_ape_percent": ("numeric(10,6)", True),
+        "baseline_mape_percent": ("numeric(10,6)", True),
+        "relative_baseline_improvement_percent": ("numeric(10,6)", True),
+        "outcome": ("text", False),
+        "calculated_at": ("timestamptz", False),
+        "createdAt": ("timestamptz", True),
+        "createdBy": ("belongsTo", True),
+        "updatedAt": ("timestamptz", True),
+        "updatedBy": ("belongsTo", True),
+    },
+    "energy_forecast_acceptance_runs": {
+        "id": ("bigint", False),
+        "station_id": ("text", False),
+        "acceptance_run_id": ("text", False),
+        "window_start": ("timestamptz", False),
+        "window_end": ("timestamptz", False),
+        "control_state": ("text", False),
+        "completed_days": ("smallint", False),
+        "result_state": ("text", False),
+        "calculated_at": ("timestamptz", True),
+        "createdAt": ("timestamptz", False),
+        "updatedAt": ("timestamptz", False),
+    },
 }
 
 DENIED_ACTIONS = ["destroy", "delete", "export", "import"]
@@ -177,11 +270,11 @@ def _guide_python_script(environment_variable):
 
 
 class CollectionContractTests(unittest.TestCase):
-    def test_four_collections_have_exact_fields_and_database_types(self):
+    def test_all_collections_have_exact_fields_and_database_types(self):
         contract = _load_contract()
         collections = _collections(contract)
 
-        self.assertEqual(contract["version"], 1)
+        self.assertEqual(contract["version"], 5)
         self.assertEqual(set(collections), set(COLLECTION_FIELDS))
         self.assertEqual(contract["database_policy"]["identifier_style"], "lowercase_snake_case")
         self.assertEqual(contract["database_policy"]["timestamp_type"], "timestamptz")
@@ -207,7 +300,8 @@ class CollectionContractTests(unittest.TestCase):
                 name,
             )
             for field, definition in fields.items():
-                self.assertRegex(field, r"^[a-z][a-z0-9_]*$", (name, field))
+                if field not in {"createdAt", "createdBy", "updatedAt", "updatedBy"}:
+                    self.assertRegex(field, r"^[a-z][a-z0-9_]*$", (name, field))
                 if "time" in field or field.endswith("_at") or field == "as_of":
                     self.assertEqual(definition["type"], "timestamptz", (name, field))
 
@@ -363,19 +457,69 @@ class CollectionContractTests(unittest.TestCase):
         self.assertEqual(worker["denied_actions"], DENIED_ACTIONS)
         self.assertEqual(
             worker["allowed_actions"],
-            ["list", "update", "updateOrCreate", "firstOrCreate"],
+            ["list", "create", "update", "updateOrCreate", "firstOrCreate"],
         )
 
         expected_actions = {
             "energy_forecast_latest": ["list", "updateOrCreate"],
             "energy_forecast_batches": ["list", "update", "firstOrCreate"],
             "energy_forecast_points": ["list", "update", "firstOrCreate"],
-            "energy_forecast_evaluations": ["updateOrCreate"],
+            "energy_forecast_evaluations": ["list", "updateOrCreate"],
+            "energy_forecast_manual_runs": ["list", "update", "firstOrCreate"],
+            "energy_forecast_manual_points": ["list", "create"],
+            "energy_forecast_manual_evaluations": ["list", "updateOrCreate"],
+            "energy_forecast_acceptance_runs": ["list", "update"],
         }
+        expected_denied_actions = {
+            name: DENIED_ACTIONS for name in expected_actions
+        }
+        expected_denied_actions.update(
+            {
+                "energy_forecast_manual_runs": [
+                    "get",
+                    "create",
+                    "updateOrCreate",
+                    "destroy",
+                    "delete",
+                    "export",
+                    "import",
+                ],
+                "energy_forecast_manual_points": [
+                    "get",
+                    "update",
+                    "updateOrCreate",
+                    "firstOrCreate",
+                    "destroy",
+                    "delete",
+                    "export",
+                    "import",
+                ],
+                "energy_forecast_manual_evaluations": [
+                    "get",
+                    "create",
+                    "update",
+                    "firstOrCreate",
+                    "destroy",
+                    "delete",
+                    "export",
+                    "import",
+                ],
+                "energy_forecast_acceptance_runs": [
+                    "get",
+                    "create",
+                    "updateOrCreate",
+                    "firstOrCreate",
+                    "destroy",
+                    "delete",
+                    "export",
+                    "import",
+                ],
+            }
+        )
         for name, allowed in expected_actions.items():
             item = permissions[name]
             self.assertEqual(item["allowed_actions"], allowed, name)
-            self.assertEqual(item["denied_actions"], DENIED_ACTIONS, name)
+            self.assertEqual(item["denied_actions"], expected_denied_actions[name], name)
             self.assertEqual(set(item["fields_by_action"]), set(allowed), name)
 
         batch = permissions["energy_forecast_batches"]
