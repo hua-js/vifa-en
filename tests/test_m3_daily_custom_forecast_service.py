@@ -92,11 +92,13 @@ class InMemoryRepository:
             dict[tuple[str, int], StoredCustomRun | BaseException] | None
         ) = None,
         daily_runs: dict[str, list[StoredCustomRun]] | None = None,
+        daily_failures: dict[tuple[str, int], BaseException] | None = None,
     ) -> None:
         self.templates = templates or {}
         self.daily_runs = daily_runs or {}
+        self.daily_failures = daily_failures or {}
         self.template_calls: list[tuple[str, int]] = []
-        self.daily_calls: list[tuple[str, datetime]] = []
+        self.daily_calls: list[tuple[str, datetime, int]] = []
 
     def latest_completed_template(self, station_id: str, *, interval_seconds: int):
         self.template_calls.append((station_id, interval_seconds))
@@ -105,9 +107,22 @@ class InMemoryRepository:
             raise result
         return result
 
-    def list_daily_runs(self, station_id: str, *, forecast_start: datetime):
-        self.daily_calls.append((station_id, forecast_start))
-        return list(self.daily_runs.get(station_id, []))
+    def list_daily_runs(
+        self,
+        station_id: str,
+        *,
+        forecast_start: datetime,
+        interval_seconds: int,
+    ):
+        self.daily_calls.append((station_id, forecast_start, interval_seconds))
+        failure = self.daily_failures.get((station_id, interval_seconds))
+        if failure is not None:
+            raise failure
+        return [
+            run
+            for run in self.daily_runs.get(station_id, [])
+            if run.config.interval_seconds == interval_seconds
+        ]
 
 
 class RecordingSubmitter:
@@ -257,6 +272,35 @@ class DailyCustomForecastServiceTests(unittest.TestCase):
         self.assertEqual(len(repository.template_calls), 12)
         self.assertEqual(repository.daily_calls, [])
         self.assertEqual(submitter.calls, [])
+
+    def test_partial_discovery_is_rechecked_for_a_first_template_later_that_day(self):
+        """Caching a covered subset would hide a newly completed first cadence."""
+        repository = InMemoryRepository(
+            {
+                ("ES01", 900): make_run(
+                    "covered-template-900",
+                    interval_seconds=900,
+                    forecast_start=DAY,
+                )
+            }
+        )
+        submitter = RecordingSubmitter()
+        service = DailyCustomForecastService(repository, submitter)
+
+        self.assertEqual(service.run_station("ES01", NOW), 0)
+        repository.templates[("ES01", 3600)] = make_run(
+            "first-template-3600",
+            interval_seconds=3600,
+            forecast_start=DAY - timedelta(days=1),
+        )
+
+        attempted = service.run_station("ES01", NOW.replace(hour=12))
+
+        self.assertEqual(attempted, 1)
+        self.assertEqual(
+            [request.interval_seconds for _, request, _ in submitter.calls],
+            [3600],
+        )
 
     def test_terminal_daily_rows_do_not_submit_duplicates(self):
         """A terminal or running automatic row must suppress another normal attempt."""
@@ -428,6 +472,35 @@ class DailyCustomForecastServiceTests(unittest.TestCase):
             [("ES01", 900)],
         )
 
+    def test_daily_lookup_failure_continues_other_intervals(self):
+        """A cadence-specific malformed daily row must not suppress another cadence."""
+        repository = InMemoryRepository(
+            {
+                ("ES01", 30): make_run("es01-template-30", interval_seconds=30),
+                ("ES01", 900): make_run("es01-template-900", interval_seconds=900),
+            },
+            daily_failures={
+                ("ES01", 30): M3Error(
+                    "sink_contract_invalid", "30-second daily row is malformed"
+                )
+            },
+        )
+        submitter = RecordingSubmitter()
+        service = DailyCustomForecastService(repository, submitter)
+
+        with self.assertRaises(M3Error) as raised:
+            service.run_station("ES01", NOW)
+
+        self.assertEqual(raised.exception.code, "sink_contract_invalid")
+        self.assertEqual(
+            [request.interval_seconds for _, request, _ in submitter.calls],
+            [900],
+        )
+        self.assertEqual(
+            repository.daily_calls,
+            [("ES01", DAY, 30), ("ES01", DAY, 900)],
+        )
+
     def test_restart_reconstructs_the_same_deterministic_attempt_key(self):
         """A process-local identity would create duplicate rows after restart."""
         long_station_id = "ES01-" + "x" * 120
@@ -454,8 +527,16 @@ class DailyCustomForecastServiceTests(unittest.TestCase):
 
     def test_completed_date_cache_serializes_same_station_sweeps(self):
         """A cache check race would repeat all repository reads for the same station/day."""
-        covered = make_run("covered-template", forecast_start=DAY)
-        repository = BlockingRepository({("ES01", 900): covered})
+        repository = BlockingRepository(
+            {
+                ("ES01", interval_seconds): make_run(
+                    f"covered-template-{interval_seconds}",
+                    interval_seconds=interval_seconds,
+                    forecast_start=DAY,
+                )
+                for interval_seconds in (30, 60, 300, 900, 1800, 3600)
+            }
+        )
         service = DailyCustomForecastService(repository, RecordingSubmitter())
         results: list[int] = []
 

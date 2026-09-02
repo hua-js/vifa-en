@@ -143,28 +143,19 @@ class DailyCustomForecastService:
             for interval_seconds, template in templates.items()
             if template.config.forecast_start < day
         }
-        daily_runs: list[StoredCustomRun] = []
-        daily_lookup_failed = False
-        if uncovered:
-            try:
-                daily_runs = self._repository.list_daily_runs(
-                    station_id, forecast_start=day
-                )
-            except Exception as error:
-                daily_lookup_failed = True
-                errors.append(_safe_error(error))
-
         attempted = 0
         complete_intervals = set(templates) - set(uncovered)
-        if daily_lookup_failed:
-            uncovered = {}
 
         for interval_seconds, template in uncovered.items():
-            matching = [
-                run
-                for run in daily_runs
-                if run.config.interval_seconds == interval_seconds
-            ]
+            try:
+                matching = self._repository.list_daily_runs(
+                    station_id,
+                    forecast_start=day,
+                    interval_seconds=interval_seconds,
+                )
+            except Exception as error:
+                errors.append(_safe_error(error))
+                continue
             terminal = [
                 run for run in matching if run.status in _COMPLETED_DAILY_STATUSES
             ]
@@ -208,7 +199,11 @@ class DailyCustomForecastService:
             if submitted.status in _COMPLETED_DAILY_STATUSES:
                 complete_intervals.add(interval_seconds)
 
-        if not errors and complete_intervals == set(templates):
+        if (
+            not errors
+            and set(templates) == set(ALLOWED_INTERVAL_SECONDS)
+            and complete_intervals == set(templates)
+        ):
             self._remember_completed(cache_key)
         if errors:
             raise errors[0]

@@ -393,8 +393,14 @@ class CustomForecastRepository:
         return None if not rows else self._parse_run(rows[0])
 
     def list_daily_runs(
-        self, station_id: str, *, forecast_start: datetime
+        self,
+        station_id: str,
+        *,
+        forecast_start: datetime,
+        interval_seconds: int,
     ) -> list[StoredCustomRun]:
+        if interval_seconds not in ALLOWED_INTERVAL_SECONDS:
+            raise ValueError("interval_seconds must be allowed")
         validate_shanghai_timestamp(
             forecast_start, "forecast_start", quarter_hour=False
         )
@@ -410,6 +416,7 @@ class CustomForecastRepository:
             filter={
                 "station_id": station_id,
                 "forecast_start": forecast_start.isoformat(),
+                "interval_seconds": interval_seconds,
                 "requested_by": DAILY_REQUESTED_BY,
             },
             fields=RUN_FIELDS,
@@ -419,6 +426,7 @@ class CustomForecastRepository:
         if any(
             run.record.requested_by != DAILY_REQUESTED_BY
             or run.config.forecast_start != forecast_start
+            or run.config.interval_seconds != interval_seconds
             for run in runs
         ):
             raise M3Error(

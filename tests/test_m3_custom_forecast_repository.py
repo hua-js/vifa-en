@@ -214,6 +214,7 @@ class DailyRunsApi:
         if filter != {
             "station_id": "ES01",
             "forecast_start": "2026-09-02T00:00:00+08:00",
+            "interval_seconds": 900,
             "requested_by": "m3_daily_scheduler",
         }:
             raise AssertionError(filter)
@@ -327,7 +328,7 @@ class CustomForecastRepositoryTests(unittest.TestCase):
         )
 
         runs = CustomForecastRepository(api).list_daily_runs(
-            "ES01", forecast_start=daily_start
+            "ES01", forecast_start=daily_start, interval_seconds=900
         )
 
         self.assertEqual([run.run_id for run in runs], ["first-daily-attempt", "second-daily-attempt"])
@@ -346,10 +347,25 @@ class CustomForecastRepositoryTests(unittest.TestCase):
 
                 with self.assertRaises(ValueError):
                     CustomForecastRepository(api).list_daily_runs(
-                        "ES01", forecast_start=forecast_start
+                        "ES01", forecast_start=forecast_start, interval_seconds=900
                     )
 
                 self.assertEqual(api.calls, 0)
+
+    def test_list_daily_runs_rejects_an_unallowed_interval_without_querying(self):
+        """An unsupported cadence must not broaden the daily-state query."""
+        api = DailyRunsApi([])
+
+        with self.assertRaises(ValueError):
+            CustomForecastRepository(api).list_daily_runs(
+                "ES01",
+                forecast_start=datetime.fromisoformat(
+                    "2026-09-02T00:00:00+08:00"
+                ),
+                interval_seconds=17,
+            )
+
+        self.assertEqual(api.calls, 0)
 
     def test_list_daily_runs_rejects_mismatched_persisted_identity(self):
         """A server response outside the daily query identity must not be trusted."""
@@ -374,6 +390,16 @@ class CustomForecastRepositoryTests(unittest.TestCase):
                 forecast_start="2026-09-03T00:00:00+08:00",
                 requested_by="m3_daily_scheduler",
             ),
+            persisted_run_row(
+                run_id="wrong-interval",
+                status="succeeded",
+                completed_at="2026-09-02T00:05:00+08:00",
+                selection_policy="weekly_load_v2",
+                station_id="ES01",
+                interval_seconds=60,
+                forecast_start="2026-09-02T00:00:00+08:00",
+                requested_by="m3_daily_scheduler",
+            ),
         )
         for invalid_row in invalid_rows:
             with self.subTest(run_id=invalid_row["run_id"]):
@@ -385,6 +411,7 @@ class CustomForecastRepositoryTests(unittest.TestCase):
                         forecast_start=datetime.fromisoformat(
                             "2026-09-02T00:00:00+08:00"
                         ),
+                        interval_seconds=900,
                     )
 
                 self.assertEqual(raised.exception.code, "sink_contract_invalid")
