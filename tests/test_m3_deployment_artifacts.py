@@ -494,8 +494,7 @@ class DeploymentArtifactTests(unittest.TestCase):
 
         for label in (
             "负载周期：7 天",
-            "SOC 周差分：周一至周六生产 · 周日休息",
-            "同星期同刻度 ΔSOC · 最后真实状态锚定",
+            "SOC 周差分",
             "weekly_load_v2",
             'id="theme-toggle"',
             'id="performance-zone-title">预测摘要',
@@ -504,6 +503,8 @@ class DeploymentArtifactTests(unittest.TestCase):
             'class="candidate-name">周期校准',
         ):
             self.assertIn(label, html)
+        self.assertNotIn("周一至周六生产 · 周日休息", html)
+        self.assertNotIn("同星期同刻度 ΔSOC · 最后真实状态锚定", html)
         self.assertIn(
             '<span class="selection-basis">模型选择依据：留出周评分 → 固定模型顺序</span>',
             html,

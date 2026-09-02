@@ -1169,10 +1169,7 @@ function legacyNullManifestFixture() {
     await page.locator(".readiness-meta").innerText(),
     "训练起点：2026/08/02 12:15 · 有效训练点折算：29.0 天",
   );
-  assert.strictEqual(
-    await page.locator(".readiness-hint").innerText(),
-    "连续有效周：3 周 · 下一级 三周中位 / 自动 ARIMA / 多周期分解：至少还需 7 天完整数据（需 4 周） · 起始无数据 0 桶（已排除） · 负负载无效 0 桶",
-  );
+  assert.strictEqual(await page.locator(".readiness-hint").isHidden(), true);
   assert.strictEqual(await inlineBarPercent(page, ".readiness-track span"), 75);
   assert.strictEqual(await page.locator(".current-day-mape-value").innerText(), "0.00%");
   assert.strictEqual(await page.locator(".current-day-mape-note").innerText(), "96 / 96 个实际点 · 完整结果");
@@ -1287,10 +1284,7 @@ function legacyNullManifestFixture() {
   await page.locator("#run-button").click();
   await waitForCustomResultModelMeta("1 个连续有效周 · 负载周期 7 天 · 15 分钟粒度", warmingRequestStart, warmingResponseStart);
   assert.match(await page.locator(".current-model-name").first().innerText(), /负载：周周期/);
-  assert.strictEqual(
-    await page.locator(".readiness-hint").innerText(),
-    "连续有效周：1 周 · 下一级 双周加权 / 周期校准：至少还需 14 天完整数据（需 3 周） · 起始无数据 0 桶（已排除） · 负负载无效 0 桶",
-  );
+  assert.strictEqual(await page.locator(".readiness-hint").isHidden(), true);
   assert.strictEqual(await page.locator(".candidate[data-model='WeeklyNaive'] .candidate-state").innerText(), "预热中");
 
   customPayload = degradedReconstructedWeekFixture();
@@ -1310,10 +1304,7 @@ function legacyNullManifestFixture() {
     await page.locator(".series-card[data-series='station_total_load'] .series-status").innerText(),
     "降级",
   );
-  assert.strictEqual(
-    await page.locator(".readiness-hint").innerText(),
-    "连续有效周：0 周 · 下一级 周周期：至少还需 7 天完整数据（需 1 周） · 起始无数据 0 桶（已排除） · 负负载无效 0 桶",
-  );
+  assert.strictEqual(await page.locator(".readiness-hint").isHidden(), true);
   assert.strictEqual(
     await page.locator(".readiness-selected").innerText(),
     "请求历史：29 天 · 源数据覆盖：29.0 天（4.1 周）· 起点：2026/08/02 12:15",

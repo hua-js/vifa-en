@@ -552,7 +552,7 @@
               <div class="config-item"><span>季节周期</span><strong id="season-value">日 96 · 周 672</strong><small>随输出粒度自动变化</small></div>
               <div class="config-item"><span>负载聚合</span><strong>时间均值</strong><small>原始数据 → 输出粒度</small></div>
               <div class="config-item"><span>负载周期</span><strong>负载周期：7 天</strong><small>以连续有效周提供候选资格</small></div>
-              <div class="config-item"><span>SOC 周期</span><strong>SOC 周差分：周一至周六生产 · 周日休息</strong><small>同星期同刻度 ΔSOC · 最后真实状态锚定</small></div>
+              <div class="config-item"><span>SOC 周期</span><strong>SOC 周差分</strong></div>
             </div></div>
             <div class="selection-panel"><div class="panel-title">选模策略与候选模型</div><div class="rule"><span class="rule-dot"></span><span><strong id="policy-name">等待数据</strong> · <span id="policy-copy">载入历史长度后显示选模策略</span></span></div>
               <div class="candidates"><div class="candidate" data-model="WeeklyNaive" title="完整模型名称：WeeklyNaive"><div class="candidate-name">周周期</div><div class="candidate-role">上一连续有效周<br>同刻度负载基线</div><div class="candidate-state">1 周起可用</div></div><div class="candidate" data-model="WeeklyWeighted2" title="完整模型名称：WeeklyWeighted2"><div class="candidate-name">双周加权</div><div class="candidate-role">最近两个连续有效周<br>加权负载轮廓</div><div class="candidate-state">3 周起可用</div></div><div class="candidate" data-model="WeeklyRegimeAdjusted" title="完整模型名称：WeeklyRegimeAdjusted"><div class="candidate-name">周期校准</div><div class="candidate-role">近期待机基线校准<br>高负载保持周加权</div><div class="candidate-state">3 周起可用</div></div><div class="candidate" data-model="WeeklyMedian3" title="完整模型名称：WeeklyMedian3"><div class="candidate-name">三周中位</div><div class="candidate-role">最近三个连续有效周<br>中位数负载轮廓</div><div class="candidate-state">4 周起可用</div></div><div class="candidate" data-model="AutoARIMA" title="完整模型名称：AutoARIMA"><div class="candidate-name">自动 ARIMA</div><div class="candidate-role">受限日季节自回归<br>仅 5 分钟及以上粒度</div><div class="candidate-state">4 周起可用</div></div><div class="candidate" data-model="MSTL" title="完整模型名称：MSTL"><div class="candidate-name">多周期分解</div><div class="candidate-role">日 / 周季节分解<br>仅 5 分钟及以上粒度</div><div class="candidate-state">4 周起可用</div></div></div>
@@ -1424,18 +1424,7 @@
             meta,
             `训练起点：${dateTime(station.readiness.training_start)} · 有效训练点折算：${station.readiness.training_days.toFixed(1)} 天`,
           );
-          const qualityEvidence = `起始无数据 ${formatInteger(station.readiness.leading_no_data_points)} 桶（已排除） · 负负载无效 ${formatInteger(station.readiness.negative_invalid_points)} 桶`;
-          if (station.readiness.next_model_name === null) {
-            const completeState = station.readiness.interval_seconds >= 300
-              ? "完整选模已启用"
-              : "高频粒度已启用三周中位（自动 ARIMA / 多周期分解要求至少 5 分钟粒度）";
-            text(hint, `连续有效周：${station.readiness.usable_weeks} 周 · ${completeState} · ${qualityEvidence}`);
-          } else {
-            text(
-              hint,
-              `连续有效周：${station.readiness.usable_weeks} 周 · 下一级 ${station.readiness.next_model_name}：至少还需 ${station.readiness.days_to_next_model} 天完整数据（需 ${station.readiness.next_model_required_weeks} 周） · ${qualityEvidence}`,
-            );
-          }
+          text(hint, "—");
           selected.hidden = false;
         } else {
           text(
@@ -1448,7 +1437,7 @@
           selected.hidden = true;
         }
         progress.style.width = `${Math.min(100, station.readiness.available_days / station.readiness.required_days * 100).toFixed(1)}%`;
-        hint.hidden = false;
+        hint.hidden = custom;
         meta.hidden = false;
       }
 
