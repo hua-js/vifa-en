@@ -1111,20 +1111,16 @@
       "target_key": "id",
       "client_writable": false,
       "relationship_object_persisted": false,
-      "required_dotted_filters": [
-        "batch.station_id",
-        "batch.acceptance_run_id",
-        "batch.write_state"
-      ],
+      "required_dotted_filters": [],
       "installed_api_documentation": {
         "gate": "hard_pre_production",
         "evidence_required": [
           "association_alias_batch_uses_existing_batch_id_foreign_key",
-          "dotted_filter_syntax_and_permissions",
-          "read_only_synthetic_relation_filter_probe"
+          "direct_batch_list_filter_probe",
+          "direct_point_batch_id_filter_probe"
         ],
         "if_unsupported": "stop_update_machine_contract_and_tests_then_rereview",
-        "alternate_query_path": "forbidden"
+        "alternate_query_path": "direct_batch_then_point_batch_id"
       }
     }
   ],
@@ -1147,7 +1143,7 @@
         "action_names_methods_body_params_and_response_envelopes",
         "separate_read_filter_sort_write_record_key_permissions",
         "exact_list_field_filter_and_sort_permissions",
-        "points_batch_dotted_relation_filter_permissions"
+        "direct_batch_and_point_filter_permissions"
       ],
       "default_not_granted": {
         "updateOrCreate": ["get", "create", "update"],
@@ -1211,8 +1207,8 @@
         "denied_actions": ["destroy", "delete", "export", "import"],
         "fields_by_action": {
           "list": {
-            "read": ["id", "unique_id", "data_time", "target_time", "horizon_step", "model_name", "raw_forecast", "forecast_value", "is_clipped", "actual_value", "actual_quality", "actual_source_revision"],
-            "filter": ["batch_id", "batch.station_id", "batch.acceptance_run_id", "batch.write_state", "unique_id", "data_time"],
+            "read": ["id", "batch_id", "unique_id", "data_time", "target_time", "horizon_step", "model_name", "raw_forecast", "forecast_value", "is_clipped", "actual_value", "actual_quality", "actual_source_revision"],
+            "filter": ["batch_id", "unique_id", "data_time"],
             "sort": ["unique_id", "data_time"],
             "write": [],
             "record_key": []

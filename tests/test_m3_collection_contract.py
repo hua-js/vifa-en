@@ -7,12 +7,18 @@ import unittest
 from urllib.parse import parse_qs, urlsplit
 from unittest.mock import patch
 
-from m3_worker.contracts import AcceptanceContext, LatestSnapshot, ObservationPoint
+from m3_worker.contracts import (
+    AcceptanceContext,
+    LatestSnapshot,
+    ObservationPoint,
+    SERIES_IDS,
+)
 from m3_worker.domain.evaluation import MetricResult
 from m3_worker.errors import M3Error
 from m3_worker.services.acceptance_service import (
     ACTUAL_UPDATE_FIELDS,
     BACKFILL_FIELDS,
+    COMPLETE_BATCH_FIELDS,
     EVALUATION_FIELDS,
     METRIC_FIELDS,
     WRITING_BATCH_FIELDS,
@@ -416,7 +422,7 @@ class CollectionContractTests(unittest.TestCase):
                 "action_names_methods_body_params_and_response_envelopes",
                 "separate_read_filter_sort_write_record_key_permissions",
                 "exact_list_field_filter_and_sort_permissions",
-                "points_batch_dotted_relation_filter_permissions",
+                "direct_batch_and_point_filter_permissions",
             ],
         )
         self.assertEqual(
@@ -432,7 +438,7 @@ class CollectionContractTests(unittest.TestCase):
             "stop_update_machine_contract_and_tests_then_rereview",
         )
 
-    def test_points_batch_relationship_matches_task9_dotted_filters(self):
+    def test_points_batch_relationship_uses_direct_acceptance_filters(self):
         contract = _load_contract()
         self.assertEqual(
             contract["relationships"],
@@ -447,20 +453,16 @@ class CollectionContractTests(unittest.TestCase):
                     "target_key": "id",
                     "client_writable": False,
                     "relationship_object_persisted": False,
-                    "required_dotted_filters": [
-                        "batch.station_id",
-                        "batch.acceptance_run_id",
-                        "batch.write_state",
-                    ],
+                    "required_dotted_filters": [],
                     "installed_api_documentation": {
                         "gate": "hard_pre_production",
                         "evidence_required": [
                             "association_alias_batch_uses_existing_batch_id_foreign_key",
-                            "dotted_filter_syntax_and_permissions",
-                            "read_only_synthetic_relation_filter_probe",
+                            "direct_batch_list_filter_probe",
+                            "direct_point_batch_id_filter_probe",
                         ],
                         "if_unsupported": "stop_update_machine_contract_and_tests_then_rereview",
-                        "alternate_query_path": "forbidden",
+                        "alternate_query_path": "direct_batch_then_point_batch_id",
                     },
                 }
             ],
@@ -479,11 +481,23 @@ class CollectionContractTests(unittest.TestCase):
                         "sort": sort,
                     }
                 )
+                if collection == "energy_forecast_batches":
+                    return [
+                        {
+                            "id": 1,
+                            "station_id": "station-1",
+                            "acceptance_run_id": "run-20260825",
+                            "issued_at": "2026-08-25T01:00:00+08:00",
+                            "forecast_start_time": "2026-08-25T01:00:00+08:00",
+                            "forecast_end_time": "2026-08-26T01:00:00+08:00",
+                            "write_state": "complete",
+                        }
+                    ]
                 return []
 
         api = CapturingApi()
         service = AcceptanceService(
-            context_source=None,
+            run_service=None,
             observation_source=None,
             api=api,
             sink=None,
@@ -505,22 +519,56 @@ class CollectionContractTests(unittest.TestCase):
             ),
             [],
         )
-        relationship = contract["relationships"][0]
-        for call in api.calls:
-            self.assertEqual(call["collection"], relationship["source_collection"])
-            dotted = [field for field in call["filter"] if "." in field]
-            self.assertEqual(dotted, relationship["required_dotted_filters"])
-            self.assertEqual(call["fields"], list(BACKFILL_FIELDS))
-            self.assertEqual(call["sort"], ["data_time"])
+        batch_calls = [
+            call for call in api.calls if call["collection"] == "energy_forecast_batches"
+        ]
+        point_calls = [
+            call for call in api.calls if call["collection"] == "energy_forecast_points"
+        ]
+        self.assertEqual(len(batch_calls), 1)
+        batch_call = batch_calls[0]
+        self.assertEqual(
+            batch_call["filter"],
+            {
+                "station_id": "station-1",
+                "acceptance_run_id": "run-20260825",
+                "write_state": "complete",
+            },
+        )
+        self.assertEqual(batch_call["fields"], list(COMPLETE_BATCH_FIELDS))
+        self.assertEqual(batch_call["sort"], ["issued_at"])
+        self.assertEqual(len(point_calls), len(SERIES_IDS))
+        for point_call in point_calls:
+            self.assertEqual(point_call["filter"]["batch_id"], 1)
+            self.assertEqual(
+                [key for key in point_call["filter"] if "." in key],
+                [],
+            )
+            self.assertEqual(point_call["fields"], list(BACKFILL_FIELDS))
+            self.assertEqual(point_call["sort"], ["data_time"])
 
         with self.assertRaises(M3Error):
             service._series_evaluation(
                 "station-1", "run-20260825", "station_total_load", context
             )
+        batch_call = api.calls[-2]
+        self.assertEqual(batch_call["collection"], "energy_forecast_batches")
+        self.assertEqual(
+            batch_call["filter"],
+            {
+                "station_id": "station-1",
+                "acceptance_run_id": "run-20260825",
+                "write_state": "complete",
+            },
+        )
+        self.assertEqual(batch_call["fields"], list(COMPLETE_BATCH_FIELDS))
+        self.assertEqual(batch_call["sort"], ["issued_at"])
         evaluation_call = api.calls[-1]
+        self.assertEqual(evaluation_call["collection"], "energy_forecast_points")
+        self.assertEqual(evaluation_call["filter"]["batch_id"], 1)
         self.assertEqual(
             [field for field in evaluation_call["filter"] if "." in field],
-            relationship["required_dotted_filters"],
+            [],
         )
         self.assertEqual(evaluation_call["fields"], list(EVALUATION_FIELDS))
         self.assertEqual(evaluation_call["sort"], ["data_time"])
@@ -553,7 +601,7 @@ class CollectionContractTests(unittest.TestCase):
             },
             "energy_forecast_batches": {
                 "read": list(WRITING_BATCH_FIELDS),
-                "filter": ["write_state"],
+                "filter": ["station_id", "acceptance_run_id", "write_state"],
                 "sort": ["issued_at"],
                 "write": [],
                 "record_key": [],
@@ -561,6 +609,7 @@ class CollectionContractTests(unittest.TestCase):
             "energy_forecast_points": {
                 "read": [
                     "id",
+                    "batch_id",
                     "unique_id",
                     "data_time",
                     "target_time",
@@ -573,14 +622,7 @@ class CollectionContractTests(unittest.TestCase):
                     "actual_quality",
                     "actual_source_revision",
                 ],
-                "filter": [
-                    "batch_id",
-                    "batch.station_id",
-                    "batch.acceptance_run_id",
-                    "batch.write_state",
-                    "unique_id",
-                    "data_time",
-                ],
+                "filter": ["batch_id", "unique_id", "data_time"],
                 "sort": ["unique_id", "data_time"],
                 "write": [],
                 "record_key": [],
@@ -698,20 +740,24 @@ class CollectionContractTests(unittest.TestCase):
         list_api = ListApi()
         self.assertEqual(
             AcceptanceService(
-                context_source=None,
+                run_service=None,
                 observation_source=None,
                 api=list_api,
                 sink=None,
                 forecast_service=None,
                 now=lambda: None,
-            ).reconcile_writing_batches(),
+            ).reconcile_writing_batches("station-1"),
             0,
         )
         collection, filter_fields, read_fields, sort_fields = list_api.calls[0]
         self.assertEqual(collection, "energy_forecast_batches")
         self.assertEqual(
             list(filter_fields),
-            permissions[collection]["fields_by_action"]["list"]["filter"],
+            ["station_id", "write_state"],
+        )
+        self.assertTrue(
+            set(filter_fields)
+            <= set(permissions[collection]["fields_by_action"]["list"]["filter"])
         )
         self.assertEqual(read_fields, list(WRITING_BATCH_FIELDS))
         self.assertEqual(
@@ -726,6 +772,10 @@ class CollectionContractTests(unittest.TestCase):
             def update_or_create(self, collection, filter, values):
                 self.calls.append((collection, filter, values))
                 return {"id": len(self.calls), **values}
+
+        class RunService:
+            def sync_result(self, station_id, acceptance_run_id, outcome, calculated_at):
+                return None
 
         class SyntheticEvaluationService(AcceptanceService):
             def _series_evaluation(
@@ -761,7 +811,7 @@ class CollectionContractTests(unittest.TestCase):
             window_end=datetime.fromisoformat("2026-09-01T01:00:00+08:00"),
         )
         SyntheticEvaluationService(
-            context_source=None,
+            run_service=RunService(),
             observation_source=None,
             api=evaluation_api,
             sink=None,
@@ -816,7 +866,7 @@ class CollectionContractTests(unittest.TestCase):
 
         actual_api = ActualApi()
         updated = SyntheticBackfillService(
-            context_source=None,
+            run_service=None,
             observation_source=None,
             api=actual_api,
             sink=None,
