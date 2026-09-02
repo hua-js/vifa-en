@@ -152,7 +152,7 @@ def clip_value(unique_id: str, raw: float) -> tuple[float, float, bool]:
     published = (
         max(value, 0.0)
         if is_load_series(unique_id)
-        else min(max(value, 0.0), 100.0)
+        else min(max(value, 2.0), 99.0)
     )
     return value, published, value != published
 

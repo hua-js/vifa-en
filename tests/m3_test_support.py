@@ -135,7 +135,7 @@ def make_m3_dashboard_series() -> list[dict]:
                 if unique_id == "storage_soc" and index == 10
                 else base + index / 20
             )
-            value = 100.0 if unit == "%" and raw_value > 100 else raw_value
+            value = 99.0 if unit == "%" and raw_value > 99 else raw_value
             forecast.append(
                 {
                     "data_time": (

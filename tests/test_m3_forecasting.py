@@ -41,9 +41,12 @@ class M3ForecastingTests(unittest.TestCase):
         self.assertEqual(models[3].season_length, [96, 672])
         self.assertIsInstance(models[3].trend_forecaster, AutoARIMA)
 
-    def test_two_series_physical_clipping(self):
+    def test_load_and_soc_forecasts_use_their_published_bounds(self):
         self.assertEqual(clip_value("station_total_load", -5), (-5.0, 0.0, True))
-        self.assertEqual(clip_value("storage_soc", 103), (103.0, 100.0, True))
+        self.assertEqual(clip_value("storage_soc", 1), (1.0, 2.0, True))
+        self.assertEqual(clip_value("storage_soc", 2), (2.0, 2.0, False))
+        self.assertEqual(clip_value("storage_soc", 99), (99.0, 99.0, False))
+        self.assertEqual(clip_value("storage_soc", 100), (100.0, 99.0, True))
 
     def test_less_than_seven_days_emits_no_forecast_points(self):
         dataset = build_training_dataset(

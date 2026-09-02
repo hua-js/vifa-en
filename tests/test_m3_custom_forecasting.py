@@ -312,10 +312,10 @@ class CustomForecastAnchoringTests(unittest.TestCase):
         )
 
     @patch("m3_worker.domain.custom_forecasting._forecast_frame")
-    def test_soc_anchor_is_clipped_to_physical_bounds(self, forecast_frame):
+    def test_soc_anchor_is_published_within_operating_bounds(self, forecast_frame):
         dataset = make_dataset("storage_soc")
         forecast_frame.return_value = (
-            model_frame([10.0, 40.0] + [40.0] * 22),
+            model_frame([10.0, -70.0, 40.0] + [40.0] * 21),
             "SeasonalNaive",
             None,
         )
@@ -324,9 +324,12 @@ class CustomForecastAnchoringTests(unittest.TestCase):
             dataset, seasonal_naive_champion(dataset), make_config()
         )
 
-        self.assertEqual(series.points[1].raw_forecast, 110.0)
-        self.assertEqual(series.points[1].forecast_value, 100.0)
+        self.assertEqual(series.points[1].raw_forecast, 0.0)
+        self.assertEqual(series.points[1].forecast_value, 2.0)
         self.assertTrue(series.points[1].is_clipped)
+        self.assertEqual(series.points[2].raw_forecast, 110.0)
+        self.assertEqual(series.points[2].forecast_value, 99.0)
+        self.assertTrue(series.points[2].is_clipped)
 
     @patch("m3_worker.domain.custom_forecasting._forecast_frame")
     def test_load_forecast_is_not_anchored(self, forecast_frame):
