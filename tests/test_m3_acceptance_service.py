@@ -106,7 +106,7 @@ def stored_point(
 def evaluation_rows(unique_id: str, *, value: float = 100.0) -> list[dict]:
     return [
         {
-            "batch_id": 41,
+            "batch_id": 41 + index // 96,
             "unique_id": unique_id,
             "data_time": (START + timedelta(minutes=15 * index)).isoformat(),
             "actual_value": value,
@@ -190,14 +190,25 @@ class FakeApi:
         rows_by_series=None,
         point_list_error=None,
         ignore_point_batch_filter: bool = False,
+        ignore_point_time_filter: bool = False,
     ) -> None:
         self.complete_batches = list(
-            [complete_batch_row()] if complete_batches is None else complete_batches
+            [
+                complete_batch_row(
+                    record_id=41 + day,
+                    forecast_start=START + timedelta(days=day),
+                    forecast_end=START + timedelta(days=day + 1),
+                )
+                for day in range(7)
+            ]
+            if complete_batches is None
+            else complete_batches
         )
         self.backfill_rows = list(backfill_rows or [])
         self.rows_by_series = dict(rows_by_series or {})
         self.point_list_error = point_list_error
         self.ignore_point_batch_filter = ignore_point_batch_filter
+        self.ignore_point_time_filter = ignore_point_time_filter
         self.list_calls: list[SimpleNamespace] = []
         self.update_calls: list[SimpleNamespace] = []
         self.upsert_calls: list[SimpleNamespace] = []
@@ -232,14 +243,20 @@ class FakeApi:
             rows = [row for row in rows if row.get("unique_id") == unique_id]
         if "batch_id" in filter and not self.ignore_point_batch_filter:
             rows = [row for row in rows if row.get("batch_id") == filter["batch_id"]]
-        if "id" in fields and "data_time" in filter:
+        if "data_time" in filter and not self.ignore_point_time_filter:
             lower = datetime.fromisoformat(filter["data_time"]["$gte"])
             upper = datetime.fromisoformat(filter["data_time"]["$lt"])
-            rows = [
-                row
-                for row in rows
-                if lower <= datetime.fromisoformat(row["data_time"]) < upper
-            ]
+            filtered = []
+            for row in rows:
+                try:
+                    data_time = datetime.fromisoformat(row["data_time"])
+                    if data_time.tzinfo is not None and lower <= data_time < upper:
+                        filtered.append(row)
+                    elif data_time.tzinfo is None:
+                        filtered.append(row)
+                except (TypeError, ValueError):
+                    filtered.append(row)
+            rows = filtered
         return [{field: row[field] for field in fields} for row in rows]
 
     def update_record(self, collection, record_id, values):
@@ -1150,6 +1167,58 @@ class BackfillTests(unittest.TestCase):
 
 
 class RecalculationTests(unittest.TestCase):
+    def test_evaluation_rejects_a_correct_batch_id_outside_that_batch_window(self):
+        """A faulty point API must not let one batch supply another batch's day."""
+        complete_batches = [
+            complete_batch_row(
+                record_id=41 + day,
+                forecast_start=START + timedelta(days=day),
+                forecast_end=START + timedelta(days=day + 1),
+            )
+            for day in range(7)
+        ]
+        rows = []
+        for day, batch in enumerate(complete_batches):
+            for interval in range(96):
+                if day == 1 and interval == 0:
+                    continue
+                rows.append(
+                    {
+                        "batch_id": batch["id"],
+                        "unique_id": "station_total_load",
+                        "data_time": (
+                            START + timedelta(days=day, minutes=15 * interval)
+                        ).isoformat(),
+                        "actual_value": 100.0,
+                        "forecast_value": 90.0,
+                        "actual_quality": "valid",
+                    }
+                )
+        rows.append(
+            {
+                "batch_id": 41,
+                "unique_id": "station_total_load",
+                "data_time": (START + timedelta(days=1)).isoformat(),
+                "actual_value": 100.0,
+                "forecast_value": 90.0,
+                "actual_quality": "valid",
+            }
+        )
+        service, _, _, _, _ = make_service(
+            api=FakeApi(
+                complete_batches=complete_batches,
+                rows_by_series={"station_total_load": rows},
+                ignore_point_time_filter=True,
+            )
+        )
+
+        with self.assertRaises(M3Error) as raised:
+            service._series_evaluation(
+                "station-1", "run-20260825", "station_total_load", active_context()
+            )
+
+        self.assertEqual(raised.exception.code, "acceptance_points_incomplete")
+
     def test_persists_all_six_series_metrics_and_keeps_overall_metrics_null(self):
         rows = {unique_id: evaluation_rows(unique_id) for unique_id in SERIES_IDS}
         metrics = iter(
@@ -1213,8 +1282,14 @@ class RecalculationTests(unittest.TestCase):
         results = service.recalculate("station-1", "run-20260825")
 
         point_queries = [call for call in api.list_calls if call.collection == "energy_forecast_points"]
-        self.assertEqual([call.filter["unique_id"] for call in point_queries], list(SERIES_IDS))
-        self.assertTrue(all(call.filter["batch_id"] == 41 for call in point_queries))
+        self.assertEqual(
+            [call.filter["unique_id"] for call in point_queries],
+            [unique_id for unique_id in SERIES_IDS for _ in range(7)],
+        )
+        self.assertEqual(
+            [call.filter["batch_id"] for call in point_queries],
+            [batch_id for _ in SERIES_IDS for batch_id in range(41, 48)],
+        )
         self.assertTrue(
             all(not any("." in key for key in call.filter) for call in point_queries)
         )

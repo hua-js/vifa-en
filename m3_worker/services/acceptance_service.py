@@ -864,14 +864,16 @@ class AcceptanceService:
         rows: list[dict[str, Any]] = []
         previous: datetime | None = None
         for batch in self._complete_batches(station_id, context):
+            lower = max(window_start, batch.forecast_start)
+            upper = min(window_end, batch.forecast_end)
             batch_rows = self._api.list_records(
                 "energy_forecast_points",
                 filter={
                     "batch_id": batch.record_id,
                     "unique_id": unique_id,
                     "data_time": {
-                        "$gte": max(window_start, batch.forecast_start).isoformat(),
-                        "$lt": min(window_end, batch.forecast_end).isoformat(),
+                        "$gte": lower.isoformat(),
+                        "$lt": upper.isoformat(),
                     },
                 },
                 fields=list(EVALUATION_FIELDS),
@@ -886,7 +888,11 @@ class AcceptanceService:
                 data_time = _safe_time(
                     row["data_time"], "data_time", quarter_hour=True
                 )
-                if row["batch_id"] != batch.record_id:
+                if (
+                    row["batch_id"] != batch.record_id
+                    or data_time < lower
+                    or data_time >= upper
+                ):
                     raise M3Error(
                         "acceptance_points_incomplete",
                         "Acceptance point batch identity is invalid",
