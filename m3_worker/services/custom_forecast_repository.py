@@ -380,7 +380,7 @@ class CustomForecastRepository:
     ) -> StoredCustomRun | None:
         if interval_seconds not in ALLOWED_INTERVAL_SECONDS:
             raise ValueError("interval_seconds must be allowed")
-        rows = self._api.list_records(
+        row = self._api.list_first_record(
             RUNS,
             filter={
                 "station_id": station_id,
@@ -390,7 +390,19 @@ class CustomForecastRepository:
             fields=RUN_FIELDS,
             sort=["-completed_at", "-createdAt"],
         )
-        return None if not rows else self._parse_run(rows[0])
+        if row is None:
+            return None
+        run = self._parse_run(row)
+        if (
+            run.station_id != station_id
+            or run.config.interval_seconds != interval_seconds
+            or run.status not in {"succeeded", "evaluated"}
+            or run.completed_at is None
+        ):
+            raise M3Error(
+                "sink_contract_invalid", "Persisted custom template is invalid"
+            )
+        return run
 
     def list_daily_runs(
         self,
@@ -424,7 +436,8 @@ class CustomForecastRepository:
         )
         runs = [self._parse_run(row) for row in rows]
         if any(
-            run.record.requested_by != DAILY_REQUESTED_BY
+            run.station_id != station_id
+            or run.record.requested_by != DAILY_REQUESTED_BY
             or run.config.forecast_start != forecast_start
             or run.config.interval_seconds != interval_seconds
             for run in runs

@@ -405,6 +405,53 @@ class NocoBaseApiClient:
             parse=lambda value: self._parse_list_envelope(value, checked_fields),
         )
 
+    def list_first_record(
+        self,
+        collection: str,
+        *,
+        filter: dict[str, Any],
+        fields: list[str],
+        sort: list[str],
+    ) -> dict[str, Any] | None:
+        """Return only the first row from a strict, sorted one-row list page."""
+
+        if not fields or not sort:
+            raise M3Error(
+                "sink_contract_invalid", "NocoBase first-record arguments are invalid"
+            )
+        checked_filter = self._json_mapping(filter, "filter", allow_empty=True)
+        checked_fields = tuple(self._identifier(field, "field") for field in fields)
+        checked_sort = tuple(self._sort_identifier(field) for field in sort)
+        params = {
+            "filter": json.dumps(
+                checked_filter,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ),
+            "fields": ",".join(checked_fields),
+            "page": "1",
+            "pageSize": "1",
+            "sort": ",".join(checked_sort),
+        }
+
+        def parse(value: object) -> dict[str, Any] | None:
+            rows, _, _ = self._parse_list_page(
+                value,
+                checked_fields,
+                expected_page=1,
+                expected_page_size=1,
+            )
+            return None if not rows else rows[0]
+
+        return self._request(
+            "GET",
+            collection,
+            "list",
+            params=params,
+            parse=parse,
+        )
+
     def create_record(
         self, collection: str, values: dict[str, Any]
     ) -> dict[str, Any]:

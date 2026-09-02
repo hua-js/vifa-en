@@ -122,7 +122,7 @@ def complete_batch_row(
     record_id: int = 41,
     station_id: str = "station-1",
     acceptance_run_id: str = "run-20260825",
-    issued_at: datetime = AS_OF,
+    issued_at: datetime | None = None,
     forecast_start: datetime = START,
     forecast_end: datetime = START + timedelta(days=1),
     write_state: str = "complete",
@@ -131,7 +131,11 @@ def complete_batch_row(
         "id": record_id,
         "station_id": station_id,
         "acceptance_run_id": acceptance_run_id,
-        "issued_at": issued_at.isoformat(),
+        "issued_at": (
+            forecast_start + timedelta(minutes=2)
+            if issued_at is None
+            else issued_at
+        ).isoformat(),
         "forecast_start_time": forecast_start.isoformat(),
         "forecast_end_time": forecast_end.isoformat(),
         "write_state": write_state,
@@ -929,6 +933,47 @@ class BackfillTests(unittest.TestCase):
                     )
 
                 self.assertEqual(raised.exception.code, "acceptance_points_incomplete")
+
+    def test_rejects_complete_batch_offset_from_formal_daily_slot(self):
+        """A 24-hour batch must start on an integer day from the run window."""
+        forecast_start = START + timedelta(minutes=15)
+        service, _, _, _, _ = make_service(
+            api=FakeApi(
+                complete_batches=[
+                    complete_batch_row(
+                        forecast_start=forecast_start,
+                        forecast_end=forecast_start + timedelta(days=1),
+                        issued_at=forecast_start + timedelta(minutes=2),
+                    )
+                ]
+            )
+        )
+
+        with self.assertRaises(M3Error) as raised:
+            service.backfill_actuals(
+                "station-1",
+                datetime.fromisoformat("2026-08-25T01:17:00+08:00"),
+            )
+
+        self.assertEqual(raised.exception.code, "acceptance_points_incomplete")
+
+    def test_rejects_complete_batch_with_noncanonical_issued_at(self):
+        """A formal batch must be issued exactly two minutes after its start."""
+        service, _, _, _, _ = make_service(
+            api=FakeApi(
+                complete_batches=[
+                    complete_batch_row(issued_at=START + timedelta(minutes=3))
+                ]
+            )
+        )
+
+        with self.assertRaises(M3Error) as raised:
+            service.backfill_actuals(
+                "station-1",
+                datetime.fromisoformat("2026-08-25T01:17:00+08:00"),
+            )
+
+        self.assertEqual(raised.exception.code, "acceptance_points_incomplete")
 
     def test_rejects_a_point_returned_under_the_wrong_batch_id(self):
         """A point response must prove that it belongs to the requested complete batch."""

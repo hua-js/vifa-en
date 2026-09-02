@@ -185,7 +185,7 @@ class TemplateRunsApi:
         self.interval_seconds = interval_seconds
         self.calls = 0
 
-    def list_records(self, collection, *, filter, fields, sort=None):
+    def list_first_record(self, collection, *, filter, fields, sort):
         self.calls += 1
         if collection != "energy_forecast_manual_runs":
             raise AssertionError(collection)
@@ -199,7 +199,7 @@ class TemplateRunsApi:
             raise AssertionError(fields)
         if sort != ["-completed_at", "-createdAt"]:
             raise AssertionError(sort)
-        return [dict(row) for row in self.rows]
+        return None if not self.rows else dict(self.rows[0])
 
 
 class DailyRunsApi:
@@ -288,6 +288,55 @@ class CustomForecastRepositoryTests(unittest.TestCase):
 
         self.assertEqual(raised.exception.code, "sink_contract_invalid")
 
+    def test_latest_completed_template_rejects_response_outside_query_identity(self):
+        """A filtered first row must still prove station, cadence, state, and completion."""
+        missing_completion = persisted_run_row(
+            run_id="missing-completion",
+            status="succeeded",
+            completed_at="2026-09-02T12:01:00+08:00",
+            selection_policy="weekly_load_v2",
+            station_id="ES01",
+            interval_seconds=900,
+        )
+        missing_completion["completed_at"] = None
+        invalid_rows = (
+            persisted_run_row(
+                run_id="wrong-station",
+                status="succeeded",
+                completed_at="2026-09-02T12:01:00+08:00",
+                selection_policy="weekly_load_v2",
+                station_id="ES02",
+                interval_seconds=900,
+            ),
+            persisted_run_row(
+                run_id="wrong-interval",
+                status="succeeded",
+                completed_at="2026-09-02T12:01:00+08:00",
+                selection_policy="weekly_load_v2",
+                station_id="ES01",
+                interval_seconds=60,
+            ),
+            persisted_run_row(
+                run_id="wrong-status",
+                status="queued",
+                completed_at="2026-09-02T12:01:00+08:00",
+                selection_policy="weekly_load_v2",
+                station_id="ES01",
+                interval_seconds=900,
+            ),
+            missing_completion,
+        )
+        for invalid_row in invalid_rows:
+            with self.subTest(run_id=invalid_row["run_id"]):
+                api = TemplateRunsApi([invalid_row])
+
+                with self.assertRaises(M3Error) as raised:
+                    CustomForecastRepository(api).latest_completed_template(
+                        "ES01", interval_seconds=900
+                    )
+
+                self.assertEqual(raised.exception.code, "sink_contract_invalid")
+
     def test_latest_completed_template_rejects_an_unallowed_interval_without_querying(self):
         """An unsupported cadence must not broaden the repository query."""
         api = TemplateRunsApi([], interval_seconds=17)
@@ -370,6 +419,16 @@ class CustomForecastRepositoryTests(unittest.TestCase):
     def test_list_daily_runs_rejects_mismatched_persisted_identity(self):
         """A server response outside the daily query identity must not be trusted."""
         invalid_rows = (
+            persisted_run_row(
+                run_id="wrong-station",
+                status="succeeded",
+                completed_at="2026-09-02T00:05:00+08:00",
+                selection_policy="weekly_load_v2",
+                station_id="ES02",
+                interval_seconds=900,
+                forecast_start="2026-09-02T00:00:00+08:00",
+                requested_by="m3_daily_scheduler",
+            ),
             persisted_run_row(
                 run_id="wrong-requester",
                 status="succeeded",

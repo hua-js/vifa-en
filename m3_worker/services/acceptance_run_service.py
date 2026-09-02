@@ -9,6 +9,9 @@ from zoneinfo import ZoneInfo
 
 from m3_worker.contracts import SERIES_IDS, validate_shanghai_timestamp
 from m3_worker.errors import M3Error
+from m3_worker.services.acceptance_batch_window import (
+    is_valid_formal_batch_window,
+)
 
 
 CONTROL_STATES = frozenset({"active", "completed", "cancelled"})
@@ -290,18 +293,13 @@ class AcceptanceRunService:
                 error_factory=_summary_error,
             )
             if (
-                issued_at.hour != 1
-                or issued_at.minute != 2
-                or issued_at.second != 0
-                or issued_at.microsecond != 0
-                or forecast_start.hour != 1
-                or forecast_start.minute != 0
-                or forecast_start.second != 0
-                or forecast_start.microsecond != 0
-                or issued_at.date() != forecast_start.date()
-                or forecast_end != forecast_start + timedelta(days=1)
-                or forecast_start < run.window_start
-                or forecast_end > run.window_end
+                not is_valid_formal_batch_window(
+                    issued_at=issued_at,
+                    forecast_start=forecast_start,
+                    forecast_end=forecast_end,
+                    window_start=run.window_start,
+                    window_end=run.window_end,
+                )
                 or forecast_start in starts
             ):
                 raise _summary_error()

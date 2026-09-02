@@ -19,6 +19,9 @@ from m3_worker.contracts import (
 from m3_worker.domain.evaluation import MetricResult, evaluate_series, overall_outcome
 from m3_worker.errors import M3Error
 from m3_worker.json_contract import ExactJsonError, validate_exact_json_mapping
+from m3_worker.services.acceptance_batch_window import (
+    is_valid_formal_batch_window,
+)
 from m3_worker.sinks.forecast_sink import (
     POINT_HASH_FIELDS,
     acceptance_content_hash,
@@ -335,9 +338,13 @@ class AcceptanceService:
                 or row["station_id"] != station_id
                 or row["acceptance_run_id"] != acceptance_run_id
                 or row["write_state"] != "complete"
-                or forecast_end - forecast_start != timedelta(days=1)
-                or forecast_start < window_start
-                or forecast_end > window_end
+                or not is_valid_formal_batch_window(
+                    issued_at=issued_at,
+                    forecast_start=forecast_start,
+                    forecast_end=forecast_end,
+                    window_start=window_start,
+                    window_end=window_end,
+                )
                 or forecast_start.date() in seen_dates
                 or any(
                     forecast_start < batch.forecast_end

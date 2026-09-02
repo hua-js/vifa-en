@@ -335,6 +335,124 @@ class NocoBaseClientTests(unittest.TestCase):
         self.assertEqual(params["sort"], "unique_id,data_time")
         self.assertEqual(params["pageSize"], "1000")
 
+    def test_list_first_record_reads_one_sorted_row_from_more_than_1000_records(self):
+        """Template discovery must stay bounded when retained history spans many pages."""
+        requests: list[httpx.Request] = []
+        first = {
+            "id": 1001,
+            "completed_at": "2026-09-02T12:01:00+08:00",
+        }
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            requests.append(request)
+            return httpx.Response(
+                200,
+                json={
+                    "data": [first],
+                    "meta": {
+                        "count": 1001,
+                        "page": 1,
+                        "pageSize": 1,
+                        "totalPage": 1001,
+                    },
+                },
+            )
+
+        row = make_api(handler).list_first_record(
+            "energy_forecast_manual_runs",
+            filter={"station_id": "ES01"},
+            fields=["id", "completed_at"],
+            sort=["-completed_at", "-createdAt"],
+        )
+
+        self.assertEqual(row, first)
+        self.assertEqual(len(requests), 1)
+        params = requests[0].url.params
+        self.assertEqual(params["page"], "1")
+        self.assertEqual(params["pageSize"], "1")
+        self.assertEqual(params["sort"], "-completed_at,-createdAt")
+
+    def test_list_first_record_strictly_rejects_malformed_page_boundaries(self):
+        """One-row reads must not trust contradictory pagination or row shapes."""
+        valid_row = {"id": 1, "completed_at": "2026-09-02T12:01:00+08:00"}
+        responses = (
+            {
+                "data": [valid_row],
+                "meta": {
+                    "count": 2,
+                    "page": 1,
+                    "pageSize": 1,
+                    "totalPage": 1,
+                },
+            },
+            {
+                "data": [],
+                "meta": {
+                    "count": 1,
+                    "page": 1,
+                    "pageSize": 1,
+                    "totalPage": 1,
+                },
+            },
+            {
+                "data": [valid_row, valid_row],
+                "meta": {
+                    "count": 2,
+                    "page": 1,
+                    "pageSize": 1,
+                    "totalPage": 2,
+                },
+            },
+            {
+                "data": [{"id": 1}],
+                "meta": {
+                    "count": 1,
+                    "page": 1,
+                    "pageSize": 1,
+                    "totalPage": 1,
+                },
+            },
+            {
+                "data": [],
+                "meta": {
+                    "count": 0,
+                    "page": 1,
+                    "pageSize": 1,
+                    "totalPage": 1,
+                },
+            },
+        )
+        for payload in responses:
+            with self.subTest(payload=payload), self.assertRaises(M3Error) as raised:
+                make_api(
+                    lambda request, payload=payload: httpx.Response(200, json=payload)
+                ).list_first_record(
+                    "energy_forecast_manual_runs",
+                    filter={"station_id": "ES01"},
+                    fields=["id", "completed_at"],
+                    sort=["-completed_at"],
+                )
+
+            self.assertEqual(raised.exception.code, "sink_contract_invalid")
+
+    def test_list_first_record_returns_none_for_an_exact_empty_page(self):
+        """No matching sorted row is a valid bounded empty result."""
+        payload = {
+            "data": [],
+            "meta": {"count": 0, "page": 1, "pageSize": 1, "totalPage": 0},
+        }
+
+        row = make_api(
+            lambda request: httpx.Response(200, json=payload)
+        ).list_first_record(
+            "energy_forecast_manual_runs",
+            filter={"station_id": "ES01"},
+            fields=["id", "completed_at"],
+            sort=["-completed_at"],
+        )
+
+        self.assertIsNone(row)
+
     def test_retries_with_fresh_requests_and_closes_every_response(self):
         """Replaying one consumed request or leaking retry responses breaks reliable publication."""
         requests: list[httpx.Request] = []

@@ -631,7 +631,7 @@ class CollectionContractTests(unittest.TestCase):
                             "id": 1,
                             "station_id": "station-1",
                             "acceptance_run_id": "run-20260825",
-                            "issued_at": "2026-08-25T01:00:00+08:00",
+                            "issued_at": "2026-08-25T01:02:00+08:00",
                             "forecast_start_time": "2026-08-25T01:00:00+08:00",
                             "forecast_end_time": "2026-08-26T01:00:00+08:00",
                             "write_state": "complete",
