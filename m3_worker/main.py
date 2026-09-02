@@ -33,6 +33,9 @@ from m3_worker.services.custom_forecast_evaluation_service import (
     CustomForecastEvaluationService,
 )
 from m3_worker.services.custom_forecast_service import CustomForecastService
+from m3_worker.services.daily_custom_forecast_service import (
+    DailyCustomForecastService,
+)
 from m3_worker.services.forecast_service import (
     ForecastService,
     verify_statsforecast_runtime,
@@ -115,6 +118,7 @@ class WorkerResources:
     acceptance_service: object
     custom_forecasts: object
     custom_evaluations: object
+    daily_custom_forecasts: object
     scheduler: object
     jobs: object
     clock: Callable[[], datetime]
@@ -191,6 +195,14 @@ class WorkerResources:
             for station_id in self.settings.station_ids:
                 self._alert(
                     station_id, "custom_forecast_recovery", error, recovery_at
+                )
+        for station_id in self.settings.station_ids:
+            try:
+                self.daily_custom_forecasts.run_station(station_id, raw_now)
+            except Exception as error:
+                failed = True
+                self._alert(
+                    station_id, "daily_custom_forecast", error, recovery_at
                 )
         if not failed:
             try:
@@ -329,6 +341,10 @@ def build_resources(
             observation_source,
             clock,
         )
+        daily_custom_forecasts = DailyCustomForecastService(
+            custom_repository,
+            custom_forecasts,
+        )
         scheduler = SchedulerRunner(
             settings.station_ids,
             forecast_service,
@@ -337,6 +353,7 @@ def build_resources(
             clock=clock,
             acceptance_enabled=settings.acceptance_enabled,
             custom_evaluation_service=custom_evaluations,
+            daily_custom_forecast_service=daily_custom_forecasts,
         )
         jobs = JobService(
             scheduler.run_manual,
@@ -354,6 +371,7 @@ def build_resources(
             acceptance_service=acceptance_service,
             custom_forecasts=custom_forecasts,
             custom_evaluations=custom_evaluations,
+            daily_custom_forecasts=daily_custom_forecasts,
             scheduler=scheduler,
             jobs=jobs,
             clock=clock,

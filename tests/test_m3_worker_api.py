@@ -468,6 +468,59 @@ class WorkerApiTests(unittest.TestCase):
 
 
 class ResourceTests(unittest.TestCase):
+    def test_build_resources_shares_one_daily_coordinator_with_scheduler(self):
+        """Splitting repository/service instances would desynchronize startup and scheduled runs."""
+        custom_repository = object()
+        custom_forecasts = SimpleNamespace(close=lambda: None)
+        daily_custom_forecasts = object()
+        scheduler = SimpleNamespace(run_manual=lambda *_args: None)
+
+        class Client:
+            def __init__(self, **_kwargs):
+                pass
+
+            def close(self):
+                pass
+
+        with (
+            patch("m3_worker.main.httpx.Client", Client),
+            patch(
+                "m3_worker.main.CustomForecastRepository",
+                return_value=custom_repository,
+            ),
+            patch(
+                "m3_worker.main.CustomForecastService",
+                return_value=custom_forecasts,
+            ),
+            patch(
+                "m3_worker.main.DailyCustomForecastService",
+                return_value=daily_custom_forecasts,
+            ) as daily_constructor,
+            patch(
+                "m3_worker.main.SchedulerRunner",
+                return_value=scheduler,
+            ) as scheduler_constructor,
+            patch(
+                "m3_worker.main.verify_statsforecast_runtime",
+                return_value="2.1.1",
+            ),
+            patch("m3_worker.main.ForecastService", return_value=SimpleNamespace()),
+            patch("m3_worker.main.AcceptanceService", return_value=SimpleNamespace()),
+        ):
+            resources = build_resources(settings(), clock=lambda: NOW)
+
+        daily_constructor.assert_called_once_with(
+            custom_repository,
+            custom_forecasts,
+        )
+        self.assertIs(
+            scheduler_constructor.call_args.kwargs["daily_custom_forecast_service"],
+            daily_custom_forecasts,
+        )
+        self.assertIs(resources.daily_custom_forecasts, daily_custom_forecasts)
+        self.assertIs(resources.scheduler, scheduler)
+        resources.close()
+
     def test_dynamic_readiness_rechecks_runtime_version_and_station_state(self):
         """A startup version string cannot keep health ready after runtime/state drift."""
         states = {"station-1": SimpleNamespace(state="ready")}
@@ -477,6 +530,9 @@ class ResourceTests(unittest.TestCase):
             nocobase_http=SimpleNamespace(close=lambda: None),
             forecast_service=SimpleNamespace(state=lambda station: states[station]),
             acceptance_service=SimpleNamespace(),
+            custom_forecasts=SimpleNamespace(close=lambda: None),
+            custom_evaluations=SimpleNamespace(),
+            daily_custom_forecasts=SimpleNamespace(),
             scheduler=SimpleNamespace(running=True, healthy=True),
             jobs=SimpleNamespace(close=lambda: None),
             clock=lambda: NOW,
@@ -513,7 +569,19 @@ class ResourceTests(unittest.TestCase):
                 return SimpleNamespace(state="ready" if station == "station-2" else "initializing")
 
         acceptance = SimpleNamespace(
-            reconcile_writing_batches=lambda: calls.append(("reconcile",))
+            reconcile_writing_batches=lambda station: calls.append(
+                ("reconcile_batches", station)
+            ),
+            reconcile_run_summary=lambda station: calls.append(
+                ("reconcile_summary", station)
+            ),
+        )
+        custom_forecasts = SimpleNamespace(
+            recover=lambda: calls.append(("custom_recover",)),
+            close=lambda: None,
+        )
+        daily_custom_forecasts = SimpleNamespace(
+            run_station=lambda station, at: calls.append(("daily", station, at))
         )
         alerts = []
         resources = WorkerResources(
@@ -522,6 +590,9 @@ class ResourceTests(unittest.TestCase):
             nocobase_http=SimpleNamespace(close=lambda: None),
             forecast_service=Forecast(),
             acceptance_service=acceptance,
+            custom_forecasts=custom_forecasts,
+            custom_evaluations=SimpleNamespace(),
+            daily_custom_forecasts=daily_custom_forecasts,
             scheduler=SimpleNamespace(running=False),
             jobs=SimpleNamespace(close=lambda: None),
             clock=lambda: NOW.replace(minute=7, second=19),
@@ -536,7 +607,13 @@ class ResourceTests(unittest.TestCase):
                 ("bootstrap", "station-1", NOW.replace(minute=0, second=0)),
                 ("bootstrap", "station-2", NOW.replace(minute=0, second=0)),
                 ("select", "station-2"),
-                ("reconcile",),
+                ("reconcile_batches", "station-1"),
+                ("reconcile_summary", "station-1"),
+                ("reconcile_batches", "station-2"),
+                ("reconcile_summary", "station-2"),
+                ("custom_recover",),
+                ("daily", "station-1", NOW.replace(minute=7, second=19)),
+                ("daily", "station-2", NOW.replace(minute=7, second=19)),
             ],
         )
         self.assertEqual(
@@ -569,6 +646,12 @@ class ResourceTests(unittest.TestCase):
                     AssertionError("acceptance reconciliation must be disabled")
                 )
             ),
+            custom_forecasts=SimpleNamespace(
+                recover=lambda: None,
+                close=lambda: None,
+            ),
+            custom_evaluations=SimpleNamespace(),
+            daily_custom_forecasts=SimpleNamespace(run_station=lambda *_args: 0),
             scheduler=SimpleNamespace(running=False),
             jobs=SimpleNamespace(close=lambda: None),
             clock=lambda: NOW.replace(minute=7, second=19),
@@ -589,8 +672,191 @@ class ResourceTests(unittest.TestCase):
             ],
         )
 
-    def test_resource_close_order_is_jobs_then_source_then_nocobase_and_idempotent(self):
-        """Closing clients before jobs can break still-running outbound work."""
+    def test_recover_runs_daily_catch_up_after_custom_recovery_for_every_station(self):
+        """Skipping startup catch-up would wait until the next quarter-hour scheduler tick."""
+        events = []
+        now = NOW.replace(hour=0, minute=18, second=23)
+        forecast = SimpleNamespace(
+            bootstrap=lambda *_args: None,
+            select_models=lambda *_args: None,
+            state=lambda _station: SimpleNamespace(state="ready"),
+        )
+        acceptance = SimpleNamespace(
+            reconcile_writing_batches=lambda *_args: None,
+            reconcile_run_summary=lambda *_args: None,
+        )
+        resources = WorkerResources(
+            settings=SimpleNamespace(
+                station_ids=("station-1", "station-2"),
+                acceptance_enabled=True,
+            ),
+            source_http=SimpleNamespace(close=lambda: None),
+            nocobase_http=SimpleNamespace(close=lambda: None),
+            forecast_service=forecast,
+            acceptance_service=acceptance,
+            custom_forecasts=SimpleNamespace(
+                recover=lambda: events.append(("custom_recover",)),
+                close=lambda: None,
+            ),
+            custom_evaluations=SimpleNamespace(),
+            daily_custom_forecasts=SimpleNamespace(
+                run_station=lambda station, at: events.append(
+                    ("daily", station, at)
+                )
+            ),
+            scheduler=SimpleNamespace(running=False),
+            jobs=SimpleNamespace(close=lambda: None),
+            clock=lambda: now,
+            alert_sink=lambda *_items: None,
+            statsforecast_version="2.1.1",
+        )
+
+        with patch(
+            "m3_worker.main.verify_statsforecast_runtime",
+            return_value="2.1.1",
+        ):
+            self.assertTrue(resources.recover())
+        self.assertEqual(
+            events,
+            [
+                ("custom_recover",),
+                ("daily", "station-1", now),
+                ("daily", "station-2", now),
+            ],
+        )
+
+    def test_recover_daily_failure_alerts_and_continues_without_losing_recovery(self):
+        """One failed station must not suppress catch-up or undo custom recovery for another."""
+        events = []
+        alerts = []
+        now = NOW.replace(hour=0, minute=18, second=23)
+
+        def run_daily(station, at):
+            events.append(("daily", station, at))
+            if station == "station-1":
+                raise M3Error(
+                    "daily_custom_forecast_failed",
+                    "secret",
+                )
+
+        resources = WorkerResources(
+            settings=SimpleNamespace(
+                station_ids=("station-1", "station-2"),
+                acceptance_enabled=False,
+            ),
+            source_http=SimpleNamespace(close=lambda: None),
+            nocobase_http=SimpleNamespace(close=lambda: None),
+            forecast_service=SimpleNamespace(
+                bootstrap=lambda *_args: None,
+                select_models=lambda *_args: None,
+                state=lambda _station: SimpleNamespace(state="ready"),
+            ),
+            acceptance_service=SimpleNamespace(),
+            custom_forecasts=SimpleNamespace(
+                recover=lambda: events.append(("custom_recover",)),
+                close=lambda: None,
+            ),
+            custom_evaluations=SimpleNamespace(),
+            daily_custom_forecasts=SimpleNamespace(run_station=run_daily),
+            scheduler=SimpleNamespace(running=False),
+            jobs=SimpleNamespace(close=lambda: None),
+            clock=lambda: now,
+            alert_sink=lambda *items: alerts.append(items),
+            statsforecast_version="2.1.1",
+        )
+
+        with patch(
+            "m3_worker.main.verify_statsforecast_runtime",
+            return_value="2.1.1",
+        ):
+            self.assertFalse(resources.recover())
+        self.assertEqual(
+            events,
+            [
+                ("custom_recover",),
+                ("daily", "station-1", now),
+                ("daily", "station-2", now),
+            ],
+        )
+        self.assertEqual(
+            alerts,
+            [
+                (
+                    "station-1",
+                    "daily_custom_forecast",
+                    "daily_custom_forecast_failed",
+                    now.replace(minute=15, second=0),
+                )
+            ],
+        )
+        self.assertFalse(resources.recovery_ready)
+
+    def test_recover_before_daily_start_calls_coordinator_without_creating_work(self):
+        """Startup before 00:17 must preserve the coordinator's no-op boundary."""
+        events = []
+        now = NOW.replace(hour=0, minute=16, second=59)
+        coordinator = worker_main.DailyCustomForecastService(
+            SimpleNamespace(
+                latest_completed_template=lambda *_args, **_kwargs: (
+                    _ for _ in ()
+                ).throw(
+                    AssertionError(
+                        "repository must not be queried before 00:17"
+                    )
+                ),
+            ),
+            SimpleNamespace(
+                submit=lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                    AssertionError(
+                        "daily task must not be created before 00:17"
+                    )
+                ),
+            ),
+        )
+
+        def run_daily(station, at):
+            result = coordinator.run_station(station, at)
+            events.append(("daily", station, at, result))
+            return result
+
+        resources = WorkerResources(
+            settings=SimpleNamespace(
+                station_ids=("station-1",),
+                acceptance_enabled=False,
+            ),
+            source_http=SimpleNamespace(close=lambda: None),
+            nocobase_http=SimpleNamespace(close=lambda: None),
+            forecast_service=SimpleNamespace(
+                bootstrap=lambda *_args: None,
+                select_models=lambda *_args: None,
+                state=lambda _station: SimpleNamespace(state="ready"),
+            ),
+            acceptance_service=SimpleNamespace(),
+            custom_forecasts=SimpleNamespace(
+                recover=lambda: events.append(("custom_recover",)),
+                close=lambda: None,
+            ),
+            custom_evaluations=SimpleNamespace(),
+            daily_custom_forecasts=SimpleNamespace(run_station=run_daily),
+            scheduler=SimpleNamespace(running=False),
+            jobs=SimpleNamespace(close=lambda: None),
+            clock=lambda: now,
+            alert_sink=lambda *_items: None,
+            statsforecast_version="2.1.1",
+        )
+
+        with patch(
+            "m3_worker.main.verify_statsforecast_runtime",
+            return_value="2.1.1",
+        ):
+            self.assertTrue(resources.recover())
+        self.assertEqual(
+            events,
+            [("custom_recover",), ("daily", "station-1", now, 0)],
+        )
+
+    def test_resource_close_excludes_stateless_daily_coordinator(self):
+        """Closing clients before stateful work can break outbound operations."""
         events = []
         resources = WorkerResources(
             settings=SimpleNamespace(station_ids=()),
@@ -598,6 +864,11 @@ class ResourceTests(unittest.TestCase):
             nocobase_http=SimpleNamespace(close=lambda: events.append("nocobase")),
             forecast_service=SimpleNamespace(),
             acceptance_service=SimpleNamespace(),
+            custom_forecasts=SimpleNamespace(
+                close=lambda: events.append("custom")
+            ),
+            custom_evaluations=SimpleNamespace(),
+            daily_custom_forecasts=SimpleNamespace(),
             scheduler=SimpleNamespace(running=False),
             jobs=SimpleNamespace(close=lambda: events.append("jobs")),
             clock=lambda: NOW,
@@ -606,7 +877,7 @@ class ResourceTests(unittest.TestCase):
         )
         resources.close()
         resources.close()
-        self.assertEqual(events, ["jobs", "source", "nocobase"])
+        self.assertEqual(events, ["jobs", "custom", "source", "nocobase"])
 
     def test_build_resources_uses_two_separate_fixed_bounded_clients(self):
         """Sharing credentials or allowing redirects crosses Source and sink trust boundaries."""
@@ -641,8 +912,8 @@ class ResourceTests(unittest.TestCase):
             self.assertEqual(client.kwargs["limits"].max_keepalive_connections, 6)
         resources.close()
 
-    def test_build_resources_splits_raw_context_nocobase_and_alert_dependencies(self):
-        """Model/actual reads, acceptance context, persistence, and alerts keep fixed credentials."""
+    def test_build_resources_splits_raw_nocobase_and_alert_dependencies(self):
+        """Model/actual reads, persistence, and alerts keep fixed credentials."""
         created = []
 
         class Client:
@@ -655,8 +926,8 @@ class ResourceTests(unittest.TestCase):
 
         configured = settings()
         raw_source = object()
-        context_source = object()
         nocobase_api = object()
+        acceptance_runs = object()
         forecast_service = object()
         acceptance_service = object()
         alert_client = object()
@@ -667,13 +938,13 @@ class ResourceTests(unittest.TestCase):
                 return_value=raw_source,
             ) as raw_constructor,
             patch(
-                "m3_worker.main.SourceApiClient",
-                return_value=context_source,
-            ) as context_constructor,
-            patch(
                 "m3_worker.main.NocoBaseApiClient",
                 return_value=nocobase_api,
             ) as nocobase_constructor,
+            patch(
+                "m3_worker.main.AcceptanceRunService",
+                return_value=acceptance_runs,
+            ) as run_constructor,
             patch(
                 "m3_worker.main.NodeRedAlertClient",
                 return_value=alert_client,
@@ -696,12 +967,6 @@ class ResourceTests(unittest.TestCase):
             created[0],
             allowed_station_ids=(ES01, ES02),
         )
-        context_constructor.assert_called_once_with(
-            str(configured.source_base_url),
-            "source-secret",
-            created[0],
-            ANY,
-        )
         nocobase_constructor.assert_called_once_with(
             str(configured.nocobase_base_url),
             "sink-secret",
@@ -717,8 +982,9 @@ class ResourceTests(unittest.TestCase):
         forecast_args = forecast_constructor.call_args.args
         self.assertIs(forecast_args[0], raw_source)
         self.assertEqual(list(forecast_args[2]), [ES01, ES02])
+        run_constructor.assert_called_once_with(nocobase_api)
         acceptance_kwargs = acceptance_constructor.call_args.kwargs
-        self.assertIs(acceptance_kwargs["context_source"], context_source)
+        self.assertIs(acceptance_kwargs["run_service"], acceptance_runs)
         self.assertIs(acceptance_kwargs["observation_source"], raw_source)
         self.assertIs(acceptance_kwargs["api"], nocobase_api)
         self.assertIs(resources.forecast_service, forecast_service)
