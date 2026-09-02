@@ -8,6 +8,10 @@ from statsforecast import StatsForecast
 from statsforecast.models import AutoARIMA, AutoETS, MSTL, SeasonalNaive
 
 from m3_worker.contracts import ForecastPoint, ForecastSeries, is_load_series
+from m3_worker.domain.soc_anchoring import (
+    anchored_soc_cv_predictions,
+    recent_soc_residual_offset,
+)
 from m3_worker.domain.training_data import TrainingDataset
 from m3_worker.errors import M3Error
 
@@ -65,7 +69,9 @@ def seasonal_naive_champion(
 
 
 def _model_mapes(
-    cv: pd.DataFrame, imputed_keys: frozenset[tuple[str, datetime]]
+    cv: pd.DataFrame,
+    imputed_keys: frozenset[tuple[str, datetime]],
+    fitted: pd.DataFrame | None = None,
 ) -> dict[str, float]:
     scorable = cv[(cv["y"] != 0) & cv["y"].notna()].copy()
     scorable = scorable[
@@ -79,7 +85,11 @@ def _model_mapes(
     for name in MODEL_NAMES:
         if name not in scorable or scorable.empty:
             continue
-        predictions = pd.to_numeric(scorable[name], errors="coerce")
+        predictions = (
+            anchored_soc_cv_predictions(scorable, fitted, name, imputed_keys)
+            if fitted is not None
+            else pd.to_numeric(scorable[name], errors="coerce")
+        )
         if predictions.isna().any() or not np.isfinite(predictions).all():
             continue
         score = float(
@@ -100,6 +110,8 @@ def select_champion(dataset: TrainingDataset) -> Champion:
         return seasonal_naive_champion(dataset)
 
     scores: dict[str, float] = {}
+    unique_id = dataset.frame["unique_id"].iloc[0]
+    needs_soc_anchor = not is_load_series(unique_id)
     for model_name, factory in _candidate_factories():
         try:
             model = factory()
@@ -109,8 +121,14 @@ def select_champion(dataset: TrainingDataset) -> Champion:
                 h=96,
                 step_size=96,
                 n_windows=7,
+                **({"fitted": True} if needs_soc_anchor else {}),
             )
-            score = _model_mapes(cv, dataset.imputed_keys).get(model_name)
+            fitted = (
+                engine.cross_validation_fitted_values()
+                if needs_soc_anchor
+                else None
+            )
+            score = _model_mapes(cv, dataset.imputed_keys, fitted).get(model_name)
         except Exception:
             continue
         if score is not None:
@@ -148,23 +166,33 @@ def model_by_name(name: str):
 
 def forecast_frame(
     dataset: TrainingDataset, model_name: str
-) -> tuple[pd.DataFrame, str, str | None]:
+) -> tuple[pd.DataFrame, pd.DataFrame | None, str, str | None]:
+    unique_id = dataset.frame["unique_id"].iloc[0]
+    needs_soc_anchor = not is_load_series(unique_id)
     try:
         engine = StatsForecast(
             models=[model_by_name(model_name)], freq="15min", n_jobs=1
         )
-        return engine.forecast(df=dataset.frame, h=96), model_name, None
+        frame = engine.forecast(
+            df=dataset.frame,
+            h=96,
+            **({"fitted": True} if needs_soc_anchor else {}),
+        )
+        fitted = engine.forecast_fitted_values() if needs_soc_anchor else None
+        return frame, fitted, model_name, None
     except Exception as champion_error:
         if model_name == "SeasonalNaive":
             raise
         fallback = StatsForecast(
             models=[model_by_name("SeasonalNaive")], freq="15min", n_jobs=1
         )
-        return (
-            fallback.forecast(df=dataset.frame, h=96),
-            "SeasonalNaive",
-            type(champion_error).__name__,
+        frame = fallback.forecast(
+            df=dataset.frame,
+            h=96,
+            **({"fitted": True} if needs_soc_anchor else {}),
         )
+        fitted = fallback.forecast_fitted_values() if needs_soc_anchor else None
+        return frame, fitted, "SeasonalNaive", type(champion_error).__name__
 
 
 def forecast_one(
@@ -186,7 +214,7 @@ def forecast_one(
     if champion is None:
         raise M3Error("model_unavailable", f"no champion for {unique_id}")
 
-    frame, used_model, fallback_reason = forecast_frame(
+    frame, fitted, used_model, fallback_reason = forecast_frame(
         dataset, champion.model_name
     )
     expected_first_data_time = as_of.replace(
@@ -204,10 +232,17 @@ def forecast_one(
             "forecast horizon is not aligned to the completed bucket",
         )
 
+    soc_offset = (
+        recent_soc_residual_offset(fitted, used_model, dataset.imputed_keys)
+        if fitted is not None
+        else 0.0
+    )
     points = []
     for horizon_step, row in enumerate(frame.itertuples(index=False), start=1):
         data_time = pd.Timestamp(row.ds).to_pydatetime()
-        raw, published, clipped = clip_value(unique_id, getattr(row, used_model))
+        raw, published, clipped = clip_value(
+            unique_id, float(getattr(row, used_model)) + soc_offset
+        )
         points.append(
             ForecastPoint(
                 data_time=data_time,
