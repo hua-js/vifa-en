@@ -89,11 +89,13 @@ def stored_point(
     data_time: datetime,
     *,
     record_id: int = 1,
+    batch_id: int = 41,
     forecast_value: float = 90.0,
     revision: int | None = None,
 ) -> dict:
     return {
         "id": record_id,
+        "batch_id": batch_id,
         "unique_id": unique_id,
         "data_time": data_time.isoformat(),
         "forecast_value": forecast_value,
@@ -104,6 +106,7 @@ def stored_point(
 def evaluation_rows(unique_id: str, *, value: float = 100.0) -> list[dict]:
     return [
         {
+            "batch_id": 41,
             "unique_id": unique_id,
             "data_time": (START + timedelta(minutes=15 * index)).isoformat(),
             "actual_value": value,
@@ -114,16 +117,45 @@ def evaluation_rows(unique_id: str, *, value: float = 100.0) -> list[dict]:
     ]
 
 
+def complete_batch_row(
+    *,
+    record_id: int = 41,
+    station_id: str = "station-1",
+    acceptance_run_id: str = "run-20260825",
+    issued_at: datetime = AS_OF,
+    forecast_start: datetime = START,
+    forecast_end: datetime = START + timedelta(days=1),
+    write_state: str = "complete",
+) -> dict:
+    return {
+        "id": record_id,
+        "station_id": station_id,
+        "acceptance_run_id": acceptance_run_id,
+        "issued_at": issued_at.isoformat(),
+        "forecast_start_time": forecast_start.isoformat(),
+        "forecast_end_time": forecast_end.isoformat(),
+        "write_state": write_state,
+    }
+
+
 class FakeSource:
     def __init__(self, *, context=None, observations=None) -> None:
         self.context = context if context is not None else active_context()
         self.observations = list(observations or [])
         self.context_calls: list[str] = []
         self.observation_calls: list[SimpleNamespace] = []
+        self.progress_calls: list[SimpleNamespace] = []
+        self.result_calls: list[SimpleNamespace] = []
 
-    def get_acceptance_context(self, station_id):
+    def active_run(self, station_id):
         self.context_calls.append(station_id)
-        return self.context
+        if not self.context.active:
+            return None
+        return SimpleNamespace(
+            acceptance_run_id=self.context.acceptance_run_id,
+            window_start=self.context.window_start,
+            window_end=self.context.window_end,
+        )
 
     def list_observations(self, station_id, start, end):
         self.observation_calls.append(
@@ -131,11 +163,41 @@ class FakeSource:
         )
         return [point for point in self.observations if start <= point.ds < end]
 
+    def sync_progress(self, station_id, acceptance_run_id):
+        self.progress_calls.append(
+            SimpleNamespace(
+                station_id=station_id, acceptance_run_id=acceptance_run_id
+            )
+        )
+
+    def sync_result(self, station_id, acceptance_run_id, outcome, calculated_at):
+        self.result_calls.append(
+            SimpleNamespace(
+                station_id=station_id,
+                acceptance_run_id=acceptance_run_id,
+                outcome=outcome,
+                calculated_at=calculated_at,
+            )
+        )
+
 
 class FakeApi:
-    def __init__(self, *, backfill_rows=None, rows_by_series=None) -> None:
+    def __init__(
+        self,
+        *,
+        complete_batches=None,
+        backfill_rows=None,
+        rows_by_series=None,
+        point_list_error=None,
+        ignore_point_batch_filter: bool = False,
+    ) -> None:
+        self.complete_batches = list(
+            [complete_batch_row()] if complete_batches is None else complete_batches
+        )
         self.backfill_rows = list(backfill_rows or [])
         self.rows_by_series = dict(rows_by_series or {})
+        self.point_list_error = point_list_error
+        self.ignore_point_batch_filter = ignore_point_batch_filter
         self.list_calls: list[SimpleNamespace] = []
         self.update_calls: list[SimpleNamespace] = []
         self.upsert_calls: list[SimpleNamespace] = []
@@ -150,9 +212,16 @@ class FakeApi:
             )
         )
         if collection == "energy_forecast_batches":
-            return [dict(row) for row in self.writing_batches]
+            rows = (
+                self.writing_batches
+                if "model_manifest" in fields
+                else self.complete_batches
+            )
+            return [dict(row) for row in rows]
         if collection != "energy_forecast_points":
             raise AssertionError(collection)
+        if self.point_list_error is not None:
+            raise self.point_list_error
         unique_id = filter.get("unique_id")
         rows = (
             self.backfill_rows
@@ -161,6 +230,8 @@ class FakeApi:
         )
         if unique_id is not None:
             rows = [row for row in rows if row.get("unique_id") == unique_id]
+        if "batch_id" in filter and not self.ignore_point_batch_filter:
+            rows = [row for row in rows if row.get("batch_id") == filter["batch_id"]]
         if "id" in fields and "data_time" in filter:
             lower = datetime.fromisoformat(filter["data_time"]["$gte"])
             upper = datetime.fromisoformat(filter["data_time"]["$lt"])
@@ -169,7 +240,7 @@ class FakeApi:
                 for row in rows
                 if lower <= datetime.fromisoformat(row["data_time"]) < upper
             ]
-        return [dict(row) for row in rows]
+        return [{field: row[field] for field in fields} for row in rows]
 
     def update_record(self, collection, record_id, values):
         call = SimpleNamespace(
@@ -233,7 +304,7 @@ def make_service(
     sink = sink or FakeSink()
     forecast_service = forecast_service or FakeForecastService()
     service = AcceptanceService(
-        context_source=source,
+        run_service=source,
         observation_source=source,
         api=api,
         sink=sink,
@@ -245,6 +316,24 @@ def make_service(
 
 
 class BaselineTests(unittest.TestCase):
+    def test_baseline_publishes_before_an_unavailable_backfill_point_query(self):
+        """Historical point-list outages must not suppress an exact-slot baseline."""
+        api = FakeApi(
+            point_list_error=M3Error("sink_http_failed", "point list unavailable")
+        )
+        service, _, api, sink, _ = make_service(api=api)
+
+        service.run_baseline("station-1", AS_OF)
+
+        self.assertEqual(len(sink.publish_calls), 1)
+        self.assertEqual(len(sink.publish_calls[0].points), 192)
+        self.assertFalse(
+            any(
+                call.collection == "energy_forecast_points"
+                for call in api.list_calls
+            )
+        )
+
     def test_exact_0102_publishes_sorted_immutable_0100_to_0100_templates(self):
         """Shifting the baseline one bucket or persisting mutable actual fields corrupts evidence."""
         service, _, _, sink, _ = make_service()
@@ -356,14 +445,18 @@ class BaselineTests(unittest.TestCase):
 
     def test_context_must_be_active_nonempty_exactly_seven_days_and_contain_batch(self):
         """A stale, anonymous, short, or wrong-window run must never receive formal evidence."""
+        inactive_service, _, _, inactive_sink, inactive_forecast = make_service(
+            source=FakeSource(context=AcceptanceContext(active=False))
+        )
+        self.assertIsNone(inactive_service.run_baseline("station-1", AS_OF))
+        self.assertEqual(inactive_forecast.calls, [])
+        self.assertEqual(inactive_sink.publish_calls, [])
         contexts = (
-            AcceptanceContext(active=False),
             active_context(acceptance_run_id=""),
             active_context(window_end=END - timedelta(minutes=15)),
             active_context(window_start=START + timedelta(days=1), window_end=END + timedelta(days=1)),
         )
         expected_codes = (
-            "acceptance_inactive",
             "acceptance_context_invalid",
             "acceptance_window_invalid",
             "acceptance_window_invalid",
@@ -406,8 +499,8 @@ class BaselineTests(unittest.TestCase):
             self.assertEqual(raised.exception.code, "acceptance_write_incomplete")
             self.assertEqual(sink.publish_calls, [])
 
-    def test_invalid_snapshot_prevents_prior_actual_mutation_and_valid_retry_backfills_then_publishes(self):
-        """A day-two forecast failure must not mutate acceptance rows before the baseline is valid."""
+    def test_invalid_snapshot_prevents_prior_actual_mutation_and_valid_retry_publishes(self):
+        """Baseline retries publish without coupling to historical actual backfill."""
         day_two_as_of = AS_OF + timedelta(days=1)
         prior = ObservationPoint(
             unique_id="station_total_load",
@@ -447,7 +540,7 @@ class BaselineTests(unittest.TestCase):
         result = service.run_baseline("station-1", day_two_as_of)
 
         self.assertEqual(result["write_state"], "complete")
-        self.assertEqual(len(api.update_calls), 1)
+        self.assertEqual(api.update_calls, [])
         self.assertEqual(len(sink.publish_calls), 1)
 
     def test_boolean_horizon_in_raw_snapshot_fails_before_any_acceptance_mutation(self):
@@ -754,6 +847,91 @@ class BaselineTests(unittest.TestCase):
 
 
 class BackfillTests(unittest.TestCase):
+    def test_backfill_lists_complete_batches_then_points_by_direct_batch_id(self):
+        """NocoBase must receive only direct batch and point filters."""
+        api = FakeApi(
+            complete_batches=[complete_batch_row(record_id=41)],
+            backfill_rows=[stored_point("station_total_load", START, batch_id=41)],
+        )
+        service, _, api, _, _ = make_service(api=api)
+
+        service.backfill_actuals(
+            "station-1", datetime.fromisoformat("2026-08-25T01:17:00+08:00")
+        )
+
+        batch_call = next(
+            call
+            for call in api.list_calls
+            if call.collection == "energy_forecast_batches"
+        )
+        self.assertEqual(
+            batch_call.filter,
+            {
+                "station_id": "station-1",
+                "acceptance_run_id": "run-20260825",
+                "write_state": "complete",
+            },
+        )
+        point_calls = [
+            call
+            for call in api.list_calls
+            if call.collection == "energy_forecast_points"
+        ]
+        self.assertTrue(point_calls)
+        self.assertTrue(all(call.filter["batch_id"] == 41 for call in point_calls))
+        self.assertTrue(
+            all(not any("." in key for key in call.filter) for call in point_calls)
+        )
+
+    def test_rejects_invalid_complete_batch_identity_or_window(self):
+        """A malformed complete batch must not authorize its returned points."""
+        cases = (
+            [complete_batch_row(), complete_batch_row()],
+            [complete_batch_row(station_id="station-2")],
+            [complete_batch_row(acceptance_run_id="run-foreign")],
+            [complete_batch_row(forecast_end=START + timedelta(hours=23))],
+            [
+                complete_batch_row(),
+                complete_batch_row(
+                    record_id=42,
+                    forecast_start=START + timedelta(hours=23),
+                    forecast_end=START + timedelta(hours=47),
+                ),
+            ],
+        )
+        for complete_batches in cases:
+            with self.subTest(complete_batches=complete_batches):
+                service, _, _, _, _ = make_service(
+                    api=FakeApi(complete_batches=complete_batches)
+                )
+
+                with self.assertRaises(M3Error) as raised:
+                    service.backfill_actuals(
+                        "station-1",
+                        datetime.fromisoformat("2026-08-25T01:17:00+08:00"),
+                    )
+
+                self.assertEqual(raised.exception.code, "acceptance_points_incomplete")
+
+    def test_rejects_a_point_returned_under_the_wrong_batch_id(self):
+        """A point response must prove that it belongs to the requested complete batch."""
+        service, _, _, _, _ = make_service(
+            api=FakeApi(
+                complete_batches=[complete_batch_row(record_id=41)],
+                backfill_rows=[
+                    stored_point("station_total_load", START, batch_id=42)
+                ],
+                ignore_point_batch_filter=True,
+            )
+        )
+
+        with self.assertRaises(M3Error) as raised:
+            service.backfill_actuals(
+                "station-1", datetime.fromisoformat("2026-08-25T01:17:00+08:00")
+            )
+
+        self.assertEqual(raised.exception.code, "acceptance_points_incomplete")
+
     def test_queries_each_series_below_page_cap_and_pulls_only_completed_half_open_window(self):
         """One all-series query exceeds 1,000 rows and using as_of includes an unfinished bucket."""
         rows = [
@@ -783,7 +961,10 @@ class BackfillTests(unittest.TestCase):
         self.assertEqual(updated, 2)
         point_queries = [call for call in api.list_calls if call.collection == "energy_forecast_points"]
         self.assertEqual([call.filter["unique_id"] for call in point_queries], list(SERIES_IDS))
-        self.assertTrue(all(call.filter["batch.write_state"] == "complete" for call in point_queries))
+        self.assertTrue(all(call.filter["batch_id"] == 41 for call in point_queries))
+        self.assertTrue(
+            all(not any("." in key for key in call.filter) for call in point_queries)
+        )
         self.assertTrue(all(call.filter["data_time"]["$lt"] == "2026-08-25T01:15:00+08:00" for call in point_queries))
         self.assertEqual(len(source.observation_calls), 1)
         pull = source.observation_calls[0]
@@ -1033,6 +1214,10 @@ class RecalculationTests(unittest.TestCase):
 
         point_queries = [call for call in api.list_calls if call.collection == "energy_forecast_points"]
         self.assertEqual([call.filter["unique_id"] for call in point_queries], list(SERIES_IDS))
+        self.assertTrue(all(call.filter["batch_id"] == 41 for call in point_queries))
+        self.assertTrue(
+            all(not any("." in key for key in call.filter) for call in point_queries)
+        )
         self.assertTrue(all(len(rows[call.filter["unique_id"]]) == 672 for call in point_queries))
         self.assertEqual([call.values["evaluation_key"] for call in api.upsert_calls], [*SERIES_IDS, "overall"])
         self.assertTrue(all(results[key]["expected_count"] == 672 for key in SERIES_IDS))
@@ -1166,6 +1351,7 @@ class ReconciliationTests(unittest.TestCase):
             "forecast_start_time": START.isoformat(),
             "forecast_end_time": (START + timedelta(days=1)).isoformat(),
             "status": "ok",
+            "write_state": "writing",
             "model_manifest": snapshot.model_manifest,
             "point_templates": points,
         }
@@ -1181,7 +1367,7 @@ class ReconciliationTests(unittest.TestCase):
             api=api, forecast_service=forecast
         )
 
-        recovered = service.reconcile_writing_batches()
+        recovered = service.reconcile_writing_batches("station-1")
 
         self.assertEqual(recovered, 1)
         self.assertEqual(forecast.calls, [])
@@ -1210,7 +1396,7 @@ class ReconciliationTests(unittest.TestCase):
         service, _, _, _, _ = make_service(api=api, sink=BooleanIdSink())
 
         with self.assertRaises(M3Error) as raised:
-            service.reconcile_writing_batches()
+            service.reconcile_writing_batches("station-1")
 
         self.assertEqual(raised.exception.code, "sink_contract_invalid")
 
@@ -1261,7 +1447,7 @@ class ReconciliationTests(unittest.TestCase):
             service, _, _, sink, forecast = make_service(api=api)
 
             with self.subTest(mutation=mutation), self.assertRaises(M3Error) as raised:
-                service.reconcile_writing_batches()
+                service.reconcile_writing_batches("station-1")
 
             self.assertIn(
                 raised.exception.code,

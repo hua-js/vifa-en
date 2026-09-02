@@ -1,5 +1,6 @@
 """Seven-day formal acceptance orchestration over Source and NocoBase HTTP APIs."""
 
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import math
 from threading import Lock, RLock
@@ -50,17 +51,28 @@ ACTUAL_UPDATE_FIELDS = frozenset(
 )
 BACKFILL_FIELDS = (
     "id",
+    "batch_id",
     "unique_id",
     "data_time",
     "forecast_value",
     "actual_source_revision",
 )
 EVALUATION_FIELDS = (
+    "batch_id",
     "unique_id",
     "data_time",
     "actual_value",
     "forecast_value",
     "actual_quality",
+)
+COMPLETE_BATCH_FIELDS = (
+    "id",
+    "station_id",
+    "acceptance_run_id",
+    "issued_at",
+    "forecast_start_time",
+    "forecast_end_time",
+    "write_state",
 )
 WRITING_BATCH_FIELDS = (
     "id",
@@ -76,6 +88,14 @@ WRITING_BATCH_FIELDS = (
     "point_templates",
 )
 SHANGHAI = timezone(timedelta(hours=8))
+
+
+@dataclass(frozen=True)
+class CompleteAcceptanceBatch:
+    record_id: int
+    issued_at: datetime
+    forecast_start: datetime
+    forecast_end: datetime
 
 
 def _safe_time(value: object, name: str, *, quarter_hour: bool) -> datetime:
@@ -276,6 +296,70 @@ class AcceptanceService:
             )
         return run_id, start, end
 
+    def _complete_batches(
+        self, station_id: str, context: AcceptanceContext
+    ) -> tuple[CompleteAcceptanceBatch, ...]:
+        acceptance_run_id, window_start, window_end = self._active_window(context)
+        rows = self._api.list_records(
+            "energy_forecast_batches",
+            filter={
+                "station_id": station_id,
+                "acceptance_run_id": acceptance_run_id,
+                "write_state": "complete",
+            },
+            fields=list(COMPLETE_BATCH_FIELDS),
+            sort=["issued_at"],
+        )
+        if not isinstance(rows, list):
+            raise M3Error(
+                "sink_contract_invalid", "Complete acceptance batch listing is invalid"
+            )
+
+        batches: list[CompleteAcceptanceBatch] = []
+        seen_ids: set[int] = set()
+        seen_dates: set[object] = set()
+        for raw in rows:
+            row = _exact_row(raw, COMPLETE_BATCH_FIELDS, "complete batch")
+            record_id = row["id"]
+            issued_at = _safe_time(row["issued_at"], "issued_at", quarter_hour=False)
+            forecast_start = _safe_time(
+                row["forecast_start_time"], "forecast_start_time", quarter_hour=True
+            )
+            forecast_end = _safe_time(
+                row["forecast_end_time"], "forecast_end_time", quarter_hour=True
+            )
+            if (
+                type(record_id) is not int
+                or record_id < 1
+                or record_id in seen_ids
+                or row["station_id"] != station_id
+                or row["acceptance_run_id"] != acceptance_run_id
+                or row["write_state"] != "complete"
+                or forecast_end - forecast_start != timedelta(days=1)
+                or forecast_start < window_start
+                or forecast_end > window_end
+                or forecast_start.date() in seen_dates
+                or any(
+                    forecast_start < batch.forecast_end
+                    and batch.forecast_start < forecast_end
+                    for batch in batches
+                )
+            ):
+                raise M3Error(
+                    "acceptance_points_incomplete", "Complete acceptance batch is invalid"
+                )
+            seen_ids.add(record_id)
+            seen_dates.add(forecast_start.date())
+            batches.append(
+                CompleteAcceptanceBatch(
+                    record_id=record_id,
+                    issued_at=issued_at,
+                    forecast_start=forecast_start,
+                    forecast_end=forecast_end,
+                )
+            )
+        return tuple(sorted(batches, key=lambda batch: batch.forecast_start))
+
     def _validate_current_baseline_slot(self, as_of: datetime) -> None:
         current = self._now()
         try:
@@ -460,7 +544,6 @@ class AcceptanceService:
                 baseline_start,
                 baseline_end,
             )
-            self._backfill_locked(station_id, as_of, context)
             published = self._sink.publish_acceptance(batch, points)
             self._runs.sync_progress(station_id, acceptance_run_id)
             return published
@@ -481,71 +564,80 @@ class AcceptanceService:
         stored: list[dict[str, Any]] = []
         seen_keys: set[tuple[str, datetime]] = set()
         seen_ids: set[int] = set()
+        batches = self._complete_batches(station_id, context)
         for unique_id in SERIES_IDS:
-            rows = self._api.list_records(
-                "energy_forecast_points",
-                filter={
-                    "batch.station_id": station_id,
-                    "batch.acceptance_run_id": acceptance_run_id,
-                    "batch.write_state": "complete",
-                    "unique_id": unique_id,
-                    "data_time": {
-                        "$gte": window_start.isoformat(),
-                        "$lt": completed_end.isoformat(),
+            for batch in batches:
+                lower = max(window_start, batch.forecast_start)
+                upper = min(completed_end, batch.forecast_end)
+                if lower >= upper:
+                    continue
+                rows = self._api.list_records(
+                    "energy_forecast_points",
+                    filter={
+                        "batch_id": batch.record_id,
+                        "unique_id": unique_id,
+                        "data_time": {
+                            "$gte": lower.isoformat(),
+                            "$lt": upper.isoformat(),
+                        },
                     },
-                },
-                fields=list(BACKFILL_FIELDS),
-                sort=["data_time"],
-            )
-            if not isinstance(rows, list):
-                raise M3Error(
-                    "sink_contract_invalid", "Forecast point listing is invalid"
+                    fields=list(BACKFILL_FIELDS),
+                    sort=["data_time"],
                 )
-            previous: datetime | None = None
-            for raw in rows:
-                row = _exact_row(raw, BACKFILL_FIELDS, "backfill")
-                record_id = row["id"]
-                revision = row["actual_source_revision"]
-                data_time = _safe_time(row["data_time"], "data_time", quarter_hour=True)
-                forecast = _finite_number(row["forecast_value"])
-                if (
-                    type(record_id) is not int
-                    or record_id < 1
-                    or record_id in seen_ids
-                    or row["unique_id"] != unique_id
-                    or data_time < window_start
-                    or data_time >= completed_end
-                    or previous is not None
-                    and data_time <= previous
-                    or revision is not None
-                    and (type(revision) is not int or revision < 0)
-                    or forecast is None
-                    or unique_id == "station_total_load"
-                    and forecast < 0
-                    or unique_id != "station_total_load"
-                    and not 0 <= forecast <= 100
-                ):
+                if not isinstance(rows, list):
                     raise M3Error(
-                        "acceptance_points_incomplete",
-                        "Persisted backfill point is invalid",
+                        "sink_contract_invalid", "Forecast point listing is invalid"
                     )
-                key = (unique_id, data_time)
-                if key in seen_keys:
-                    raise M3Error(
-                        "acceptance_points_incomplete",
-                        "Persisted backfill points are duplicated",
+                previous: datetime | None = None
+                for raw in rows:
+                    row = _exact_row(raw, BACKFILL_FIELDS, "backfill")
+                    record_id = row["id"]
+                    revision = row["actual_source_revision"]
+                    data_time = _safe_time(
+                        row["data_time"], "data_time", quarter_hour=True
                     )
-                seen_ids.add(record_id)
-                seen_keys.add(key)
-                previous = data_time
-                stored.append(
-                    {
-                        **row,
-                        "data_time_parsed": data_time,
-                        "forecast_value_parsed": forecast,
-                    }
-                )
-        return stored
+                    forecast = _finite_number(row["forecast_value"])
+                    if (
+                        type(record_id) is not int
+                        or record_id < 1
+                        or record_id in seen_ids
+                        or row["batch_id"] != batch.record_id
+                        or row["unique_id"] != unique_id
+                        or data_time < lower
+                        or data_time >= upper
+                        or previous is not None
+                        and data_time <= previous
+                        or revision is not None
+                        and (type(revision) is not int or revision < 0)
+                        or forecast is None
+                        or unique_id == "station_total_load"
+                        and forecast < 0
+                        or unique_id != "station_total_load"
+                        and not 0 <= forecast <= 100
+                    ):
+                        raise M3Error(
+                            "acceptance_points_incomplete",
+                            "Persisted backfill point is invalid",
+                        )
+                    key = (unique_id, data_time)
+                    if key in seen_keys:
+                        raise M3Error(
+                            "acceptance_points_incomplete",
+                            "Persisted backfill points are duplicated",
+                        )
+                    seen_ids.add(record_id)
+                    seen_keys.add(key)
+                    previous = data_time
+                    stored.append(
+                        {
+                            **row,
+                            "data_time_parsed": data_time,
+                            "forecast_value_parsed": forecast,
+                        }
+                    )
+        return sorted(
+            stored, key=lambda point: (point["unique_id"], point["data_time_parsed"])
+        )
 
     def _pull_actuals(
         self, station_id: str, start: datetime, end: datetime
@@ -769,22 +861,44 @@ class AcceptanceService:
         context: AcceptanceContext,
     ) -> tuple[MetricResult, dict[str, Any]]:
         _, window_start, window_end = self._active_window(context)
-        rows = self._api.list_records(
-            "energy_forecast_points",
-            filter={
-                "batch.station_id": station_id,
-                "batch.acceptance_run_id": acceptance_run_id,
-                "batch.write_state": "complete",
-                "unique_id": unique_id,
-                "data_time": {
-                    "$gte": window_start.isoformat(),
-                    "$lt": window_end.isoformat(),
+        rows: list[dict[str, Any]] = []
+        previous: datetime | None = None
+        for batch in self._complete_batches(station_id, context):
+            batch_rows = self._api.list_records(
+                "energy_forecast_points",
+                filter={
+                    "batch_id": batch.record_id,
+                    "unique_id": unique_id,
+                    "data_time": {
+                        "$gte": max(window_start, batch.forecast_start).isoformat(),
+                        "$lt": min(window_end, batch.forecast_end).isoformat(),
+                    },
                 },
-            },
-            fields=list(EVALUATION_FIELDS),
-            sort=["data_time"],
-        )
-        if not isinstance(rows, list) or len(rows) != EXPECTED_SERIES_POINTS:
+                fields=list(EVALUATION_FIELDS),
+                sort=["data_time"],
+            )
+            if not isinstance(batch_rows, list):
+                raise M3Error(
+                    "sink_contract_invalid", "Forecast point listing is invalid"
+                )
+            for raw in batch_rows:
+                row = _exact_row(raw, EVALUATION_FIELDS, "evaluation")
+                data_time = _safe_time(
+                    row["data_time"], "data_time", quarter_hour=True
+                )
+                if row["batch_id"] != batch.record_id:
+                    raise M3Error(
+                        "acceptance_points_incomplete",
+                        "Acceptance point batch identity is invalid",
+                    )
+                if previous is not None and data_time <= previous:
+                    raise M3Error(
+                        "acceptance_points_incomplete",
+                        "Acceptance point ordering is invalid",
+                    )
+                previous = data_time
+                rows.append(row)
+        if len(rows) != EXPECTED_SERIES_POINTS:
             raise M3Error(
                 "acceptance_points_incomplete",
                 "Acceptance requires exactly 672 points per series",
