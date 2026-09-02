@@ -41,6 +41,31 @@ Compose 同时运行 `vifa-m3-worker` 和 `vifa-m3-dashboard`。两个服务不�
 端口，只通过共享 Unix Socket 与宿主机 Node-RED 通信。两个环境文件必须配置完全相同的
 两个完整电站 ID。
 
+## 验收查询修复与每日自动预测发布顺序
+
+本次发布先让自定义预测和评估稳定运行，再恢复正式验收。必须按以下顺序执行；每一步成功后才进入下一步，
+并且不在文档、命令历史或版本库中记录 API Key、Token 或生产密钥。
+
+1. 使用 `M3_ACCEPTANCE_ENABLED=false` 发布 Worker，先确认 `m3_daily_scheduler` 已在上海时区
+   每天 00:17 为每个电站的每一种已完成预测时间粒度创建任务，并确认自定义预测评估可以独立完成。
+   已有的手工完成任务仅作为模板；自动任务沿用其预测时长、预测粒度和历史天数，不修改旧任务。
+2. 在 NocoBase 权限中只授予机器契约所需的直接筛选字段，不能因为方便而放开关联字段筛选或额外写权限。
+3. 使用最低权限账号探测 `energy_forecast_batches`：查询条件只使用直接字段 `station_id`、
+   `acceptance_run_id`、`write_state`，确认空结果和有结果都返回正常业务响应。
+4. 使用同一账号探测 `energy_forecast_points`：查询条件只使用直接字段 `batch_id`、`unique_id`、
+   `data_time`。不得使用 `batch.*`；关联筛选会触发 NocoBase 500，不能作为生产回读或验收恢复方式。
+5. 将未完成的 `acceptance-20260829-station1` 和 `acceptance-20260829-station2` 标记为已取消，
+   但保留批次、点位和告警证据，禁止删除历史记录或以删除重跑作为补救。
+6. 在未来一个上海时区 01:00 起点新建七日验收任务，避免与正在运行或已结束的历史窗口重叠。
+7. 将 Worker 配置改回 `M3_ACCEPTANCE_ENABLED=true`，只重建并重启 Worker；随后观察各阶段独立告警，
+   包括 forecast、acceptance_backfill、custom_evaluation 和 daily_custom_forecast，确认其中一个阶段失败
+   不会阻塞其他阶段。
+8. 在每个电站新验收窗口的首个 01:02 基线后，核对每个序列恰有一个完整批次，并且每个序列有 96 个
+   15 分钟点位；异常时保留响应和告警上下文后再处理，不删除证据。
+
+发布完成后继续观察每日自动预测：只有同一电站、同一时间粒度不存在当天或未来的成功手工任务时，
+才会按最近完成任务的配置自动创建任务；因此操作人员完成一次手工预测后，不需要每天再次点击预测。
+
 ## 创建自定义预测集合
 
 `create-custom-forecast-collections.py` 通过固定的

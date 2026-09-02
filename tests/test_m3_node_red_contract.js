@@ -815,13 +815,14 @@ test("every NocoBase capture uses strict pagination and raw EMS windows reject p
   assert.strictEqual(flow.find((node) => node.id === "dashboard_evaluations_capture").func.includes("Date.parse(msg.m3.latest.as_of)"), false);
 });
 
-test("Task11 Dashboard points ACL exactly matches the fixed flow with no remaining logical delta", () => {
+test("Worker point ACL uses only direct batch and point filters", () => {
   const nocobase = JSON.parse(fs.readFileSync(NOCOBASE_CONTRACT_PATH, "utf8"));
-  const configured = nocobase.dashboard_role.collections.energy_forecast_points.fields_by_action.list.filter;
-  const required = ["batch.station_id", "batch.acceptance_run_id", "batch.write_state", "unique_id"];
+  const configured = nocobase.worker_role.collections.energy_forecast_points.fields_by_action.list.filter;
+  const required = ["batch_id", "unique_id", "data_time"];
   assert.deepStrictEqual(configured, required);
   assert.deepStrictEqual(required.filter((field) => !configured.includes(field)), []);
   assert.deepStrictEqual(configured.filter((field) => !required.includes(field)), []);
+  assert.strictEqual(configured.some((field) => field.startsWith("batch.")), false);
 });
 
 (async () => {

@@ -14,6 +14,7 @@ import json
 
 ROOT = Path(__file__).resolve().parents[1]
 DEPLOY = ROOT / "m3" / "deploy"
+PRODUCTION_ENV_README = DEPLOY / "production-env" / "README.md"
 GUIDE = ROOT / "m3" / "部署说明.md"
 RUNTIME_LOCK = ROOT / "m3" / "requirements.lock.txt"
 DOCKERFILE = ROOT / "Dockerfile"
@@ -88,6 +89,20 @@ def _systemd_directives(path: Path) -> dict[str, dict[str, list[str]]]:
 
 
 class DeploymentArtifactTests(unittest.TestCase):
+    def test_production_env_runbook_covers_safe_acceptance_rollout(self):
+        guide = PRODUCTION_ENV_README.read_text(encoding="utf-8")
+
+        for marker in (
+            "M3_ACCEPTANCE_ENABLED=false",
+            "energy_forecast_batches",
+            "batch_id",
+            "不得使用 `batch.*`",
+            "m3_daily_scheduler",
+            "M3_ACCEPTANCE_ENABLED=true",
+            "新建七日验收任务",
+        ):
+            self.assertIn(marker, guide)
+
     def test_runtime_requirements_are_hash_locked_and_match_project_pins(self):
         content = RUNTIME_LOCK.read_text(encoding="utf-8")
         project = tomllib.loads(
