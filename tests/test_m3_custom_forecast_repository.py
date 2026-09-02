@@ -123,28 +123,33 @@ def persisted_run_row(
     status: str,
     completed_at: str,
     selection_policy: str,
+    station_id: str = "ES02",
+    interval_seconds: int = 60,
+    forecast_start: str = "2026-09-01T00:00:00+08:00",
+    requested_by: str = "m3_operations_api",
 ) -> dict:
+    forecast_start_at = datetime.fromisoformat(forecast_start)
     return {
         "id": len(run_id),
         "run_id": run_id,
-        "station_id": "ES02",
+        "station_id": station_id,
         "idempotency_key": f"{run_id}-key",
-        "history_start": "2026-08-04T00:00:00+08:00",
-        "history_end": "2026-09-01T00:00:00+08:00",
+        "history_start": (forecast_start_at - timedelta(days=28)).isoformat(),
+        "history_end": forecast_start,
         "history_days": 28,
-        "forecast_start": "2026-09-01T00:00:00+08:00",
-        "forecast_end": "2026-09-02T00:00:00+08:00",
+        "forecast_start": forecast_start,
+        "forecast_end": (forecast_start_at + timedelta(days=1)).isoformat(),
         "forecast_days": 1,
-        "interval_seconds": 60,
-        "points_per_day": 1440,
-        "expected_points_per_series": 1440,
+        "interval_seconds": interval_seconds,
+        "points_per_day": 86_400 // interval_seconds,
+        "expected_points_per_series": 86_400 // interval_seconds,
         "model_policy": "full_selection",
         "status": status,
         "model_manifest": {"selection_policy": selection_policy},
         "source_manifest": {},
         "content_hash": "a" * 64,
         "error_code": None,
-        "requested_by": "m3_operations_api",
+        "requested_by": requested_by,
         "started_at": "2026-09-01T00:00:00+08:00",
         "completed_at": completed_at,
         "evaluated_at": completed_at if status == "evaluated" else None,
@@ -174,7 +179,216 @@ class LatestRunsApi:
         return [dict(row) for row in self.rows]
 
 
+class TemplateRunsApi:
+    def __init__(self, rows: list[dict], *, interval_seconds: int = 900) -> None:
+        self.rows = rows
+        self.interval_seconds = interval_seconds
+        self.calls = 0
+
+    def list_records(self, collection, *, filter, fields, sort=None):
+        self.calls += 1
+        if collection != "energy_forecast_manual_runs":
+            raise AssertionError(collection)
+        if filter != {
+            "station_id": "ES01",
+            "interval_seconds": self.interval_seconds,
+            "status": {"$in": ["succeeded", "evaluated"]},
+        }:
+            raise AssertionError(filter)
+        if fields != RUN_FIELDS:
+            raise AssertionError(fields)
+        if sort != ["-completed_at", "-createdAt"]:
+            raise AssertionError(sort)
+        return [dict(row) for row in self.rows]
+
+
+class DailyRunsApi:
+    def __init__(self, rows: list[dict]) -> None:
+        self.rows = rows
+        self.calls = 0
+
+    def list_records_all(self, collection, *, filter, fields, sort=None):
+        self.calls += 1
+        if collection != "energy_forecast_manual_runs":
+            raise AssertionError(collection)
+        if filter != {
+            "station_id": "ES01",
+            "forecast_start": "2026-09-02T00:00:00+08:00",
+            "requested_by": "m3_daily_scheduler",
+        }:
+            raise AssertionError(filter)
+        if fields != RUN_FIELDS:
+            raise AssertionError(fields)
+        if sort != ["createdAt"]:
+            raise AssertionError(sort)
+        return [dict(row) for row in self.rows]
+
+
 class CustomForecastRepositoryTests(unittest.TestCase):
+    def test_latest_completed_template_returns_the_newest_terminal_interval_run(self):
+        """Removing the interval filter could return a template at the wrong cadence."""
+        api = TemplateRunsApi(
+            [
+                persisted_run_row(
+                    run_id="newest-quarter-hour-run",
+                    status="evaluated",
+                    completed_at="2026-09-02T12:01:00+08:00",
+                    selection_policy="weekly_load_v2",
+                    station_id="ES01",
+                    interval_seconds=900,
+                ),
+                persisted_run_row(
+                    run_id="older-quarter-hour-run",
+                    status="succeeded",
+                    completed_at="2026-09-02T12:00:00+08:00",
+                    selection_policy="weekly_load_v2",
+                    station_id="ES01",
+                    interval_seconds=900,
+                ),
+            ]
+        )
+
+        run = CustomForecastRepository(api).latest_completed_template(
+            "ES01", interval_seconds=900
+        )
+
+        self.assertIsNotNone(run)
+        self.assertEqual(run.run_id, "newest-quarter-hour-run")
+        self.assertEqual(api.calls, 1)
+
+    def test_latest_completed_template_returns_none_when_no_terminal_run_exists(self):
+        """An empty bounded query must not manufacture a template."""
+        api = TemplateRunsApi([])
+
+        self.assertIsNone(
+            CustomForecastRepository(api).latest_completed_template(
+                "ES01", interval_seconds=900
+            )
+        )
+        self.assertEqual(api.calls, 1)
+
+    def test_latest_completed_template_rejects_a_malformed_newest_row(self):
+        """Skipping a corrupt newest row would silently select a stale template."""
+        malformed = persisted_run_row(
+            run_id="malformed-quarter-hour-run",
+            status="evaluated",
+            completed_at="2026-09-02T12:01:00+08:00",
+            selection_policy="weekly_load_v2",
+            station_id="ES01",
+            interval_seconds=900,
+        )
+        del malformed["run_id"]
+        api = TemplateRunsApi([malformed])
+
+        with self.assertRaises(M3Error) as raised:
+            CustomForecastRepository(api).latest_completed_template(
+                "ES01", interval_seconds=900
+            )
+
+        self.assertEqual(raised.exception.code, "sink_contract_invalid")
+
+    def test_latest_completed_template_rejects_an_unallowed_interval_without_querying(self):
+        """An unsupported cadence must not broaden the repository query."""
+        api = TemplateRunsApi([], interval_seconds=17)
+
+        with self.assertRaises(ValueError):
+            CustomForecastRepository(api).latest_completed_template(
+                "ES01", interval_seconds=17
+            )
+
+        self.assertEqual(api.calls, 0)
+
+    def test_list_daily_runs_returns_only_the_requested_daily_attempts(self):
+        """A mismatched scheduler identity or forecast day is a persistence contract error."""
+        daily_start = datetime.fromisoformat("2026-09-02T00:00:00+08:00")
+        api = DailyRunsApi(
+            [
+                persisted_run_row(
+                    run_id="first-daily-attempt",
+                    status="succeeded",
+                    completed_at="2026-09-02T00:05:00+08:00",
+                    selection_policy="weekly_load_v2",
+                    station_id="ES01",
+                    interval_seconds=900,
+                    forecast_start=daily_start.isoformat(),
+                    requested_by="m3_daily_scheduler",
+                ),
+                persisted_run_row(
+                    run_id="second-daily-attempt",
+                    status="succeeded",
+                    completed_at="2026-09-02T00:10:00+08:00",
+                    selection_policy="weekly_load_v2",
+                    station_id="ES01",
+                    interval_seconds=900,
+                    forecast_start=daily_start.isoformat(),
+                    requested_by="m3_daily_scheduler",
+                ),
+            ]
+        )
+
+        runs = CustomForecastRepository(api).list_daily_runs(
+            "ES01", forecast_start=daily_start
+        )
+
+        self.assertEqual([run.run_id for run in runs], ["first-daily-attempt", "second-daily-attempt"])
+        self.assertEqual(api.calls, 1)
+
+    def test_list_daily_runs_rejects_invalid_forecast_start_without_querying(self):
+        """Daily lookup must be a Shanghai-midnight query before reaching NocoBase."""
+        invalid_starts = (
+            datetime(2026, 9, 2),
+            datetime.fromisoformat("2026-09-02T00:00:00+00:00"),
+            datetime.fromisoformat("2026-09-02T00:15:00+08:00"),
+        )
+        for forecast_start in invalid_starts:
+            with self.subTest(forecast_start=forecast_start):
+                api = DailyRunsApi([])
+
+                with self.assertRaises(ValueError):
+                    CustomForecastRepository(api).list_daily_runs(
+                        "ES01", forecast_start=forecast_start
+                    )
+
+                self.assertEqual(api.calls, 0)
+
+    def test_list_daily_runs_rejects_mismatched_persisted_identity(self):
+        """A server response outside the daily query identity must not be trusted."""
+        invalid_rows = (
+            persisted_run_row(
+                run_id="wrong-requester",
+                status="succeeded",
+                completed_at="2026-09-02T00:05:00+08:00",
+                selection_policy="weekly_load_v2",
+                station_id="ES01",
+                interval_seconds=900,
+                forecast_start="2026-09-02T00:00:00+08:00",
+                requested_by="m3_operations_api",
+            ),
+            persisted_run_row(
+                run_id="wrong-forecast-day",
+                status="succeeded",
+                completed_at="2026-09-02T00:05:00+08:00",
+                selection_policy="weekly_load_v2",
+                station_id="ES01",
+                interval_seconds=900,
+                forecast_start="2026-09-03T00:00:00+08:00",
+                requested_by="m3_daily_scheduler",
+            ),
+        )
+        for invalid_row in invalid_rows:
+            with self.subTest(run_id=invalid_row["run_id"]):
+                api = DailyRunsApi([invalid_row])
+
+                with self.assertRaises(M3Error) as raised:
+                    CustomForecastRepository(api).list_daily_runs(
+                        "ES01",
+                        forecast_start=datetime.fromisoformat(
+                            "2026-09-02T00:00:00+08:00"
+                        ),
+                    )
+
+                self.assertEqual(raised.exception.code, "sink_contract_invalid")
+
     def test_latest_usable_run_skips_newer_incompatible_terminal_runs(self):
         """A stale task format must not hide the newest usable matching forecast."""
         api = LatestRunsApi(

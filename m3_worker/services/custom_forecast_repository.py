@@ -10,6 +10,7 @@ from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 from m3_worker.custom_forecast_contracts import (
+    ALLOWED_INTERVAL_SECONDS,
     CustomForecastConfig,
     CustomForecastRequest,
     CustomForecastSeries,
@@ -18,6 +19,7 @@ from m3_worker.custom_forecast_contracts import (
     build_custom_forecast_config,
     validate_custom_series_for_config,
 )
+from m3_worker.contracts import validate_shanghai_timestamp
 from m3_worker.errors import M3Error
 from m3_worker.sinks.forecast_sink import canonical_hash
 
@@ -116,6 +118,7 @@ ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
 }
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 POINT_DECIMAL_QUANTUM = Decimal("0.000001")
+DAILY_REQUESTED_BY = "m3_daily_scheduler"
 
 
 def _positive_id(value: object, context: str) -> int:
@@ -371,6 +374,57 @@ class CustomForecastRepository:
             sort=["createdAt"],
         )
         return [self._parse_run(row) for row in rows]
+
+    def latest_completed_template(
+        self, station_id: str, *, interval_seconds: int
+    ) -> StoredCustomRun | None:
+        if interval_seconds not in ALLOWED_INTERVAL_SECONDS:
+            raise ValueError("interval_seconds must be allowed")
+        rows = self._api.list_records(
+            RUNS,
+            filter={
+                "station_id": station_id,
+                "interval_seconds": interval_seconds,
+                "status": {"$in": ["succeeded", "evaluated"]},
+            },
+            fields=RUN_FIELDS,
+            sort=["-completed_at", "-createdAt"],
+        )
+        return None if not rows else self._parse_run(rows[0])
+
+    def list_daily_runs(
+        self, station_id: str, *, forecast_start: datetime
+    ) -> list[StoredCustomRun]:
+        validate_shanghai_timestamp(
+            forecast_start, "forecast_start", quarter_hour=False
+        )
+        if (
+            forecast_start.hour
+            or forecast_start.minute
+            or forecast_start.second
+            or forecast_start.microsecond
+        ):
+            raise ValueError("forecast_start must be midnight")
+        rows = self._api.list_records_all(
+            RUNS,
+            filter={
+                "station_id": station_id,
+                "forecast_start": forecast_start.isoformat(),
+                "requested_by": DAILY_REQUESTED_BY,
+            },
+            fields=RUN_FIELDS,
+            sort=["createdAt"],
+        )
+        runs = [self._parse_run(row) for row in rows]
+        if any(
+            run.record.requested_by != DAILY_REQUESTED_BY
+            or run.config.forecast_start != forecast_start
+            for run in runs
+        ):
+            raise M3Error(
+                "sink_contract_invalid", "Persisted daily custom run is invalid"
+            )
+        return runs
 
     def latest_usable(
         self,
