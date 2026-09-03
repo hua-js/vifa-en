@@ -1013,7 +1013,7 @@
         assert(milliseconds(point.target_time) - milliseconds(point.data_time) === 900000, "forecast horizon invalid");
         if (index === 0) assert(point.data_time === range.forecast_start, "forecast first point invalid");
         if (previousTarget !== null) assert(point.data_time === previousTarget, "forecast continuity invalid");
-        const expected = uniqueId === "station_total_load" ? Math.max(point.raw_value, 0) : Math.min(Math.max(point.raw_value, 0), 100);
+        const expected = uniqueId === "station_total_load" ? Math.max(point.raw_value, 0) : Math.min(Math.max(point.raw_value, 2), 99);
         assert(point.value === expected && point.is_clipped === (point.value !== point.raw_value), "forecast clipping invalid");
         return point.target_time;
       }

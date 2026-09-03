@@ -1100,6 +1100,21 @@ function legacyNullManifestFixture() {
   assert.strictEqual(await page.locator(".readiness-hint").isHidden(), true);
   await page.evaluate((data) => window.renderDashboard(data), payload.data);
 
+  const truthfullyClippedSoc = clone(payload);
+  Object.assign(
+    truthfullyClippedSoc.data.stations[0].series[1].forecast[0],
+    { raw_value: 0.5, value: 2, is_clipped: true },
+  );
+  await page.evaluate((data) => window.renderDashboard(data), truthfullyClippedSoc.data);
+  assert.strictEqual(
+    await page.locator("#forecast-dashboard").getAttribute("data-state"),
+    "ready",
+    "truthful 2..99 SOC clipping must remain renderable",
+  );
+  assert.strictEqual(await page.locator("#error-state").isHidden(), true);
+  assert.notStrictEqual(await page.locator("#generated-at").innerText(), "最近更新：—");
+  await page.evaluate((data) => window.renderDashboard(data), payload.data);
+
   const malformedCases = [];
   const extraTop = clone(payload); extraTop.data.debug = true; malformedCases.push(["extra_top", extraTop]);
   const extraStation = clone(payload); extraStation.data.stations[0].unknown = "x"; malformedCases.push(["extra_station", extraStation]);
