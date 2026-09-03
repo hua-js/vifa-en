@@ -212,7 +212,7 @@ class DashboardSeries(ApiModel):
             expected = (
                 max(point.raw_value, 0.0)
                 if is_load_series(self.unique_id)
-                else min(max(point.raw_value, 0.0), 100.0)
+                else min(max(point.raw_value, 2.0), 99.0)
             )
             if point.value != expected:
                 raise ValueError("published forecast does not truthfully apply physical clipping")

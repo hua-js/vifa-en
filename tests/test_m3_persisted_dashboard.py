@@ -4,6 +4,8 @@ from datetime import datetime, timedelta
 from types import SimpleNamespace
 import unittest
 
+from pydantic import ValidationError
+
 from m3_worker.config import StationBinding
 from m3_worker.contracts import ForecastPoint, ForecastSeries, LatestSnapshot, ObservationPoint
 from m3_worker.errors import M3Error
@@ -284,6 +286,25 @@ class PersistedDashboardTests(unittest.TestCase):
         with self.assertRaises(M3Error) as raised:
             service.build()
         self.assertEqual(raised.exception.code, "sink_http_failed")
+
+    def test_one_station_public_projection_failure_is_isolated(self):
+        api = FakeApi()
+        point = api.latest[STATION_1.station_id]["series_payload"][0]["points"][0]
+        point.update({
+            "raw_forecast": -2.0,
+            "forecast_value": 1.0,
+            "is_clipped": True,
+        })
+        service, _, _ = self.make_service(api=api)
+
+        try:
+            envelope = service.build()
+        except ValidationError as error:
+            self.fail(f"one invalid station projection was not isolated: {error}")
+
+        self.assertEqual(envelope.data.stations[0].system.state, "error")
+        self.assertEqual(envelope.data.stations[1].system.state, "ready")
+        self.assertEqual(envelope.data.system.state, "degraded")
 
     def test_raw_actual_failure_retains_forecast_and_marks_station_degraded(self):
         source = FakeSource()

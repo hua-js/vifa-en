@@ -703,6 +703,7 @@
       [historyStart, historyEnd].forEach((control) => control.addEventListener("change", updateTaskConfiguration));
       [forecastDays, granularity].forEach((control) => control.addEventListener("change", changeOutputConfiguration));
       applyTheme("light");
+      initializeTaskDates(new Date());
       selectStation(stationPicker.value, false);
       updateTaskConfiguration();
 

@@ -415,6 +415,13 @@ class PersistedDashboardService:
             except M3Error as error:
                 failures.append(error)
                 cache.mark_station_failure(binding)
+            except (ValidationError, TypeError, ValueError):
+                failures.append(
+                    _contract_error(
+                        "Persisted dashboard station projection is invalid"
+                    )
+                )
+                cache.mark_station_failure(binding)
         if len(failures) == len(self._bindings):
             if any(error.code == "dashboard_contract_invalid" for error in failures):
                 raise _contract_error("Both persisted station payloads are invalid")

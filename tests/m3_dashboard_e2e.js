@@ -471,6 +471,44 @@ function legacyNullManifestFixture() {
   </script><script>${testBlockText}</script></body></html>`;
 
   browser = await chromium.launch({ headless: true });
+  const unavailableContext = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+  const unavailablePage = await unavailableContext.newPage();
+  await unavailablePage.addInitScript(() => {
+    const NativeDate = Date;
+    const fixedNow = NativeDate.parse("2026-09-03T09:00:00+08:00");
+    window.Date = class extends NativeDate {
+      constructor(...args) {
+        super(...(args.length ? args : [fixedNow]));
+      }
+
+      static now() { return fixedNow; }
+    };
+  });
+  await unavailablePage.route(/\/energy-forecast-api(?:\/|$|\?)/, async (route) => {
+    await route.fulfill({
+      status: 502,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify({ status: "error", error: { code: "dashboard_unavailable", message: "预测服务暂不可用" } }),
+    });
+  });
+  const unavailableHtml = htmlText.replace(
+    "  <script>\n    (() => {",
+    `  <script>window.__M3_DASHBOARD_AUTH_MODE__ = "server_token"; window.__M3_NOCOBASE_PARENT_ORIGIN__ = ${JSON.stringify(origin)};</script>\n  <script>\n    (() => {`,
+  );
+  servedHtml = unavailableHtml;
+  await unavailablePage.goto(`${origin}/ett`, { waitUntil: "domcontentloaded" });
+  await unavailablePage.locator("#error-state").waitFor({ state: "visible" });
+  assert.deepStrictEqual(
+    await unavailablePage.locator("#history-start, #history-end").evaluateAll((inputs) => inputs.map((input) => input.value)),
+    ["2026-08-06", "2026-09-02"],
+    "task dates must remain usable when the first dashboard request fails",
+  );
+  await unavailableContext.close();
+  servedHtml = htmlText.replace(
+    "  <script>\n    (() => {",
+    `  <script>window.__M3_DASHBOARD_AUTH_MODE__ = "postmessage"; window.__M3_NOCOBASE_PARENT_ORIGIN__ = ${JSON.stringify(origin)};</script>\n  <script>\n    (() => {`,
+  );
+
   const context = await browser.newContext({ viewport: { width: 1280, height: 720 } });
   await context.addCookies([{ name: "m3_token", value: "must-not-send", url: origin }]);
   const page = await context.newPage();

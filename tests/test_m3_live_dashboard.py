@@ -192,6 +192,42 @@ class DashboardContractTests(unittest.TestCase):
         self.assertEqual(len(station.series[0].forecast), 96)
         self.assertEqual(station.series[0].actual, [])
 
+    def test_dashboard_accepts_operational_soc_safety_clipping(self):
+        result = station_result(STATION_1)
+        soc = result.forecasts[1]
+        points = list(soc.points)
+        points[0] = points[0].model_copy(update={
+            "raw_forecast": 1.0,
+            "forecast_value": 2.0,
+            "is_clipped": True,
+        })
+        points[1] = points[1].model_copy(update={
+            "raw_forecast": 100.0,
+            "forecast_value": 99.0,
+            "is_clipped": True,
+        })
+        result.forecasts[1] = ForecastSeries(
+            unique_id=soc.unique_id,
+            unit=soc.unit,
+            model_name=soc.model_name,
+            status=soc.status,
+            points=points,
+        )
+
+        try:
+            station = build_dashboard_payload(
+                [result, station_result(STATION_2)],
+                generated_at=GENERATED_AT,
+            ).data.stations[0]
+        except ValidationError as error:
+            self.fail(f"valid operational SOC clipping was rejected: {error}")
+
+        clipped = station.series[1].forecast[:2]
+        self.assertEqual(
+            [(point.raw_value, point.value, point.is_clipped) for point in clipped],
+            [(1.0, 2.0, True), (100.0, 99.0, True)],
+        )
+
     def test_dashboard_rejects_wrong_station_or_series_order(self):
         payload = self.envelope().model_dump(mode="python")
         for mutate in (
