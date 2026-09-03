@@ -1,0 +1,661 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>M4 优化调度控制台</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --page: #09111f;
+      --surface: #101b2d;
+      --surface-2: #152238;
+      --surface-3: #1a2942;
+      --text: #eff5ff;
+      --muted: #94a5c0;
+      --faint: #6e809d;
+      --line: rgb(255 255 255 / 9%);
+      --line-strong: rgb(255 255 255 / 16%);
+      --blue: #74a7ff;
+      --green: #5de1a0;
+      --orange: #f4c961;
+      --red: #ff7d91;
+      --purple: #b69aff;
+      --blue-soft: rgb(116 167 255 / 11%);
+      --green-soft: rgb(93 225 160 / 10%);
+      --orange-soft: rgb(244 201 97 / 11%);
+      --red-soft: rgb(255 125 145 / 11%);
+      --shadow: 0 16px 38px rgb(0 0 0 / 22%);
+      --radius: 15px;
+    }
+
+    html[data-theme="light"] {
+      color-scheme: light;
+      --page: #f3f6fb;
+      --surface: #ffffff;
+      --surface-2: #f7f9fc;
+      --surface-3: #edf2f9;
+      --text: #172033;
+      --muted: #68778f;
+      --faint: #8290a4;
+      --line: rgb(15 23 42 / 9%);
+      --line-strong: rgb(15 23 42 / 16%);
+      --blue: #477df0;
+      --green: #15845a;
+      --orange: #a46e00;
+      --red: #cd4054;
+      --purple: #7354c7;
+      --blue-soft: rgb(71 125 240 / 9%);
+      --green-soft: rgb(21 132 90 / 9%);
+      --orange-soft: rgb(164 110 0 / 9%);
+      --red-soft: rgb(205 64 84 / 9%);
+      --shadow: 0 14px 34px rgb(36 48 74 / 8%);
+    }
+
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    html { overflow-x: hidden; background: var(--page); }
+    body {
+      min-width: 320px;
+      margin: 0;
+      overflow-x: hidden;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 4% 0%, rgb(71 125 240 / 11%), transparent 26%),
+        radial-gradient(circle at 96% 0%, rgb(22 157 120 / 8%), transparent 23%),
+        var(--page);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      font-variant-numeric: tabular-nums;
+      -webkit-font-smoothing: antialiased;
+    }
+    button, input, select { font: inherit; }
+    button, select { cursor: pointer; }
+    button:disabled { cursor: not-allowed; opacity: .45; }
+    button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+
+    .app { width: min(1500px, 100%); margin: 0 auto; padding: 24px 28px 36px; }
+    .app-header { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 16px; }
+    .brand { display: flex; min-width: 0; align-items: center; gap: 12px; }
+    .brand-mark { display: grid; place-items: center; width: 45px; height: 45px; flex: 0 0 auto; color: #fff; border-radius: 13px; background: linear-gradient(135deg, var(--blue), var(--green)); box-shadow: 0 10px 24px rgb(71 125 240 / 24%); }
+    .brand-mark svg { width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    h1 { margin: 0; font-size: clamp(22px, 3vw, 29px); line-height: 1.2; letter-spacing: -.035em; }
+    .brand-copy { margin: 5px 0 0; color: var(--muted); font-size: 12px; }
+    .header-tools { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+    .chip, .tool-button { display: inline-flex; min-height: 39px; align-items: center; gap: 7px; padding: 7px 11px; color: var(--text); border: 1px solid var(--line); border-radius: 10px; background: var(--surface); font-size: 11px; }
+    .tool-button { cursor: pointer; }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 4px var(--green-soft); }
+    #mock-data-badge { color: var(--purple); background: color-mix(in srgb, var(--purple) 10%, var(--surface)); }
+
+    .tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin-bottom: 18px; padding: 5px; border: 1px solid var(--line); border-radius: 13px; background: var(--surface-2); }
+    .tab { min-height: 43px; padding: 8px 12px; color: var(--muted); border: 0; border-radius: 9px; background: transparent; font-weight: 720; }
+    .tab[aria-selected="true"] { color: var(--text); background: var(--surface); box-shadow: 0 5px 16px rgb(0 0 0 / 8%); }
+
+    .panel { min-width: 0; }
+    .section { min-width: 0; margin-bottom: 18px; }
+    .section-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 14px; margin: 0 2px 11px; }
+    .section-title { margin: 0; font-size: 17px; line-height: 1.3; }
+    .section-copy { margin: 4px 0 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
+    .card { min-width: 0; border: 1px solid var(--line); border-radius: var(--radius); background: linear-gradient(180deg, rgb(255 255 255 / 2%), transparent), var(--surface); box-shadow: var(--shadow); }
+    .card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 13px; margin-bottom: 14px; }
+    .card-title { font-size: 14px; font-weight: 750; }
+    .card-copy { margin-top: 4px; color: var(--muted); font-size: 10px; line-height: 1.5; }
+    .status { display: inline-flex; min-height: 26px; align-items: center; padding: 4px 8px; border-radius: 999px; font-size: 10px; font-weight: 760; white-space: nowrap; }
+    .status.good { color: var(--green); background: var(--green-soft); }
+    .status.info { color: var(--blue); background: var(--blue-soft); }
+    .status.warn { color: var(--orange); background: var(--orange-soft); }
+    .status.bad { color: var(--red); background: var(--red-soft); }
+
+    .operation-banner { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 20px; align-items: center; padding: 20px; background: linear-gradient(112deg, var(--blue-soft), var(--green-soft)), var(--surface); }
+    .operation-kicker { color: var(--green); font-size: 11px; font-weight: 760; }
+    .operation-title { margin: 7px 0 0; font-size: clamp(20px, 3vw, 28px); line-height: 1.25; }
+    .operation-copy { max-width: 780px; margin: 8px 0 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
+    .operation-side { min-width: 220px; padding: 13px 16px; border-left: 1px solid var(--line-strong); }
+    .operation-side span { display: block; color: var(--muted); font-size: 10px; }
+    .operation-side strong { display: block; margin-top: 6px; font-size: 18px; }
+    .progress { height: 7px; margin-top: 10px; overflow: hidden; border-radius: 8px; background: var(--line); }
+    .progress > span { display: block; width: 42%; height: 100%; background: linear-gradient(90deg, var(--blue), var(--green)); }
+
+    .metrics { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; }
+    .metric { min-height: 112px; padding: 14px; }
+    .metric-label { color: var(--muted); font-size: 10px; line-height: 1.4; }
+    .metric-value { margin-top: 10px; font-size: 22px; font-weight: 800; letter-spacing: -.025em; }
+    .metric-meta { margin-top: 8px; color: var(--faint); font-size: 9px; line-height: 1.45; }
+    .metric-meta.up { color: var(--orange); }
+    .metric-meta.good { color: var(--green); }
+
+    .overview-grid { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(280px, .55fr); gap: 14px; }
+    .timeline-card, .stage-card, .energy-card, .effect-card, .strategy-card, .reason-card, .table-card, .dispatch-card, .records-card, .detail-card { padding: 18px; }
+    .timeline-scroll { min-width: 0; overflow-x: auto; overscroll-behavior-inline: contain; }
+    .timeline-svg { display: block; width: 100%; height: auto; min-height: 235px; }
+    .chart-frame { fill: var(--surface-2); stroke: var(--line); }
+    .chart-grid { stroke: var(--line); stroke-width: 1; }
+    .chart-label { fill: var(--muted); font-size: 12px; }
+    .chart-lane { fill: var(--text); font-size: 13px; font-weight: 700; }
+    .charge { fill: var(--green); }
+    .discharge { fill: var(--blue); }
+    .standby { fill: var(--line-strong); }
+    .tariff-valley { fill: var(--green-soft); }
+    .tariff-flat { fill: var(--blue-soft); }
+    .tariff-peak { fill: var(--orange-soft); }
+    .legend { display: flex; flex-wrap: wrap; gap: 13px; margin-top: 9px; color: var(--muted); font-size: 10px; }
+    .legend span { display: inline-flex; align-items: center; gap: 6px; }
+    .legend i { width: 16px; height: 5px; border-radius: 5px; }
+    .legend .charge-key { background: var(--green); }
+    .legend .discharge-key { background: var(--blue); }
+    .legend .standby-key { background: var(--line-strong); }
+
+    .stage-list { display: grid; gap: 9px; }
+    .stage-item { padding: 12px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface-2); }
+    .stage-item span { display: block; color: var(--muted); font-size: 9px; }
+    .stage-item strong { display: block; margin-top: 5px; font-size: 12px; }
+    .stage-item.current { border-color: color-mix(in srgb, var(--green) 35%, transparent); background: var(--green-soft); }
+
+    .lower-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+    .energy-flow { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; align-items: center; }
+    .energy-node { min-height: 86px; padding: 13px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface-2); text-align: center; }
+    .energy-node span { display: block; color: var(--muted); font-size: 9px; }
+    .energy-node strong { display: block; margin-top: 7px; font-size: 16px; }
+    .energy-node.storage { color: var(--green); background: var(--green-soft); }
+    .energy-arrow { color: var(--blue); text-align: center; font-size: 11px; line-height: 1.6; }
+    .effect-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+    .effect { padding: 12px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface-2); }
+    .effect span { color: var(--muted); font-size: 9px; }
+    .effect strong { display: block; margin-top: 6px; font-size: 18px; }
+
+    .input-strip { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 9px; }
+    .input-item { padding: 12px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface); box-shadow: var(--shadow); }
+    .input-item span { display: block; color: var(--muted); font-size: 9px; }
+    .input-item strong { display: block; margin-top: 6px; font-size: 12px; }
+    .strategy-layout { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(270px, .6fr); gap: 14px; }
+    .reason-list { display: grid; gap: 9px; margin: 0; padding: 0; list-style: none; }
+    .reason-list li { padding: 11px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); }
+    .reason-list strong { display: block; font-size: 11px; }
+    .reason-list p { margin: 4px 0 0; color: var(--muted); font-size: 10px; line-height: 1.5; }
+    .risk-note { margin-top: 10px; padding: 10px; color: var(--orange); border-radius: 10px; background: var(--orange-soft); font-size: 10px; line-height: 1.55; }
+
+    .button { min-height: 39px; padding: 7px 13px; border-radius: 9px; font-weight: 740; }
+    .button.primary { color: #fff; border: 0; background: linear-gradient(90deg, var(--blue), var(--green)); }
+    .button.secondary { color: var(--text); border: 1px solid var(--line-strong); background: var(--surface); }
+    .table-scroll { max-width: 100%; overflow-x: auto; border: 1px solid var(--line); border-radius: 11px; }
+    table { width: 100%; min-width: 840px; border-collapse: collapse; }
+    th, td { padding: 11px 12px; border-bottom: 1px solid var(--line); text-align: left; font-size: 10px; }
+    th { color: var(--muted); background: var(--surface-2); }
+    tbody tr:last-child td { border-bottom: 0; }
+    .action-charge { color: var(--green); font-weight: 760; }
+    .action-discharge { color: var(--blue); font-weight: 760; }
+    .action-standby { color: var(--muted); font-weight: 760; }
+    .row-button { min-height: 32px; padding: 5px 8px; color: var(--blue); border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+    .edit-panel { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 9px; margin-top: 12px; padding: 14px; border: 1px solid var(--line-strong); border-radius: 11px; background: var(--surface-2); }
+    .field { display: flex; min-width: 0; flex-direction: column; gap: 6px; color: var(--muted); font-size: 9px; }
+    .field input, .field select { width: 100%; min-height: 38px; padding: 7px 9px; color: var(--text); border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+    .edit-actions { display: flex; align-items: end; }
+
+    .dispatch-contract { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 9px; margin: 0; }
+    .contract-item { padding: 11px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); }
+    .contract-item dt { color: var(--muted); font-size: 9px; }
+    .contract-item dd { margin: 6px 0 0; font-size: 12px; font-weight: 750; }
+    .contract-note { margin: 10px 0 0; color: var(--blue); font-size: 10px; line-height: 1.55; }
+    .dispatch-actions { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px; align-items: end; margin-top: 13px; padding-top: 13px; border-top: 1px solid var(--line); }
+    #precheck-state, #ems-feedback { min-height: 23px; font-size: 11px; line-height: 1.5; }
+    #precheck-state[data-state="passed"] { color: var(--green); }
+    #precheck-state[data-state="pending"] { color: var(--orange); }
+    #precheck-state[data-state="blocked"] { color: var(--red); }
+    #ems-feedback { margin-top: 5px; color: var(--muted); }
+    .button-row { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+
+    .record-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+    .records-layout { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(280px, .55fr); gap: 14px; }
+    #execution-list { display: grid; gap: 9px; }
+    .execution-item { display: grid; grid-template-columns: 120px minmax(0, 1fr) auto; gap: 11px; align-items: start; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); }
+    .execution-time { color: var(--muted); font-size: 9px; }
+    .execution-main strong { display: block; font-size: 11px; }
+    .execution-main p { margin: 4px 0 0; color: var(--muted); font-size: 10px; line-height: 1.5; }
+    .detail-list { display: grid; gap: 8px; margin: 0; }
+    .detail-list div { padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+    .detail-list div:last-child { padding-bottom: 0; border-bottom: 0; }
+    .detail-list dt { color: var(--muted); font-size: 9px; }
+    .detail-list dd { margin: 5px 0 0; font-size: 11px; line-height: 1.5; }
+
+    @media (max-width: 1180px) {
+      .metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .input-strip, .dispatch-contract { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    }
+    @media (max-width: 900px) {
+      .app-header, .section-head { align-items: flex-start; flex-direction: column; }
+      .header-tools { justify-content: flex-start; }
+      .operation-banner { grid-template-columns: minmax(0, 1fr); }
+      .operation-side { padding: 12px 0 0; border-top: 1px solid var(--line-strong); border-left: 0; }
+      .overview-grid, .strategy-layout, .records-layout { grid-template-columns: minmax(0, 1fr); }
+      .edit-panel { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .dispatch-actions { grid-template-columns: minmax(0, 1fr); }
+      .button-row { justify-content: flex-start; }
+    }
+    @media (max-width: 620px) {
+      .app { padding: 15px; }
+      .brand { align-items: flex-start; }
+      .brand-mark { width: 40px; height: 40px; }
+      .header-tools { width: 100%; }
+      .chip, .tool-button { flex: 1 1 auto; justify-content: center; }
+      .tabs { grid-template-columns: minmax(0, 1fr); }
+      .tab { min-height: 38px; }
+      .metrics, .lower-grid, .energy-flow, .effect-grid, .input-strip, .dispatch-contract, .record-summary { grid-template-columns: minmax(0, 1fr); }
+      .operation-banner, .timeline-card, .stage-card, .energy-card, .effect-card, .strategy-card, .reason-card, .table-card, .dispatch-card, .records-card, .detail-card { padding: 14px; }
+      .edit-panel { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .edit-actions { grid-column: 1 / -1; }
+      .edit-actions .button { width: 100%; }
+      .execution-item { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+      .execution-item .status { justify-self: start; }
+      .button-row, .button-row .button { width: 100%; }
+      #overview-chart, #strategy-chart { width: 1080px; max-width: none; }
+    }
+  </style>
+</head>
+<body>
+  <main class="app" id="m4-online-app">
+    <header class="app-header">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M4 17h3l2-5 3 8 3-13 2 10h3"/><path d="M4 4h16v16H4z"/></svg>
+        </span>
+        <div>
+          <h1>M4 优化调度控制台</h1>
+          <p class="brand-copy">苏州示范园区 · 光储协同调度</p>
+        </div>
+      </div>
+      <div class="header-tools">
+        <span class="chip" id="mock-data-badge">Mock 数据</span>
+        <span class="chip"><span class="dot"></span>EMS 连接正常</span>
+        <span class="chip">数据时间&nbsp;<strong>2026/09/03 15:00</strong></span>
+        <button class="tool-button" id="theme-toggle" type="button" aria-pressed="false">切换主题</button>
+      </div>
+    </header>
+
+    <nav class="tabs" role="tablist" aria-label="M4 功能导航">
+      <button class="tab" id="overview-tab" role="tab" type="button" aria-selected="true" aria-controls="overview-panel">调度总览</button>
+      <button class="tab" id="strategy-tab" role="tab" type="button" aria-selected="false" aria-controls="strategy-panel">策略工作台</button>
+      <button class="tab" id="records-tab" role="tab" type="button" aria-selected="false" aria-controls="records-panel">执行记录</button>
+    </nav>
+
+    <section class="panel" id="overview-panel" role="tabpanel" aria-labelledby="overview-tab">
+      <section class="section">
+        <article class="card operation-banner">
+          <div>
+            <div class="operation-kicker">今日策略运行中</div>
+            <h2 class="operation-title">优先削峰，兼顾光伏消纳与峰谷价差</h2>
+            <p class="operation-copy">当前处于光伏消纳阶段，两套储能为午间余电预留充电空间；18:00 起进入晚峰协同放电。</p>
+          </div>
+          <div class="operation-side">
+            <span>计划执行进度</span>
+            <strong>42 / 96 点</strong>
+            <div class="progress" role="progressbar" aria-label="今日计划执行进度" aria-valuemin="0" aria-valuemax="96" aria-valuenow="42"><span></span></div>
+          </div>
+        </article>
+      </section>
+
+      <section class="section" aria-labelledby="realtime-title">
+        <div class="section-head"><div><h2 class="section-title" id="realtime-title">实时运行</h2><p class="section-copy">厂区功率、需量与储能状态</p></div><span class="status good">数据正常</span></div>
+        <div class="metrics">
+          <article class="card metric" data-overview-metric><div class="metric-label">厂区负荷</div><div class="metric-value">1,126 kW</div><div class="metric-meta up">较15分钟前 +3.2%</div></article>
+          <article class="card metric" data-overview-metric><div class="metric-label">光伏出力</div><div class="metric-value">286 kW</div><div class="metric-meta good">当前消纳率 100%</div></article>
+          <article class="card metric" data-overview-metric><div class="metric-label">电网购电</div><div class="metric-value">706 kW</div><div class="metric-meta">储能充电 134 kW</div></article>
+          <article class="card metric" data-overview-metric><div class="metric-label">当前需量</div><div class="metric-value">1,218 kW</div><div class="metric-meta good">目标上限 1,320 kW</div></article>
+          <article class="card metric" data-overview-metric><div class="metric-label">1# 储能 SOC</div><div class="metric-value">62.4%</div><div class="metric-meta good">在线 · 充电 46 kW</div></article>
+          <article class="card metric" data-overview-metric><div class="metric-label">2# 储能 SOC</div><div class="metric-value">54.8%</div><div class="metric-meta good">在线 · 充电 88 kW</div></article>
+        </div>
+      </section>
+
+      <section class="section overview-grid">
+        <article class="card timeline-card">
+          <div class="card-head"><div><div class="card-title">今日充放电计划</div><div class="card-copy">2026/09/03 · 两套储能各 96 点</div></div><span class="status good">执行中</span></div>
+          <div class="timeline-scroll" id="overview-timeline">
+            <svg class="timeline-svg" id="overview-chart" viewBox="0 0 1080 260" role="img" aria-label="今日两套储能充放电时间轴"></svg>
+          </div>
+          <div class="legend"><span><i class="charge-key"></i>充电</span><span><i class="discharge-key"></i>放电</span><span><i class="standby-key"></i>待机</span><span>背景：谷 / 峰 / 平 / 尖峰</span></div>
+        </article>
+        <aside class="card stage-card">
+          <div class="card-head"><div><div class="card-title">当前与后续动作</div><div class="card-copy">由EMS按已接收计划执行</div></div></div>
+          <div class="stage-list">
+            <div class="stage-item current"><span>当前 · 15:00–18:00</span><strong>保留调节空间</strong></div>
+            <div class="stage-item"><span>下一阶段 · 18:00–22:00</span><strong>两套储能协同放电</strong></div>
+            <div class="stage-item"><span>目标</span><strong>购电需量不超过 1,320 kW</strong></div>
+            <div class="stage-item"><span>设备状态</span><strong>2台在线，无阻断告警</strong></div>
+          </div>
+        </aside>
+      </section>
+
+      <section class="section lower-grid">
+        <article class="card energy-card">
+          <div class="card-head"><div><div class="card-title">当前能量流</div><div class="card-copy">正值表示当前流向</div></div></div>
+          <div class="energy-flow">
+            <div><div class="energy-node"><span>光伏</span><strong>286 kW</strong></div><div class="energy-arrow">↓ 优先供负荷</div></div>
+            <div><div class="energy-node"><span>厂区负荷</span><strong>1,126 kW</strong></div><div class="energy-arrow">↑ 电网补充 706 kW</div></div>
+            <div><div class="energy-node storage"><span>储能</span><strong>充电 134 kW</strong></div><div class="energy-arrow">↑ 预留午间容量</div></div>
+          </div>
+        </article>
+        <article class="card effect-card">
+          <div class="card-head"><div><div class="card-title">今日策略效果</div><div class="card-copy">基于当前运行数据的Mock估算</div></div></div>
+          <div class="effect-grid">
+            <div class="effect"><span>预计削峰</span><strong>168 kW</strong></div>
+            <div class="effect"><span>预计光伏消纳</span><strong>96.2%</strong></div>
+            <div class="effect"><span>预计移峰电量</span><strong>3.4 MWh</strong></div>
+            <div class="effect"><span>预计日电费降低</span><strong>7.1%</strong></div>
+          </div>
+        </article>
+      </section>
+    </section>
+
+    <section class="panel" id="strategy-panel" role="tabpanel" aria-labelledby="strategy-tab" hidden>
+      <section class="section" aria-labelledby="input-title">
+        <div class="section-head"><div><h2 class="section-title" id="input-title">调度输入</h2><p class="section-copy">AI生成策略时使用的数据快照</p></div><button class="button secondary" id="generate-plan" type="button">AI生成新策略</button></div>
+        <div class="input-strip">
+          <div class="input-item"><span>24h负荷峰值</span><strong>1,486 kW · M3</strong></div>
+          <div class="input-item"><span>实时负荷 / 光伏</span><strong>1,126 / 286 kW</strong></div>
+          <div class="input-item"><span>分时电价</span><strong>V2026.09 · 有效</strong></div>
+          <div class="input-item"><span>设备能力</span><strong>2台在线 · EMS</strong></div>
+          <div class="input-item"><span>调度目标</span><strong>需量 ≤ 1,320 kW</strong></div>
+        </div>
+      </section>
+
+      <section class="section strategy-layout" id="strategy-output">
+        <article class="card strategy-card">
+          <div class="card-head"><div><div class="card-title">统一策略草案</div><div class="card-copy">策略 M4-20260903-001 · <strong id="strategy-version">V1</strong> · 两套储能各 96 点</div></div><span class="status info" id="strategy-state">AI已生成</span></div>
+          <div class="timeline-scroll">
+            <svg class="timeline-svg" id="strategy-chart" viewBox="0 0 1080 260" role="img" aria-label="待发送的两套储能充放电策略"></svg>
+          </div>
+          <div class="legend"><span><i class="charge-key"></i>充电</span><span><i class="discharge-key"></i>放电</span><span><i class="standby-key"></i>待机</span></div>
+        </article>
+        <aside class="card reason-card">
+          <div class="card-head"><div><div class="card-title">AI策略说明</div><div class="card-copy">仅用于生成策略，执行层不使用AI</div></div></div>
+          <ul class="reason-list">
+            <li><strong>谷段补能</strong><p>00:00–06:00使用低谷电价补充SOC。</p></li>
+            <li><strong>光伏消纳</strong><p>10:00–14:00为预计光伏余电预留容量。</p></li>
+            <li><strong>晚峰削峰</strong><p>18:00–22:00协同放电，控制关口需量。</p></li>
+          </ul>
+          <div class="risk-note">光伏采用实时与历史参考基线；日内偏差不会自动覆盖已发送计划。</div>
+        </aside>
+      </section>
+
+      <section class="section">
+        <div class="section-head"><div><h2 class="section-title">策略片段</h2><p class="section-copy">完整计划保留96点，这里展示可人工调整的关键时段</p></div></div>
+        <article class="card table-card">
+          <div class="table-scroll">
+            <table>
+              <thead><tr><th>储能</th><th>时段</th><th>动作</th><th>目标功率</th><th>SOC范围</th><th>主要目的</th><th>操作</th></tr></thead>
+              <tbody id="segment-table"></tbody>
+            </table>
+          </div>
+          <div class="edit-panel" id="edit-panel" hidden>
+            <label class="field">开始时间<input id="edit-start" type="time" step="900"></label>
+            <label class="field">结束时间<input id="edit-end" type="time" step="900"></label>
+            <label class="field">运行模式<select id="edit-mode"><option value="charge">充电</option><option value="discharge">放电</option><option value="standby">待机</option></select></label>
+            <label class="field">目标功率（kW）<input id="edit-power" type="number" min="0" max="1000" step="10"></label>
+            <div class="edit-actions"><button class="button primary" id="save-edit" type="button">保存调整</button></div>
+          </div>
+        </article>
+      </section>
+
+      <section class="section">
+        <div class="section-head"><div><h2 class="section-title">发送策略</h2><p class="section-copy">M4发送统一策略，设备控制由EMS负责</p></div></div>
+        <article class="card dispatch-card" id="dispatch-contract">
+          <div class="card-head"><div><div class="card-title">EMS下发计划</div><div class="card-copy">安全预检通过后由操作员发送</div></div><span class="status info">待发送</span></div>
+          <dl class="dispatch-contract">
+            <div class="contract-item"><dt>策略编号</dt><dd>M4-20260903-001</dd></div>
+            <div class="contract-item"><dt>策略版本</dt><dd id="dispatch-version">V1</dd></div>
+            <div class="contract-item"><dt>生效日期</dt><dd>2026/09/04</dd></div>
+            <div class="contract-item"><dt>计划规模</dt><dd>2 × 96 点</dd></div>
+            <div class="contract-item"><dt>触发方式</dt><dd>人工确认</dd></div>
+          </dl>
+          <p class="contract-note">字段包含设备编号、时间、充放电模式、目标功率和SOC范围；不直接调用EMS内部规则模板。</p>
+          <div class="dispatch-actions">
+            <div><div id="precheck-state" data-state="passed" aria-live="polite">安全预检通过 · 两套设备各96点完整，功率与SOC均在边界内</div><div id="ems-feedback" aria-live="polite">尚未发送 · M4不直接控制PCS/BMS</div></div>
+            <div class="button-row"><button class="button secondary" id="run-precheck" type="button">执行安全预检</button><button class="button primary" id="send-plan" type="button">发送至 EMS</button></div>
+          </div>
+        </article>
+      </section>
+    </section>
+
+    <section class="panel" id="records-panel" role="tabpanel" aria-labelledby="records-tab" hidden>
+      <section class="section" aria-labelledby="record-summary-title">
+        <div class="section-head"><div><h2 class="section-title" id="record-summary-title">执行概况</h2><p class="section-copy">策略下发与EMS执行状态</p></div><span class="status good">链路正常</span></div>
+        <div class="record-summary">
+          <article class="card metric"><div class="metric-label">今日策略</div><div class="metric-value">3</div><div class="metric-meta">运行中 1 · 已完成 2</div></article>
+          <article class="card metric"><div class="metric-label">执行成功率</div><div class="metric-value">98.6%</div><div class="metric-meta good">近30日</div></article>
+          <article class="card metric"><div class="metric-label">今日执行点</div><div class="metric-value">84</div><div class="metric-meta">计划点 192</div></article>
+          <article class="card metric"><div class="metric-label">待处理异常</div><div class="metric-value">0</div><div class="metric-meta good">无阻断问题</div></article>
+        </div>
+      </section>
+
+      <section class="section records-layout">
+        <article class="card records-card">
+          <div class="card-head"><div><div class="card-title">M4-20260903-001 事件记录</div><div class="card-copy">策略版本、人工操作和EMS回读统一留痕</div></div><span class="status info">V1</span></div>
+          <div id="execution-list" aria-live="polite">
+            <article class="execution-item"><time class="execution-time">15:04:18</time><div class="execution-main"><strong>EMS执行回读</strong><p>1#、2#储能计划进入执行队列，当前无异常。</p></div><span class="status good">执行中</span></article>
+            <article class="execution-item"><time class="execution-time">15:03:52</time><div class="execution-main"><strong>EMS已接收策略</strong><p>接收两套设备各96点计划，最终校验通过。</p></div><span class="status good">已接收</span></article>
+            <article class="execution-item"><time class="execution-time">15:03:21</time><div class="execution-main"><strong>操作员发送策略</strong><p>安全预检通过，发送策略M4-20260903-001 V1。</p></div><span class="status info">已发送</span></article>
+            <article class="execution-item"><time class="execution-time">15:01:46</time><div class="execution-main"><strong>AI生成策略草案</strong><p>完成负荷、电价、光伏参考和设备约束计算。</p></div><span class="status info">已生成</span></article>
+          </div>
+        </article>
+        <aside class="card detail-card">
+          <div class="card-head"><div><div class="card-title">当前执行详情</div><div class="card-copy">数据由EMS只读回传</div></div></div>
+          <dl class="detail-list">
+            <div><dt>EMS任务编号</dt><dd>EMS-DSP-0903-018</dd></div>
+            <div><dt>当前状态</dt><dd><span class="status good">执行中</span></dd></div>
+            <div><dt>1#储能实际功率</dt><dd>充电 46 kW</dd></div>
+            <div><dt>2#储能实际功率</dt><dd>充电 88 kW</dd></div>
+            <div><dt>最近回读</dt><dd>2026/09/03 15:04:18</dd></div>
+            <div><dt>执行责任</dt><dd>EMS最终校验、控制、暂停和停止</dd></div>
+          </dl>
+        </aside>
+      </section>
+    </section>
+  </main>
+
+  <script>
+    (() => {
+      "use strict";
+
+      const app = document.getElementById("m4-online-app");
+      const labels = { charge: "充电", discharge: "放电", standby: "待机" };
+      const purposes = { valley: "低谷补能", morning: "早峰削峰", solar: "光伏消纳", reserve: "保留空间", evening: "晚峰削峰", idle: "设备待机" };
+      const segments = [
+        { storage: "1#储能", start: "00:00", end: "06:00", mode: "charge", power: 380, soc: "20–82%", purpose: "valley" },
+        { storage: "1#储能", start: "06:00", end: "10:00", mode: "discharge", power: 330, soc: "32–82%", purpose: "morning" },
+        { storage: "1#储能", start: "10:00", end: "14:00", mode: "charge", power: 260, soc: "28–88%", purpose: "solar" },
+        { storage: "1#储能", start: "14:00", end: "22:00", mode: "discharge", power: 420, soc: "22–88%", purpose: "evening" },
+        { storage: "1#储能", start: "22:00", end: "24:00", mode: "standby", power: 0, soc: "20–95%", purpose: "idle" },
+        { storage: "2#储能", start: "00:00", end: "06:00", mode: "charge", power: 760, soc: "18–78%", purpose: "valley" },
+        { storage: "2#储能", start: "06:00", end: "10:00", mode: "discharge", power: 560, soc: "30–78%", purpose: "morning" },
+        { storage: "2#储能", start: "10:00", end: "14:00", mode: "charge", power: 520, soc: "26–90%", purpose: "solar" },
+        { storage: "2#储能", start: "14:00", end: "18:00", mode: "standby", power: 0, soc: "42–90%", purpose: "reserve" },
+        { storage: "2#储能", start: "18:00", end: "22:00", mode: "discharge", power: 820, soc: "20–90%", purpose: "evening" },
+        { storage: "2#储能", start: "22:00", end: "24:00", mode: "standby", power: 0, soc: "20–95%", purpose: "idle" },
+      ];
+      let editingIndex = 0;
+      let version = 1;
+
+      function element(name, attrs = {}, text = "") {
+        const node = document.createElement(name);
+        Object.entries(attrs).forEach(([key, value]) => node.setAttribute(key, String(value)));
+        node.textContent = text;
+        return node;
+      }
+
+      function svgElement(name, attrs = {}) {
+        const node = document.createElementNS("http://www.w3.org/2000/svg", name);
+        Object.entries(attrs).forEach(([key, value]) => node.setAttribute(key, String(value)));
+        return node;
+      }
+
+      function minutes(time) {
+        if (time === "24:00") return 1440;
+        const [hour, minute] = time.split(":").map(Number);
+        return hour * 60 + minute;
+      }
+
+      function segmentAt(storage, minute) {
+        return segments.find((segment) => segment.storage === storage && minute >= minutes(segment.start) && minute < minutes(segment.end));
+      }
+
+      function renderTimeline(id) {
+        const svg = document.getElementById(id);
+        svg.replaceChildren();
+        const left = 94, right = 22, top = 28, width = 1080 - left - right;
+        const x = (minute) => left + minute / 1440 * width;
+        svg.append(svgElement("rect", { x: left, y: top, width, height: 176, rx: 10, class: "chart-frame" }));
+        [[0, 360, "tariff-valley"], [360, 600, "tariff-peak"], [600, 1080, "tariff-flat"], [1080, 1320, "tariff-peak"], [1320, 1440, "tariff-flat"]].forEach(([start, end, className]) => {
+          svg.append(svgElement("rect", { x: x(start), y: top, width: x(end) - x(start), height: 176, class: className }));
+        });
+        for (let hour = 0; hour <= 24; hour += 2) {
+          const xx = x(hour * 60);
+          svg.append(svgElement("line", { x1: xx, y1: top, x2: xx, y2: 204, class: "chart-grid" }));
+          const label = svgElement("text", { x: xx, y: 226, class: "chart-label", "text-anchor": hour === 0 ? "start" : hour === 24 ? "end" : "middle" });
+          label.textContent = `${String(hour).padStart(2, "0")}:00`;
+          svg.append(label);
+        }
+        ["1#储能", "2#储能"].forEach((storage, laneIndex) => {
+          const y = 64 + laneIndex * 64;
+          const label = svgElement("text", { x: 14, y: y + 19, class: "chart-lane" });
+          label.textContent = storage;
+          svg.append(label);
+          const lane = svgElement("g", { class: "schedule-lane", "data-storage": storage });
+          for (let index = 0; index < 96; index += 1) {
+            const segment = segmentAt(storage, index * 15);
+            lane.append(svgElement("rect", { x: x(index * 15) + .8, y, width: Math.max(x(15) - x(0) - 1.6, 1), height: 31, rx: 2, class: segment ? segment.mode : "standby" }));
+          }
+          svg.append(lane);
+        });
+        [[0, 360, "谷"], [360, 600, "峰"], [600, 1080, "平"], [1080, 1320, "尖峰"], [1320, 1440, "平"]].forEach(([start, end, text]) => {
+          const label = svgElement("text", { x: (x(start) + x(end)) / 2, y: 251, class: "chart-label", "text-anchor": "middle" });
+          label.textContent = text;
+          svg.append(label);
+        });
+      }
+
+      function renderTable() {
+        const body = document.getElementById("segment-table");
+        body.replaceChildren();
+        segments.forEach((segment, index) => {
+          const row = element("tr");
+          row.append(element("td", {}, segment.storage));
+          row.append(element("td", {}, `${segment.start}–${segment.end}`));
+          const action = element("td");
+          action.append(element("span", { class: `action-${segment.mode}` }, labels[segment.mode]));
+          row.append(action);
+          row.append(element("td", {}, segment.mode === "standby" ? "—" : `${segment.power} kW`));
+          row.append(element("td", {}, segment.soc));
+          row.append(element("td", {}, purposes[segment.purpose]));
+          const edit = element("td");
+          edit.append(element("button", { class: "row-button", type: "button", "data-edit-index": index, "aria-label": index === 0 ? "编辑第一个策略片段" : `编辑${segment.storage}${segment.start}策略片段` }, "编辑"));
+          row.append(edit);
+          body.append(row);
+        });
+      }
+
+      function populateEditor() {
+        const segment = segments[editingIndex];
+        document.getElementById("edit-start").value = segment.start;
+        document.getElementById("edit-end").value = segment.end === "24:00" ? "23:59" : segment.end;
+        document.getElementById("edit-mode").value = segment.mode;
+        document.getElementById("edit-power").value = String(segment.power);
+      }
+
+      function setPending(message) {
+        const state = document.getElementById("precheck-state");
+        state.dataset.state = "pending";
+        state.textContent = message;
+        document.getElementById("send-plan").disabled = true;
+      }
+
+      function addExecution(title, copy, stateText, stateClass) {
+        const item = element("article", { class: "execution-item" });
+        item.append(element("time", { class: "execution-time" }, new Date().toLocaleTimeString("zh-CN", { hour12: false })));
+        const main = element("div", { class: "execution-main" });
+        main.append(element("strong", {}, title));
+        main.append(element("p", {}, copy));
+        item.append(main);
+        item.append(element("span", { class: `status ${stateClass}` }, stateText));
+        document.getElementById("execution-list").prepend(item);
+      }
+
+      app.querySelectorAll('[role="tab"]').forEach((tab) => {
+        tab.addEventListener("click", () => {
+          app.querySelectorAll('[role="tab"]').forEach((candidate) => {
+            const selected = candidate === tab;
+            candidate.setAttribute("aria-selected", String(selected));
+            document.getElementById(candidate.getAttribute("aria-controls")).hidden = !selected;
+          });
+        });
+      });
+
+      document.getElementById("theme-toggle").addEventListener("click", (event) => {
+        const html = document.documentElement;
+        const dark = html.dataset.theme !== "dark";
+        html.dataset.theme = dark ? "dark" : "light";
+        event.currentTarget.setAttribute("aria-pressed", String(dark));
+      });
+
+      document.getElementById("generate-plan").addEventListener("click", () => {
+        version += 1;
+        document.getElementById("strategy-version").textContent = `V${version}`;
+        document.getElementById("dispatch-version").textContent = `V${version}`;
+        document.getElementById("strategy-state").textContent = "新草案待校验";
+        document.getElementById("strategy-state").className = "status warn";
+        setPending(`V${version} 已生成 · 请执行安全预检`);
+        addExecution(`AI生成策略草案 · V${version}`, "使用最新数据快照生成两套储能计划。", "待校验", "warn");
+      });
+
+      document.getElementById("segment-table").addEventListener("click", (event) => {
+        const button = event.target.closest("[data-edit-index]");
+        if (!button) return;
+        editingIndex = Number(button.dataset.editIndex);
+        document.getElementById("edit-panel").hidden = false;
+        populateEditor();
+      });
+
+      document.getElementById("save-edit").addEventListener("click", () => {
+        const segment = segments[editingIndex];
+        segment.start = document.getElementById("edit-start").value;
+        segment.end = document.getElementById("edit-end").value === "23:59" ? "24:00" : document.getElementById("edit-end").value;
+        segment.mode = document.getElementById("edit-mode").value;
+        segment.power = Number(document.getElementById("edit-power").value);
+        version += 1;
+        document.getElementById("strategy-version").textContent = `V${version}`;
+        document.getElementById("dispatch-version").textContent = `V${version}`;
+        document.getElementById("strategy-state").textContent = "人工调整待校验";
+        document.getElementById("strategy-state").className = "status warn";
+        renderTable();
+        renderTimeline("overview-chart");
+        renderTimeline("strategy-chart");
+        setPending(`V${version} 已保存人工调整 · 请重新执行安全预检`);
+        addExecution(`人工调整策略 · V${version}`, `${segment.storage} ${segment.start}–${segment.end} 调整为${labels[segment.mode]} ${segment.power} kW。`, "待校验", "warn");
+      });
+
+      document.getElementById("run-precheck").addEventListener("click", () => {
+        const state = document.getElementById("precheck-state");
+        const invalid = segments.find((segment) => !Number.isFinite(segment.power) || segment.power < 0 || segment.power > 1000 || minutes(segment.start) >= minutes(segment.end));
+        if (invalid) {
+          state.dataset.state = "blocked";
+          state.textContent = `安全预检阻断 · ${invalid.storage}功率或时段超出设备边界`;
+          document.getElementById("send-plan").disabled = true;
+          return;
+        }
+        state.dataset.state = "passed";
+        state.textContent = "安全预检通过 · 两套设备各96点完整，功率与SOC均在边界内";
+        document.getElementById("send-plan").disabled = false;
+        document.getElementById("strategy-state").textContent = "预检通过";
+        document.getElementById("strategy-state").className = "status good";
+      });
+
+      document.getElementById("send-plan").addEventListener("click", () => {
+        document.getElementById("ems-feedback").textContent = `EMS 已接收 · M4-20260903-001 V${version} 已进入执行队列`;
+        addExecution(`EMS 已接收 · V${version}`, "两套设备各96点计划最终校验通过，进入执行队列。", "已接收", "good");
+      });
+
+      renderTable();
+      renderTimeline("overview-chart");
+      renderTimeline("strategy-chart");
+    })();
+  </script>
+</body>
+</html>
