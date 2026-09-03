@@ -135,6 +135,25 @@
     }
     #demo-mode { font-weight: 760; }
 
+    .io-overview {
+      margin-bottom: 16px;
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--panel);
+      box-shadow: var(--shadow);
+    }
+    .io-overview-head { margin-bottom: 12px; }
+    .io-overview-head strong { display: block; font-size: 14px; }
+    .io-overview-head span { display: block; margin-top: 4px; color: var(--muted); font-size: 11px; line-height: 1.5; }
+    .flow-track { display: grid; grid-template-columns: minmax(0, 1.2fr) auto minmax(0, 1fr) auto minmax(0, .9fr) auto minmax(0, .9fr) auto minmax(0, 1fr); align-items: stretch; gap: 8px; }
+    .flow-step { display: grid; align-content: center; min-height: 78px; padding: 11px; border: 1px solid var(--line); border-radius: 11px; background: var(--panel-soft); text-align: center; }
+    .flow-step strong { font-size: 12px; }
+    .flow-step span { margin-top: 5px; color: var(--muted); font-size: 10px; line-height: 1.45; }
+    .flow-step.output { border-color: color-mix(in srgb, var(--blue) 35%, transparent); background: var(--blue-soft); }
+    .flow-step.execute { border-color: color-mix(in srgb, var(--green) 35%, transparent); background: var(--green-soft); }
+    .flow-arrow { display: grid; place-items: center; color: var(--blue); font-size: 22px; font-weight: 800; }
+
     .tabs {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -197,7 +216,7 @@
     .status-label.bad { color: var(--red); background: var(--red-soft); }
     .status-label.info { color: var(--blue); background: var(--blue-soft); }
 
-    .input-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 11px; }
+    .input-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 11px; }
     .input-card { min-height: 116px; padding: 15px; }
     .input-label { color: var(--muted); font-size: 11px; line-height: 1.4; }
     .input-value { margin-top: 11px; font-size: 23px; font-weight: 800; letter-spacing: -.025em; }
@@ -278,6 +297,12 @@
     .danger { color: var(--red); border: 1px solid color-mix(in srgb, var(--red) 30%, transparent); background: var(--red-soft); }
 
     .dispatch-card { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px; align-items: end; padding: 18px; }
+    .dispatch-summary-card { margin-top: 14px; padding: 18px; }
+    .contract-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; margin: 0; }
+    .contract-item { padding: 12px; border: 1px solid var(--line); border-radius: 11px; background: var(--panel-soft); }
+    .contract-item dt { color: var(--muted); font-size: 10px; line-height: 1.4; }
+    .contract-item dd { margin: 7px 0 0; font-size: 13px; font-weight: 760; line-height: 1.45; }
+    .contract-note { margin: 11px 0 0; color: var(--blue); font-size: 11px; line-height: 1.55; }
     #validation-state, #ems-result { min-height: 25px; font-size: 12px; line-height: 1.55; }
     #validation-state[data-state="passed"] { color: var(--green); }
     #validation-state[data-state="warning"], #validation-state[data-state="pending"] { color: var(--orange); }
@@ -288,6 +313,10 @@
 
     .records-layout { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(250px, .65fr); gap: 14px; }
     .records-card, .boundary-card { padding: 18px; }
+    .interface-map-card { margin-bottom: 14px; padding: 18px; }
+    .interface-map-link { display: block; overflow: hidden; border: 1px solid var(--line); border-radius: 12px; background: #f8fafc; }
+    .interface-map { display: block; width: 100%; height: auto; }
+    .interface-map-caption { margin: 10px 0 0; color: var(--muted); font-size: 10px; line-height: 1.55; }
     #record-list { display: grid; gap: 10px; }
     .record-item { display: grid; grid-template-columns: 124px minmax(0, 1fr) auto; gap: 12px; align-items: start; padding: 13px; border: 1px solid var(--line); border-radius: 11px; background: var(--panel-soft); }
     .record-time { color: var(--muted); font-size: 10px; }
@@ -312,12 +341,15 @@
 
     @media (max-width: 1180px) {
       .input-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .contract-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
       .acceptance-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
     @media (max-width: 900px) {
       .top { flex-direction: column; }
       .tools { justify-content: flex-start; }
       .strategy-grid, .records-layout { grid-template-columns: minmax(0, 1fr); }
+      .flow-track { grid-template-columns: minmax(0, 1fr); }
+      .flow-arrow { min-height: 18px; transform: rotate(90deg); }
       .edit-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
       .dispatch-card { grid-template-columns: minmax(0, 1fr); align-items: start; }
       .dispatch-controls { justify-content: flex-start; }
@@ -332,10 +364,10 @@
       .demo-strip { align-items: flex-start; flex-direction: column; }
       .tabs { grid-template-columns: minmax(0, 1fr); }
       .tab { min-height: 38px; }
-      .input-grid, .metrics, .acceptance-grid { grid-template-columns: minmax(0, 1fr); }
+      .input-grid, .metrics, .contract-grid, .acceptance-grid { grid-template-columns: minmax(0, 1fr); }
       .edit-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .card-head { flex-direction: column; }
-      .schedule-card, .insight-card, .table-card, .records-card, .boundary-card, .dispatch-card { padding: 14px; }
+      .io-overview, .schedule-card, .insight-card, .table-card, .records-card, .boundary-card, .dispatch-summary-card, .dispatch-card, .interface-map-card { padding: 14px; }
       .record-item { grid-template-columns: minmax(0, 1fr); gap: 7px; }
       .record-item .status-label { justify-self: start; }
       .dispatch-controls { width: 100%; }
@@ -368,6 +400,24 @@
       <span>所有策略、状态和节费数字均为沟通用演示数据</span>
     </div>
 
+    <section class="io-overview" id="io-overview" aria-labelledby="io-overview-title">
+      <div class="io-overview-head">
+        <strong id="io-overview-title">M4 输入、输出与执行闭环</strong>
+        <span>决策在 M4，设备执行在 EMS；首版由人工确认发送，不启用全自动闭环。</span>
+      </div>
+      <div class="flow-track">
+        <div class="flow-step"><strong>调度输入</strong><span>预测、实时数据、电价、设备约束、业务目标</span></div>
+        <div class="flow-arrow" aria-hidden="true">→</div>
+        <div class="flow-step output"><strong>M4统一策略</strong><span>两套储能各 96 点计划</span></div>
+        <div class="flow-arrow" aria-hidden="true">→</div>
+        <div class="flow-step"><strong>人工确认</strong><span>调整、安全预检与发送</span></div>
+        <div class="flow-arrow" aria-hidden="true">→</div>
+        <div class="flow-step execute"><strong>EMS执行</strong><span>最终校验、仲裁与设备控制</span></div>
+        <div class="flow-arrow" aria-hidden="true">→</div>
+        <div class="flow-step execute"><strong>状态回读</strong><span>接收结果、执行状态与日志</span></div>
+      </div>
+    </section>
+
     <nav class="tabs" role="tablist" aria-label="M4 功能区">
       <button class="tab" id="workbench-tab" role="tab" type="button" aria-selected="true" aria-controls="workbench-panel">策略工作台</button>
       <button class="tab" id="records-tab" role="tab" type="button" aria-selected="false" aria-controls="records-panel">策略与执行记录</button>
@@ -384,11 +434,13 @@
           <article class="card input-card"><div class="input-label">光伏参考峰值</div><div class="input-value">508 kW</div><div class="input-meta">历史同类日基线 · 中等置信</div></article>
           <article class="card input-card"><div class="input-label">电价数据</div><div class="input-value">V2026.09</div><div class="input-meta">接口表 · 峰平谷尖峰有效</div></article>
           <article class="card input-card"><div class="input-label">本次调度目标</div><div class="input-value">≤ 1,320 kW</div><div class="input-meta">优先削峰，其次峰谷套利与消纳</div></article>
+          <article class="card input-card"><div class="input-label">当前实时功率</div><div class="input-value">1,126 / 286 kW</div><div class="input-meta">M1/M2 · 厂区负荷 / 光伏；光伏预测不来自 M3</div></article>
+          <article class="card input-card"><div class="input-label">EMS 执行边界</div><div class="input-value">2 台可用</div><div class="input-meta">最大充放电 1000 kW · SOC 安全范围 10–95%</div></article>
         </div>
       </section>
 
       <section class="zone" aria-labelledby="strategy-title">
-        <header class="zone-head"><span class="zone-index">02</span><div><div class="zone-title" id="strategy-title">AI 策略草案</div><div class="zone-copy">未来 24 小时 · 15 分钟粒度 · 两套储能分别计算</div></div></header>
+        <header class="zone-head"><span class="zone-index">02</span><div><div class="zone-title" id="strategy-title">M4 输出一 · 统一策略草案</div><div class="zone-copy">未来 24 小时 · 15 分钟粒度 · 两套储能各 96 点，由 AI 统一决策</div></div></header>
         <div class="strategy-grid">
           <article class="card schedule-card">
             <div class="card-head">
@@ -460,6 +512,21 @@
           </div>
         </article>
 
+        <article class="card dispatch-summary-card" id="dispatch-summary" data-device-count="2" data-point-count="192">
+          <div class="card-head">
+            <div><div class="card-title">M4 输出二 · EMS 下发计划</div><div class="card-copy">展示人工确认后实际交给 EMS 的统一策略契约</div></div>
+            <span class="status-label info">待人工发送</span>
+          </div>
+          <dl class="contract-grid">
+            <div class="contract-item"><dt>策略编号</dt><dd>M4-DEMO-20260903</dd></div>
+            <div class="contract-item"><dt>策略版本</dt><dd id="dispatch-version">V1</dd></div>
+            <div class="contract-item"><dt>生效日期</dt><dd>2026/09/04</dd></div>
+            <div class="contract-item"><dt>计划规模</dt><dd>2 × 96 点</dd></div>
+            <div class="contract-item"><dt>触发方式</dt><dd>人工确认</dd></div>
+          </dl>
+          <p class="contract-note">下发字段：设备编号、开始/结束时间、充电/放电/待机、目标功率、SOC 范围。只发送一份统一策略，不分别调用 EMS 内部规则模板。</p>
+        </article>
+
         <article class="card dispatch-card" style="margin-top:14px">
           <div>
             <div class="card-title">发送前状态</div>
@@ -478,6 +545,13 @@
     <section id="records-panel" role="tabpanel" aria-labelledby="records-tab" hidden>
       <section class="zone" aria-labelledby="records-title">
         <header class="zone-head"><span class="zone-index">01</span><div><div class="zone-title" id="records-title">策略与执行记录</div><div class="zone-copy">关联 AI 原始策略、人工修改、EMS 接收状态和执行回读</div></div></header>
+        <article class="card interface-map-card">
+          <div class="card-head"><div><div class="card-title">M4—EMS 对接边界大图</div><div class="card-copy">点击图片可打开原始 SVG；放大后文字仍保持清晰</div></div><span class="status-label info">沟通用</span></div>
+          <a class="interface-map-link" href="M4-EMS对接流程图.svg" target="_blank" rel="noopener">
+            <img class="interface-map" id="interface-flow-map" src="M4-EMS对接流程图.svg" alt="M4 与 EMS 对接流程：M4 生成人工确认的统一策略，EMS 校验并执行，执行状态和日志回传 M4">
+          </a>
+          <p class="interface-map-caption">核心边界：M4 对接统一策略接口，不对接 EMS 内部三个规则模板，也不直接控制 PCS/BMS。</p>
+        </article>
         <div class="records-layout">
           <article class="card records-card">
             <div class="card-head"><div><div class="card-title">M4-DEMO-20260903 事件链</div><div class="card-copy">最新事件排在最前，刷新页面恢复初始演示数据</div></div><span class="status-label info">演示记录</span></div>
@@ -767,6 +841,7 @@
         segment.socMax = Number(document.getElementById("edit-soc-max").value);
         version += 1;
         document.getElementById("strategy-version").textContent = `V${version}`;
+        document.getElementById("dispatch-version").textContent = `V${version}`;
         document.getElementById("draft-state").className = "status-label warn";
         document.getElementById("draft-state").textContent = "人工调整待校验";
         renderTable();

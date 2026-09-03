@@ -9,6 +9,7 @@ const { chromium } = require("playwright");
 
 const ROOT = path.resolve(__dirname, "..");
 const HTML_PATH = path.join(ROOT, "m4", "M4优化调度控制台.html");
+const SVG_PATH = path.join(ROOT, "m4", "M4-EMS对接流程图.svg");
 
 let browser;
 let server;
@@ -36,11 +37,17 @@ async function openPage(viewport) {
 
 (async () => {
   const html = fs.readFileSync(HTML_PATH);
+  const interfaceFlowSvg = fs.readFileSync(SVG_PATH);
   server = http.createServer((request, response) => {
     const pathname = decodeURIComponent(new URL(request.url, "http://127.0.0.1").pathname);
     if (pathname === "/M4优化调度控制台.html") {
       response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
       response.end(html);
+      return;
+    }
+    if (pathname === "/M4-EMS对接流程图.svg") {
+      response.writeHead(200, { "Content-Type": "image/svg+xml; charset=utf-8" });
+      response.end(interfaceFlowSvg);
       return;
     }
     response.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
@@ -58,8 +65,16 @@ async function openPage(viewport) {
     "静态演示模式 · 不连接真实 AI/EMS",
   );
   assert.strictEqual(await page.locator('[role="tab"]').count(), 3);
+  assert.strictEqual(await page.locator("#io-overview .flow-step").count(), 5);
+  assert.match(await page.locator("#io-overview").textContent(), /调度输入.*M4统一策略.*人工确认.*EMS执行.*状态回读/s);
+  assert.strictEqual(await page.getByText("当前实时功率", { exact: true }).count(), 1);
+  assert.strictEqual(await page.getByText("EMS 执行边界", { exact: true }).count(), 1);
+  assert.match(await page.locator("#strategy-title").textContent(), /M4 输出一.*统一策略草案/);
   assert.strictEqual(await page.locator("#schedule-points").getAttribute("data-point-count"), "96");
   assert.strictEqual(await page.locator(".schedule-lane").count(), 2);
+  assert.strictEqual(await page.locator("#dispatch-summary").getAttribute("data-device-count"), "2");
+  assert.strictEqual(await page.locator("#dispatch-summary").getAttribute("data-point-count"), "192");
+  assert.match(await page.locator("#dispatch-summary").textContent(), /M4 输出二.*EMS 下发计划.*2 × 96.*人工确认/s);
 
   const screenshotDir = process.env.M4_SCREENSHOT_DIR;
   if (screenshotDir) {
@@ -74,6 +89,7 @@ async function openPage(viewport) {
   await page.getByRole("button", { name: "编辑策略" }).click();
   await page.locator("#edit-power").fill("1600");
   await page.getByRole("button", { name: "保存调整" }).click();
+  assert.strictEqual((await page.locator("#dispatch-version").textContent()).trim(), "V2");
   await page.getByRole("button", { name: "执行安全预检" }).click();
   assert.strictEqual(await page.locator("#validation-state").getAttribute("data-state"), "blocked");
   assert.strictEqual(await page.locator("#send-ems").isDisabled(), true);
@@ -97,6 +113,14 @@ async function openPage(viewport) {
 
   await page.getByRole("tab", { name: "策略与执行记录" }).click();
   assert.strictEqual(await page.locator("#records-panel").isVisible(), true);
+  await page.locator("#interface-flow-map").waitFor({ state: "visible" });
+  assert.strictEqual(
+    await page.locator("#interface-flow-map").evaluate((image) => image.complete && image.naturalWidth > 0),
+    true,
+  );
+  if (screenshotDir) {
+    await page.screenshot({ path: path.join(screenshotDir, "m4-records-desktop.png"), fullPage: true });
+  }
   await page.getByRole("tab", { name: "验收看板" }).click();
   assert.strictEqual(await page.locator("#acceptance-panel").isVisible(), true);
   assert.strictEqual(await page.locator(".acceptance-item").count(), 5);
