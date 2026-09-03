@@ -205,7 +205,7 @@
 
     .strategy-grid { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(270px, .65fr); gap: 14px; }
     .schedule-card { padding: 18px; }
-    #schedule-points { min-width: 0; }
+    #schedule-points { min-width: 0; overflow-x: auto; overscroll-behavior-inline: contain; }
     #schedule-chart { display: block; width: 100%; height: auto; min-height: 245px; }
     .chart-frame { fill: var(--panel-soft); stroke: var(--line); }
     .chart-grid { stroke: var(--line); stroke-width: 1; }
@@ -340,6 +340,7 @@
       .record-item .status-label { justify-self: start; }
       .dispatch-controls { width: 100%; }
       .dispatch-controls select, .dispatch-controls button { width: 100%; }
+      #schedule-chart { width: 720px; max-width: none; }
     }
   </style>
 </head>

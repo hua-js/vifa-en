@@ -61,6 +61,12 @@ async function openPage(viewport) {
   assert.strictEqual(await page.locator("#schedule-points").getAttribute("data-point-count"), "96");
   assert.strictEqual(await page.locator(".schedule-lane").count(), 2);
 
+  const screenshotDir = process.env.M4_SCREENSHOT_DIR;
+  if (screenshotDir) {
+    fs.mkdirSync(screenshotDir, { recursive: true });
+    await page.screenshot({ path: path.join(screenshotDir, "m4-workbench-desktop.png"), fullPage: true });
+  }
+
   const originalTheme = await page.locator("html").getAttribute("data-theme");
   await page.locator("#theme-toggle").click();
   assert.notStrictEqual(await page.locator("html").getAttribute("data-theme"), originalTheme);
@@ -97,9 +103,7 @@ async function openPage(viewport) {
   assert.match(await page.locator('[data-acceptance="4.5"]').textContent(), /口径待确认/);
   assert.doesNotMatch(await page.locator("#acceptance-panel").textContent(), /正式通过/);
 
-  const screenshotDir = process.env.M4_SCREENSHOT_DIR;
   if (screenshotDir) {
-    fs.mkdirSync(screenshotDir, { recursive: true });
     await page.screenshot({ path: path.join(screenshotDir, "m4-desktop.png"), fullPage: true });
   }
 
@@ -109,6 +113,17 @@ async function openPage(viewport) {
     client: document.documentElement.clientWidth,
   }));
   assert.ok(overflow.scroll <= overflow.client, `mobile page overflow: ${JSON.stringify(overflow)}`);
+  const timelineOverflow = await mobile.page.locator("#schedule-points").evaluate((node) => ({
+    scroll: node.scrollWidth,
+    client: node.clientWidth,
+  }));
+  assert.ok(
+    timelineOverflow.scroll > timelineOverflow.client,
+    `mobile timeline should scroll locally: ${JSON.stringify(timelineOverflow)}`,
+  );
+  if (screenshotDir) {
+    await mobile.page.screenshot({ path: path.join(screenshotDir, "m4-workbench-mobile.png"), fullPage: true });
+  }
   await mobile.page.getByRole("tab", { name: "验收看板" }).click();
   assert.strictEqual(await mobile.page.locator("#acceptance-panel").isVisible(), true);
   if (screenshotDir) {
