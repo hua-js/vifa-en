@@ -3,6 +3,7 @@
 from dataclasses import replace
 from datetime import datetime, timedelta
 from importlib.metadata import version
+import math
 from pathlib import Path
 import re
 import tomllib
@@ -18,6 +19,7 @@ from m3_worker.contracts import (
 )
 from m3_worker.domain.forecasting import (
     Champion,
+    MODEL_NAMES,
     seasonal_naive_champion,
     select_champion,
 )
@@ -41,6 +43,18 @@ EXACT_STATSFORECAST = re.compile(
 LOCKED_VERSION = re.compile(
     r"[0-9]+\.[0-9]+\.[0-9]+(?:[A-Za-z0-9.+-]*)?\Z"
 )
+PERSISTED_CHAMPION_FIELDS = {
+    "model_name",
+    "cv_mape_percent",
+    "selected_at",
+    "training_start",
+    "training_end",
+    "selection_reason",
+}
+PERSISTED_MANIFEST_FIELDS = {
+    frozenset({"statsforecast_version", "series"}),
+    frozenset({"statsforecast_version", "series", "readiness"}),
+}
 
 
 def project_statsforecast_version(project_root: Path = PROJECT_ROOT) -> str:
@@ -139,6 +153,95 @@ def _safe_error(error: Exception, code: str, message: str) -> M3Error:
     if isinstance(error, M3Error):
         return error
     return M3Error(code, message)
+
+
+def _persisted_time(value: object, field_name: str, *, quarter_hour: bool) -> datetime:
+    if type(value) is not str:
+        raise ValueError(f"{field_name} must be an exact timestamp string")
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        validate_shanghai_timestamp(
+            parsed, field_name, quarter_hour=quarter_hour
+        )
+    except ValueError as error:
+        raise ValueError(f"{field_name} is invalid") from error
+    return parsed
+
+
+def _persisted_champions(
+    manifest: object, required_version: str
+) -> dict[str, Champion | None] | None:
+    try:
+        if (
+            type(manifest) is not dict
+            or frozenset(manifest) not in PERSISTED_MANIFEST_FIELDS
+            or manifest["statsforecast_version"] != required_version
+        ):
+            return None
+        series = manifest["series"]
+        if type(series) is not dict or set(series) != SERIES_SET:
+            return None
+        champions: dict[str, Champion | None] = {}
+        for unique_id in SERIES_IDS:
+            item = series[unique_id]
+            if type(item) is not dict:
+                return None
+            if item.get("model_name") is None:
+                if set(item) != {"model_name", "reason"} or item.get(
+                    "reason"
+                ) != "insufficient_history":
+                    return None
+                champions[unique_id] = None
+                continue
+            if set(item) != PERSISTED_CHAMPION_FIELDS:
+                return None
+            model_name = item["model_name"]
+            metric = item["cv_mape_percent"]
+            reason = item["selection_reason"]
+            if (
+                type(model_name) is not str
+                or model_name not in MODEL_NAMES
+                or metric is not None
+                and (
+                    type(metric) not in {int, float}
+                    or not math.isfinite(metric)
+                    or metric < 0
+                )
+                or reason is not None
+                and (
+                    type(reason) is not str
+                    or not reason
+                    or reason != reason.strip()
+                    or any(
+                        ord(character) < 32 or ord(character) == 127
+                        for character in reason
+                    )
+                )
+            ):
+                return None
+            selected_at = _persisted_time(
+                item["selected_at"], "selected_at", quarter_hour=False
+            )
+            training_start = _persisted_time(
+                item["training_start"], "training_start", quarter_hour=True
+            )
+            training_end = _persisted_time(
+                item["training_end"], "training_end", quarter_hour=True
+            )
+            if training_end < training_start:
+                return None
+            champions[unique_id] = Champion(
+                model_name=model_name,
+                cv_mape_percent=float(metric) if metric is not None else None,
+                selected_at=selected_at,
+                training_start=training_start,
+                training_end=training_end,
+                statsforecast_version=required_version,
+                selection_reason=reason,
+            )
+        return champions
+    except (KeyError, TypeError, ValueError):
+        return None
 
 
 def _champion_manifest(champion: Champion | None) -> dict[str, object]:
@@ -341,6 +444,44 @@ class ForecastService:
                     "Station training history is unavailable",
                 ) from cause
         return datasets
+
+    def restore_models(self, station_id: str) -> bool:
+        cache = self._cache(station_id)
+        required_version = self._require_runtime(cache)
+        loader = getattr(self._sink, "load_latest_model_manifest", None)
+        if not callable(loader):
+            return False
+        try:
+            manifest = loader(station_id)
+        except M3Error as error:
+            if error.code == "sink_contract_invalid":
+                return False
+            raise
+        champions = _persisted_champions(manifest, required_version)
+        if champions is None:
+            return False
+        with cache.exclusive():
+            if cache.state.last_source_at is None or any(
+                champion is not None
+                and champion.training_end > cache.state.last_source_at
+                for champion in champions.values()
+            ):
+                return False
+            cache.state.champions = champions
+            if any(champion is None for champion in champions.values()):
+                cache.state.state = "degraded"
+                cache.state.last_error_code = "insufficient_history"
+            elif any(
+                champion.selection_reason is not None
+                for champion in champions.values()
+                if champion is not None
+            ):
+                cache.state.state = "degraded"
+                cache.state.last_error_code = "model_selection_failed"
+            else:
+                cache.state.state = "ready"
+                cache.state.last_error_code = None
+        return True
 
     def select_models(self, station_id: str) -> None:
         cache = self._cache(station_id)

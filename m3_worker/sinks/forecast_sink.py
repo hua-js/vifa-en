@@ -1,5 +1,6 @@
 """Deterministic latest and recoverable acceptance publication over HTTP."""
 
+from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 import hashlib
 import json
@@ -36,6 +37,7 @@ POINT_HASH_FIELDS = (
     "is_clipped",
 )
 EXPECTED_DAILY_POINTS = len(SERIES_IDS) * 96
+LATEST_MODEL_FIELDS = ("station_id", "model_manifest")
 
 
 def canonical_hash(value: object) -> str:
@@ -207,6 +209,32 @@ def _same_immutable_point(actual: dict[str, Any], expected: dict[str, Any]) -> b
 class ForecastSink:
     def __init__(self, api: object) -> None:
         self._api = api
+
+    def load_latest_model_manifest(self, station_id: str) -> dict | None:
+        if type(station_id) is not str or not station_id:
+            raise M3Error("sink_contract_invalid", "Station identity is invalid")
+        rows = self._api.list_records(
+            "energy_forecast_latest",
+            filter={"station_id": station_id},
+            fields=list(LATEST_MODEL_FIELDS),
+        )
+        if type(rows) is not list or len(rows) > 1:
+            raise M3Error(
+                "sink_contract_invalid", "Latest model manifest listing is invalid"
+            )
+        if not rows:
+            return None
+        row = rows[0]
+        if (
+            type(row) is not dict
+            or set(row) != set(LATEST_MODEL_FIELDS)
+            or row["station_id"] != station_id
+            or type(row["model_manifest"]) is not dict
+        ):
+            raise M3Error(
+                "sink_contract_invalid", "Latest model manifest row is invalid"
+            )
+        return deepcopy(row["model_manifest"])
 
     def publish_latest(self, snapshot: LatestSnapshot) -> dict[str, Any]:
         try:

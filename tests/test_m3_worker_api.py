@@ -468,6 +468,103 @@ class WorkerApiTests(unittest.TestCase):
 
 
 class ResourceTests(unittest.TestCase):
+    def test_startup_recovery_prefers_persisted_models_without_reselection(self):
+        events = []
+
+        class Forecast:
+            def bootstrap(self, station, at):
+                events.append(("bootstrap", station, at))
+
+            def restore_models(self, station):
+                events.append(("restore", station))
+                return True
+
+            def select_models(self, _station):
+                raise AssertionError("restored champions must skip startup selection")
+
+            def state(self, _station):
+                return SimpleNamespace(state="ready")
+
+        resources = WorkerResources(
+            settings=SimpleNamespace(
+                station_ids=("station-1",), acceptance_enabled=False
+            ),
+            source_http=SimpleNamespace(close=lambda: None),
+            nocobase_http=SimpleNamespace(close=lambda: None),
+            forecast_service=Forecast(),
+            acceptance_service=SimpleNamespace(),
+            custom_forecasts=SimpleNamespace(recover=lambda: None, close=lambda: None),
+            custom_evaluations=SimpleNamespace(),
+            daily_custom_forecasts=SimpleNamespace(run_station=lambda *_args: 0),
+            scheduler=SimpleNamespace(running=False),
+            jobs=SimpleNamespace(close=lambda: None),
+            clock=lambda: NOW,
+            alert_sink=lambda *_items: None,
+            statsforecast_version="2.1.1",
+        )
+
+        with patch(
+            "m3_worker.main.verify_statsforecast_runtime",
+            return_value="2.1.1",
+        ):
+            self.assertTrue(resources.recover())
+        self.assertEqual(
+            events,
+            [
+                ("bootstrap", "station-1", NOW),
+                ("restore", "station-1"),
+            ],
+        )
+
+    def test_startup_recovery_reselects_when_persisted_models_are_unusable(self):
+        events = []
+
+        class Forecast:
+            def bootstrap(self, station, at):
+                events.append(("bootstrap", station, at))
+
+            def restore_models(self, station):
+                events.append(("restore", station))
+                return False
+
+            def select_models(self, station):
+                events.append(("select", station))
+
+            def state(self, _station):
+                return SimpleNamespace(state="ready")
+
+        resources = WorkerResources(
+            settings=SimpleNamespace(
+                station_ids=("station-1",), acceptance_enabled=False
+            ),
+            source_http=SimpleNamespace(close=lambda: None),
+            nocobase_http=SimpleNamespace(close=lambda: None),
+            forecast_service=Forecast(),
+            acceptance_service=SimpleNamespace(),
+            custom_forecasts=SimpleNamespace(recover=lambda: None, close=lambda: None),
+            custom_evaluations=SimpleNamespace(),
+            daily_custom_forecasts=SimpleNamespace(run_station=lambda *_args: 0),
+            scheduler=SimpleNamespace(running=False),
+            jobs=SimpleNamespace(close=lambda: None),
+            clock=lambda: NOW,
+            alert_sink=lambda *_items: None,
+            statsforecast_version="2.1.1",
+        )
+
+        with patch(
+            "m3_worker.main.verify_statsforecast_runtime",
+            return_value="2.1.1",
+        ):
+            self.assertTrue(resources.recover())
+        self.assertEqual(
+            events,
+            [
+                ("bootstrap", "station-1", NOW),
+                ("restore", "station-1"),
+                ("select", "station-1"),
+            ],
+        )
+
     def test_build_resources_shares_one_daily_coordinator_with_scheduler(self):
         """Splitting repository/service instances would desynchronize startup and scheduled runs."""
         custom_repository = object()

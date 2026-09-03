@@ -174,7 +174,16 @@ class WorkerResources:
             for station_id in self.settings.station_ids:
                 try:
                     self.forecast_service.bootstrap(station_id, recovery_at)
-                    self.forecast_service.select_models(station_id)
+                    restore_models = getattr(
+                        self.forecast_service, "restore_models", None
+                    )
+                    restored = bool(
+                        restore_models(station_id)
+                        if callable(restore_models)
+                        else False
+                    )
+                    if not restored:
+                        self.forecast_service.select_models(station_id)
                 except Exception as error:
                     failed = True
                     self._alert(station_id, "startup_recovery", error, recovery_at)

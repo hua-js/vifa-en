@@ -616,6 +616,45 @@ class NocoBaseClientTests(unittest.TestCase):
 
 
 class ForecastSinkTests(unittest.TestCase):
+    def test_latest_model_manifest_read_is_station_bound_and_minimal(self):
+        manifest = {
+            "statsforecast_version": "2.1.1",
+            "series": {
+                "station_total_load": {"model_name": "AutoETS"},
+                "storage_soc": {"model_name": "AutoARIMA"},
+            },
+        }
+        fake = FakeNocoBase()
+        fake.latest = {
+            "id": 1,
+            "station_id": "plant-alpha-ES01",
+            "model_manifest": manifest,
+        }
+
+        sink = ForecastSink(fake)
+        load = getattr(sink, "load_latest_model_manifest", None)
+        self.assertIsNotNone(load, "forecast sink must load persisted models")
+        restored = load("plant-alpha-ES01")
+
+        self.assertEqual(restored, manifest)
+        action, arguments = fake.actions[-1]
+        self.assertEqual(action, "energy_forecast_latest:list")
+        self.assertEqual(arguments, {
+            "filter": {"station_id": "plant-alpha-ES01"},
+            "fields": ["station_id", "model_manifest"],
+            "sort": None,
+        })
+
+    def test_latest_model_manifest_read_returns_none_when_station_has_no_snapshot(self):
+        fake = FakeNocoBase()
+
+        sink = ForecastSink(fake)
+        load = getattr(sink, "load_latest_model_manifest", None)
+        self.assertIsNotNone(load, "forecast sink must load persisted models")
+        restored = load("station-1")
+
+        self.assertIsNone(restored)
+
     def test_latest_snapshot_uses_station_upsert_and_rechecks_persisted_identity(self):
         """Publishing by any key except station_id or trusting a wrong returned row can cross stations."""
         fake = FakeNocoBase()

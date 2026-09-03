@@ -88,10 +88,16 @@ class FakeSource:
 
 
 class FakeSink:
-    def __init__(self, *, fail_times: int = 0) -> None:
+    def __init__(self, *, fail_times: int = 0, model_manifest=None) -> None:
         self.fail_times = fail_times
+        self.model_manifest = model_manifest
         self.attempts = []
         self.latest = []
+        self.model_loads = []
+
+    def load_latest_model_manifest(self, station_id):
+        self.model_loads.append(station_id)
+        return self.model_manifest
 
     def publish_latest(self, snapshot):
         self.attempts.append(snapshot)
@@ -119,6 +125,31 @@ def fake_champion(dataset, *, name: str = "SeasonalNaive") -> Champion:
         training_end=dataset.end,
         statsforecast_version="2.1.1",
     )
+
+
+def persisted_model_manifest(*, version: str = "2.1.1") -> dict:
+    common = {
+        "cv_mape_percent": 8.5,
+        "selected_at": "2026-08-24T23:50:00+08:00",
+        "training_start": "2026-07-28T00:30:00+08:00",
+        "training_end": "2026-08-24T00:15:00+08:00",
+        "selection_reason": None,
+    }
+    return {
+        "statsforecast_version": version,
+        "series": {
+            "station_total_load": {**common, "model_name": "AutoETS"},
+            "storage_soc": {**common, "model_name": "AutoARIMA"},
+        },
+        "readiness": {
+            "required_days": 28,
+            "required_points": 2688,
+            "series": {
+                "station_total_load": {"real_points": 2688},
+                "storage_soc": {"real_points": 2688},
+            },
+        },
+    }
 
 
 def fake_forecast_one(dataset, champion, as_of):
@@ -272,6 +303,65 @@ class StationCacheTests(unittest.TestCase):
 
 
 class ForecastServiceTests(unittest.TestCase):
+    def test_restore_models_rebuilds_ready_champions_from_persisted_manifest(self):
+        sink = FakeSink(model_manifest=persisted_model_manifest())
+        service = make_service(source_with_history(), sink)
+        service.bootstrap("station-1", BOOTSTRAP_AT)
+
+        restore = getattr(service, "restore_models", None)
+        self.assertIsNotNone(restore, "forecast service must restore persisted models")
+        restored = restore("station-1")
+
+        state = service.state("station-1")
+        self.assertTrue(restored)
+        self.assertEqual(sink.model_loads, ["station-1"])
+        self.assertEqual(state.state, "ready")
+        self.assertEqual(state.last_error_code, None)
+        self.assertEqual(
+            [state.champions[unique_id].model_name for unique_id in SERIES_IDS],
+            ["AutoETS", "AutoARIMA"],
+        )
+        self.assertTrue(
+            all(
+                champion.statsforecast_version == "2.1.1"
+                for champion in state.champions.values()
+            )
+        )
+
+    def test_restore_models_returns_false_when_latest_manifest_is_missing(self):
+        service = make_service(source_with_history(), FakeSink(model_manifest=None))
+        service.bootstrap("station-1", BOOTSTRAP_AT)
+
+        restore = getattr(service, "restore_models", None)
+        self.assertIsNotNone(restore, "forecast service must restore persisted models")
+        self.assertFalse(restore("station-1"))
+        self.assertEqual(service.state("station-1").state, "initializing")
+
+    def test_restore_models_returns_false_for_malformed_manifest(self):
+        manifest = persisted_model_manifest()
+        del manifest["series"]["storage_soc"]["training_end"]
+        service = make_service(
+            source_with_history(), FakeSink(model_manifest=manifest)
+        )
+        service.bootstrap("station-1", BOOTSTRAP_AT)
+
+        restore = getattr(service, "restore_models", None)
+        self.assertIsNotNone(restore, "forecast service must restore persisted models")
+        self.assertFalse(restore("station-1"))
+        self.assertEqual(service.state("station-1").state, "initializing")
+
+    def test_restore_models_returns_false_for_runtime_version_mismatch(self):
+        service = make_service(
+            source_with_history(),
+            FakeSink(model_manifest=persisted_model_manifest(version="9.9.9")),
+        )
+        service.bootstrap("station-1", BOOTSTRAP_AT)
+
+        restore = getattr(service, "restore_models", None)
+        self.assertIsNotNone(restore, "forecast service must restore persisted models")
+        self.assertFalse(restore("station-1"))
+        self.assertEqual(service.state("station-1").state, "initializing")
+
     def test_es01_refresh_cannot_change_es02_cache_or_forecast(self):
         """A full station key must bound cache mutation and latest publication."""
         service, source, sink, caches = make_two_station_service()
