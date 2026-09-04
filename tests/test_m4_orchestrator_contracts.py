@@ -60,8 +60,8 @@ def make_orchestration_result(**overrides: object) -> M4OrchestrationResult:
         "finished_at": FIXED_FINISHED_AT,
         "orchestrator_version": "test-orchestrator-v1",
         "model_version": "test-model-v1",
-        "status": "completed",
-        "station_results": [make_station_result()],
+        "overall_status": "completed",
+        "stations": [make_station_result()],
         "errors": [],
     }
     values.update(overrides)
@@ -141,6 +141,64 @@ class M4OrchestratorContractTests(unittest.TestCase):
         )
         self.assertEqual(optimization_error.optimization_result, None)
 
+    def test_input_error_allows_missing_identities_but_no_other_status_does(self):
+        input_error = make_station_result(
+            station_id=None,
+            request_id=None,
+            status="input_error",
+            input_summary=None,
+            optimization_result=None,
+            error=OrchestrationError(code="INPUT_JSON_ERROR", message="invalid input"),
+        )
+        self.assertIsNone(input_error.station_id)
+        self.assertIsNone(input_error.request_id)
+
+        status_payloads = (
+            ("optimized", None, None),
+            (
+                "no_usable_candidate",
+                make_optimization_result(),
+                OrchestrationError(
+                    code="NO_USABLE_CANDIDATE", message="no usable candidate"
+                ),
+            ),
+            (
+                "optimization_error",
+                None,
+                OrchestrationError(
+                    code="OPTIMIZATION_ERROR", message="optimizer failed"
+                ),
+            ),
+        )
+        for status, optimization_result, error in status_payloads:
+            with self.subTest(status=status, identity="station_id"):
+                with self.assertRaisesRegex(ValidationError, "station_id"):
+                    make_station_result(
+                        station_id=None,
+                        status=status,
+                        optimization_result=optimization_result,
+                        error=error,
+                    )
+            with self.subTest(status=status, identity="request_id"):
+                with self.assertRaisesRegex(ValidationError, "request_id"):
+                    make_station_result(
+                        request_id="   ",
+                        status=status,
+                        optimization_result=optimization_result,
+                        error=error,
+                    )
+
+        with self.assertRaisesRegex(ValidationError, "station_id"):
+            make_station_result(
+                station_id=" ",
+                status="input_error",
+                input_summary=None,
+                optimization_result=None,
+                error=OrchestrationError(
+                    code="INPUT_JSON_ERROR", message="invalid input"
+                ),
+            )
+
     def test_failed_station_requires_safe_error_and_no_input_summary(self):
         with self.assertRaises(ValidationError):
             StationOrchestrationResult(
@@ -209,14 +267,14 @@ class M4OrchestratorContractTests(unittest.TestCase):
             error=OrchestrationError(code="INPUT_JSON_ERROR", message="invalid input"),
         )
         partial = make_orchestration_result(
-            status="completed", station_results=[make_station_result(), input_error]
+            overall_status="completed", stations=[make_station_result(), input_error]
         )
-        self.assertEqual(partial.status, "partial_failure")
+        self.assertEqual(partial.overall_status, "partial_failure")
 
         failed = make_orchestration_result(
-            status="completed", station_results=[input_error]
+            overall_status="completed", stations=[input_error]
         )
-        self.assertEqual(failed.status, "failed")
+        self.assertEqual(failed.overall_status, "failed")
 
         top_level_failure = make_orchestration_result(
             errors=[
@@ -225,7 +283,7 @@ class M4OrchestratorContractTests(unittest.TestCase):
                 )
             ]
         )
-        self.assertEqual(top_level_failure.status, "failed")
+        self.assertEqual(top_level_failure.overall_status, "failed")
 
     def test_orchestration_result_requires_nonempty_metadata_and_station_results(self):
         for field in (
@@ -238,18 +296,36 @@ class M4OrchestratorContractTests(unittest.TestCase):
                 with self.assertRaises(ValidationError):
                     make_orchestration_result(**{field: ""})
         with self.assertRaises(ValidationError):
-            make_orchestration_result(station_results=[])
+            make_orchestration_result(stations=[])
         with self.assertRaises(ValidationError):
-            make_orchestration_result(status="unknown")
+            make_orchestration_result(overall_status="unknown")
 
-    def test_orchestration_result_rejects_extra_fields_and_preserves_duplicate_identities(self):
+    def test_orchestration_result_uses_exact_public_keys_and_preserves_duplicate_identities(self):
+        self.assertEqual(
+            set(M4OrchestrationResult.model_fields),
+            {
+                "schema_version",
+                "run_id",
+                "started_at",
+                "finished_at",
+                "orchestrator_version",
+                "model_version",
+                "overall_status",
+                "stations",
+                "errors",
+            },
+        )
         station = make_station_result()
         duplicated = station.model_copy(update={"input_ref": "station-1-copy.json"})
         result = make_orchestration_result(
-            status="failed",
-            station_results=[station, duplicated],
+            overall_status="failed",
+            stations=[station, duplicated],
         )
-        self.assertEqual(len(result.station_results), 2)
+        self.assertEqual(len(result.stations), 2)
+        self.assertEqual(
+            set(result.model_dump()),
+            set(M4OrchestrationResult.model_fields),
+        )
         with self.assertRaises(ValidationError):
             M4OrchestrationResult.model_validate(
                 {**make_orchestration_result().model_dump(), "extra": True}

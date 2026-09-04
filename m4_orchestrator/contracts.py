@@ -73,8 +73,8 @@ class InputSummary(StrictModel):
 
 class StationOrchestrationResult(StrictModel):
     input_ref: str = Field(min_length=1)
-    station_id: str = Field(min_length=1)
-    request_id: str = Field(min_length=1)
+    station_id: str | None = None
+    request_id: str | None = None
     status: StationStatus
     input_summary: InputSummary | None = None
     optimization_result: OptimizationResult | None = None
@@ -86,6 +86,18 @@ class StationOrchestrationResult(StrictModel):
 
     @model_validator(mode="after")
     def validate_status_payload(self) -> "StationOrchestrationResult":
+        for label, value in (
+            ("station_id", self.station_id),
+            ("request_id", self.request_id),
+        ):
+            if value is not None and not value.strip():
+                raise ValueError(f"{label} must be non-blank when present")
+        if self.status != "input_error" and (
+            self.station_id is None or self.request_id is None
+        ):
+            raise ValueError(
+                "station_id and request_id are required outside input_error"
+            )
         if self.status == "optimized":
             if (
                 self.input_summary is None
@@ -133,8 +145,8 @@ class M4OrchestrationResult(StrictModel):
     finished_at: datetime
     orchestrator_version: str = Field(min_length=1)
     model_version: str = Field(min_length=1)
-    status: OrchestrationStatus
-    station_results: list[StationOrchestrationResult] = Field(min_length=1)
+    overall_status: OrchestrationStatus
+    stations: list[StationOrchestrationResult] = Field(min_length=1)
     errors: list[OrchestrationError] = Field(default_factory=list)
 
     @model_validator(mode="after")
@@ -149,15 +161,15 @@ class M4OrchestrationResult(StrictModel):
             raise ValueError("finished_at cannot be earlier than started_at")
 
         optimized_count = sum(
-            result.status == "optimized" for result in self.station_results
+            station.status == "optimized" for station in self.stations
         )
         if self.errors or optimized_count == 0:
             expected_status: OrchestrationStatus = "failed"
-        elif optimized_count == len(self.station_results):
+        elif optimized_count == len(self.stations):
             expected_status = "completed"
         else:
             expected_status = "partial_failure"
         if self.errors and expected_status != "failed":
             raise ValueError("top-level errors are only allowed with failed status")
-        self.status = expected_status
+        self.overall_status = expected_status
         return self
