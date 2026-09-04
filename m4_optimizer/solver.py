@@ -1,3 +1,4 @@
+import warnings
 from dataclasses import dataclass
 
 import numpy as np
@@ -9,6 +10,7 @@ from m4_optimizer.contracts import CandidateStatus
 
 
 FloatArray = NDArray[np.float64]
+MIP_FEASIBILITY_TOLERANCE = 1e-9
 
 
 @dataclass(frozen=True)
@@ -61,17 +63,26 @@ def solve_milp(
         lower = np.concatenate([lower, np.full(len(locks), -np.inf)])
         upper = np.concatenate([upper, np.array([lock.upper_bound for lock in locks])])
 
-    result = milp(
-        c=objective,
-        integrality=problem.integrality,
-        bounds=Bounds(problem.lower_bounds, problem.upper_bounds),
-        constraints=LinearConstraint(matrix, lower, upper),
-        options={
-            "time_limit": time_limit_seconds,
-            "mip_rel_gap": mip_rel_gap,
-            "presolve": True,
-        },
-    )
+    with warnings.catch_warnings():
+        # SciPy forwards this supported HiGHS option but warns because it is not
+        # part of SciPy's small documented option set.
+        warnings.filterwarnings(
+            "ignore",
+            message=r"Unrecognized options detected:.*mip_feasibility_tolerance",
+            category=RuntimeWarning,
+        )
+        result = milp(
+            c=objective,
+            integrality=problem.integrality,
+            bounds=Bounds(problem.lower_bounds, problem.upper_bounds),
+            constraints=LinearConstraint(matrix, lower, upper),
+            options={
+                "time_limit": time_limit_seconds,
+                "mip_rel_gap": mip_rel_gap,
+                "mip_feasibility_tolerance": MIP_FEASIBILITY_TOLERANCE,
+                "presolve": True,
+            },
+        )
 
     raw_x = result.x
     x = raw_x if raw_x is not None and np.isfinite(raw_x).all() else None
