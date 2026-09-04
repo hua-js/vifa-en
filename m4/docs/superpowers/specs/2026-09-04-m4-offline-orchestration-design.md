@@ -1,7 +1,7 @@
 # M4 离线编排层设计
 
 日期：2026-09-04  
-状态：待用户审阅  
+状态：已确认
 范围：阶段 B1，Mock/离线数据编排
 
 ## 1. 背景
@@ -177,6 +177,7 @@ result = M4Orchestrator(
 错误对象只提供稳定代码和安全说明。首版代码包括：
 
 - `INPUT_NOT_FOUND`；
+- `INPUT_READ_ERROR`；
 - `INPUT_ENCODING_ERROR`；
 - `INPUT_JSON_ERROR`；
 - `INPUT_VALIDATION_ERROR`；
