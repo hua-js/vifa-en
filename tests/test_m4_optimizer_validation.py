@@ -1,0 +1,83 @@
+import unittest
+
+from m4_optimizer.metrics import calculate_metrics, materialize_plan
+from m4_optimizer.model import build_model
+from m4_optimizer.solver import solve_milp
+from m4_optimizer.validation import ResultValidationError, validate_candidate
+from tests.m4_optimizer_test_support import (
+    make_candidate,
+    make_candidate_from_optimizer,
+    make_request,
+)
+
+
+class M4OptimizerValidationTests(unittest.TestCase):
+    def test_materialized_plan_recomputes_soc_and_power_balance(self):
+        request = make_request()
+        built = build_model(request)
+        solved = solve_milp(
+            built.problem,
+            built.objectives["throughput"],
+            locks=(),
+            time_limit_seconds=2.0,
+            mip_rel_gap=0.0,
+        )
+        self.assertIsNotNone(solved.x)
+        plan = materialize_plan(request, built, solved.x)
+        candidate = make_candidate(request, plan, calculate_metrics(request, plan))
+        validate_candidate(request, candidate)
+
+    def test_calculate_metrics_uses_only_public_plan_values(self):
+        request = make_request()
+        candidate = make_candidate_from_optimizer(request)
+        metrics = calculate_metrics(request, candidate.plan)
+
+        self.assertAlmostEqual(metrics.import_cost, 1536.0)
+        self.assertAlmostEqual(metrics.energy_cost, 1536.0)
+        self.assertAlmostEqual(metrics.max_grid_import_kw, 80.0)
+        self.assertAlmostEqual(metrics.pv_self_use_kwh, 480.0)
+        self.assertAlmostEqual(metrics.pv_self_use_rate, 1.0)
+        self.assertAlmostEqual(metrics.terminal_soc_pct, 50.0)
+        self.assertAlmostEqual(metrics.throughput_energy_kwh, 0.0)
+
+    def test_validator_rejects_tampered_soc(self):
+        request = make_request()
+        candidate = make_candidate_from_optimizer(request)
+        payload = candidate.model_dump()
+        payload["plan"][10]["expected_soc_pct"] += 3.0
+        tampered = type(candidate).model_validate(payload)
+
+        with self.assertRaisesRegex(ResultValidationError, "SOC state"):
+            validate_candidate(request, tampered)
+
+    def test_validator_rejects_simultaneous_import_and_export(self):
+        request = make_request()
+        candidate = make_candidate_from_optimizer(request)
+        payload = candidate.model_dump()
+        payload["plan"][4]["grid_import_kw"] = 10.0
+        payload["plan"][4]["grid_export_kw"] = 10.0
+        tampered = type(candidate).model_validate(payload)
+
+        with self.assertRaisesRegex(ResultValidationError, "import and export"):
+            validate_candidate(request, tampered)
+
+    def test_validator_rejects_tampered_metrics(self):
+        request = make_request()
+        candidate = make_candidate_from_optimizer(request)
+        payload = candidate.model_dump()
+        payload["metrics"]["energy_cost"] += 1.0
+        tampered = type(candidate).model_validate(payload)
+
+        with self.assertRaisesRegex(ResultValidationError, "metric energy_cost"):
+            validate_candidate(request, tampered)
+
+    def test_validator_rejects_nonempty_failed_candidate(self):
+        request = make_request()
+        candidate = make_candidate_from_optimizer(request)
+        payload = candidate.model_dump()
+        payload["status"] = "infeasible"
+        payload["metrics"] = None
+        failed = type(candidate).model_validate(payload)
+
+        with self.assertRaisesRegex(ResultValidationError, "non-success candidate"):
+            validate_candidate(request, failed)

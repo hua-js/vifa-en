@@ -1,12 +1,15 @@
 from datetime import datetime, timedelta
 
 from m4_optimizer.contracts import (
+    CandidateMetrics,
+    CandidateResult,
     CapabilitySnapshot,
     ForecastPoint,
     ObjectiveLayer,
     ObjectiveProfile,
     OptimizationConstraints,
     OptimizationRequest,
+    PlanPoint,
 )
 
 
@@ -103,3 +106,40 @@ def make_request(**overrides: object) -> OptimizationRequest:
     }
     values.update(overrides)
     return OptimizationRequest(**values)
+
+
+def make_candidate(
+    request: OptimizationRequest,
+    plan: list[PlanPoint],
+    metrics: CandidateMetrics,
+) -> CandidateResult:
+    return CandidateResult(
+        profile_id="balanced",
+        profile_version="test-v1",
+        status="optimal",
+        solver_message="test solution",
+        solve_seconds=0.0,
+        plan=plan,
+        metrics=metrics,
+        layers=[],
+        risk_codes=[],
+    )
+
+
+def make_candidate_from_optimizer(request: OptimizationRequest) -> CandidateResult:
+    from m4_optimizer.metrics import calculate_metrics, materialize_plan
+    from m4_optimizer.model import build_model
+    from m4_optimizer.solver import solve_milp
+
+    built = build_model(request)
+    solved = solve_milp(
+        built.problem,
+        built.objectives["throughput"],
+        locks=(),
+        time_limit_seconds=2.0,
+        mip_rel_gap=0.0,
+    )
+    if solved.x is None:
+        raise AssertionError(f"test fixture did not solve: {solved.message}")
+    plan = materialize_plan(request, built, solved.x)
+    return make_candidate(request, plan, calculate_metrics(request, plan))
