@@ -13,7 +13,7 @@ const HTML_PATH = path.join(ROOT, "m4", "M4优化调度控制台-线上版.html"
 let browser;
 let server;
 
-async function openPage(viewport, scenario = "normal") {
+async function openPage(viewport, scenario = "normal", station = "s1") {
   const page = await browser.newPage({ viewport });
   const externalRequests = [];
   const consoleErrors = [];
@@ -29,7 +29,7 @@ async function openPage(viewport, scenario = "normal") {
   page.on("pageerror", (error) => pageErrors.push(error.message));
 
   const port = server.address().port;
-  const query = new URLSearchParams({ scenario });
+  const query = new URLSearchParams({ scenario, station });
   await page.goto(`http://127.0.0.1:${port}/M4%E4%BC%98%E5%8C%96%E8%B0%83%E5%BA%A6%E6%8E%A7%E5%88%B6%E5%8F%B0-%E7%BA%BF%E4%B8%8A%E7%89%88.html?${query}`);
   await page.waitForLoadState("networkidle");
   return { page, externalRequests, consoleErrors, pageErrors };
@@ -62,8 +62,12 @@ async function openStrategy(result) {
   assert.strictEqual((await page.locator("#mock-data-badge").textContent()).trim(), "Mock 数据");
   assert.strictEqual(await page.locator('[role="tab"]').count(), 3);
   assert.strictEqual(await page.getByRole("tab", { name: "调度总览" }).getAttribute("aria-selected"), "true");
+  assert.strictEqual(await page.locator("#station-switcher [data-station]").count(), 3);
+  assert.strictEqual(await page.locator('#station-switcher [data-station="s1"]').getAttribute("aria-pressed"), "true");
+  assert.match(await page.locator("#station-context-title").textContent(), /电站1/);
   assert.strictEqual(await page.locator("[data-overview-metric]").count(), 6);
-  assert.strictEqual(await page.locator("#overview-timeline .schedule-lane").count(), 2);
+  assert.strictEqual(await page.locator("#overview-timeline .schedule-lane").count(), 1);
+  assert.match(await page.locator("#overview-plan-copy").textContent(), /电站1.*M4-S1.*96点/);
   assert.match(await page.locator("#automatic-operation-banner").textContent(), /全自动调度运行中.*15分钟/s);
   assert.doesNotMatch(
     await page.locator("body").textContent(),
@@ -73,8 +77,20 @@ async function openStrategy(result) {
   const screenshotDir = process.env.M4_ONLINE_SCREENSHOT_DIR;
   if (screenshotDir) {
     fs.mkdirSync(screenshotDir, { recursive: true });
-    await page.screenshot({ path: path.join(screenshotDir, "m4-online-overview-desktop.png"), fullPage: true });
+    await page.screenshot({ path: path.join(screenshotDir, "m4-online-station1-overview-desktop.png"), fullPage: true });
   }
+
+  await page.locator('#station-switcher [data-station="all"]').click();
+  assert.match(await page.locator("#station-context-title").textContent(), /全场总览/);
+  assert.strictEqual(await page.locator("#all-station-summary [data-station-summary]").count(), 2);
+  assert.strictEqual(await page.locator("#overview-timeline .schedule-lane").count(), 2);
+  assert.strictEqual(await page.getByRole("tab", { name: "策略工作台" }).isDisabled(), true);
+  assert.strictEqual(await page.getByRole("tab", { name: "执行记录" }).isDisabled(), true);
+  assert.match(await page.locator("#automatic-operation-banner").textContent(), /独立自动调度.*不生成跨站合并策略/s);
+  if (screenshotDir) {
+    await page.screenshot({ path: path.join(screenshotDir, "m4-online-all-stations-desktop.png"), fullPage: true });
+  }
+  await page.locator('#station-switcher [data-station="s1"]').click();
 
   await openStrategy(desktop);
   assert.match(await page.locator("#auto-cycle-summary").textContent(), /每15分钟.*下一轮/s);
@@ -85,7 +101,7 @@ async function openStrategy(result) {
   assert.strictEqual(await page.locator("#pipeline .pipeline-step").count(), 7);
   assert.match(await page.locator("#change-gate").textContent(), /未来4小时.*10%.*1%.*达到阈值/s);
   assert.strictEqual(await page.locator("#change-gate").getAttribute("data-result"), "dispatch");
-  assert.match(await page.locator("#auto-dispatch-contract").textContent(), /2 × 96 点.*自动下发.*EMS已接收/s);
+  assert.match(await page.locator("#auto-dispatch-contract").textContent(), /电站1.*1 × 96 点.*自动下发.*EMS已接收/s);
   assert.strictEqual(await page.locator("#validation-status").getAttribute("data-state"), "passed");
   if (screenshotDir) {
     await page.screenshot({ path: path.join(screenshotDir, "m4-online-strategy-desktop.png"), fullPage: true });
@@ -95,6 +111,17 @@ async function openStrategy(result) {
   assert.strictEqual(await page.locator("#records-panel").isVisible(), true);
   assert.match(await page.locator("#execution-list").textContent(), /MILP生成3个可行候选.*大语言模型完成选择.*确定性校验通过.*EMS已接收/s);
   assert.doesNotMatch(await page.locator("#execution-list").textContent(), /人工|操作员/);
+
+  await page.locator('#station-switcher [data-station="s2"]').click();
+  assert.match(await page.locator("#station-context-title").textContent(), /电站2/);
+  assert.match(await page.locator("#record-cycle-title").textContent(), /电站2.*M4-S2-CYCLE/);
+  assert.match(await page.locator("#ems-device-scope").textContent(), /emu21–emu26/);
+  assert.match(await page.locator("#execution-list").textContent(), /仅使用电站2的关口、需量和设备约束/);
+  await page.getByRole("tab", { name: "策略工作台" }).click();
+  assert.match(await page.locator('#candidate-grid [data-selected="true"]').textContent(), /光伏消纳优先/);
+  assert.match(await page.locator("#dispatch-plan-id").textContent(), /M4-S2/);
+  assert.match(await page.locator("#strategy-plan-copy").textContent(), /电站2.*1 × 96点/);
+  await page.getByRole("tab", { name: "执行记录" }).click();
 
   const originalTheme = await page.locator("html").getAttribute("data-theme");
   await page.locator("#theme-toggle").click();
@@ -116,7 +143,7 @@ async function openStrategy(result) {
   await openStrategy(validationFailed);
   assert.strictEqual(await validationFailed.page.locator("#validation-status").getAttribute("data-state"), "blocked");
   assert.strictEqual(await validationFailed.page.locator("#dispatch-status").getAttribute("data-state"), "not-sent");
-  assert.match(await validationFailed.page.locator("#auto-dispatch-contract").textContent(), /未发送.*保留EMS当前有效计划/s);
+  assert.match(await validationFailed.page.locator("#auto-dispatch-contract").textContent(), /未发送.*保留电站1 EMS当前有效计划/s);
 
   const emsRetry = await openPage({ width: 1280, height: 900 }, "ems-retry");
   await openStrategy(emsRetry);

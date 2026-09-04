@@ -88,6 +88,19 @@
     .tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin-bottom: 18px; padding: 5px; border: 1px solid var(--line); border-radius: 13px; background: var(--surface-2); }
     .tab { min-height: 43px; padding: 8px 12px; color: var(--muted); border: 0; border-radius: 9px; background: transparent; font-weight: 720; }
     .tab[aria-selected="true"] { color: var(--text); background: var(--surface); box-shadow: 0 5px 16px rgb(0 0 0 / 8%); }
+    .tab:disabled { cursor: not-allowed; opacity: .42; }
+    .station-context { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: 18px; padding: 12px 14px; }
+    .station-context-copy { min-width: 230px; }
+    .station-context-copy span { display: block; color: var(--muted); font-size: 9px; }
+    .station-context-copy strong { display: block; margin-top: 4px; font-size: 14px; }
+    .station-context-copy small { display: block; margin-top: 4px; color: var(--muted); font-size: 9px; line-height: 1.4; }
+    .station-switcher { display: grid; width: min(720px, 100%); grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; padding: 5px; border-radius: 11px; background: var(--surface-2); }
+    .station-button { min-height: 44px; padding: 7px 10px; color: var(--muted); border: 1px solid transparent; border-radius: 8px; background: transparent; text-align: left; }
+    .station-button strong, .station-button span { display: block; }
+    .station-button strong { color: inherit; font-size: 11px; }
+    .station-button span { margin-top: 3px; font-size: 8px; }
+    .station-button[aria-pressed="true"] { color: var(--text); border-color: var(--line); background: var(--surface); box-shadow: 0 4px 12px rgb(0 0 0 / 7%); }
+    .station-button[aria-pressed="true"] strong { color: var(--blue); }
     .panel, .section { min-width: 0; }
     .section { margin-bottom: 18px; }
     .section-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 14px; margin: 0 2px 11px; }
@@ -121,6 +134,15 @@
     .metric-meta.good { color: var(--green); }
     .metric-meta.warn { color: var(--orange); }
     .overview-grid { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(280px, .55fr); gap: 14px; }
+    .station-summary-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    .station-summary { padding: 16px; }
+    .station-summary-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+    .station-summary h3 { margin: 0; font-size: 14px; }
+    .station-summary p { margin: 5px 0 0; color: var(--muted); font-size: 9px; }
+    .station-summary-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 13px; }
+    .station-summary-kpi { padding: 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface-2); }
+    .station-summary-kpi span { display: block; color: var(--muted); font-size: 8px; }
+    .station-summary-kpi strong { display: block; margin-top: 5px; font-size: 11px; }
     .timeline-card, .stage-card, .energy-card, .effect-card, .cycle-card, .candidate-card, .ai-card, .strategy-card, .pipeline-card, .gate-card, .dispatch-card, .records-card, .detail-card { padding: 18px; }
     .timeline-scroll { min-width: 0; overflow-x: auto; overscroll-behavior-inline: contain; }
     .timeline-svg { display: block; width: 100%; height: auto; min-height: 235px; }
@@ -243,6 +265,8 @@
     @media (max-width: 900px) {
       .app-header, .section-head { align-items: flex-start; flex-direction: column; }
       .header-tools { justify-content: flex-start; }
+      .station-context { align-items: flex-start; flex-direction: column; }
+      .station-switcher { width: 100%; }
       .operation-banner { grid-template-columns: minmax(0, 1fr); }
       .operation-side { padding: 12px 0 0; border-top: 1px solid var(--line-strong); border-left: 0; }
       .overview-grid, .decision-grid, .gate-dispatch-grid, .records-layout { grid-template-columns: minmax(0, 1fr); }
@@ -257,7 +281,7 @@
       .chip, .tool-button { flex: 1 1 auto; justify-content: center; }
       .tabs { grid-template-columns: minmax(0, 1fr); }
       .tab { min-height: 38px; }
-      .metrics, .lower-grid, .effect-grid, .input-strip, .cycle-grid, .pipeline, .dispatch-contract, .record-summary { grid-template-columns: minmax(0, 1fr); }
+      .station-switcher, .station-summary-grid, .station-summary-kpis, .metrics, .lower-grid, .effect-grid, .input-strip, .cycle-grid, .pipeline, .dispatch-contract, .record-summary { grid-template-columns: minmax(0, 1fr); }
       .energy-flow { grid-template-columns: minmax(0, 1fr); }
       .energy-arrow { transform: rotate(90deg); }
       .operation-banner, .timeline-card, .stage-card, .energy-card, .effect-card, .cycle-card, .candidate-card, .ai-card, .strategy-card, .pipeline-card, .gate-card, .dispatch-card, .records-card, .detail-card { padding: 14px; }
@@ -295,6 +319,19 @@
       <button class="tab" id="records-tab" role="tab" type="button" aria-selected="false" aria-controls="records-panel">执行记录</button>
     </nav>
 
+    <section class="card station-context" aria-labelledby="station-context-title">
+      <div class="station-context-copy">
+        <span>当前调度范围</span>
+        <strong id="station-context-title">电站1</strong>
+        <small id="station-context-copy">独立关口、独立需量、独立策略与EMS任务</small>
+      </div>
+      <div class="station-switcher" id="station-switcher" role="group" aria-label="选择调度范围">
+        <button class="station-button" type="button" data-station="all" aria-pressed="false"><strong>全场总览</strong><span>只读汇总 · 不生成合并策略</span></button>
+        <button class="station-button" type="button" data-station="s1" aria-pressed="true"><strong>电站1</strong><span>emu11 · emu12</span></button>
+        <button class="station-button" type="button" data-station="s2" aria-pressed="false"><strong>电站2</strong><span>emu21–emu26</span></button>
+      </div>
+    </section>
+
     <section class="panel" id="overview-panel" role="tabpanel" aria-labelledby="overview-tab">
       <section class="section">
         <article class="card operation-banner" id="automatic-operation-banner">
@@ -314,25 +351,39 @@
       <section class="section" aria-labelledby="realtime-title">
         <div class="section-head"><div><h2 class="section-title" id="realtime-title">实时运行</h2><p class="section-copy">M4只读汇聚现场状态，控制、暂停与应急处置由EMS负责</p></div><span class="status good">数据正常</span></div>
         <div class="metrics">
-          <article class="card metric" data-overview-metric><div class="metric-label">厂区负荷</div><div class="metric-value">1,126 kW</div><div class="metric-meta warn">较15分钟前 +3.2%</div></article>
-          <article class="card metric" data-overview-metric><div class="metric-label">光伏出力</div><div class="metric-value">286 kW</div><div class="metric-meta good">当前消纳率 100%</div></article>
-          <article class="card metric" data-overview-metric><div class="metric-label">电网购电</div><div class="metric-value">706 kW</div><div class="metric-meta">需量上限 1,320 kW</div></article>
-          <article class="card metric" data-overview-metric><div class="metric-label">1#储能 SOC</div><div class="metric-value">61%</div><div class="metric-meta good">充电 46 kW</div></article>
-          <article class="card metric" data-overview-metric><div class="metric-label">2#储能 SOC</div><div class="metric-value">54%</div><div class="metric-meta good">充电 88 kW</div></article>
-          <article class="card metric" data-overview-metric><div class="metric-label">当前电价</div><div class="metric-value">0.68 元</div><div class="metric-meta">平段 · 18:00转尖峰</div></article>
+          <article class="card metric" data-overview-metric data-metric-key="load"><div class="metric-label">厂区负荷</div><div class="metric-value">438 kW</div><div class="metric-meta warn">较15分钟前 +2.1%</div></article>
+          <article class="card metric" data-overview-metric data-metric-key="pv"><div class="metric-label">光伏出力</div><div class="metric-value">112 kW</div><div class="metric-meta good">当前消纳率 100%</div></article>
+          <article class="card metric" data-overview-metric data-metric-key="grid"><div class="metric-label">电网购电</div><div class="metric-value">280 kW</div><div class="metric-meta">需量上限 520 kW</div></article>
+          <article class="card metric" data-overview-metric data-metric-key="soc"><div class="metric-label">储能 SOC</div><div class="metric-value">61%</div><div class="metric-meta good">容量 1,000 kWh</div></article>
+          <article class="card metric" data-overview-metric data-metric-key="power"><div class="metric-label">储能功率</div><div class="metric-value">46 kW</div><div class="metric-meta good">充电 · EMS执行中</div></article>
+          <article class="card metric" data-overview-metric data-metric-key="tariff"><div class="metric-label">当前电价</div><div class="metric-value">0.68 元</div><div class="metric-meta">平段 · 独立计费</div></article>
+        </div>
+      </section>
+
+      <section class="section" id="all-station-summary" hidden>
+        <div class="section-head"><div><h2 class="section-title">独立电站状态</h2><p class="section-copy">汇总页只读展示；两站分别求解、校验、下发与回读</p></div><span class="status info">无跨站调度</span></div>
+        <div class="station-summary-grid">
+          <article class="card station-summary" data-station-summary="s1">
+            <div class="station-summary-head"><div><h3>电站1</h3><p>emu11 · emu12 · 1,000 kWh</p></div><span class="status good">独立闭环</span></div>
+            <div class="station-summary-kpis"><div class="station-summary-kpi"><span>负荷</span><strong>438 kW</strong></div><div class="station-summary-kpi"><span>SOC</span><strong>61%</strong></div><div class="station-summary-kpi"><span>选中方案</span><strong>节费优先</strong></div><div class="station-summary-kpi"><span>EMS任务</span><strong>S1-061</strong></div></div>
+          </article>
+          <article class="card station-summary" data-station-summary="s2">
+            <div class="station-summary-head"><div><h3>电站2</h3><p>emu21–emu26 · 3,000 kWh</p></div><span class="status good">独立闭环</span></div>
+            <div class="station-summary-kpis"><div class="station-summary-kpi"><span>负荷</span><strong>688 kW</strong></div><div class="station-summary-kpi"><span>SOC</span><strong>54%</strong></div><div class="station-summary-kpi"><span>选中方案</span><strong>光伏消纳优先</strong></div><div class="station-summary-kpi"><span>EMS任务</span><strong>S2-061</strong></div></div>
+          </article>
         </div>
       </section>
 
       <section class="section overview-grid">
         <article class="card timeline-card">
-          <div class="card-head"><div><div class="card-title">当前生效计划</div><div class="card-copy">策略 M4-20260904-061 · V1 · 两套储能各96点</div></div><span class="status good">EMS执行中</span></div>
+          <div class="card-head"><div><div class="card-title">当前生效计划</div><div class="card-copy" id="overview-plan-copy">电站1 · 策略 M4-S1-20260904-061 · V1 · 96点</div></div><span class="status good">EMS执行中</span></div>
           <div class="timeline-scroll" id="overview-timeline">
             <svg class="timeline-svg" id="overview-chart" viewBox="0 0 1080 260" role="img" aria-label="两套储能今日充放电计划"></svg>
           </div>
           <div class="legend"><span><i class="charge-key"></i>充电</span><span><i class="discharge-key"></i>放电</span><span><i class="standby-key"></i>待机</span></div>
         </article>
         <aside class="card stage-card">
-          <div class="card-head"><div><div class="card-title">15:00 调度周期</div><div class="card-copy">从求解到EMS接收的完整状态</div></div><span class="status good" id="cycle-status">已闭环</span></div>
+          <div class="card-head"><div><div class="card-title" id="overview-cycle-title">电站1 · 15:00 调度周期</div><div class="card-copy">从求解到EMS接收的完整状态</div></div><span class="status good" id="cycle-status">已闭环</span></div>
           <div class="stage-list" id="overview-stage-list">
             <div class="stage-item"><span>15:00:03</span><strong>MILP候选已生成</strong></div>
             <div class="stage-item"><span>15:00:05</span><strong>AI选择：节费优先</strong></div>
@@ -347,20 +398,20 @@
         <article class="card energy-card">
           <div class="card-head"><div><div class="card-title">当前能量流</div><div class="card-copy">光伏余电优先进入储能，缺口由电网补充</div></div><span class="status info">实时</span></div>
           <div class="energy-flow">
-            <div class="energy-node"><span>光伏</span><strong>286 kW</strong></div>
+            <div class="energy-node"><span>光伏</span><strong id="flow-pv">112 kW</strong></div>
             <div class="energy-arrow">→</div>
-            <div class="energy-node storage"><span>储能充电</span><strong>134 kW</strong></div>
+            <div class="energy-node storage"><span>储能充电</span><strong id="flow-storage">46 kW</strong></div>
             <div class="energy-arrow">←</div>
-            <div class="energy-node"><span>电网</span><strong>706 kW</strong></div>
+            <div class="energy-node"><span>电网</span><strong id="flow-grid">280 kW</strong></div>
           </div>
         </article>
         <article class="card effect-card">
           <div class="card-head"><div><div class="card-title">选中方案预期效果</div><div class="card-copy">同一预测窗口、同一设备约束下的模型测算</div></div><span class="status info">未来24h</span></div>
           <div class="effect-grid">
-            <div class="effect"><span>预计购电成本</span><strong>¥ 18,640</strong></div>
-            <div class="effect"><span>基线节省</span><strong style="color:var(--green)">¥ 1,960</strong></div>
-            <div class="effect"><span>最大需量</span><strong>1,294 kW</strong></div>
-            <div class="effect"><span>光伏消纳率</span><strong>96.8%</strong></div>
+            <div class="effect"><span>预计购电成本</span><strong id="effect-cost">¥ 6,480</strong></div>
+            <div class="effect"><span>基线节省</span><strong id="effect-saving" style="color:var(--green)">¥ 720</strong></div>
+            <div class="effect"><span>最大需量</span><strong id="effect-demand">506 kW</strong></div>
+            <div class="effect"><span>光伏消纳率</span><strong id="effect-pv">97.2%</strong></div>
           </div>
         </article>
       </section>
@@ -373,8 +424,8 @@
           <div class="input-item"><span>负荷预测</span><strong>96点 · 已更新</strong></div>
           <div class="input-item"><span>光伏预测</span><strong>96点 · 已更新</strong></div>
           <div class="input-item"><span>分时电价</span><strong>尖峰 / 峰 / 平 / 谷</strong></div>
-          <div class="input-item"><span>设备与SOC</span><strong>2台在线 · EMS</strong></div>
-          <div class="input-item"><span>约束与目标</span><strong>需量≤1,320 kW</strong></div>
+          <div class="input-item"><span>设备与SOC</span><strong id="input-device">emu11、emu12 · 在线</strong></div>
+          <div class="input-item"><span>约束与目标</span><strong id="input-constraint">需量≤520 kW</strong></div>
         </div>
       </section>
 
@@ -382,7 +433,7 @@
         <article class="card cycle-card" id="auto-cycle-summary">
           <div class="card-head"><div><div class="card-title">自动滚动周期</div><div class="card-copy">每15分钟重新求解；只有排序、风险或输入状态实质变化时调用大语言模型</div></div><span class="status good">周期正常</span></div>
           <div class="cycle-grid">
-            <div class="cycle-item"><span>周期编号</span><strong>M4-CYCLE-1500</strong></div>
+            <div class="cycle-item"><span>周期编号</span><strong id="cycle-id">M4-S1-CYCLE-1500</strong></div>
             <div class="cycle-item"><span>开始时间</span><strong>15:00:00</strong></div>
             <div class="cycle-item"><span>求解耗时</span><strong>3.2 秒</strong></div>
             <div class="cycle-item"><span>决策来源</span><strong id="cycle-decision-source">大语言模型选择</strong></div>
@@ -392,7 +443,7 @@
       </section>
 
       <section class="section" aria-labelledby="candidate-title">
-        <div class="section-head"><div><h2 class="section-title" id="candidate-title">MILP 可行候选</h2><p class="section-copy">同一约束下生成3个可执行方案；均衡方案同时作为AI异常时的确定性降级方案</p></div><span class="status good">3 / 3 可行</span></div>
+        <div class="section-head"><div><h2 class="section-title" id="candidate-title">MILP 可行候选</h2><p class="section-copy" id="candidate-scope-copy">电站1独立约束下生成3个可执行方案；不使用电站2的需量或设备余量</p></div><span class="status good">3 / 3 可行</span></div>
         <div class="candidate-grid" id="candidate-grid"></div>
       </section>
 
@@ -420,7 +471,7 @@
 
       <section class="section">
         <article class="card strategy-card">
-          <div class="card-head"><div><div class="card-title">选中方案的数值计划</div><div class="card-copy">策略 M4-20260904-061 · 两套储能各96点 · 15分钟粒度</div></div><span class="status info" id="selected-plan-status">待自动校验</span></div>
+          <div class="card-head"><div><div class="card-title">选中方案的数值计划</div><div class="card-copy" id="strategy-plan-copy">电站1 · 策略 M4-S1-20260904-061 · 1 × 96点 · 15分钟粒度</div></div><span class="status info" id="selected-plan-status">待自动校验</span></div>
           <div class="timeline-scroll">
             <svg class="timeline-svg" id="strategy-chart" viewBox="0 0 1080 260" role="img" aria-label="选中候选的两套储能充放电策略"></svg>
           </div>
@@ -458,9 +509,9 @@
         <article class="card dispatch-card" id="auto-dispatch-contract">
           <div class="card-head"><div><div class="card-title">EMS 自动下发</div><div class="card-copy">M4发送计划，EMS负责最终校验、设备控制与执行回读</div></div><span class="status good" id="dispatch-badge">已闭环</span></div>
           <dl class="dispatch-contract">
-            <div class="contract-item"><dt>策略编号</dt><dd>M4-20260904-061</dd></div>
+            <div class="contract-item"><dt>策略编号</dt><dd id="dispatch-plan-id">M4-S1-20260904-061</dd></div>
             <div class="contract-item"><dt>策略版本</dt><dd id="dispatch-version">V1</dd></div>
-            <div class="contract-item"><dt>计划规模</dt><dd>2 × 96 点</dd></div>
+            <div class="contract-item"><dt>计划规模</dt><dd id="dispatch-plan-size">电站1 · 1 × 96 点</dd></div>
             <div class="contract-item"><dt>触发方式</dt><dd>自动下发</dd></div>
           </dl>
           <div class="dispatch-state-list">
@@ -477,7 +528,7 @@
       <section class="section" aria-labelledby="record-summary-title">
         <div class="section-head"><div><h2 class="section-title" id="record-summary-title">执行概况</h2><p class="section-copy">滚动求解、自动下发与EMS执行回读统一留痕</p></div><span class="status good">链路正常</span></div>
         <div class="record-summary">
-          <article class="card metric"><div class="metric-label">今日调度周期</div><div class="metric-value">61</div><div class="metric-meta">15分钟 / 次</div></article>
+          <article class="card metric"><div class="metric-label">今日调度周期</div><div class="metric-value" id="cycle-count">61</div><div class="metric-meta">15分钟 / 次</div></article>
           <article class="card metric"><div class="metric-label">AI选择次数</div><div class="metric-value" id="ai-call-count">18</div><div class="metric-meta">其余周期复用候选画像</div></article>
           <article class="card metric"><div class="metric-label">自动下发</div><div class="metric-value" id="dispatch-count">7</div><div class="metric-meta">达到实质变化阈值</div></article>
           <article class="card metric"><div class="metric-label">待处理异常</div><div class="metric-value" id="alert-count">0</div><div class="metric-meta good" id="alert-copy">无阻断问题</div></article>
@@ -486,7 +537,7 @@
 
       <section class="section records-layout">
         <article class="card records-card">
-          <div class="card-head"><div><div class="card-title">M4-CYCLE-1500 事件记录</div><div class="card-copy">按发生顺序展示模型决策、系统校验、EMS接收与执行状态</div></div><span class="status info" id="record-cycle-badge">已闭环</span></div>
+          <div class="card-head"><div><div class="card-title" id="record-cycle-title">电站1 · M4-S1-CYCLE-1500 事件记录</div><div class="card-copy">记录仅属于当前电站，不与另一电站合并</div></div><span class="status info" id="record-cycle-badge">已闭环</span></div>
           <div id="execution-list" aria-live="polite"></div>
         </article>
         <aside class="card detail-card">
@@ -494,8 +545,8 @@
           <dl class="detail-list">
             <div><dt>EMS任务编号</dt><dd id="ems-task-id">EMS-DSP-0904-061</dd></div>
             <div><dt>当前状态</dt><dd><span class="status good" id="ems-task-status">执行中</span></dd></div>
-            <div><dt>1#储能实际功率</dt><dd>充电 46 kW</dd></div>
-            <div><dt>2#储能实际功率</dt><dd>充电 88 kW</dd></div>
+            <div><dt>设备范围</dt><dd id="ems-device-scope">emu11、emu12</dd></div>
+            <div><dt>电站实际功率</dt><dd id="ems-actual-power">充电 46 kW</dd></div>
             <div><dt>最近回读</dt><dd>2026/09/04 15:00:18</dd></div>
             <div><dt>职责边界</dt><dd>M4优化与展示；EMS最终校验、控制、暂停和停止</dd></div>
           </dl>
@@ -509,136 +560,168 @@
       "use strict";
 
       const app = document.getElementById("m4-online-app");
-      const scenarioKey = new URLSearchParams(window.location.search).get("scenario") || "normal";
-      const candidates = [
-        { id: "balanced", name: "均衡方案", description: "在成本、需量与光伏消纳之间保持稳健余量，亦作为AI异常时的默认降级方案。", cost: "¥19,020", demand: "1,276 kW", pv: "97.4%", throughput: "3.6 MWh", risk: "低风险", rank: "候选 A" },
-        { id: "cost", name: "节费优先", description: "利用峰谷价差压低购电成本，并在晚峰维持需量约束与终端SOC。", cost: "¥18,640", demand: "1,294 kW", pv: "96.8%", throughput: "4.2 MWh", risk: "中低风险", rank: "候选 B" },
-        { id: "pv", name: "光伏消纳优先", description: "午间预留更多充电空间，提高本地消纳，减少反送与弃光风险。", cost: "¥18,880", demand: "1,305 kW", pv: "99.1%", throughput: "4.5 MWh", risk: "中风险", rank: "候选 C" },
-      ];
-      const baseEvents = [
-        { time: "15:00:00", title: "调度周期启动", copy: "读取负荷与光伏预测、电价、设备状态及当前EMS计划。", badge: "已完成", tone: "info" },
-        { time: "15:00:03", title: "MILP生成3个可行候选", copy: "均衡、节费优先、光伏消纳优先方案均满足基础约束。", badge: "3个可行", tone: "good" },
-      ];
-      const scenarios = {
-        normal: {
+      const query = new URLSearchParams(window.location.search);
+      const scenarioKey = ["normal", "ai-fallback", "validation-failed", "ems-retry"].includes(query.get("scenario")) ? query.get("scenario") : "normal";
+      let activeStationKey = ["all", "s1", "s2"].includes(query.get("station")) ? query.get("station") : "s1";
+      const descriptions = {
+        balanced: "在成本、需量与光伏消纳之间保持稳健余量，亦作为AI异常时的默认降级方案。",
+        cost: "利用峰谷价差压低购电成本，并在晚峰维持本站需量约束与终端SOC。",
+        pv: "午间预留更多充电空间，提高本站光伏消纳，减少反送与弃光风险。",
+      };
+      const stations = {
+        s1: {
+          code: "S1",
+          name: "电站1",
+          emus: "emu11、emu12",
+          capacity: "1,000 kWh",
+          demandLimit: "520 kW",
+          planId: "M4-S1-20260904-061",
+          previousPlanId: "M4-S1-20260904-060",
+          taskId: "EMS-S1-0904-061",
+          cycleId: "M4-S1-CYCLE-1500",
           selected: "cost",
-          aiMode: "ai",
-          aiStatus: "已选择",
-          source: "大语言模型选择",
           confidence: "0.91",
-          summary: "预计成本最低，需量与终端SOC均保有安全余量；当前预测偏差处于可接受范围。",
+          aiSummary: "预计本站购电成本最低，需量与终端SOC均保有安全余量；当前预测偏差处于可接受范围。",
           reasonCodes: ["COST_MIN", "DEMAND_SAFE", "SOC_MARGIN"],
-          validationState: "passed",
-          validationText: "确定性校验通过 · 时间连续、SOC与功率边界均满足",
-          gateState: "dispatch",
           gateText: "达到阈值 · 18:00起连续3点功率差为12.4%",
-          dispatchState: "received",
-          dispatchText: "EMS已接收 · 任务 EMS-DSP-0904-061 已进入执行队列",
-          recoveryState: "none",
-          recoveryText: "本轮未触发EMS拒绝重算",
-          badge: "已闭环",
-          title: "节费优先方案已自动下发",
-          cycleStatus: "已闭环",
-          events: [
-            { time: "15:00:05", title: "大语言模型完成选择", copy: "选择节费优先，置信度0.91；返回候选ID、原因码与风险说明。", badge: "已选择", tone: "info" },
-            { time: "15:00:05", title: "确定性校验通过", copy: "两套设备各96点完整，功率、SOC和终端SOC均满足边界。", badge: "已通过", tone: "good" },
-            { time: "15:00:06", title: "变化阈值达到", copy: "未来4小时连续3点功率差为额定功率12.4%，允许替换当前计划。", badge: "允许下发", tone: "good" },
-            { time: "15:00:07", title: "EMS已接收", copy: "策略M4-20260904-061 V1进入EMS执行队列。", badge: "执行中", tone: "good" },
+          metrics: [
+            ["厂区负荷", "438 kW", "较15分钟前 +2.1%", "warn"],
+            ["光伏出力", "112 kW", "当前消纳率 100%", "good"],
+            ["电网购电", "280 kW", "独立需量上限 520 kW", ""],
+            ["储能 SOC", "61%", "容量 1,000 kWh", "good"],
+            ["储能功率", "46 kW", "充电 · EMS执行中", "good"],
+            ["当前电价", "0.68 元", "平段 · 独立计费", ""],
+          ],
+          flow: { pv: "112 kW", storage: "46 kW", grid: "280 kW" },
+          actualPower: "充电 46 kW",
+          counts: { cycles: "61", ai: "18", dispatch: "7" },
+          candidates: [
+            { id: "balanced", name: "均衡方案", cost: "¥ 6,610", saving: "¥ 590", demand: "498 kW", pv: "97.8%", throughput: "1.1 MWh", risk: "低风险", rank: "候选 A" },
+            { id: "cost", name: "节费优先", cost: "¥ 6,480", saving: "¥ 720", demand: "506 kW", pv: "97.2%", throughput: "1.3 MWh", risk: "中低风险", rank: "候选 B" },
+            { id: "pv", name: "光伏消纳优先", cost: "¥ 6,560", saving: "¥ 640", demand: "510 kW", pv: "99.2%", throughput: "1.4 MWh", risk: "中风险", rank: "候选 C" },
+          ],
+          segments: [
+            [0, 360, "charge"], [360, 600, "discharge"], [600, 840, "charge"],
+            [840, 1080, "standby"], [1080, 1320, "discharge"], [1320, 1440, "standby"],
           ],
         },
-        "ai-fallback": {
-          selected: "balanced",
-          aiMode: "fallback",
-          aiStatus: "自动降级",
-          source: "均衡方案自动降级",
-          confidence: "—",
-          summary: "大语言模型超时，系统已自动降级为均衡方案；数值计划仍由MILP生成。",
-          reasonCodes: ["LLM_TIMEOUT", "FALLBACK_BALANCED"],
-          validationState: "passed",
-          validationText: "确定性校验通过 · 降级方案时间连续、SOC与功率边界均满足",
-          gateState: "dispatch",
-          gateText: "达到阈值 · 运行模式发生变化",
-          dispatchState: "received",
-          dispatchText: "EMS已接收 · 均衡方案已进入执行队列",
-          recoveryState: "none",
-          recoveryText: "本轮未触发EMS拒绝重算",
-          badge: "降级闭环",
-          title: "AI超时，均衡方案已自动接管",
-          cycleStatus: "降级闭环",
-          events: [
-            { time: "15:00:08", title: "大语言模型超时", copy: "未获得结构化选择结果，自动降级采用均衡方案。", badge: "已降级", tone: "warn" },
-            { time: "15:00:08", title: "确定性校验通过", copy: "降级方案满足完整性、功率、SOC与终端SOC约束。", badge: "已通过", tone: "good" },
-            { time: "15:00:09", title: "变化阈值达到", copy: "运行模式发生变化，允许替换当前计划。", badge: "允许下发", tone: "good" },
-            { time: "15:00:10", title: "EMS已接收", copy: "均衡方案进入EMS执行队列。", badge: "执行中", tone: "good" },
+        s2: {
+          code: "S2",
+          name: "电站2",
+          emus: "emu21–emu26",
+          capacity: "3,000 kWh",
+          demandLimit: "820 kW",
+          planId: "M4-S2-20260904-061",
+          previousPlanId: "M4-S2-20260904-060",
+          taskId: "EMS-S2-0904-061",
+          cycleId: "M4-S2-CYCLE-1500",
+          selected: "pv",
+          confidence: "0.88",
+          aiSummary: "本站午后光伏反送风险较高，选择光伏消纳优先；需量和终端SOC仍满足独立约束。",
+          reasonCodes: ["PV_EXPORT_RISK", "DEMAND_SAFE", "SOC_MARGIN"],
+          gateText: "达到阈值 · 午间运行模式变化且光伏消纳提升2.3%",
+          metrics: [
+            ["厂区负荷", "688 kW", "较15分钟前 +3.9%", "warn"],
+            ["光伏出力", "174 kW", "当前消纳率 100%", "good"],
+            ["电网购电", "426 kW", "独立需量上限 820 kW", ""],
+            ["储能 SOC", "54%", "容量 3,000 kWh", "good"],
+            ["储能功率", "88 kW", "充电 · EMS执行中", "good"],
+            ["当前电价", "0.68 元", "平段 · 独立计费", ""],
           ],
-        },
-        "validation-failed": {
-          selected: "cost",
-          aiMode: "ai",
-          aiStatus: "已选择",
-          source: "大语言模型选择",
-          confidence: "0.87",
-          summary: "模型选择节费优先，但系统校验发现第58点SOC上界冲突，已阻断本轮发送。",
-          reasonCodes: ["COST_MIN", "SOC_CONFLICT"],
-          validationState: "blocked",
-          validationText: "确定性校验失败 · 2#储能第58点SOC预测超过配置上限",
-          gateState: "blocked",
-          gateText: "未进入变化判断 · 安全校验已阻断",
-          dispatchState: "not-sent",
-          dispatchText: "未发送 · 保留EMS当前有效计划",
-          recoveryState: "none",
-          recoveryText: "无新计划发送，EMS继续执行当前有效版本",
-          badge: "已阻断",
-          title: "本轮校验未通过，EMS继续当前计划",
-          cycleStatus: "安全阻断",
-          events: [
-            { time: "15:00:05", title: "大语言模型完成选择", copy: "选择节费优先，置信度0.87。", badge: "已选择", tone: "info" },
-            { time: "15:00:05", title: "确定性校验失败", copy: "2#储能第58点SOC预测超过配置上限，本轮计划未发送。", badge: "已阻断", tone: "bad" },
-            { time: "15:00:06", title: "EMS保持当前计划", copy: "继续执行M4-20260904-060，无计划空窗。", badge: "保持执行", tone: "warn" },
+          flow: { pv: "174 kW", storage: "88 kW", grid: "426 kW" },
+          actualPower: "充电 88 kW",
+          counts: { cycles: "61", ai: "16", dispatch: "5" },
+          candidates: [
+            { id: "balanced", name: "均衡方案", cost: "¥ 12,410", saving: "¥ 1,210", demand: "768 kW", pv: "97.6%", throughput: "2.5 MWh", risk: "低风险", rank: "候选 A" },
+            { id: "cost", name: "节费优先", cost: "¥ 12,160", saving: "¥ 1,460", demand: "782 kW", pv: "96.5%", throughput: "2.9 MWh", risk: "中低风险", rank: "候选 B" },
+            { id: "pv", name: "光伏消纳优先", cost: "¥ 12,280", saving: "¥ 1,340", demand: "776 kW", pv: "99.3%", throughput: "3.0 MWh", risk: "中风险", rank: "候选 C" },
           ],
-        },
-        "ems-retry": {
-          selected: "cost",
-          aiMode: "ai",
-          aiStatus: "已选择",
-          source: "大语言模型选择",
-          confidence: "0.89",
-          summary: "节费优先通过校验；EMS首次拒绝后，M4刷新设备状态并完成一次即时重算。",
-          reasonCodes: ["COST_MIN", "DEVICE_REFRESHED"],
-          validationState: "passed",
-          validationText: "确定性校验通过 · 重算后的V2满足最新设备边界",
-          gateState: "dispatch",
-          gateText: "达到阈值 · 设备可行性发生变化",
-          dispatchState: "received",
-          dispatchText: "EMS已接收 · 重算版本V2已进入执行队列",
-          recoveryState: "recovered",
-          recoveryText: "EMS首次拒绝 · 已刷新设备状态并立即重算1次 · V2已恢复",
-          badge: "重算恢复",
-          title: "EMS拒绝后即时重算，V2已恢复执行",
-          cycleStatus: "重算恢复",
-          events: [
-            { time: "15:00:05", title: "大语言模型完成选择", copy: "选择节费优先，置信度0.89。", badge: "已选择", tone: "info" },
-            { time: "15:00:05", title: "确定性校验通过", copy: "首次发送前校验全部通过。", badge: "已通过", tone: "good" },
-            { time: "15:00:07", title: "EMS首次拒绝", copy: "设备可用功率发生变化，M4刷新状态并立即重算1次。", badge: "重算中", tone: "warn" },
-            { time: "15:00:11", title: "EMS已接收", copy: "重算版本V2通过校验并进入执行队列，闭环已恢复。", badge: "已恢复", tone: "good" },
+          segments: [
+            [0, 300, "charge"], [300, 540, "standby"], [540, 660, "discharge"],
+            [660, 900, "charge"], [900, 1080, "standby"], [1080, 1320, "discharge"], [1320, 1440, "standby"],
           ],
         },
       };
-      const scenario = scenarios[scenarioKey] || scenarios.normal;
-      const segments = [
-        { storage: "1#储能", start: 0, end: 360, mode: "charge" },
-        { storage: "1#储能", start: 360, end: 600, mode: "discharge" },
-        { storage: "1#储能", start: 600, end: 840, mode: "charge" },
-        { storage: "1#储能", start: 840, end: 1080, mode: "standby" },
-        { storage: "1#储能", start: 1080, end: 1320, mode: "discharge" },
-        { storage: "1#储能", start: 1320, end: 1440, mode: "standby" },
-        { storage: "2#储能", start: 0, end: 360, mode: "charge" },
-        { storage: "2#储能", start: 360, end: 600, mode: "discharge" },
-        { storage: "2#储能", start: 600, end: 840, mode: "charge" },
-        { storage: "2#储能", start: 840, end: 1080, mode: "standby" },
-        { storage: "2#储能", start: 1080, end: 1320, mode: "discharge" },
-        { storage: "2#储能", start: 1320, end: 1440, mode: "standby" },
+      const allMetrics = [
+        ["两站总负荷", "1,126 kW", "仅汇总展示", ""],
+        ["两站光伏", "286 kW", "两站分别计算余电", "good"],
+        ["两站购电合计", "706 kW", "不形成共享需量", ""],
+        ["电站1 SOC", "61%", "独立容量 1,000 kWh", "good"],
+        ["电站2 SOC", "54%", "独立容量 3,000 kWh", "good"],
+        ["独立调度实例", "2 / 2", "无跨站策略或下发", "good"],
       ];
+
+      function resolveDecision(profile) {
+        const decision = {
+          selected: profile.selected,
+          aiMode: "ai",
+          aiStatus: "已选择",
+          source: "大语言模型选择",
+          confidence: profile.confidence,
+          summary: profile.aiSummary,
+          reasonCodes: profile.reasonCodes,
+          validationState: "passed",
+          validationText: "确定性校验通过 · 本站96点完整，SOC与功率边界均满足",
+          gateState: "dispatch",
+          gateText: profile.gateText,
+          dispatchState: "received",
+          recoveryState: "none",
+          recoveryText: "本轮未触发EMS拒绝重算",
+          badge: "已闭环",
+          title: null,
+          version: "V1",
+        };
+        if (scenarioKey === "ai-fallback") {
+          Object.assign(decision, {
+            selected: "balanced",
+            aiMode: "fallback",
+            aiStatus: "自动降级",
+            source: "均衡方案自动降级",
+            confidence: "—",
+            summary: "大语言模型超时，本站已自动降级为均衡方案；数值计划仍由MILP生成。",
+            reasonCodes: ["LLM_TIMEOUT", "FALLBACK_BALANCED"],
+            validationText: "确定性校验通过 · 本站降级方案满足全部设备边界",
+            gateText: "达到阈值 · 本站运行模式发生变化",
+            badge: "降级闭环",
+            title: profile.name + " AI超时，均衡方案已接管",
+          });
+        } else if (scenarioKey === "validation-failed") {
+          Object.assign(decision, {
+            confidence: "0.87",
+            summary: "模型完成本站候选选择，但确定性校验发现第58点SOC上界冲突，已阻断本轮发送。",
+            reasonCodes: ["SOC_CONFLICT", "DISPATCH_BLOCKED"],
+            validationState: "blocked",
+            validationText: "确定性校验失败 · 本站第58点SOC预测超过配置上限",
+            gateState: "blocked",
+            gateText: "未进入变化判断 · 本站安全校验已阻断",
+            dispatchState: "not-sent",
+            recoveryText: "无新计划发送，本站EMS继续执行当前有效版本",
+            badge: "已阻断",
+            title: profile.name + " 本轮校验未通过，EMS继续当前计划",
+          });
+        } else if (scenarioKey === "ems-retry") {
+          Object.assign(decision, {
+            confidence: "0.89",
+            summary: "本站候选通过校验；EMS首次拒绝后，M4仅刷新本站设备状态并完成一次即时重算。",
+            reasonCodes: ["DEVICE_REFRESHED", "STATION_ISOLATED"],
+            validationText: "确定性校验通过 · 本站重算后的V2满足最新设备边界",
+            gateText: "达到阈值 · 本站设备可行性发生变化",
+            recoveryState: "recovered",
+            recoveryText: "EMS首次拒绝 · 已刷新本站设备状态并立即重算1次 · V2已恢复",
+            badge: "重算恢复",
+            title: profile.name + " EMS拒绝后即时重算，V2已恢复",
+            version: "V2",
+          });
+        }
+        if (!decision.title) {
+          const selected = profile.candidates.find((candidate) => candidate.id === decision.selected);
+          decision.title = profile.name + " · " + selected.name + "已自动下发";
+        }
+        decision.dispatchText = decision.dispatchState === "not-sent"
+          ? "未发送 · 保留" + profile.name + " EMS当前有效计划"
+          : "EMS已接收 · " + profile.taskId + " 已进入本站执行队列";
+        return decision;
+      }
 
       function element(name, attrs, text) {
         const node = document.createElement(name);
@@ -653,16 +736,17 @@
         return node;
       }
 
-      function segmentAt(storage, minute) {
-        return segments.find((segment) => segment.storage === storage && minute >= segment.start && minute < segment.end);
+      function segmentAt(profile, minute) {
+        return profile.segments.find((segment) => minute >= segment[0] && minute < segment[1]);
       }
 
-      function renderTimeline(id) {
+      function renderTimeline(id, scopeKey) {
         const svg = document.getElementById(id);
         svg.replaceChildren();
         const left = 94;
         const top = 28;
         const width = 964;
+        const laneKeys = scopeKey === "all" ? ["s1", "s2"] : [scopeKey];
         const x = (minute) => left + minute / 1440 * width;
         svg.append(svgElement("rect", { x: left, y: top, width: width, height: 176, rx: 10, class: "chart-frame" }));
         [[0, 360, "tariff-valley"], [360, 600, "tariff-peak"], [600, 1080, "tariff-flat"], [1080, 1320, "tariff-peak"], [1320, 1440, "tariff-flat"]].forEach((range) => {
@@ -675,15 +759,16 @@
           label.textContent = String(hour).padStart(2, "0") + ":00";
           svg.append(label);
         }
-        ["1#储能", "2#储能"].forEach((storage, laneIndex) => {
-          const y = 64 + laneIndex * 64;
+        laneKeys.forEach((stationKey, laneIndex) => {
+          const profile = stations[stationKey];
+          const y = laneKeys.length === 1 ? 96 : 64 + laneIndex * 64;
           const label = svgElement("text", { x: 14, y: y + 19, class: "chart-lane" });
-          label.textContent = storage;
+          label.textContent = profile.name;
           svg.append(label);
-          const lane = svgElement("g", { class: "schedule-lane", "data-storage": storage });
+          const lane = svgElement("g", { class: "schedule-lane", "data-station-lane": stationKey });
           for (let index = 0; index < 96; index += 1) {
-            const segment = segmentAt(storage, index * 15);
-            lane.append(svgElement("rect", { x: x(index * 15) + .8, y: y, width: Math.max(x(15) - x(0) - 1.6, 1), height: 31, rx: 2, class: segment ? segment.mode : "standby" }));
+            const segment = segmentAt(profile, index * 15);
+            lane.append(svgElement("rect", { x: x(index * 15) + .8, y: y, width: Math.max(x(15) - x(0) - 1.6, 1), height: 31, rx: 2, class: segment ? segment[2] : "standby" }));
           }
           svg.append(lane);
         });
@@ -694,13 +779,15 @@
         });
       }
 
-      function renderCandidates() {
+      function renderCandidates(profile, decision) {
         const grid = document.getElementById("candidate-grid");
-        candidates.forEach((candidate) => {
-          const card = element("article", { class: "candidate", "data-candidate": candidate.id, "data-selected": candidate.id === scenario.selected });
+        grid.replaceChildren();
+        profile.candidates.forEach((candidate) => {
+          const selected = candidate.id === decision.selected;
+          const card = element("article", { class: "candidate", "data-candidate": candidate.id, "data-selected": selected });
           card.append(element("span", { class: "candidate-rank" }, candidate.rank));
           card.append(element("h3", {}, candidate.name));
-          card.append(element("p", {}, candidate.description));
+          card.append(element("p", {}, descriptions[candidate.id]));
           const kpis = element("div", { class: "candidate-kpis" });
           [["预计成本", candidate.cost], ["最大需量", candidate.demand], ["光伏消纳", candidate.pv], ["储能吞吐", candidate.throughput]].forEach((pair) => {
             const kpi = element("div", { class: "candidate-kpi" });
@@ -711,15 +798,53 @@
           card.append(kpis);
           const foot = element("div", { class: "candidate-foot" });
           foot.append(element("span", {}, candidate.risk));
-          foot.append(element("span", {}, candidate.id === scenario.selected ? "AI选中" : "可执行"));
+          foot.append(element("span", {}, selected ? "AI选中" : "可执行"));
           card.append(foot);
           grid.append(card);
         });
       }
 
-      function renderEvents() {
+      function buildEvents(profile, decision) {
+        const selected = profile.candidates.find((candidate) => candidate.id === decision.selected);
+        const events = [
+          { time: "15:00:00", title: "调度周期启动", copy: "读取" + profile.name + "负荷与光伏预测、独立电价、" + profile.emus + "状态及当前EMS计划。", badge: "已完成", tone: "info" },
+          { time: "15:00:03", title: "MILP生成3个可行候选", copy: "仅使用" + profile.name + "的关口、需量和设备约束完成求解。", badge: "3个可行", tone: "good" },
+        ];
+        if (scenarioKey === "ai-fallback") {
+          events.push(
+            { time: "15:00:08", title: "大语言模型超时", copy: profile.name + "自动降级采用均衡方案，另一电站不受影响。", badge: "已降级", tone: "warn" },
+            { time: "15:00:08", title: "确定性校验通过", copy: "本站96点计划满足功率、SOC和终端SOC约束。", badge: "已通过", tone: "good" },
+            { time: "15:00:09", title: "变化阈值达到", copy: "本站运行模式发生变化，允许替换当前计划。", badge: "允许下发", tone: "good" },
+            { time: "15:00:10", title: "EMS已接收", copy: profile.taskId + "进入本站EMS执行队列。", badge: "执行中", tone: "good" },
+          );
+        } else if (scenarioKey === "validation-failed") {
+          events.push(
+            { time: "15:00:05", title: "大语言模型完成选择", copy: "选择" + selected.name + "，置信度0.87。", badge: "已选择", tone: "info" },
+            { time: "15:00:05", title: "确定性校验失败", copy: profile.name + "第58点SOC预测超过配置上限，本轮计划未发送。", badge: "已阻断", tone: "bad" },
+            { time: "15:00:06", title: "EMS保持当前计划", copy: "本站继续执行" + profile.previousPlanId + "，另一电站不受影响。", badge: "保持执行", tone: "warn" },
+          );
+        } else if (scenarioKey === "ems-retry") {
+          events.push(
+            { time: "15:00:05", title: "大语言模型完成选择", copy: "选择" + selected.name + "，置信度0.89。", badge: "已选择", tone: "info" },
+            { time: "15:00:05", title: "确定性校验通过", copy: "本站首次发送前校验全部通过。", badge: "已通过", tone: "good" },
+            { time: "15:00:07", title: "EMS首次拒绝", copy: "只刷新" + profile.name + "设备状态并立即重算1次。", badge: "重算中", tone: "warn" },
+            { time: "15:00:11", title: "EMS已接收", copy: profile.name + "重算版本V2进入执行队列，另一电站持续独立运行。", badge: "已恢复", tone: "good" },
+          );
+        } else {
+          events.push(
+            { time: "15:00:05", title: "大语言模型完成选择", copy: "选择" + selected.name + "，置信度" + decision.confidence + "；返回本站候选ID和原因码。", badge: "已选择", tone: "info" },
+            { time: "15:00:05", title: "确定性校验通过", copy: profile.name + "的96点计划、功率与SOC边界均满足。", badge: "已通过", tone: "good" },
+            { time: "15:00:06", title: "变化阈值达到", copy: decision.gateText.replace("达到阈值 · ", "") + "，允许替换本站计划。", badge: "允许下发", tone: "good" },
+            { time: "15:00:07", title: "EMS已接收", copy: profile.taskId + "进入本站EMS执行队列。", badge: "执行中", tone: "good" },
+          );
+        }
+        return events;
+      }
+
+      function renderEvents(profile, decision) {
         const list = document.getElementById("execution-list");
-        baseEvents.concat(scenario.events).forEach((event) => {
+        list.replaceChildren();
+        buildEvents(profile, decision).forEach((event) => {
           const item = element("article", { class: "execution-item" });
           item.append(element("time", { class: "execution-time" }, event.time));
           const main = element("div", { class: "execution-main" });
@@ -731,67 +856,176 @@
         });
       }
 
-      function applyScenario() {
-        const selected = candidates.find((candidate) => candidate.id === scenario.selected);
-        document.getElementById("overview-operation-title").textContent = scenario.title;
-        document.getElementById("cycle-status").textContent = scenario.cycleStatus;
-        document.getElementById("cycle-decision-source").textContent = scenario.source;
-        document.getElementById("ai-selection").dataset.mode = scenario.aiMode;
-        document.getElementById("ai-status").textContent = scenario.aiStatus;
-        document.getElementById("ai-status").className = "status " + (scenario.aiMode === "fallback" ? "warn" : "info");
-        document.getElementById("selected-candidate-name").textContent = selected.name;
-        document.getElementById("ai-confidence").textContent = scenario.confidence;
-        document.getElementById("ai-summary").textContent = scenario.summary;
-        document.getElementById("decision-benefit").textContent = "同基线相比预计成本 " + selected.cost;
-        document.getElementById("decision-risk").textContent = selected.risk + " · EMS保留最终安全校验";
-        const reasonCodes = document.getElementById("reason-codes");
-        scenario.reasonCodes.forEach((code) => reasonCodes.append(element("span", { class: "reason-code" }, code)));
-
-        const validation = document.getElementById("validation-status");
-        validation.dataset.state = scenario.validationState;
-        validation.textContent = scenario.validationText;
-        document.getElementById("selected-plan-status").textContent = scenario.validationState === "passed" ? "校验通过" : "校验阻断";
-        document.getElementById("selected-plan-status").className = "status " + (scenario.validationState === "passed" ? "good" : "bad");
-
-        const gate = document.getElementById("change-gate");
-        gate.dataset.result = scenario.gateState;
-        document.getElementById("gate-result-text").textContent = scenario.gateText;
-        const dispatch = document.getElementById("dispatch-status");
-        dispatch.dataset.state = scenario.dispatchState;
-        dispatch.textContent = scenario.dispatchText;
-        const recovery = document.getElementById("ems-recovery");
-        recovery.dataset.state = scenario.recoveryState;
-        recovery.textContent = scenario.recoveryText;
-        document.getElementById("dispatch-badge").textContent = scenario.badge;
-        document.getElementById("dispatch-badge").className = "status " + (scenario.validationState === "passed" ? "good" : "bad");
-        document.getElementById("record-cycle-badge").textContent = scenario.badge;
-        document.getElementById("record-cycle-badge").className = "status " + (scenario.validationState === "passed" ? "info" : "bad");
-
-        const pipelineStates = scenario.validationState === "blocked"
-          ? ["completed", "completed", "completed", "completed", "blocked", "waiting", "waiting"]
-          : ["completed", "completed", "completed", "completed", "completed", "completed", "completed"];
-        document.querySelectorAll("#pipeline .pipeline-step").forEach((step, index) => {
-          step.dataset.stepState = pipelineStates[index];
+      function updateMetrics(metrics) {
+        document.querySelectorAll("[data-overview-metric]").forEach((card, index) => {
+          const metric = metrics[index];
+          card.querySelector(".metric-label").textContent = metric[0];
+          card.querySelector(".metric-value").textContent = metric[1];
+          const meta = card.querySelector(".metric-meta");
+          meta.textContent = metric[2];
+          meta.className = "metric-meta" + (metric[3] ? " " + metric[3] : "");
         });
-        if (scenarioKey === "ems-retry") document.getElementById("dispatch-version").textContent = "V2";
-        if (scenario.validationState === "blocked") {
-          document.getElementById("dispatch-count").textContent = "6";
-          document.getElementById("alert-count").textContent = "1";
-          document.getElementById("alert-copy").textContent = "校验阻断已记录";
-          document.getElementById("alert-copy").className = "metric-meta warn";
-          document.getElementById("ems-task-id").textContent = "EMS-DSP-0904-060";
-          document.getElementById("ems-task-status").textContent = "原计划执行中";
+      }
+
+      function renderOverviewStages(profile, decision) {
+        const list = document.getElementById("overview-stage-list");
+        list.replaceChildren();
+        const stages = profile
+          ? [
+              ["15:00:03", "MILP候选已生成"],
+              ["15:00:05", (decision.aiMode === "fallback" ? "自动降级：" : "AI选择：") + profile.candidates.find((candidate) => candidate.id === decision.selected).name],
+              ["15:00:05", decision.validationState === "passed" ? "确定性校验通过" : "确定性校验阻断"],
+              ["15:00:06", decision.gateState === "dispatch" ? "变化阈值已达到" : "未进入变化判断"],
+              ["15:00:07", decision.dispatchState === "received" ? "EMS已接收 " + decision.version : "EMS保持原计划"],
+            ]
+          : [
+              ["电站1 · 15:00", "独立闭环 · " + stations.s1.taskId],
+              ["电站2 · 15:00", "独立闭环 · " + stations.s2.taskId],
+              ["隔离状态", "两站无共享需量或合并计划"],
+            ];
+        stages.forEach((stage) => {
+          const item = element("div", { class: "stage-item" });
+          item.append(element("span", {}, stage[0]));
+          item.append(element("strong", {}, stage[1]));
+          list.append(item);
+        });
+      }
+
+      function activatePanel(tab) {
+        app.querySelectorAll('[role="tab"]').forEach((candidate) => {
+          const selected = candidate === tab;
+          candidate.setAttribute("aria-selected", String(selected));
+          document.getElementById(candidate.getAttribute("aria-controls")).hidden = !selected;
+        });
+      }
+
+      function applyStationScope() {
+        const all = activeStationKey === "all";
+        const profile = all ? null : stations[activeStationKey];
+        const decision = profile ? resolveDecision(profile) : null;
+        document.querySelectorAll("#station-switcher [data-station]").forEach((button) => {
+          button.setAttribute("aria-pressed", String(button.dataset.station === activeStationKey));
+        });
+        document.getElementById("strategy-tab").disabled = all;
+        document.getElementById("records-tab").disabled = all;
+        document.getElementById("all-station-summary").hidden = !all;
+
+        if (all) {
+          activatePanel(document.getElementById("overview-tab"));
+          document.getElementById("station-context-title").textContent = "全场总览";
+          document.getElementById("station-context-copy").textContent = "只读汇总；两个电站不共享关口、需量、策略或EMS任务";
+          document.getElementById("overview-operation-title").textContent = "两座电站正在独立自动调度";
+          document.getElementById("overview-operation-copy").textContent = "全场页仅汇总展示。电站1与电站2分别每15分钟求解、校验和下发，不生成跨站合并策略。";
+          document.getElementById("overview-plan-copy").textContent = "全场只读汇总 · 两个互相独立的96点计划";
+          document.getElementById("overview-cycle-title").textContent = "15:00 独立周期";
+          document.getElementById("cycle-status").textContent = "2 / 2 正常";
+          updateMetrics(allMetrics);
+          document.getElementById("flow-pv").textContent = "286 kW";
+          document.getElementById("flow-storage").textContent = "134 kW";
+          document.getElementById("flow-grid").textContent = "706 kW";
+          document.getElementById("effect-cost").textContent = "¥ 18,760";
+          document.getElementById("effect-saving").textContent = "¥ 2,060";
+          document.getElementById("effect-demand").textContent = "506 / 776 kW";
+          document.getElementById("effect-pv").textContent = "97.2% / 99.3%";
+          renderOverviewStages(null, null);
+          renderTimeline("overview-chart", "all");
+        } else {
+          const selected = profile.candidates.find((candidate) => candidate.id === decision.selected);
+          document.getElementById("station-context-title").textContent = profile.name;
+          document.getElementById("station-context-copy").textContent = profile.emus + " · 独立关口、独立需量、独立策略与EMS任务";
+          document.getElementById("overview-operation-title").textContent = decision.title;
+          document.getElementById("overview-operation-copy").textContent = profile.name + "每15分钟独立滚动求解；所有候选、校验结果、EMS任务和执行日志均带station_id。";
+          document.getElementById("overview-plan-copy").textContent = profile.name + " · 策略 " + profile.planId + " · " + decision.version + " · 96点";
+          document.getElementById("overview-cycle-title").textContent = profile.name + " · 15:00 调度周期";
+          document.getElementById("cycle-status").textContent = decision.badge;
+          updateMetrics(profile.metrics);
+          document.getElementById("flow-pv").textContent = profile.flow.pv;
+          document.getElementById("flow-storage").textContent = profile.flow.storage;
+          document.getElementById("flow-grid").textContent = profile.flow.grid;
+          document.getElementById("effect-cost").textContent = selected.cost;
+          document.getElementById("effect-saving").textContent = selected.saving;
+          document.getElementById("effect-demand").textContent = selected.demand;
+          document.getElementById("effect-pv").textContent = selected.pv;
+          renderOverviewStages(profile, decision);
+          renderTimeline("overview-chart", activeStationKey);
+
+          document.getElementById("input-device").textContent = profile.emus + " · 在线";
+          document.getElementById("input-constraint").textContent = "本站需量≤" + profile.demandLimit;
+          document.getElementById("cycle-id").textContent = profile.cycleId;
+          document.getElementById("cycle-decision-source").textContent = decision.source;
+          document.getElementById("candidate-scope-copy").textContent = profile.name + "独立约束下生成3个可执行方案；不使用另一电站的需量或设备余量";
+          renderCandidates(profile, decision);
+          document.getElementById("ai-selection").dataset.mode = decision.aiMode;
+          document.getElementById("ai-status").textContent = decision.aiStatus;
+          document.getElementById("ai-status").className = "status " + (decision.aiMode === "fallback" ? "warn" : "info");
+          document.getElementById("selected-candidate-name").textContent = selected.name;
+          document.getElementById("ai-confidence").textContent = decision.confidence;
+          document.getElementById("ai-summary").textContent = decision.summary;
+          document.getElementById("decision-benefit").textContent = "同本站基线相比预计节省 " + selected.saving;
+          document.getElementById("decision-risk").textContent = selected.risk + " · " + profile.name + " EMS保留最终安全校验";
+          const reasonCodes = document.getElementById("reason-codes");
+          reasonCodes.replaceChildren();
+          decision.reasonCodes.forEach((code) => reasonCodes.append(element("span", { class: "reason-code" }, code)));
+
+          document.getElementById("strategy-plan-copy").textContent = profile.name + " · 策略 " + profile.planId + " · 1 × 96点 · 15分钟粒度";
+          document.getElementById("selected-plan-status").textContent = decision.validationState === "passed" ? "校验通过" : "校验阻断";
+          document.getElementById("selected-plan-status").className = "status " + (decision.validationState === "passed" ? "good" : "bad");
+          renderTimeline("strategy-chart", activeStationKey);
+
+          const validation = document.getElementById("validation-status");
+          validation.dataset.state = decision.validationState;
+          validation.textContent = decision.validationText;
+          const gate = document.getElementById("change-gate");
+          gate.dataset.result = decision.gateState;
+          document.getElementById("gate-result-text").textContent = decision.gateText;
+          document.getElementById("dispatch-plan-id").textContent = profile.planId;
+          document.getElementById("dispatch-version").textContent = decision.version;
+          document.getElementById("dispatch-plan-size").textContent = profile.name + " · 1 × 96 点";
+          const dispatch = document.getElementById("dispatch-status");
+          dispatch.dataset.state = decision.dispatchState;
+          dispatch.textContent = decision.dispatchText;
+          const recovery = document.getElementById("ems-recovery");
+          recovery.dataset.state = decision.recoveryState;
+          recovery.textContent = decision.recoveryText;
+          document.getElementById("dispatch-badge").textContent = decision.badge;
+          document.getElementById("dispatch-badge").className = "status " + (decision.validationState === "passed" ? "good" : "bad");
+          const pipelineStates = decision.validationState === "blocked"
+            ? ["completed", "completed", "completed", "completed", "blocked", "waiting", "waiting"]
+            : ["completed", "completed", "completed", "completed", "completed", "completed", "completed"];
+          document.querySelectorAll("#pipeline .pipeline-step").forEach((step, index) => {
+            step.dataset.stepState = pipelineStates[index];
+          });
+
+          document.getElementById("cycle-count").textContent = profile.counts.cycles;
+          document.getElementById("ai-call-count").textContent = scenarioKey === "ai-fallback" ? String(Number(profile.counts.ai) - 1) : profile.counts.ai;
+          document.getElementById("dispatch-count").textContent = decision.validationState === "blocked" ? String(Number(profile.counts.dispatch) - 1) : profile.counts.dispatch;
+          document.getElementById("alert-count").textContent = decision.validationState === "blocked" ? "1" : "0";
+          document.getElementById("alert-copy").textContent = decision.validationState === "blocked" ? "本站校验阻断已记录" : "本站无阻断问题";
+          document.getElementById("alert-copy").className = "metric-meta " + (decision.validationState === "blocked" ? "warn" : "good");
+          document.getElementById("record-cycle-title").textContent = profile.name + " · " + profile.cycleId + " 事件记录";
+          document.getElementById("record-cycle-badge").textContent = decision.badge;
+          document.getElementById("record-cycle-badge").className = "status " + (decision.validationState === "passed" ? "info" : "bad");
+          document.getElementById("ems-task-id").textContent = decision.validationState === "blocked" ? profile.taskId.replace("-061", "-060") : profile.taskId;
+          document.getElementById("ems-task-status").textContent = decision.validationState === "blocked" ? "原计划执行中" : "执行中";
+          document.getElementById("ems-device-scope").textContent = profile.emus;
+          document.getElementById("ems-actual-power").textContent = profile.actualPower;
+          renderEvents(profile, decision);
         }
-        if (scenario.aiMode === "fallback") document.getElementById("ai-call-count").textContent = "17";
+
+        const nextQuery = new URLSearchParams(window.location.search);
+        nextQuery.set("station", activeStationKey);
+        window.history.replaceState(null, "", window.location.pathname + "?" + nextQuery.toString());
       }
 
       app.querySelectorAll('[role="tab"]').forEach((tab) => {
         tab.addEventListener("click", () => {
-          app.querySelectorAll('[role="tab"]').forEach((candidate) => {
-            const selected = candidate === tab;
-            candidate.setAttribute("aria-selected", String(selected));
-            document.getElementById(candidate.getAttribute("aria-controls")).hidden = !selected;
-          });
+          if (!tab.disabled) activatePanel(tab);
+        });
+      });
+      document.querySelectorAll("#station-switcher [data-station]").forEach((button) => {
+        button.addEventListener("click", () => {
+          activeStationKey = button.dataset.station;
+          applyStationScope();
         });
       });
       document.getElementById("theme-toggle").addEventListener("click", (event) => {
@@ -801,11 +1035,7 @@
         event.currentTarget.setAttribute("aria-pressed", String(dark));
       });
 
-      renderCandidates();
-      applyScenario();
-      renderEvents();
-      renderTimeline("overview-chart");
-      renderTimeline("strategy-chart");
+      applyStationScope();
     })();
   </script>
 </body>
