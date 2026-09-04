@@ -9,11 +9,14 @@ from .contracts import (
     StationStatus,
 )
 from .loader import load_station_input
+from .service import M4Orchestrator, Optimizer
 
 __all__ = [
     "ErrorCode",
     "InputSummary",
     "M4OrchestrationResult",
+    "M4Orchestrator",
+    "Optimizer",
     "OrchestrationError",
     "OrchestrationStatus",
     "StationInput",
