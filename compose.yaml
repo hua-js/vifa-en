@@ -37,6 +37,8 @@ services:
     <<: *m3-service
     command:
       - worker
+    mem_limit: 1536m
+    memswap_limit: 1536m
     env_file:
       - /etc/vifa-m3/m3.env
     healthcheck:
