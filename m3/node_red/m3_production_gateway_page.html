@@ -555,7 +555,7 @@
               <div class="config-item"><span>SOC 周期</span><strong>SOC 周差分</strong></div>
             </div></div>
             <div class="selection-panel"><div class="panel-title">选模策略与候选模型</div><div class="rule"><span class="rule-dot"></span><span><strong id="policy-name">等待数据</strong> · <span id="policy-copy">载入历史长度后显示选模策略</span></span></div>
-              <div class="candidates"><div class="candidate" data-model="WeeklyNaive" title="完整模型名称：WeeklyNaive"><div class="candidate-name">周周期</div><div class="candidate-role">上一连续有效周<br>同刻度负载基线</div><div class="candidate-state">1 周起可用</div></div><div class="candidate" data-model="WeeklyWeighted2" title="完整模型名称：WeeklyWeighted2"><div class="candidate-name">双周加权</div><div class="candidate-role">最近两个连续有效周<br>加权负载轮廓</div><div class="candidate-state">3 周起可用</div></div><div class="candidate" data-model="WeeklyRegimeAdjusted" title="完整模型名称：WeeklyRegimeAdjusted"><div class="candidate-name">周期校准</div><div class="candidate-role">近期待机基线校准<br>高负载保持周加权</div><div class="candidate-state">3 周起可用</div></div><div class="candidate" data-model="WeeklyMedian3" title="完整模型名称：WeeklyMedian3"><div class="candidate-name">三周中位</div><div class="candidate-role">最近三个连续有效周<br>中位数负载轮廓</div><div class="candidate-state">4 周起可用</div></div><div class="candidate" data-model="AutoARIMA" title="完整模型名称：AutoARIMA"><div class="candidate-name">自动 ARIMA</div><div class="candidate-role">受限日季节自回归<br>仅 5 分钟及以上粒度</div><div class="candidate-state">4 周起可用</div></div><div class="candidate" data-model="MSTL" title="完整模型名称：MSTL"><div class="candidate-name">多周期分解</div><div class="candidate-role">日 / 周季节分解<br>仅 5 分钟及以上粒度</div><div class="candidate-state">4 周起可用</div></div></div>
+              <div class="candidates"><div class="candidate" data-model="WeeklyNaive" title="完整模型名称：WeeklyNaive"><div class="candidate-name">周周期</div><div class="candidate-role">上一连续有效周<br>同刻度负载基线</div><div class="candidate-state">1 周起可用</div></div><div class="candidate" data-model="WeeklyWeighted2" title="完整模型名称：WeeklyWeighted2"><div class="candidate-name">双周加权</div><div class="candidate-role">最近两个连续有效周<br>加权负载轮廓</div><div class="candidate-state">3 周起可用</div></div><div class="candidate" data-model="WeeklyRegimeAdjusted" title="完整模型名称：WeeklyRegimeAdjusted"><div class="candidate-name">周期校准</div><div class="candidate-role">近期待机基线校准<br>高负载保持周加权</div><div class="candidate-state">3 周起可用</div></div><div class="candidate" data-model="WeeklyMedian3" title="完整模型名称：WeeklyMedian3"><div class="candidate-name">三周中位</div><div class="candidate-role">最近三个连续有效周<br>中位数负载轮廓</div><div class="candidate-state">4 周起可用</div></div><div class="candidate" data-model="AutoARIMA" title="完整模型名称：AutoARIMA"><div class="candidate-name">自动 ARIMA</div><div class="candidate-role">受限日季节自回归<br>仅 15 分钟及以上粒度</div><div class="candidate-state">4 周起可用</div></div><div class="candidate" data-model="MSTL" title="完整模型名称：MSTL"><div class="candidate-name">多周期分解</div><div class="candidate-role">日 / 周季节分解<br>仅 15 分钟及以上粒度</div><div class="candidate-state">4 周起可用</div></div></div>
               <div class="model-foot"><span class="selection-basis">模型选择依据：留出周评分 → 固定模型顺序</span><span>策略版本：<strong id="policy-version">weekly_load_v2</strong></span></div>
             </div>
           </div>
@@ -603,8 +603,8 @@
         WeeklyWeighted2: { weeks: 3, minimumInterval: 0 },
         WeeklyRegimeAdjusted: { weeks: 3, minimumInterval: 0 },
         WeeklyMedian3: { weeks: 4, minimumInterval: 0 },
-        AutoARIMA: { weeks: 4, minimumInterval: 300 },
-        MSTL: { weeks: 4, minimumInterval: 300 },
+        AutoARIMA: { weeks: 4, minimumInterval: 900 },
+        MSTL: { weeks: 4, minimumInterval: 900 },
       });
       const SVG_NS = "http://www.w3.org/2000/svg";
       const SHANGHAI_DATE_TIME = new Intl.DateTimeFormat("zh-CN", {

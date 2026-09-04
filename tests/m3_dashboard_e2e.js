@@ -892,9 +892,16 @@ function legacyNullManifestFixture() {
   assert.strictEqual(await page.locator(".candidate[data-model='WeeklyWeighted2']").evaluate((node) => node.classList.contains("disabled")), false);
   assert.strictEqual(await page.locator(".candidate[data-model='WeeklyRegimeAdjusted']").evaluate((node) => node.classList.contains("disabled")), false);
   assert.strictEqual(await page.locator(".candidate[data-model='AutoARIMA']").evaluate((node) => node.classList.contains("disabled")), false);
+  assert.match(await page.locator(".candidate[data-model='AutoARIMA'] .candidate-role").innerText(), /仅 15 分钟及以上粒度/);
+  assert.match(await page.locator(".candidate[data-model='MSTL'] .candidate-role").innerText(), /仅 15 分钟及以上粒度/);
+  await page.locator("#granularity").selectOption("300");
+  assert.strictEqual(await page.locator(".candidate[data-model='AutoARIMA']").evaluate((node) => node.classList.contains("disabled")), true);
+  assert.strictEqual(await page.locator(".candidate[data-model='MSTL']").evaluate((node) => node.classList.contains("disabled")), true);
   await page.locator("#granularity").selectOption("60");
   assert.strictEqual(await page.locator(".candidate[data-model='AutoARIMA']").evaluate((node) => node.classList.contains("disabled")), true);
   await page.locator("#granularity").selectOption("900");
+  assert.strictEqual(await page.locator(".candidate[data-model='AutoARIMA']").evaluate((node) => node.classList.contains("disabled")), false);
+  assert.strictEqual(await page.locator(".candidate[data-model='MSTL']").evaluate((node) => node.classList.contains("disabled")), false);
 
   latestCustomPayload = oneMinuteCrossBrowserFixture();
   holdLatestLookup = true;
