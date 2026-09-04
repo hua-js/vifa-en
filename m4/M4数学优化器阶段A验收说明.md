@@ -11,9 +11,9 @@
 | 业务场景 | 自动化测试方法 | 验收口径 |
 | --- | --- | --- |
 | 峰谷套利 | `test_cost_profile_charges_in_valley_and_discharges_at_peak` | 成本候选在前 24 点谷段充电、48–71 点峰段放电，并满足终端 SOC 边界。 |
-| 午间光伏消纳 | `test_pv_profile_stores_midday_surplus_before_export` | 光伏候选在 40–55 点吸收盈余，反送与未吸收电量之和低于无储能手算基线 `400 kWh`。默认场景允许反送但限功率，因此同时经过允许反送和剩余光伏风险分支。 |
-| 放电能力不足时的需量超限 | `test_demand_profile_reports_unavoidable_exceedance` | 峰段原始负荷 `180 kW`、需量上限 `100 kW`、储能功率上限 `20 kW`，手算最小峰值超限为 `60 kW`；结果如实报告超限且计划不越过设备功率边界。 |
-| 储能不可用 | `test_disabled_storage_returns_an_idle_plan` | 三类候选均输出全时段 `idle`。 |
+| 午间光伏消纳 | `test_pv_profile_stores_midday_surplus_before_export` | 光伏候选在 40–55 点吸收盈余，反送与未吸收电量之和低于无储能手算基线 `400 kWh`。默认场景允许反送、逐点反送上限为 `20 kW`，因此最多反送 `80 kWh`；测试锁定反送电量和未吸收电量均大于 0，且包含 `PV_UNABSORBED` 风险。 |
+| 放电能力不足时的需量超限 | `test_demand_profile_reports_unavoidable_exceedance` | 峰段原始负荷 `180 kW`、需量上限 `100 kW`、储能功率上限 `20 kW`，手算最小峰值超限为 `60 kW`；测试同时复核公开指标约为 `60 kW`，以及 32–35 点均约以 `20 kW` 放电。 |
+| 储能不可用 | `test_disabled_storage_returns_an_idle_plan` | 三类候选均为成功状态、各有 96 点计划，且全时段 `mode=idle`、`target_power_kw=0`。 |
 | 双站隔离 | `test_station_requests_do_not_share_identity_or_results` | 同一优化器实例保持各站标识，且不同负荷得到不同复算结果。 |
 | 放电能力充足时的需量治理 | `test_sufficient_battery_power_eliminates_demand_exceedance` | 同一 `80 kW` 峰段缺口在 200 kW 功率上限下可完全覆盖，峰值需量超限不大于 `1e-6 kW`。 |
 | 禁止反送 | `test_disabled_export_reports_unabsorbed_pv_without_export_command` | 结果包含 `PV_UNABSORBED` 风险，所有计划点反送功率不大于 `1e-7 kW`。 |
@@ -26,9 +26,11 @@
 
 以下结果均来自验收提交前的实际命令输出：
 
-- 聚焦业务场景：`.venv/bin/python -m unittest tests/test_m4_optimizer_scenarios.py -v`，11 项通过，0 失败，0 跳过，测试框架耗时 `8.087 s`。
-- 完整 M4 优化器回归：`.venv/bin/python -m unittest discover -s tests -p 'test_m4_optimizer*.py' -v`，42 项通过，0 失败，0 跳过，测试框架耗时 `8.410 s`。
-- 项目 Python 全量回归：`.venv/bin/python -m unittest discover -s tests -p 'test_*.py' -q`，512 项通过，0 失败，4 项既有显式跳过，测试框架耗时 `39.707 s`。运行时出现既有 Starlette `httpx` 弃用告警及预期的故障分支日志，不影响退出码 0。
+- 聚焦业务场景：`.venv/bin/python -m unittest tests/test_m4_optimizer_scenarios.py -v`，11 项通过，0 失败，0 跳过，测试框架耗时 `8.041 s`。
+- 完整 M4 优化器回归：`.venv/bin/python -m unittest discover -s tests -p 'test_m4_optimizer*.py' -v`，43 项通过，0 失败，0 跳过，测试框架耗时 `8.267 s`。
+- 项目 Python 全量回归：`.venv/bin/python -m unittest discover -s tests -p 'test_*.py' -v`，`Ran 513 tests`，即 509 项通过、4 项既有显式跳过，测试框架耗时 `37.031 s`。运行时出现既有 Starlette `httpx` 弃用告警及预期的故障分支日志，不影响退出码 0。
+
+审查前文档曾把 `Ran 512 tests` 且 `skipped=4` 误写为“512 项通过”；该次历史结果的正确统计是 508 项通过、4 项跳过。本次新增 1 项告警隔离测试后，最新总数相应为 509 项通过、4 项跳过（`Ran 513 tests`）。
 
 ## 性能基线
 
@@ -42,8 +44,8 @@
 - Python：3.12.12。
 - SciPy / HiGHS 接口：SciPy 1.18.1。
 - 场景数量：11 个测试方法，其中本任务新增 9 个业务验收场景。
-- 测试框架耗时：`8.036 s`。
-- `/usr/bin/time -p`：`real 8.69 s`、`user 11.20 s`、`sys 0.91 s`。
+- 测试框架耗时：`8.041 s`。
+- `/usr/bin/time -p`：`real 8.58 s`、`user 11.13 s`、`sys 0.85 s`。
 
 该数据只作为当前开发环境的求解基线，不是生产 SLA，也不能据此推导真实站点的成本或节费表现。
 

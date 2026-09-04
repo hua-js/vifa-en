@@ -1,3 +1,4 @@
+import re
 import warnings
 from dataclasses import dataclass
 
@@ -11,6 +12,10 @@ from m4_optimizer.contracts import CandidateStatus
 
 FloatArray = NDArray[np.float64]
 MIP_FEASIBILITY_TOLERANCE = 1e-9
+SCIPY_MIP_FEASIBILITY_PASSTHROUGH_WARNING = (
+    "Unrecognized options detected: {'mip_feasibility_tolerance'}. "
+    "These will be passed to HiGHS verbatim."
+)
 
 
 @dataclass(frozen=True)
@@ -68,7 +73,9 @@ def solve_milp(
         # part of SciPy's small documented option set.
         warnings.filterwarnings(
             "ignore",
-            message=r"Unrecognized options detected:.*mip_feasibility_tolerance",
+            message=(
+                rf"\A{re.escape(SCIPY_MIP_FEASIBILITY_PASSTHROUGH_WARNING)}\Z"
+            ),
             category=RuntimeWarning,
         )
         result = milp(

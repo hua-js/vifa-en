@@ -1,4 +1,5 @@
 import unittest
+import warnings
 from unittest.mock import patch
 
 import numpy as np
@@ -67,6 +68,42 @@ class M4OptimizerSolverTests(unittest.TestCase):
             result = solve_milp(problem, np.array([1.0]), (), 2.0, 0.0)
         self.assertEqual(result.status, "timeout")
         self.assertIsNone(result.x)
+
+    def test_only_the_expected_scipy_passthrough_warning_is_suppressed(self):
+        targeted = (
+            "Unrecognized options detected: {'mip_feasibility_tolerance'}. "
+            "These will be passed to HiGHS verbatim."
+        )
+        combined = (
+            "Unrecognized options detected: {'other_option', "
+            "'mip_feasibility_tolerance'}. These will be passed to HiGHS verbatim."
+        )
+        related = "mip_feasibility_tolerance behavior changed"
+        fake = OptimizeResult(
+            status=0,
+            x=np.array([0.0]),
+            message="optimal",
+            mip_gap=0.0,
+        )
+
+        def warning_milp(**kwargs):
+            warnings.warn(targeted, RuntimeWarning, stacklevel=2)
+            warnings.warn(combined, RuntimeWarning, stacklevel=2)
+            warnings.warn(related, RuntimeWarning, stacklevel=2)
+            return fake
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            with patch("m4_optimizer.solver.milp", side_effect=warning_milp):
+                solve_milp(
+                    self.make_one_variable_problem(),
+                    np.array([1.0]),
+                    (),
+                    2.0,
+                    0.0,
+                )
+
+        self.assertEqual([str(item.message) for item in caught], [combined, related])
 
     def make_one_variable_problem(self):
         return MilpProblem(

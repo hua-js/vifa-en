@@ -79,22 +79,43 @@ class M4OptimizerScenarioTests(unittest.TestCase):
             + candidate.metrics.pv_unabsorbed_energy_kwh,
             no_storage_unused_pv_energy(request),
         )
+        self.assertTrue(request.constraints.grid_export_enabled)
+        self.assertGreater(candidate.metrics.grid_export_energy_kwh, 0.0)
+        self.assertLessEqual(candidate.metrics.grid_export_energy_kwh, 80.0 + 1e-6)
+        self.assertGreater(candidate.metrics.pv_unabsorbed_energy_kwh, 0.0)
+        self.assertIn("PV_UNABSORBED", candidate.risk_codes)
+        self.assertTrue(
+            all(point.grid_export_kw <= 20.0 + 1e-7 for point in candidate.plan)
+        )
 
     def test_demand_profile_reports_unavoidable_exceedance(self):
         request = make_demand_peak_request(max_discharge_kw=20.0)
         result = M4Optimizer(model_version="m4-milp-v1").optimize(request)
         candidate = candidate_by_id(result, "balanced")
-        self.assertGreater(candidate.metrics.peak_demand_exceed_kw, 0.0)
+        self.assertAlmostEqual(
+            candidate.metrics.peak_demand_exceed_kw,
+            60.0,
+            delta=2e-6,
+        )
         self.assertLessEqual(
             max(point.target_power_kw for point in candidate.plan), 20.0 + 1e-6
         )
+        for point in candidate.plan[32:36]:
+            self.assertEqual(point.mode, "discharge")
+            self.assertAlmostEqual(point.target_power_kw, 20.0, delta=2e-6)
+            self.assertAlmostEqual(point.demand_exceed_kw, 60.0, delta=2e-6)
 
     def test_disabled_storage_returns_an_idle_plan(self):
         result = M4Optimizer(model_version="m4-milp-v1").optimize(
             make_request(available=False)
         )
         for candidate in result.candidates:
+            self.assertIn(candidate.status, {"optimal", "feasible"})
+            self.assertEqual(len(candidate.plan), 96)
             self.assertTrue(all(point.mode == "idle" for point in candidate.plan))
+            self.assertTrue(
+                all(point.target_power_kw == 0.0 for point in candidate.plan)
+            )
 
     def test_station_requests_do_not_share_identity_or_results(self):
         optimizer = M4Optimizer(model_version="m4-milp-v1")
