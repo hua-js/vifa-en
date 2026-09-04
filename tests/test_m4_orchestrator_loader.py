@@ -115,6 +115,71 @@ class M4OrchestratorLoaderTests(unittest.TestCase):
         self.assertIsNone(result.station_id_hint)
         self.assertIsNone(result.request_id_hint)
 
+    def test_non_contract_week_date_timestamps_are_rejected(self):
+        payload = make_request().model_dump(mode="json")
+
+        def week_date(timestamp: str) -> str:
+            return timestamp.replace("2026-09-04", "2026-W36-5").replace(
+                "+08:00", "+0800"
+            )
+
+        payload["plan_start_at"] = week_date(payload["plan_start_at"])
+        payload["input_observed_at"] = week_date(payload["input_observed_at"])
+        self.assertEqual(len(payload["points"]), 96)
+        for point in payload["points"]:
+            point["timestamp"] = week_date(point["timestamp"])
+        path = self.write_json(payload, "non-contract-timestamps.json")
+
+        result = load_station_input(path)
+
+        self.assertIsNone(result.request)
+        self.assertEqual(result.error.code, "INPUT_VALIDATION_ERROR")
+
+    def test_all_input_errors_redact_input_and_exception_details(self):
+        secret_json = "SECRET_JSON_BODY"
+        missing = self.temp_dir / "missing.json"
+        malformed = self.write_text(f"{{not-json {secret_json}", "malformed.json")
+        invalid = self.write_json({"unexpected": secret_json}, "invalid.json")
+        invalid_encoding = self.temp_dir / "invalid-encoding.json"
+        invalid_encoding.write_bytes(b"\xffSECRET_JSON_BODY")
+        unreadable = self.temp_dir / "unreadable.json"
+
+        with patch.object(
+            Path,
+            "read_text",
+            side_effect=PermissionError("SECRET_EXCEPTION /private/secret TRACEBACK"),
+        ):
+            read_error = load_station_input(unreadable)
+
+        results = [
+            load_station_input(missing),
+            load_station_input(invalid_encoding),
+            load_station_input(malformed),
+            load_station_input(invalid),
+            read_error,
+        ]
+
+        self.assertEqual(
+            [result.error.code for result in results],
+            [
+                "INPUT_NOT_FOUND",
+                "INPUT_ENCODING_ERROR",
+                "INPUT_JSON_ERROR",
+                "INPUT_VALIDATION_ERROR",
+                "INPUT_READ_ERROR",
+            ],
+        )
+        for result in results:
+            rendered = result.model_dump_json()
+            for sensitive_value in (
+                str(self.temp_dir),
+                secret_json,
+                "SECRET_EXCEPTION",
+                "/private/secret",
+                "TRACEBACK",
+            ):
+                self.assertNotIn(sensitive_value, rendered)
+
 
 if __name__ == "__main__":
     unittest.main()

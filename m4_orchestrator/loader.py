@@ -1,5 +1,4 @@
 import json
-from datetime import datetime
 from pathlib import Path
 
 from pydantic import ValidationError
@@ -31,7 +30,7 @@ def load_station_input(path: Path, *, input_ref: str | None = None) -> StationIn
         if isinstance(payload, dict):
             station_id_hint = _nonblank_string(payload.get("station_id"))
             request_id_hint = _nonblank_string(payload.get("request_id"))
-        request = OptimizationRequest.model_validate(_restore_datetimes(payload))
+        request = OptimizationRequest.model_validate_json(text)
     except FileNotFoundError:
         return failed("INPUT_NOT_FOUND", "input file was not found")
     except UnicodeDecodeError:
@@ -55,30 +54,3 @@ def _nonblank_string(value: object) -> str | None:
     if isinstance(value, str) and value.strip():
         return value
     return None
-
-
-def _restore_datetimes(payload: object) -> object:
-    if not isinstance(payload, dict):
-        return payload
-
-    restored = payload.copy()
-    for key in ("plan_start_at", "input_observed_at"):
-        restored[key] = _parse_datetime(payload.get(key))
-    points = payload.get("points")
-    if isinstance(points, list):
-        restored["points"] = [
-            {**point, "timestamp": _parse_datetime(point.get("timestamp"))}
-            if isinstance(point, dict)
-            else point
-            for point in points
-        ]
-    return restored
-
-
-def _parse_datetime(value: object) -> object:
-    if not isinstance(value, str):
-        return value
-    try:
-        return datetime.fromisoformat(value)
-    except ValueError:
-        return value
