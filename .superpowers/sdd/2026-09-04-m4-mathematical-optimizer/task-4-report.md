@@ -43,3 +43,30 @@
 
 - 当前 `ProfileSolveResult` 在后续层无 incumbent 时返回 `x=None`，由上层按失败/超时状态处理，不复用不完整的前层解。
 - `uv run` 因受限环境无法初始化 `/Users/hua/.cache/uv`；按任务要求使用 `.venv/bin/python` 完成验证。
+
+## 修复轮 1：错误状态 incumbent 门禁
+
+### RED
+
+新增回归测试 `test_error_with_finite_incumbent_does_not_continue_to_next_layer`，模拟第一层返回 `status="error"` 但带有限 `x`，第二层返回 `optimal`，要求第一层立即返回且只调用一次 solver。
+
+命令：
+
+```text
+.venv/bin/python -m unittest tests/test_m4_optimizer_lexicographic.py -v
+```
+
+结果：预期失败；修复前结果状态为 `optimal` 而非 `error`，证明错误状态解被误继续。
+
+### GREEN
+
+最小修复：仅当层状态为 `optimal`/`feasible` 且 `x` 全部有限时继续；其他状态立即按原状态返回并置 `x=None`。
+
+命令：
+
+```text
+.venv/bin/python -m unittest tests/test_m4_optimizer_lexicographic.py -v
+.venv/bin/python -m unittest tests/test_m4_optimizer_contracts.py tests/test_m4_optimizer_model.py tests/test_m4_optimizer_solver.py tests/test_m4_optimizer_lexicographic.py
+```
+
+结果：分层测试 3 tests passed；累计 M4 测试 22 tests passed。

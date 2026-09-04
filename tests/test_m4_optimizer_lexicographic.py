@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 import numpy as np
 from scipy.sparse import csr_matrix
@@ -6,7 +7,7 @@ from scipy.sparse import csr_matrix
 from m4_optimizer.contracts import ObjectiveLayer, ObjectiveProfile
 from m4_optimizer.lexicographic import solve_profile
 from m4_optimizer.model import BuiltModel, VariableIndex
-from m4_optimizer.solver import MilpProblem
+from m4_optimizer.solver import MilpProblem, RawSolveResult
 
 
 class M4OptimizerLexicographicTests(unittest.TestCase):
@@ -56,6 +57,50 @@ class M4OptimizerLexicographicTests(unittest.TestCase):
         result = solve_profile(built, profile, 2.0, 0.0)
         self.assertLessEqual(result.x[0], 1.0 + 1e-7)
         self.assertAlmostEqual(result.x[1], 9.0, places=6)
+
+    def test_error_with_finite_incumbent_does_not_continue_to_next_layer(self):
+        built = self.make_two_variable_model()
+        profile = ObjectiveProfile(
+            profile_id="balanced",
+            profile_version="test-v1",
+            objective_order=[
+                ObjectiveLayer(
+                    name="primary",
+                    terms={"demand_peak": 1.0},
+                    absolute_tolerance=0.0,
+                    relative_tolerance=0.0,
+                ),
+                ObjectiveLayer(
+                    name="secondary",
+                    terms={"energy_cost": 1.0},
+                    absolute_tolerance=0.0,
+                    relative_tolerance=0.0,
+                ),
+            ],
+        )
+        error_with_x = RawSolveResult(
+            status="error",
+            x=np.array([0.0, 10.0]),
+            objective_value=0.0,
+            message="solver error",
+            mip_gap=None,
+        )
+        later_optimal = RawSolveResult(
+            status="optimal",
+            x=np.array([0.0, 10.0]),
+            objective_value=10.0,
+            message="optimal",
+            mip_gap=0.0,
+        )
+        with patch(
+            "m4_optimizer.lexicographic.solve_milp",
+            side_effect=[error_with_x, later_optimal],
+        ) as solve:
+            result = solve_profile(built, profile, 2.0, 0.0)
+
+        self.assertEqual(result.status, "error")
+        self.assertIsNone(result.x)
+        solve.assert_called_once()
 
     def make_two_variable_model(self):
         empty = slice(0, 0)

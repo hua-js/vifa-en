@@ -65,7 +65,11 @@ def solve_profile(
             mip_rel_gap,
         )
         final_message = raw.message
-        if raw.x is None:
+        if (
+            raw.status not in {"optimal", "feasible"}
+            or raw.x is None
+            or not np.isfinite(raw.x).all()
+        ):
             return ProfileSolveResult(
                 status=raw.status,
                 x=None,
