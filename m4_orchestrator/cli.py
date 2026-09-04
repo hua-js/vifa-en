@@ -11,6 +11,19 @@ from .writer import OutputWriteError, write_result_atomic
 DEFAULT_ORCHESTRATOR_VERSION = "m4-orchestrator-b1-v1"
 
 
+class _StoreOnce(argparse.Action):
+    def __call__(
+        self,
+        parser: argparse.ArgumentParser,
+        namespace: argparse.Namespace,
+        values: object,
+        option_string: str | None = None,
+    ) -> None:
+        if getattr(namespace, self.dest, None) is not None:
+            parser.error(f"{option_string} may only be specified once")
+        setattr(namespace, self.dest, values)
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Run offline M4 optimization for station input files."
@@ -25,6 +38,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--output",
+        action=_StoreOnce,
         required=True,
         type=Path,
         metavar="PATH",
@@ -32,6 +46,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--model-version",
+        action=_StoreOnce,
         required=True,
         metavar="VALUE",
         help="optimizer model version",

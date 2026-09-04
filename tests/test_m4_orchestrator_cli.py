@@ -102,6 +102,68 @@ class M4OrchestratorWriterTests(unittest.TestCase):
         self.assertEqual(target.read_text(encoding="utf-8"), "old-result\n")
         self.assertEqual(list(target.parent.glob(f".{target.name}.*.tmp")), [])
 
+    def test_interrupts_propagate_after_only_new_temp_is_removed(self):
+        interruptions = (
+            KeyboardInterrupt("INTERRUPTED_AFTER_WRITE"),
+            SystemExit(23),
+        )
+        for index, interruption in enumerate(interruptions, start=1):
+            with self.subTest(interruption=type(interruption).__name__):
+                target = self.temp_dir / f"result-{index}.json"
+                target.write_text("old-result\n", encoding="utf-8")
+                unrelated_temp = (
+                    target.parent / f".{target.name}.unrelated.tmp"
+                )
+                unrelated_temp.write_text("keep-me\n", encoding="utf-8")
+
+                with patch(
+                    "m4_orchestrator.writer.os.fsync",
+                    side_effect=interruption,
+                ):
+                    with self.assertRaises(type(interruption)) as raised:
+                        write_result_atomic(make_orchestration_result(), target)
+
+                self.assertIs(raised.exception, interruption)
+                self.assertEqual(
+                    target.read_text(encoding="utf-8"),
+                    "old-result\n",
+                )
+                self.assertEqual(
+                    sorted(target.parent.glob(f".{target.name}.*.tmp")),
+                    [unrelated_temp],
+                )
+
+    def test_ordinary_failure_raises_fresh_redacted_error_without_chain(self):
+        target = self.temp_dir / "result.json"
+        target.write_text("old-result\n", encoding="utf-8")
+        unrelated_temp = target.parent / f".{target.name}.unrelated.tmp"
+        unrelated_temp.write_text("keep-me\n", encoding="utf-8")
+        sensitive_error = OSError(
+            "SENSITIVE_WRITE_DETAIL /private/customer/result.json"
+        )
+
+        with patch(
+            "m4_orchestrator.writer.serialize_result",
+            side_effect=sensitive_error,
+        ):
+            with self.assertRaises(OutputWriteError) as raised:
+                write_result_atomic(make_orchestration_result(), target)
+
+        public_error = raised.exception
+        self.assertEqual(
+            str(public_error),
+            "orchestration result could not be written",
+        )
+        self.assertIsNone(public_error.__cause__)
+        self.assertIsNone(public_error.__context__)
+        self.assertNotIn("SENSITIVE_WRITE_DETAIL", repr(public_error))
+        self.assertNotIn("/private/customer", repr(public_error))
+        self.assertEqual(target.read_text(encoding="utf-8"), "old-result\n")
+        self.assertEqual(
+            sorted(target.parent.glob(f".{target.name}.*.tmp")),
+            [unrelated_temp],
+        )
+
 
 class M4OrchestratorCliTests(unittest.TestCase):
     def setUp(self):
@@ -289,6 +351,66 @@ class M4OrchestratorCliTests(unittest.TestCase):
                     with self.assertRaises(SystemExit) as raised:
                         main(argv)
                 self.assertEqual(raised.exception.code, 2)
+
+    def test_repeated_singleton_arguments_exit_two_before_service_or_write(self):
+        input_path = self.write_request("station-valid")
+        first_output = self.temp_dir / "first-result.json"
+        second_output = self.temp_dir / "second-result.json"
+        model_output = self.temp_dir / "model-result.json"
+        cases = (
+            (
+                "output",
+                [
+                    "--input",
+                    str(input_path),
+                    "--output",
+                    str(first_output),
+                    "--output",
+                    str(second_output),
+                    "--model-version",
+                    "model-one",
+                ],
+                (first_output, second_output),
+            ),
+            (
+                "model-version",
+                [
+                    "--input",
+                    str(input_path),
+                    "--output",
+                    str(model_output),
+                    "--model-version",
+                    "model-one",
+                    "--model-version",
+                    "model-two",
+                ],
+                (model_output,),
+            ),
+        )
+
+        for label, argv, outputs in cases:
+            with self.subTest(argument=label):
+                optimizer_constructions = []
+
+                def optimizer_factory(*args, **kwargs):
+                    optimizer_constructions.append((args, kwargs))
+                    return DeterministicOptimizer()
+
+                stdout = StringIO()
+                stderr = StringIO()
+                with patch(
+                    "m4_orchestrator.service.M4Optimizer",
+                    side_effect=optimizer_factory,
+                ):
+                    with redirect_stdout(stdout), redirect_stderr(stderr):
+                        with self.assertRaises(SystemExit) as raised:
+                            main(argv)
+
+                self.assertEqual(raised.exception.code, 2)
+                self.assertEqual(stdout.getvalue(), "")
+                self.assertEqual(optimizer_constructions, [])
+                self.assertTrue(stderr.getvalue().startswith("usage:"))
+                self.assertTrue(all(not output.exists() for output in outputs))
 
     def test_module_help_is_available_without_running_orchestration(self):
         completed = subprocess.run(
