@@ -174,7 +174,16 @@ class CustomForecastService:
     def recover(self) -> int:
         runs = self._repository.list_recoverable()
         for run in runs:
-            self._schedule(run)
+            if run.status == "running":
+                self._repository.transition(
+                    run,
+                    "failed",
+                    at=self._now(),
+                    error_code="worker_interrupted",
+                )
+        for run in runs:
+            if run.status == "queued":
+                self._schedule(run)
         return len(runs)
 
     def get(self, run_id: str) -> StoredCustomRun | None:

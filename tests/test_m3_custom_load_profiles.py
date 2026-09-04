@@ -183,13 +183,24 @@ class EligibilityTests(unittest.TestCase):
                 "WeeklyWeighted2",
                 "WeeklyRegimeAdjusted",
                 "WeeklyMedian3",
-                "AutoARIMA",
-                "MSTL",
             ),
         }
         for usable_weeks, names in expected.items():
             with self.subTest(usable_weeks=usable_weeks):
                 self.assertEqual(eligible_load_models(usable_weeks, 300), names)
+
+    def test_automatic_models_start_at_fifteen_minutes(self):
+        self.assertEqual(
+            eligible_load_models(4, 900),
+            (
+                "WeeklyNaive",
+                "WeeklyWeighted2",
+                "WeeklyRegimeAdjusted",
+                "WeeklyMedian3",
+                "AutoARIMA",
+                "MSTL",
+            ),
+        )
 
 
 class LoadMetricTests(unittest.TestCase):

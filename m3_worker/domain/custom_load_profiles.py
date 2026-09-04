@@ -53,7 +53,7 @@ def eligible_load_models(
         names.extend(("WeeklyWeighted2", "WeeklyRegimeAdjusted"))
     if usable_week_count >= 4:
         names.append("WeeklyMedian3")
-        if interval_seconds >= 300:
+        if interval_seconds >= 900:
             names.extend(("AutoARIMA", "MSTL"))
     return tuple(names)
 

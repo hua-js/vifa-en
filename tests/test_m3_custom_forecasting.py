@@ -513,12 +513,41 @@ class LoadDispatchSelectionTests(unittest.TestCase):
         mstl_type.assert_not_called()
 
     @patch("m3_worker.domain.custom_forecasting.StatsForecast")
-    def test_five_minute_automatic_models_participate_on_latest_week_holdout(
+    def test_five_minute_load_selection_never_constructs_automatic_models(
+        self, statsforecast_type
+    ):
+        champion = select_custom_champion(
+            load_dataset_with_weeks(4, interval_seconds=300),
+            make_selection_config(28, interval_seconds=300),
+        )
+
+        self.assertIn(
+            champion.model_name,
+            {
+                "WeeklyNaive",
+                "WeeklyWeighted2",
+                "WeeklyRegimeAdjusted",
+                "WeeklyMedian3",
+            },
+        )
+        self.assertEqual(
+            [score.model_name for score in champion.candidate_scores],
+            [
+                "WeeklyNaive",
+                "WeeklyWeighted2",
+                "WeeklyRegimeAdjusted",
+                "WeeklyMedian3",
+            ],
+        )
+        statsforecast_type.assert_not_called()
+
+    @patch("m3_worker.domain.custom_forecasting.StatsForecast")
+    def test_fifteen_minute_automatic_models_participate_on_latest_week_holdout(
         self, statsforecast_type
     ):
         dataset = load_dataset_with_weeks(
             4,
-            interval_seconds=300,
+            interval_seconds=900,
             week_values=[10.0, 20.0, 30.0, 100.0],
         )
         latest_week = dataset.usable_weeks[-1]
@@ -533,7 +562,7 @@ class LoadDispatchSelectionTests(unittest.TestCase):
         )
         statsforecast_type.side_effect = [autoarima_engine, mstl_engine]
 
-        config = make_selection_config(28, interval_seconds=300)
+        config = make_selection_config(28, interval_seconds=900)
         with self.assertLogs(
             "m3_worker.domain.custom_forecasting", level="INFO"
         ) as captured_logs:
@@ -595,7 +624,7 @@ class LoadDispatchSelectionTests(unittest.TestCase):
     ):
         dataset = load_dataset_with_weeks(
             4,
-            interval_seconds=300,
+            interval_seconds=900,
             week_values=[10.0, 20.0, 30.0, 100.0],
         )
         holdout_length = 7 * dataset.points_per_day
@@ -608,7 +637,7 @@ class LoadDispatchSelectionTests(unittest.TestCase):
         statsforecast_type.side_effect = [failed_autoarima, winning_mstl]
 
         champion = select_custom_champion(
-            dataset, make_selection_config(28, interval_seconds=300)
+            dataset, make_selection_config(28, interval_seconds=900)
         )
 
         self.assertEqual(champion.model_name, "MSTL")

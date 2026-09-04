@@ -272,7 +272,98 @@ class InMemoryRepository:
         return "a" * 64
 
 
+class RecoveryRepository:
+    def __init__(self, runs: list[StoredCustomRun]) -> None:
+        self.runs = runs
+        self.transitions: list[tuple[str, str, datetime, str | None]] = []
+
+    def list_recoverable(self) -> list[StoredCustomRun]:
+        return self.runs
+
+    def transition(
+        self,
+        run: StoredCustomRun,
+        status: str,
+        *,
+        at: datetime,
+        error_code: str | None = None,
+    ) -> StoredCustomRun:
+        self.transitions.append((run.run_id, status, at, error_code))
+        return replace(
+            run,
+            record=run.record.model_copy(
+                update={"status": status, "error_code": error_code}
+            ),
+            completed_at=at,
+            updated_at=at,
+        )
+
+
 class CustomForecastServiceTests(unittest.TestCase):
+    def test_recover_fails_orphaned_running_run_and_schedules_queued_run(self):
+        queued = make_run(run_id="queued-run")
+        running = make_run(run_id="running-run")
+        running = replace(
+            running,
+            record=running.record.model_copy(update={"status": "running"}),
+            started_at=NOW - timedelta(minutes=5),
+        )
+        repository = RecoveryRepository([queued, running])
+        service = CustomForecastService(
+            repository,
+            InMemorySource(make_observations()),
+            now=lambda: NOW,
+            station_ids=("ES01",),
+        )
+        self.addCleanup(service.close)
+        scheduled: list[StoredCustomRun] = []
+
+        with patch.object(service, "_schedule", side_effect=scheduled.append):
+            recovered = service.recover()
+
+        self.assertEqual(recovered, 2)
+        self.assertEqual([run.run_id for run in scheduled], ["queued-run"])
+        self.assertEqual(
+            repository.transitions,
+            [("running-run", "failed", NOW, "worker_interrupted")],
+        )
+
+    def test_recover_fails_running_runs_before_queued_scheduling_can_fail(self):
+        first_queued = make_run(run_id="first-queued-run")
+        second_queued = make_run(run_id="second-queued-run")
+        running = make_run(run_id="running-run")
+        running = replace(
+            running,
+            record=running.record.model_copy(update={"status": "running"}),
+            started_at=NOW - timedelta(minutes=5),
+        )
+        repository = RecoveryRepository([first_queued, second_queued, running])
+        service = CustomForecastService(
+            repository,
+            InMemorySource(make_observations()),
+            now=lambda: NOW,
+            station_ids=("ES01",),
+        )
+        self.addCleanup(service.close)
+        scheduled: list[str] = []
+
+        def schedule(run: StoredCustomRun) -> None:
+            scheduled.append(run.run_id)
+            if run.run_id == "second-queued-run":
+                raise RuntimeError("queue capacity unavailable")
+
+        with (
+            patch.object(service, "_schedule", side_effect=schedule),
+            self.assertRaisesRegex(RuntimeError, "queue capacity unavailable"),
+        ):
+            service.recover()
+
+        self.assertEqual(
+            repository.transitions,
+            [("running-run", "failed", NOW, "worker_interrupted")],
+        )
+        self.assertEqual(scheduled, ["first-queued-run", "second-queued-run"])
+
     def test_one_minute_run_models_soc_on_five_minutes_then_interpolates_output(self):
         """One-minute output must not select SOC models on sparse minute buckets."""
         run = make_run(
