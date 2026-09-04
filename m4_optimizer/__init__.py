@@ -14,6 +14,7 @@ from .contracts import (
     PlanPoint,
     ProfileId,
 )
+from .service import M4Optimizer
 
 __all__ = [
     "CandidateMetrics",
@@ -22,6 +23,7 @@ __all__ = [
     "CapabilitySnapshot",
     "ForecastPoint",
     "LayerResult",
+    "M4Optimizer",
     "ObjectiveLayer",
     "ObjectiveName",
     "ObjectiveProfile",
