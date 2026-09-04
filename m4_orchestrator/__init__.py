@@ -8,6 +8,7 @@ from .contracts import (
     StationOrchestrationResult,
     StationStatus,
 )
+from .loader import load_station_input
 
 __all__ = [
     "ErrorCode",
@@ -18,4 +19,5 @@ __all__ = [
     "StationInput",
     "StationOrchestrationResult",
     "StationStatus",
+    "load_station_input",
 ]
