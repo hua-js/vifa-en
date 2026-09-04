@@ -6,6 +6,7 @@ import numpy as np
 from scipy.optimize import OptimizeResult
 from scipy.sparse import csr_matrix
 
+import m4_optimizer.solver as solver_module
 from m4_optimizer.solver import MilpProblem, solve_milp
 
 
@@ -68,6 +69,42 @@ class M4OptimizerSolverTests(unittest.TestCase):
             result = solve_milp(problem, np.array([1.0]), (), 2.0, 0.0)
         self.assertEqual(result.status, "timeout")
         self.assertIsNone(result.x)
+
+    def test_success_status_with_nonzero_mip_gap_is_only_feasible(self):
+        fake = OptimizeResult(
+            status=0,
+            x=np.array([0.5]),
+            message="gap target reached",
+            mip_gap=1e-4,
+        )
+
+        with patch("m4_optimizer.solver.milp", return_value=fake):
+            result = solve_milp(
+                self.make_one_variable_problem(), np.array([1.0]), (), 2.0, 0.01
+            )
+
+        self.assertEqual(result.status, "feasible")
+        self.assertEqual(result.mip_gap, 1e-4)
+
+    def test_success_status_with_zero_or_near_zero_mip_gap_is_optimal(self):
+        threshold = solver_module.PROVEN_OPTIMAL_MIP_GAP_TOLERANCE
+        for mip_gap in (0.0, threshold / 2.0):
+            with self.subTest(mip_gap=mip_gap):
+                fake = OptimizeResult(
+                    status=0,
+                    x=np.array([0.5]),
+                    message="optimal",
+                    mip_gap=mip_gap,
+                )
+                with patch("m4_optimizer.solver.milp", return_value=fake):
+                    result = solve_milp(
+                        self.make_one_variable_problem(),
+                        np.array([1.0]),
+                        (),
+                        2.0,
+                        0.01,
+                    )
+                self.assertEqual(result.status, "optimal")
 
     def test_only_the_expected_scipy_passthrough_warning_is_suppressed(self):
         targeted = (

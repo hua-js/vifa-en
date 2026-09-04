@@ -90,8 +90,22 @@ class OptimizationRequest(StrictModel):
     def validate_cross_fields(self) -> "OptimizationRequest":
         if len(self.points) != HORIZON_POINTS:
             raise ValueError("request must contain exactly 96 points")
-        if self.plan_start_at.tzinfo is None or self.input_observed_at.tzinfo is None:
-            raise ValueError("request timestamps must include timezone")
+        timestamp_values = [
+            ("plan_start_at", self.plan_start_at),
+            ("input_observed_at", self.input_observed_at),
+            *(
+                (f"points[{index}].timestamp", point.timestamp)
+                for index, point in enumerate(self.points)
+            ),
+        ]
+        offsets = []
+        for label, value in timestamp_values:
+            offset = value.utcoffset() if value.tzinfo is not None else None
+            if offset is None:
+                raise ValueError(f"{label} must have a valid UTC offset")
+            offsets.append(offset)
+        if any(offset != offsets[0] for offset in offsets[1:]):
+            raise ValueError("request timestamps must use the same UTC offset")
         expected = [
             self.plan_start_at + timedelta(minutes=INTERVAL_MINUTES * index)
             for index in range(HORIZON_POINTS)
@@ -103,6 +117,13 @@ class OptimizationRequest(StrictModel):
         age = (self.plan_start_at - self.input_observed_at).total_seconds()
         if age > self.max_input_age_seconds:
             raise ValueError("EMS capability snapshot is stale")
+        if not self.source_versions or any(
+            not key.strip() or not value.strip()
+            for key, value in self.source_versions.items()
+        ):
+            raise ValueError(
+                "source_versions must be non-empty with non-blank keys and values"
+            )
         profile_ids = [profile.profile_id for profile in self.profiles]
         if len(profile_ids) != 3 or set(profile_ids) != {"balanced", "cost", "pv"}:
             raise ValueError("profiles must contain balanced, cost and pv exactly once")
@@ -179,6 +200,7 @@ class LayerResult(StrictModel):
 class CandidateResult(StrictModel):
     profile_id: ProfileId
     profile_version: str
+    plan_version: str
     status: CandidateStatus
     solver_message: str
     solve_seconds: NonNegativeFloat
@@ -186,6 +208,19 @@ class CandidateResult(StrictModel):
     metrics: CandidateMetrics | None
     layers: list[LayerResult]
     risk_codes: list[str]
+    risk_messages: list[str]
+
+    @model_validator(mode="after")
+    def validate_audit_fields(self) -> "CandidateResult":
+        if not self.plan_version.strip():
+            raise ValueError("plan_version must be non-blank")
+        if len(self.risk_codes) != len(self.risk_messages):
+            raise ValueError("risk_codes and risk_messages must have the same length")
+        if any(not code.strip() for code in self.risk_codes):
+            raise ValueError("risk_codes must not contain blank values")
+        if any(not message.strip() for message in self.risk_messages):
+            raise ValueError("risk_messages must not contain blank values")
+        return self
 
 
 class OptimizationResult(StrictModel):

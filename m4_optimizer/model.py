@@ -193,6 +193,10 @@ def build_model(request: OptimizationRequest) -> BuiltModel:
             upper=grid_export_big_m,
         )
         rows.add(
+            {grid_export_t: 1.0, pv_unabsorbed_t: 1.0},
+            upper=point.pv_forecast_kw,
+        )
+        rows.add(
             {
                 soc_low_deviation_t: 1.0,
                 energy_next: 100.0 / capacity_kwh,

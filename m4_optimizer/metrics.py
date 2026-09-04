@@ -118,11 +118,23 @@ def calculate_metrics(
     pv_unabsorbed_energy = sum(
         point.pv_unabsorbed_kw * INTERVAL_HOURS for point in plan
     )
-    pv_self_use = sum(
-        (source.pv_forecast_kw - point.grid_export_kw - point.pv_unabsorbed_kw)
-        * INTERVAL_HOURS
-        for point, source in zip(plan, request.points, strict=True)
-    )
+    pv_self_use = 0.0
+    for index, (point, source) in enumerate(zip(plan, request.points, strict=True)):
+        self_use_kw = (
+            source.pv_forecast_kw
+            - point.grid_export_kw
+            - point.pv_unabsorbed_kw
+        )
+        if self_use_kw < -NUMERIC_TOLERANCE:
+            raise ValueError(
+                f"point {index}: PV-attributed flows exceed available PV"
+            )
+        pv_self_use += _normalize_boundary(
+            self_use_kw,
+            0.0,
+            source.pv_forecast_kw,
+            NUMERIC_TOLERANCE,
+        ) * INTERVAL_HOURS
     total_pv_energy = sum(
         source.pv_forecast_kw * INTERVAL_HOURS for source in request.points
     )

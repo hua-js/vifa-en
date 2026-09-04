@@ -57,6 +57,13 @@ def validate_candidate(
             _raise(label, "grid export limit")
         if point.pv_unabsorbed_kw - source.pv_forecast_kw > tolerance:
             _raise(label, "PV availability")
+        if (
+            point.grid_export_kw
+            + point.pv_unabsorbed_kw
+            - source.pv_forecast_kw
+            > tolerance
+        ):
+            _raise(label, "PV attribution boundary")
 
         balance_error = (
             source.pv_forecast_kw

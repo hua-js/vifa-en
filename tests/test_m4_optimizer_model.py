@@ -4,7 +4,11 @@ import numpy as np
 
 from m4_optimizer.model import build_model
 from m4_optimizer.solver import solve_milp
-from tests.m4_optimizer_test_support import make_request
+from tests.m4_optimizer_test_support import (
+    make_battery_load_with_pv_export_request,
+    make_request,
+    make_zero_pv_export_request,
+)
 
 
 class M4OptimizerModelTests(unittest.TestCase):
@@ -162,6 +166,40 @@ class M4OptimizerModelTests(unittest.TestCase):
         np.testing.assert_allclose(x[built.index.demand_exceed], 30.0, atol=1e-7)
         built, x = self.solve(request, objective_name="demand_peak")
         self.assertAlmostEqual(x[built.index.peak_demand_exceed], 30.0, places=7)
+
+    def test_export_and_unabsorbed_are_jointly_bounded_by_available_pv(self):
+        request = make_zero_pv_export_request(
+            buy_price_per_kwh=0.1,
+            sell_price_per_kwh=10.0,
+        )
+        built = build_model(request)
+        result = solve_milp(
+            built.problem,
+            built.objectives["energy_cost"],
+            locks=(),
+            time_limit_seconds=2.0,
+            mip_rel_gap=0.0,
+        )
+        self.assertIn(result.status, {"optimal", "feasible"})
+        self.assertIsNotNone(result.x)
+        x = result.x
+
+        for t, point in enumerate(request.points):
+            exported = x[built.index.grid_export.start + t]
+            unabsorbed = x[built.index.pv_unabsorbed.start + t]
+            self.assertLessEqual(exported + unabsorbed, point.pv_forecast_kw + 1e-7)
+
+    def test_battery_can_serve_load_while_pv_is_exported(self):
+        request = make_battery_load_with_pv_export_request()
+        built, x = self.solve(request, objective_name="energy_cost")
+
+        self.assertGreater(x[built.index.discharge.start + 40], 1e-7)
+        self.assertGreater(x[built.index.grid_export.start + 40], 1e-7)
+        self.assertLessEqual(
+            x[built.index.grid_export.start + 40]
+            + x[built.index.pv_unabsorbed.start + 40],
+            request.points[40].pv_forecast_kw + 1e-7,
+        )
 
 
 if __name__ == "__main__":

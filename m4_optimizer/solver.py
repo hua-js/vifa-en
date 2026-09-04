@@ -12,6 +12,7 @@ from m4_optimizer.contracts import CandidateStatus
 
 FloatArray = NDArray[np.float64]
 MIP_FEASIBILITY_TOLERANCE = 1e-9
+PROVEN_OPTIMAL_MIP_GAP_TOLERANCE = 1e-9
 SCIPY_MIP_FEASIBILITY_PASSTHROUGH_WARNING = (
     "Unrecognized options detected: {'mip_feasibility_tolerance'}. "
     "These will be passed to HiGHS verbatim."
@@ -93,8 +94,18 @@ def solve_milp(
 
     raw_x = result.x
     x = raw_x if raw_x is not None and np.isfinite(raw_x).all() else None
-    if result.status == 0:
-        status: CandidateStatus = "optimal"
+    raw_mip_gap = getattr(result, "mip_gap", None)
+    mip_gap = float(raw_mip_gap) if raw_mip_gap is not None else None
+    proves_optimality = mip_gap is None or (
+        np.isfinite(mip_gap)
+        and abs(mip_gap) <= PROVEN_OPTIMAL_MIP_GAP_TOLERANCE
+    )
+    if result.status == 0 and x is None:
+        status: CandidateStatus = "error"
+    elif result.status == 0 and proves_optimality:
+        status = "optimal"
+    elif result.status == 0:
+        status = "feasible"
     elif result.status == 1 and x is not None:
         status = "feasible"
     elif result.status == 1:
@@ -105,9 +116,6 @@ def solve_milp(
         status = "error"
 
     objective_value = float(np.dot(objective, x)) if x is not None else None
-    mip_gap = getattr(result, "mip_gap", None)
-    if mip_gap is not None:
-        mip_gap = float(mip_gap)
     return RawSolveResult(
         status=status,
         x=x,

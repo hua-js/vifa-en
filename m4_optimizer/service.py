@@ -11,11 +11,21 @@ from m4_optimizer.profiles import ordered_profiles
 from m4_optimizer.validation import validate_candidate
 
 
+RISK_MESSAGES = {
+    "PV_UNABSORBED": (
+        "存在未吸收光伏余量；该值仅用于风险提示，不是光伏限发指令。"
+    ),
+    "CANDIDATE_PROCESSING_ERROR": (
+        "候选在计划解码、指标复算或独立验证阶段失败，不能作为可用计划。"
+    ),
+}
+
+
 class M4Optimizer:
     """Build and solve all request-defined candidate profiles for one station."""
 
     def __init__(self, *, model_version: str) -> None:
-        if not model_version:
+        if not model_version.strip():
             raise ValueError("model_version is required")
         self.model_version = model_version
 
@@ -26,42 +36,75 @@ class M4Optimizer:
         candidates: list[CandidateResult] = []
 
         for profile in ordered_profiles(request):
+            plan_version = self._plan_version(
+                request,
+                profile.profile_id,
+                profile.profile_version,
+            )
             solved = solve_profile(
                 built,
                 profile,
                 request.solver_time_limit_seconds,
                 request.solver_mip_rel_gap,
             )
-            if solved.x is None:
+            stage = "candidate_result"
+            try:
+                if solved.x is None:
+                    candidate = CandidateResult(
+                        profile_id=profile.profile_id,
+                        profile_version=profile.profile_version,
+                        plan_version=plan_version,
+                        status=solved.status,
+                        solver_message=solved.message,
+                        solve_seconds=solved.solve_seconds,
+                        plan=[],
+                        metrics=None,
+                        layers=list(solved.layers),
+                        risk_codes=[],
+                        risk_messages=[],
+                    )
+                else:
+                    stage = "materialize_plan"
+                    plan = materialize_plan(request, built, solved.x)
+                    stage = "calculate_metrics"
+                    metrics = calculate_metrics(request, plan)
+                    risk_codes = []
+                    if metrics.pv_unabsorbed_energy_kwh > 1e-6:
+                        risk_codes.append("PV_UNABSORBED")
+                    stage = "candidate_result"
+                    candidate = CandidateResult(
+                        profile_id=profile.profile_id,
+                        profile_version=profile.profile_version,
+                        plan_version=plan_version,
+                        status=solved.status,
+                        solver_message=solved.message,
+                        solve_seconds=solved.solve_seconds,
+                        plan=plan,
+                        metrics=metrics,
+                        layers=list(solved.layers),
+                        risk_codes=risk_codes,
+                        risk_messages=[RISK_MESSAGES[code] for code in risk_codes],
+                    )
+                stage = "validate_candidate"
+                validate_candidate(request, candidate)
+            except ValueError as exc:
+                error_message = (
+                    f"{solved.message}; {stage} failed: "
+                    f"{type(exc).__name__}: {exc}"
+                )
                 candidate = CandidateResult(
                     profile_id=profile.profile_id,
                     profile_version=profile.profile_version,
-                    status=solved.status,
-                    solver_message=solved.message,
+                    plan_version=plan_version,
+                    status="error",
+                    solver_message=error_message,
                     solve_seconds=solved.solve_seconds,
                     plan=[],
                     metrics=None,
                     layers=list(solved.layers),
-                    risk_codes=[],
+                    risk_codes=["CANDIDATE_PROCESSING_ERROR"],
+                    risk_messages=[RISK_MESSAGES["CANDIDATE_PROCESSING_ERROR"]],
                 )
-            else:
-                plan = materialize_plan(request, built, solved.x)
-                metrics = calculate_metrics(request, plan)
-                risk_codes = []
-                if metrics.pv_unabsorbed_energy_kwh > 1e-6:
-                    risk_codes.append("PV_UNABSORBED")
-                candidate = CandidateResult(
-                    profile_id=profile.profile_id,
-                    profile_version=profile.profile_version,
-                    status=solved.status,
-                    solver_message=solved.message,
-                    solve_seconds=solved.solve_seconds,
-                    plan=plan,
-                    metrics=metrics,
-                    layers=list(solved.layers),
-                    risk_codes=risk_codes,
-                )
-            validate_candidate(request, candidate)
             candidates.append(candidate)
 
         return OptimizationResult(
@@ -76,4 +119,15 @@ class M4Optimizer:
             solver_version=version("scipy"),
             source_versions=request.source_versions,
             candidates=candidates,
+        )
+
+    def _plan_version(
+        self,
+        request: OptimizationRequest,
+        profile_id: str,
+        profile_version: str,
+    ) -> str:
+        return (
+            f"{request.request_id}/{self.model_version}/"
+            f"{profile_id}/{profile_version}"
         )

@@ -48,6 +48,18 @@ def solve_profile(
     for layer in profile.objective_order:
         remaining_seconds = time_limit_seconds - (monotonic() - started)
         if remaining_seconds <= 0:
+            if incumbent is not None:
+                return ProfileSolveResult(
+                    status="feasible",
+                    x=incumbent,
+                    layers=tuple(layer_results),
+                    message=(
+                        "partial lexicographic result: total time limit exhausted "
+                        f"after {len(layer_results)} of "
+                        f"{len(profile.objective_order)} layers; returning last incumbent"
+                    ),
+                    solve_seconds=monotonic() - started,
+                )
             return ProfileSolveResult(
                 status="timeout",
                 x=None,
@@ -65,11 +77,19 @@ def solve_profile(
             mip_rel_gap,
         )
         final_message = raw.message
-        if (
-            raw.status not in {"optimal", "feasible"}
-            or raw.x is None
-            or not np.isfinite(raw.x).all()
-        ):
+        if raw.status == "timeout" and raw.x is None and incumbent is not None:
+            return ProfileSolveResult(
+                status="feasible",
+                x=incumbent,
+                layers=tuple(layer_results),
+                message=(
+                    "partial lexicographic result: "
+                    f"{raw.message}; returning last incumbent after "
+                    f"{len(layer_results)} of {len(profile.objective_order)} layers"
+                ),
+                solve_seconds=monotonic() - started,
+            )
+        if raw.status not in {"optimal", "feasible"}:
             return ProfileSolveResult(
                 status=raw.status,
                 x=None,
@@ -77,8 +97,16 @@ def solve_profile(
                 message=final_message,
                 solve_seconds=monotonic() - started,
             )
+        if raw.x is None or not np.isfinite(raw.x).all():
+            return ProfileSolveResult(
+                status="error",
+                x=None,
+                layers=tuple(layer_results),
+                message=f"{raw.message}; solver returned no finite incumbent",
+                solve_seconds=monotonic() - started,
+            )
 
-        incumbent = raw.x
+        incumbent = raw.x.copy()
         if raw.status == "feasible":
             used_feasible_incumbent = True
 

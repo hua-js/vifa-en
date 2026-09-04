@@ -61,6 +61,42 @@ class M4OptimizerValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(ResultValidationError, "import and export"):
             validate_candidate(request, tampered)
 
+    def test_validator_rejects_export_plus_unabsorbed_above_available_pv(self):
+        base = make_request()
+        request = make_request(
+            constraints=base.constraints.model_copy(
+                update={"grid_export_enabled": True, "grid_export_limit_kw": 20.0}
+            )
+        )
+        candidate = make_candidate_from_optimizer(request)
+        payload = candidate.model_dump()
+        payload["plan"][0].update(
+            {
+                "grid_import_kw": 0.0,
+                "grid_export_kw": 15.0,
+                "pv_unabsorbed_kw": 10.0,
+            }
+        )
+        tampered = type(candidate).model_validate(payload)
+
+        with self.assertRaisesRegex(ResultValidationError, "PV attribution"):
+            validate_candidate(request, tampered)
+
+    def test_metrics_reject_export_plus_unabsorbed_above_available_pv(self):
+        request = make_request()
+        candidate = make_candidate_from_optimizer(request)
+        payload = candidate.model_dump()
+        payload["plan"][0].update(
+            {
+                "grid_export_kw": 15.0,
+                "pv_unabsorbed_kw": 10.0,
+            }
+        )
+        tampered = type(candidate).model_validate(payload)
+
+        with self.assertRaisesRegex(ValueError, "PV-attributed flows"):
+            calculate_metrics(request, tampered.plan)
+
     def test_validator_rejects_tampered_metrics(self):
         request = make_request()
         candidate = make_candidate_from_optimizer(request)

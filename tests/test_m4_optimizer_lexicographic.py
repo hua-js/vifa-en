@@ -102,6 +102,120 @@ class M4OptimizerLexicographicTests(unittest.TestCase):
         self.assertIsNone(result.x)
         solve.assert_called_once()
 
+    def test_feasible_layer_keeps_final_status_conservative(self):
+        built = self.make_two_variable_model()
+        profile = self.make_two_layer_profile()
+        first = self.raw_result("feasible", np.array([0.0, 10.0]), "gap reached")
+        second = self.raw_result("optimal", np.array([0.0, 10.0]), "optimal")
+
+        with patch(
+            "m4_optimizer.lexicographic.solve_milp", side_effect=[first, second]
+        ):
+            result = solve_profile(built, profile, 2.0, 0.01)
+
+        self.assertEqual(result.status, "feasible")
+        np.testing.assert_allclose(result.x, second.x)
+        self.assertEqual(len(result.layers), 2)
+
+    def test_total_time_exhaustion_between_layers_returns_last_incumbent(self):
+        built = self.make_two_variable_model()
+        profile = self.make_two_layer_profile()
+        first = self.raw_result("optimal", np.array([0.0, 10.0]), "optimal")
+
+        with (
+            patch("m4_optimizer.lexicographic.solve_milp", return_value=first) as solve,
+            patch(
+                "m4_optimizer.lexicographic.monotonic",
+                side_effect=[0.0, 0.0, 2.0, 2.0],
+            ),
+        ):
+            result = solve_profile(built, profile, 1.0, 0.0)
+
+        self.assertEqual(result.status, "feasible")
+        np.testing.assert_allclose(result.x, first.x)
+        self.assertEqual(len(result.layers), 1)
+        self.assertIn("partial", result.message)
+        self.assertIn("time limit", result.message)
+        solve.assert_called_once()
+
+    def test_later_timeout_without_x_returns_last_incumbent(self):
+        built = self.make_two_variable_model()
+        profile = self.make_two_layer_profile()
+        first = self.raw_result("optimal", np.array([0.0, 10.0]), "optimal")
+        timeout = self.raw_result("timeout", None, "secondary time limit")
+
+        with patch(
+            "m4_optimizer.lexicographic.solve_milp", side_effect=[first, timeout]
+        ):
+            result = solve_profile(built, profile, 2.0, 0.0)
+
+        self.assertEqual(result.status, "feasible")
+        np.testing.assert_allclose(result.x, first.x)
+        self.assertEqual(len(result.layers), 1)
+        self.assertIn("partial", result.message)
+        self.assertIn("secondary time limit", result.message)
+
+    def test_later_error_or_infeasible_is_not_disguised_as_feasible(self):
+        built = self.make_two_variable_model()
+        profile = self.make_two_layer_profile()
+        first = self.raw_result("optimal", np.array([0.0, 10.0]), "optimal")
+
+        for status in ("error", "infeasible"):
+            with self.subTest(status=status):
+                failed = self.raw_result(status, None, f"secondary {status}")
+                with patch(
+                    "m4_optimizer.lexicographic.solve_milp",
+                    side_effect=[first, failed],
+                ):
+                    result = solve_profile(built, profile, 2.0, 0.0)
+                self.assertEqual(result.status, status)
+                self.assertIsNone(result.x)
+                self.assertEqual(len(result.layers), 1)
+                self.assertEqual(result.message, f"secondary {status}")
+
+    def test_first_layer_timeout_without_incumbent_returns_no_plan(self):
+        timeout = self.raw_result("timeout", None, "first layer time limit")
+        with patch("m4_optimizer.lexicographic.solve_milp", return_value=timeout):
+            result = solve_profile(
+                self.make_two_variable_model(),
+                self.make_two_layer_profile(),
+                2.0,
+                0.0,
+            )
+
+        self.assertEqual(result.status, "timeout")
+        self.assertIsNone(result.x)
+        self.assertEqual(result.layers, ())
+
+    def make_two_layer_profile(self):
+        return ObjectiveProfile(
+            profile_id="balanced",
+            profile_version="test-v1",
+            objective_order=[
+                ObjectiveLayer(
+                    name="primary",
+                    terms={"demand_peak": 1.0},
+                    absolute_tolerance=0.0,
+                    relative_tolerance=0.0,
+                ),
+                ObjectiveLayer(
+                    name="secondary",
+                    terms={"energy_cost": 1.0},
+                    absolute_tolerance=0.0,
+                    relative_tolerance=0.0,
+                ),
+            ],
+        )
+
+    def raw_result(self, status, x, message):
+        return RawSolveResult(
+            status=status,
+            x=x,
+            objective_value=None if x is None else 0.0,
+            message=message,
+            mip_gap=None if x is None else 0.0,
+        )
+
     def make_two_variable_model(self):
         empty = slice(0, 0)
         index = VariableIndex(

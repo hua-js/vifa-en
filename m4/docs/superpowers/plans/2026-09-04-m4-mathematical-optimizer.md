@@ -21,6 +21,7 @@
 - 优化器内部不填补缺失预测，不访问数据库、M3、AI 或 EMS。
 - 输出功率始终为非负值，使用 `mode=charge|discharge|idle` 表示方向。
 - `expected_soc_pct` 只表示预计轨迹，不是 EMS 的直接 SOC 指令。
+- `grid_export_kw` 与 `pv_unabsorbed_kw` 是 PV 归因流，二者逐点之和不得超过当点 PV；该边界不禁止电池服务本地负荷时同时外送 PV。
 - 首版不实现人工调整、EMU 分配、真实 AI、真实 EMS 或静态页面改造。
 - SciPy 必须作为 `pyproject.toml` 的显式固定依赖，不能依赖传递安装。
 - 实现过程使用 TDD；每个任务先看到目标测试失败，再写最小实现。
@@ -55,6 +56,18 @@ tests/
 ```
 
 现有 `m4/` 静态 HTML、M3 代码、EMS 配置和数据库代码不在本计划修改范围内。
+
+## 最终审查加固（2026-09-04）
+
+本节是阶段 A 最终审查后的实施口径；若与下方最初任务骨架冲突，以本节为准：
+
+- 请求头和 96 点必须都有可计算的 `utcoffset()`，且整个请求采用同一固定 UTC offset；跨 DST offset 跳变的窗口先由调用方转换为 UTC/固定 offset。`source_versions` 映射、键和值均不得为空或纯空白。
+- 模型与独立验证器都实施 `grid_export_kw[t] + pv_unabsorbed_kw[t] <= pv_forecast_kw[t]`；指标函数在构造非负光伏自用指标前先复验该边界，不以裁剪掩盖违例。
+- `status=0` 仅在 MIP gap 未报告，或为有限值且 `abs(mip_gap) <= 1e-9` 时映射为 `optimal`；超过阈值且有有限 `x` 时映射为 `feasible`。
+- 已有 incumbent 后发生层间总时限耗尽，或后续层 timeout 且无 `x`，保留 incumbent 与已完成 `layers`，返回 `feasible` 并写明部分完成；从未取得 incumbent 才返回无计划 `timeout`。后续 `error`/`infeasible` 不得伪装成可行。
+- `CandidateResult` 增加确定性的非空 `plan_version`，以及和 `risk_codes` 等长对应的 `risk_messages`；成功和失败候选都使用同一版本规则。阶段 A 不公开逐层 gap，最终候选状态保守汇总所有层的证明状态。
+- `materialize_plan`、`calculate_metrics` 或 `validate_candidate` 抛出的候选级 `ValueError`/`ResultValidationError` 转换为该 profile 的 `error` 空候选，并保留求解消息、已完成层和审计风险；其他 profile 继续。未预期的 `TypeError`、`RuntimeError` 等程序错误不被笼统吞掉。
+- 最终回归覆盖零 PV、异常购售价差、允许反送正向场景、非法容量/效率、时间与来源版本、公开失败状态、相同输入确定性及非真空购售互斥。
 
 ---
 
@@ -251,8 +264,19 @@ class OptimizationRequest(StrictModel):
     def validate_cross_fields(self) -> "OptimizationRequest":
         if len(self.points) != HORIZON_POINTS:
             raise ValueError("request must contain exactly 96 points")
-        if self.plan_start_at.tzinfo is None or self.input_observed_at.tzinfo is None:
-            raise ValueError("request timestamps must include timezone")
+        timestamp_values = [
+            self.plan_start_at,
+            self.input_observed_at,
+            *(point.timestamp for point in self.points),
+        ]
+        offsets = [
+            value.utcoffset() if value.tzinfo is not None else None
+            for value in timestamp_values
+        ]
+        if any(offset is None for offset in offsets):
+            raise ValueError("all request timestamps need a valid UTC offset")
+        if any(offset != offsets[0] for offset in offsets[1:]):
+            raise ValueError("request timestamps must use the same UTC offset")
         expected = [
             self.plan_start_at + timedelta(minutes=INTERVAL_MINUTES * index)
             for index in range(HORIZON_POINTS)
@@ -264,6 +288,11 @@ class OptimizationRequest(StrictModel):
         age = (self.plan_start_at - self.input_observed_at).total_seconds()
         if age > self.max_input_age_seconds:
             raise ValueError("EMS capability snapshot is stale")
+        if not self.source_versions or any(
+            not key.strip() or not value.strip()
+            for key, value in self.source_versions.items()
+        ):
+            raise ValueError("source_versions keys and values must be non-blank")
         profile_ids = [profile.profile_id for profile in self.profiles]
         if len(profile_ids) != 3 or set(profile_ids) != {"balanced", "cost", "pv"}:
             raise ValueError("profiles must contain balanced, cost and pv exactly once")
@@ -341,6 +370,7 @@ class LayerResult(StrictModel):
 class CandidateResult(StrictModel):
     profile_id: ProfileId
     profile_version: str
+    plan_version: str
     status: CandidateStatus
     solver_message: str
     solve_seconds: NonNegativeFloat
@@ -348,6 +378,7 @@ class CandidateResult(StrictModel):
     metrics: CandidateMetrics | None
     layers: list[LayerResult]
     risk_codes: list[str]
+    risk_messages: list[str]
 
 
 class OptimizationResult(StrictModel):
@@ -363,6 +394,8 @@ class OptimizationResult(StrictModel):
     source_versions: dict[str, str]
     candidates: list[CandidateResult]
 ```
+
+`CandidateResult` 的交叉校验必须拒绝空白 `plan_version`、空白风险代码/说明，以及长度不一致的 `risk_codes`/`risk_messages`。`OptimizationRequest` 的交叉校验同时执行固定 UTC offset 与非空 `source_versions` 规则。
 
 在 `tests/m4_optimizer_test_support.py` 中用固定 `+08:00` 时间、平坦负荷/光伏和三份完整目标配置构建 `make_request(**overrides)`。工厂必须创建新的列表和模型，不能在测试之间共享可变对象。测试目标配置由以下函数创建：
 
@@ -598,11 +631,18 @@ result = milp(
 )
 ```
 
-按 SciPy 状态和是否存在有限 `x` 转换：
+按 SciPy 状态、是否存在有限 `x` 和 `PROVEN_OPTIMAL_MIP_GAP_TOLERANCE = 1e-9` 转换：
 
 ```python
-if result.status == 0:
+if result.status == 0 and x is None:
+    status = "error"
+elif result.status == 0 and (
+    mip_gap is None
+    or (np.isfinite(mip_gap) and abs(mip_gap) <= 1e-9)
+):
     status = "optimal"
+elif result.status == 0:
+    status = "feasible"
 elif result.status == 1 and result.x is not None and np.isfinite(result.x).all():
     status = "feasible"
 elif result.status == 1:
@@ -907,6 +947,12 @@ rows.add(
     upper=grid_export_big_m,
 )
 
+# Both public flows are PV-attributed, jointly bounded by point PV.
+rows.add(
+    {grid_export_t: 1.0, pv_unabsorbed_t: 1.0},
+    upper=point.pv_forecast_kw,
+)
+
 # Preferred SOC deviation.
 rows.add(
     {
@@ -929,7 +975,7 @@ rows.add(
 - `energy[0]` 上下界都等于 EMS 初始能量；
 - 所有 `energy` 状态受绝对 SOC 上下限限制；
 - `energy[96]` 再与初始 SOC ±终端容差取交集；
-- `pv_unabsorbed[t] <= pv_forecast_kw[t]`；
+- `grid_export[t] + pv_unabsorbed[t] <= pv_forecast_kw[t]`（单变量上界可保留为冗余防护）；
 - 禁止反送时 `grid_export` 上界为 0；允许反送时上界为 `grid_export_limit_kw`；
 - 有物理进线限额时使用该值作为 `grid_import` 硬上界；否则使用 `max(load_forecast_kw) + effective_max_charge_kw` 作为有限 Big-M；
 - `grid_export_big_m` 使用允许的反送上限，禁止反送时取 0。
@@ -1101,7 +1147,7 @@ locks.append(
 )
 ```
 
-每次调用求解器都使用总时限扣除 `monotonic()` 已消耗时间后的剩余秒数。任一层没有可行 `x` 时立即返回该状态；任一层只达到 `feasible` 时继续后序求解，但最终状态最多为 `feasible`，不能标记为 `optimal`。
+每次调用求解器都使用总时限扣除 `monotonic()` 已消耗时间后的剩余秒数。任一层只达到 `feasible` 时可继续后序求解，但最终状态最多为 `feasible`。若已有 incumbent 后在层间耗尽时限，或下一层 timeout 且无新 `x`，返回最后 incumbent、已完成层及明确的部分完成消息；若从未取得 incumbent 才返回 `timeout/x=None`。后续 `error`/`infeasible` 保持失败状态与 `x=None`，不复用旧解掩盖错误。
 
 - [ ] **Step 4: 运行分层测试并确认通过**
 
@@ -1268,7 +1314,24 @@ demand_exceed_energy = sum(point.demand_exceed_kw * 0.25 for point in plan)
 grid_export_energy = sum(point.grid_export_kw * 0.25 for point in plan)
 pv_unabsorbed_energy = sum(point.pv_unabsorbed_kw * 0.25 for point in plan)
 total_pv_energy = sum(source.pv_forecast_kw * 0.25 for source in request.points)
-pv_self_use = total_pv_energy - grid_export_energy - pv_unabsorbed_energy
+pv_self_use = 0.0
+for index, (point, source) in enumerate(zip(plan, request.points, strict=True)):
+    self_use_kw = (
+        source.pv_forecast_kw
+        - point.grid_export_kw
+        - point.pv_unabsorbed_kw
+    )
+    if self_use_kw < -NUMERIC_TOLERANCE:
+        raise ValueError(
+            f"point {index}: PV-attributed flows exceed available PV"
+        )
+    pv_self_use += _normalize_boundary(
+        self_use_kw,
+        0.0,
+        source.pv_forecast_kw,
+        NUMERIC_TOLERANCE,
+    ) * 0.25
+pv_self_use_rate = 1.0 if total_pv_energy == 0 else pv_self_use / total_pv_energy
 preferred_soc_deviation = sum(
     (
         max(request.constraints.preferred_soc_min_pct - point.expected_soc_pct, 0.0)
@@ -1279,7 +1342,7 @@ preferred_soc_deviation = sum(
 )
 ```
 
-光伏自用量为 `sum((pv - export - unabsorbed) * 0.25)`，总光伏为 0 时自用率定义为 1.0；否则自用率为自用量除以总光伏，并仅在数值容差内裁剪到 `[0,1]`。
+光伏自用量为 `sum((pv - export - unabsorbed) * 0.25)`。计算前逐点拒绝 `export + unabsorbed > pv + tolerance`，不能靠裁剪掩盖来源违例；仅对数值容差内的零边界做归一化。总光伏为 0 时自用率定义为 1.0。
 
 - [ ] **Step 4: 实现独立候选验证器**
 
@@ -1304,7 +1367,7 @@ expected_energy = (
 )
 ```
 
-若功率平衡误差、SOC 状态误差、SOC/功率/进线硬边界、终端 SOC、设备可用性、反送配置、需量超限量或购电反送互斥超出 `tolerance`，抛出带时间点和规则名的 `ResultValidationError`。最后比较 `calculate_metrics()` 与候选指标，确保所有指标可复算。
+若功率平衡误差、SOC 状态误差、SOC/功率/进线硬边界、终端 SOC、设备可用性、反送配置、`grid_export + pv_unabsorbed <= pv`、需量超限量或购电反送互斥超出 `tolerance`，抛出带时间点和规则名的 `ResultValidationError`。最后比较 `calculate_metrics()` 与候选指标，确保所有指标可复算。
 
 - [ ] **Step 5: 运行验证测试并确认通过**
 
@@ -1409,9 +1472,15 @@ from m4_optimizer.profiles import ordered_profiles
 from m4_optimizer.validation import validate_candidate
 
 
+RISK_MESSAGES = {
+    "PV_UNABSORBED": "存在未吸收光伏余量；该值仅用于风险提示，不是光伏限发指令。",
+    "CANDIDATE_PROCESSING_ERROR": "候选解码、指标复算或复验失败，不能作为可用计划。",
+}
+
+
 class M4Optimizer:
     def __init__(self, *, model_version: str) -> None:
-        if not model_version:
+        if not model_version.strip():
             raise ValueError("model_version is required")
         self.model_version = model_version
 
@@ -1420,42 +1489,75 @@ class M4Optimizer:
         built = build_model(request)
         candidates: list[CandidateResult] = []
         for profile in ordered_profiles(request):
+            plan_version = (
+                f"{request.request_id}/{self.model_version}/"
+                f"{profile.profile_id}/{profile.profile_version}"
+            )
             solved = solve_profile(
                 built,
                 profile,
                 request.solver_time_limit_seconds,
                 request.solver_mip_rel_gap,
             )
-            if solved.x is None:
+            stage = "candidate_result"
+            try:
+                if solved.x is None:
+                    candidate = CandidateResult(
+                        profile_id=profile.profile_id,
+                        profile_version=profile.profile_version,
+                        plan_version=plan_version,
+                        status=solved.status,
+                        solver_message=solved.message,
+                        solve_seconds=solved.solve_seconds,
+                        plan=[],
+                        metrics=None,
+                        layers=list(solved.layers),
+                        risk_codes=[],
+                        risk_messages=[],
+                    )
+                else:
+                    stage = "materialize_plan"
+                    plan = materialize_plan(request, built, solved.x)
+                    stage = "calculate_metrics"
+                    metrics = calculate_metrics(request, plan)
+                    risk_codes = (
+                        ["PV_UNABSORBED"]
+                        if metrics.pv_unabsorbed_energy_kwh > 1e-6
+                        else []
+                    )
+                    stage = "candidate_result"
+                    candidate = CandidateResult(
+                        profile_id=profile.profile_id,
+                        profile_version=profile.profile_version,
+                        plan_version=plan_version,
+                        status=solved.status,
+                        solver_message=solved.message,
+                        solve_seconds=solved.solve_seconds,
+                        plan=plan,
+                        metrics=metrics,
+                        layers=list(solved.layers),
+                        risk_codes=risk_codes,
+                        risk_messages=[RISK_MESSAGES[code] for code in risk_codes],
+                    )
+                stage = "validate_candidate"
+                validate_candidate(request, candidate)
+            except ValueError as exc:
                 candidate = CandidateResult(
                     profile_id=profile.profile_id,
                     profile_version=profile.profile_version,
-                    status=solved.status,
-                    solver_message=solved.message,
+                    plan_version=plan_version,
+                    status="error",
+                    solver_message=(
+                        f"{solved.message}; {stage} failed: "
+                        f"{type(exc).__name__}: {exc}"
+                    ),
                     solve_seconds=solved.solve_seconds,
                     plan=[],
                     metrics=None,
                     layers=list(solved.layers),
-                    risk_codes=[],
+                    risk_codes=["CANDIDATE_PROCESSING_ERROR"],
+                    risk_messages=[RISK_MESSAGES["CANDIDATE_PROCESSING_ERROR"]],
                 )
-            else:
-                plan = materialize_plan(request, built, solved.x)
-                metrics = calculate_metrics(request, plan)
-                risks = []
-                if metrics.pv_unabsorbed_energy_kwh > 1e-6:
-                    risks.append("PV_UNABSORBED")
-                candidate = CandidateResult(
-                    profile_id=profile.profile_id,
-                    profile_version=profile.profile_version,
-                    status=solved.status,
-                    solver_message=solved.message,
-                    solve_seconds=solved.solve_seconds,
-                    plan=plan,
-                    metrics=metrics,
-                    layers=list(solved.layers),
-                    risk_codes=risks,
-                )
-            validate_candidate(request, candidate)
             candidates.append(candidate)
         return OptimizationResult(
             request_id=request.request_id,
@@ -1472,7 +1574,7 @@ class M4Optimizer:
         )
 ```
 
-不要在此服务中加入 AI、EMS、数据库、日志持久化或人工计划逻辑。求解状态是预期结果，不用异常模拟；只有输入/配置错误和程序错误可以抛出异常。
+不要在此服务中加入 AI、EMS、数据库、日志持久化或人工计划逻辑。每个候选先生成由 `request_id/model_version/profile_id/profile_version` 组成的确定性 `plan_version`，并同时构造等长的 `risk_codes`/`risk_messages`。候选的计划解码、指标复算和独立复验在 profile 局部捕获 `ValueError`（包括 `ResultValidationError`），转换为保留层记录和审计消息的 `error` 空候选后继续；不得捕获 `BaseException` 或把未知程序错误静默降级。
 
 在 `m4_optimizer/__init__.py` 导出 `M4Optimizer` 和稳定契约。
 
@@ -1738,7 +1840,9 @@ git commit -m "test(m4): cover optimizer acceptance scenarios"
 - `m4_optimizer` 可以在不启动 FastAPI、不连接数据库、不调用 AI/EMS 的情况下生成三套候选；
 - 三套候选共享硬约束，并按外部配置执行分层优化；
 - 输出包含 96 点计划、可复算 SOC、功率平衡和完整业务指标；
+- 输出包含可追溯候选 `plan_version` 和与风险代码对齐的可读说明；
 - 输入错误、不可行、超时和未证明最优状态被准确区分；
+- 部分层级 timeout 保留已复验 incumbent，真实 error/infeasible 不被伪装；
 - 独立验证器能识别被篡改结果；
 - 双站使用不同请求时没有共享状态；
 - 所有 M4 优化器测试通过；

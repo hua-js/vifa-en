@@ -202,6 +202,48 @@ def make_demand_peak_request(max_discharge_kw: float) -> OptimizationRequest:
     )
 
 
+def make_zero_pv_export_request(
+    *,
+    load_kw: float = 0.0,
+    buy_price_per_kwh: float = 0.8,
+    sell_price_per_kwh: float = 0.0,
+) -> OptimizationRequest:
+    request = make_request(load_kw=load_kw)
+    payload = request.model_dump()
+    payload["points"] = [
+        {
+            **point.model_dump(),
+            "load_forecast_kw": load_kw,
+            "pv_forecast_kw": 0.0,
+            "buy_price_per_kwh": buy_price_per_kwh,
+            "sell_price_per_kwh": sell_price_per_kwh,
+        }
+        for point in request.points
+    ]
+    payload["constraints"] = {
+        **request.constraints.model_dump(),
+        "terminal_soc_tolerance_pct": 0.0,
+        "demand_limit_kw": 300.0,
+        "grid_import_limit_kw": 400.0,
+        "grid_export_enabled": True,
+        "grid_export_limit_kw": 100.0,
+    }
+    return OptimizationRequest.model_validate(payload)
+
+
+def make_battery_load_with_pv_export_request() -> OptimizationRequest:
+    request = make_zero_pv_export_request(
+        load_kw=100.0,
+        buy_price_per_kwh=0.1,
+        sell_price_per_kwh=0.0,
+    )
+    payload = request.model_dump()
+    payload["points"][40]["pv_forecast_kw"] = 100.0
+    payload["points"][40]["sell_price_per_kwh"] = 10.0
+    payload["constraints"]["grid_export_limit_kw"] = 20.0
+    return OptimizationRequest.model_validate(payload)
+
+
 def candidate_by_id(result: OptimizationResult, profile_id: str) -> CandidateResult:
     return next(
         candidate
@@ -237,6 +279,7 @@ def make_candidate(
     return CandidateResult(
         profile_id="balanced",
         profile_version="test-balanced-v1",
+        plan_version=f"{request.request_id}/test/balanced/test-balanced-v1",
         status="optimal",
         solver_message="test solution",
         solve_seconds=0.0,
@@ -244,6 +287,7 @@ def make_candidate(
         metrics=metrics,
         layers=[],
         risk_codes=[],
+        risk_messages=[],
     )
 
 
