@@ -71,6 +71,38 @@ class M4OptimizerValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(ResultValidationError, "metric energy_cost"):
             validate_candidate(request, tampered)
 
+    def test_validator_rejects_high_reported_demand_exceed_with_synced_metrics(self):
+        request = make_request()
+        candidate = make_candidate_from_optimizer(request)
+        payload = candidate.model_dump()
+        for point in payload["plan"]:
+            point["demand_exceed_kw"] = 1.0
+        candidate_with_high_demand = type(candidate).model_validate(payload)
+        payload["metrics"] = calculate_metrics(
+            request, candidate_with_high_demand.plan
+        ).model_dump()
+        tampered = type(candidate).model_validate(payload)
+
+        with self.assertRaisesRegex(ResultValidationError, "demand exceed"):
+            validate_candidate(request, tampered)
+
+    def test_materialize_plan_rejects_significantly_negative_power(self):
+        request = make_request()
+        built, x = self._solved_vector(request)
+        x[built.index.charge.start] = -10.0
+
+        with self.assertRaisesRegex(ValueError, "negative"):
+            materialize_plan(request, built, x)
+
+    def test_materialize_plan_rejects_simultaneous_charge_and_discharge(self):
+        request = make_request()
+        built, x = self._solved_vector(request)
+        x[built.index.charge.start] = 10.0
+        x[built.index.discharge.start] = 10.0
+
+        with self.assertRaisesRegex(ValueError, "charge and discharge"):
+            materialize_plan(request, built, x)
+
     def test_validator_rejects_nonempty_failed_candidate(self):
         request = make_request()
         candidate = make_candidate_from_optimizer(request)
@@ -81,3 +113,15 @@ class M4OptimizerValidationTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ResultValidationError, "non-success candidate"):
             validate_candidate(request, failed)
+
+    def _solved_vector(self, request):
+        built = build_model(request)
+        solved = solve_milp(
+            built.problem,
+            built.objectives["throughput"],
+            locks=(),
+            time_limit_seconds=2.0,
+            mip_rel_gap=0.0,
+        )
+        self.assertIsNotNone(solved.x)
+        return built, solved.x.copy()

@@ -27,6 +27,12 @@ def materialize_plan(
         raise ValueError("solution vector length must match the built model")
     if not np.isfinite(x).all():
         raise ValueError("solution vector must contain only finite values")
+    if np.any(x < -tolerance):
+        raise ValueError("solution vector contains significantly negative values")
+    charge_values = x[built.index.charge]
+    discharge_values = x[built.index.discharge]
+    if np.any((charge_values > tolerance) & (discharge_values > tolerance)):
+        raise ValueError("solution vector has simultaneous charge and discharge")
 
     capacity = request.capability.energy_capacity_kwh
     plan: list[PlanPoint] = []
@@ -64,8 +70,12 @@ def materialize_plan(
                 pv_unabsorbed_kw=_zero_small(
                     float(x[built.index.pv_unabsorbed.start + index]), tolerance
                 ),
-                demand_exceed_kw=_zero_small(
-                    float(x[built.index.demand_exceed.start + index]), tolerance
+                demand_exceed_kw=max(
+                    _zero_small(
+                        float(x[built.index.grid_import.start + index]), tolerance
+                    )
+                    - request.constraints.demand_limit_kw,
+                    0.0,
                 ),
             )
         )

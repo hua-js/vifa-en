@@ -69,10 +69,10 @@ def validate_candidate(
         )
         if abs(balance_error) > tolerance:
             _raise(label, "power balance")
-        minimum_demand_exceed = max(
+        expected_demand_exceed = max(
             point.grid_import_kw - constraints.demand_limit_kw, 0.0
         )
-        if point.demand_exceed_kw < minimum_demand_exceed - tolerance:
+        if abs(point.demand_exceed_kw - expected_demand_exceed) > tolerance:
             _raise(label, "demand exceed")
 
         expected_energy = (

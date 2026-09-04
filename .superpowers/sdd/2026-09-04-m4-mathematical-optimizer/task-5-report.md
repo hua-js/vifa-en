@@ -19,4 +19,24 @@
 
 ## 观察
 
-- `demand_exceed_kw` 按模型约束验证为不低于实际超限量；在仅最小化吞吐量的可行解中该松弛变量可高于下限，强制相等会错误拒绝任务测试中的可行计划。
+- 修复前，`demand_exceed_kw` 曾按模型松弛变量下界验证；修复后该内部变量不再公开，公开计划基于购电功率重算精确超限量。
+
+## 修复轮 1：公开需量事实与原始向量防护
+
+### RED
+
+- 新增以下回归测试后运行
+  `.venv/bin/python -m unittest tests/test_m4_optimizer_validation.py -v`：
+  - 实际无超限但每点高报 `demand_exceed_kw`，同时同步重算指标；
+  - 原始解向量 `charge=-10`；
+  - 原始解向量同一点充放电均为正。
+- 结果：9 项中 3 项按预期失败。高报需量未被验证器拒绝，两个原始向量违例均未被 `materialize_plan()` 拒绝。
+
+### GREEN
+
+- `materialize_plan()` 在解码前拒绝任何显著负内部变量及同时显著充放电，并从公开 `grid_import_kw` 与需量限制重算 `demand_exceed_kw`。
+- `validate_candidate()` 要求公开 `demand_exceed_kw` 与 `max(grid_import_kw - demand_limit_kw, 0)` 在容差内精确相等。
+- 验证：
+  - `.venv/bin/python -m unittest tests/test_m4_optimizer_validation.py -v`：9 passed。
+  - `.venv/bin/python -m unittest tests/test_m4_optimizer_contracts.py tests/test_m4_optimizer_model.py tests/test_m4_optimizer_solver.py tests/test_m4_optimizer_lexicographic.py tests/test_m4_optimizer_validation.py -v`：31 passed。
+  - `git diff --check`：passed。
