@@ -10,6 +10,7 @@ from .contracts import (
 )
 from .loader import load_station_input
 from .service import M4Orchestrator, Optimizer
+from .writer import OutputWriteError, serialize_result, write_result_atomic
 
 __all__ = [
     "ErrorCode",
@@ -17,10 +18,13 @@ __all__ = [
     "M4OrchestrationResult",
     "M4Orchestrator",
     "Optimizer",
+    "OutputWriteError",
     "OrchestrationError",
     "OrchestrationStatus",
     "StationInput",
     "StationOrchestrationResult",
     "StationStatus",
     "load_station_input",
+    "serialize_result",
+    "write_result_atomic",
 ]
