@@ -23,6 +23,8 @@ def serialize_result(result: M4OrchestrationResult) -> str:
 
 def write_result_atomic(result: M4OrchestrationResult, path: Path) -> None:
     target = Path(path)
+    temporary_file = None
+    temporary_name: str | None = None
     temporary_path: Path | None = None
     write_failed = False
 
@@ -35,16 +37,22 @@ def write_result_atomic(result: M4OrchestrationResult, path: Path) -> None:
             suffix=".tmp",
             delete=False,
         )
-        temporary_path = Path(temporary_file.name)
+        temporary_name = temporary_file.name
+        temporary_path = Path(temporary_name)
         with temporary_file:
             temporary_file.write(serialize_result(result))
             temporary_file.flush()
             os.fsync(temporary_file.fileno())
         os.replace(temporary_path, target)
     except BaseException as error:
-        if temporary_path is not None:
+        if temporary_file is not None and not temporary_file.closed:
             try:
-                temporary_path.unlink(missing_ok=True)
+                temporary_file.close()
+            except OSError:
+                pass
+        if temporary_name is not None:
+            try:
+                os.unlink(temporary_name)
             except OSError:
                 pass
         if not isinstance(error, Exception):

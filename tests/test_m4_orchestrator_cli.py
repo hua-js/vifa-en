@@ -1,6 +1,7 @@
 import json
 import subprocess
 import sys
+import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
@@ -132,6 +133,66 @@ class M4OrchestratorWriterTests(unittest.TestCase):
                     sorted(target.parent.glob(f".{target.name}.*.tmp")),
                     [unrelated_temp],
                 )
+
+    def test_path_recording_interrupt_closes_and_removes_only_owned_temp(self):
+        interruptions = (
+            KeyboardInterrupt("INTERRUPT_PATH_RECORD"),
+            SystemExit(29),
+        )
+        for index, interruption in enumerate(interruptions, start=1):
+            with self.subTest(interruption=type(interruption).__name__):
+                target = self.temp_dir / f"path-record-{index}.json"
+                target.write_text("old-result\n", encoding="utf-8")
+                unrelated_temp = (
+                    target.parent / f".{target.name}.unrelated.tmp"
+                )
+                unrelated_temp.write_text("keep-me\n", encoding="utf-8")
+                created_files = []
+                path_calls = 0
+
+                def recording_named_temporary_file(*args, **kwargs):
+                    created_file = tempfile.NamedTemporaryFile(*args, **kwargs)
+                    created_files.append(created_file)
+                    return created_file
+
+                def interrupting_path(value):
+                    nonlocal path_calls
+                    path_calls += 1
+                    if path_calls == 1:
+                        return Path(value)
+                    raise interruption
+
+                try:
+                    with patch(
+                        "m4_orchestrator.writer.NamedTemporaryFile",
+                        side_effect=recording_named_temporary_file,
+                    ), patch(
+                        "m4_orchestrator.writer.Path",
+                        side_effect=interrupting_path,
+                    ):
+                        with self.assertRaises(type(interruption)) as raised:
+                            write_result_atomic(
+                                make_orchestration_result(),
+                                target,
+                            )
+
+                    self.assertIs(raised.exception, interruption)
+                    self.assertEqual(len(created_files), 1)
+                    owned_temp = Path(created_files[0].name)
+                    self.assertEqual(
+                        sorted(target.parent.glob(f".{target.name}.*.tmp")),
+                        [unrelated_temp],
+                    )
+                    self.assertFalse(owned_temp.exists())
+                    self.assertTrue(created_files[0].closed)
+                    self.assertEqual(
+                        target.read_text(encoding="utf-8"),
+                        "old-result\n",
+                    )
+                finally:
+                    for created_file in created_files:
+                        created_file.close()
+                        Path(created_file.name).unlink(missing_ok=True)
 
     def test_ordinary_failure_raises_fresh_redacted_error_without_chain(self):
         target = self.temp_dir / "result.json"
