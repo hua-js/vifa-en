@@ -214,6 +214,63 @@ class M4OrchestratorServiceTests(unittest.TestCase):
         ):
             self.assertNotIn(sensitive_value, rendered)
 
+    def test_successes_sort_by_station_id_then_errors_sort_by_input_ref(self):
+        healthy_b = station_input("station-b", input_ref="success-a")
+        hinted_input_error = invalid_station_input(
+            input_ref="error-c",
+            station_id_hint="station-00-hint",
+            request_id_hint="request-hinted",
+        )
+        optimization_error = station_input(
+            "station-z-error",
+            input_ref="error-a",
+        )
+        no_candidate = station_input(
+            "station-0-no-candidate",
+            input_ref="error-b",
+        )
+        healthy_a = station_input("station-a", input_ref="success-z")
+        optimizer = DeterministicOptimizer(
+            results_by_station_id={
+                "station-0-no-candidate": make_optimization_result(
+                    no_candidate.request,
+                    candidate_statuses=("infeasible", "timeout", "error"),
+                )
+            },
+            failures_by_station_id={
+                "station-z-error": RuntimeError("redacted optimizer failure")
+            },
+        )
+
+        result = self.make_orchestrator(optimizer).run(
+            [
+                healthy_b,
+                hinted_input_error,
+                optimization_error,
+                no_candidate,
+                healthy_a,
+            ]
+        )
+
+        self.assertEqual(result.overall_status, "partial_failure")
+        self.assertEqual(
+            [
+                (item.status, item.input_ref, item.station_id)
+                for item in result.stations
+            ],
+            [
+                ("optimized", "success-z", "station-a"),
+                ("optimized", "success-a", "station-b"),
+                ("optimization_error", "error-a", "station-z-error"),
+                (
+                    "no_usable_candidate",
+                    "error-b",
+                    "station-0-no-candidate",
+                ),
+                ("input_error", "error-c", "station-00-hint"),
+            ],
+        )
+
     def test_duplicate_station_ids_reject_every_station_before_solving(self):
         first_duplicate = station_input("station-1", input_ref="station-1-a.json")
         unique = station_input("station-2")

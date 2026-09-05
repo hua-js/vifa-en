@@ -57,6 +57,54 @@ class M4OrchestratorLoaderTests(unittest.TestCase):
             self.assertNotIn(str(self.temp_dir), rendered)
             self.assertNotIn("not-json", rendered)
 
+    def test_json_recursion_error_returns_safe_json_error(self):
+        path = self.write_text(
+            '"SENSITIVE_DEEP_JSON_BODY"',
+            "private-deep-input.json",
+        )
+        recursion_error = RecursionError(
+            "SENSITIVE_RECURSION_DETAIL /private/deep-input.json"
+        )
+
+        with patch(
+            "m4_orchestrator.loader.json.loads",
+            side_effect=recursion_error,
+        ):
+            result = load_station_input(path, input_ref="input-deep")
+
+        self.assertIsNone(result.request)
+        self.assertEqual(result.error.code, "INPUT_JSON_ERROR")
+        self.assertEqual(result.error.message, "input file is not valid JSON")
+        rendered = result.model_dump_json()
+        for sensitive_value in (
+            str(path),
+            "private-deep-input.json",
+            "SENSITIVE_DEEP_JSON_BODY",
+            "SENSITIVE_RECURSION_DETAIL",
+            "/private/deep-input.json",
+            "RecursionError",
+        ):
+            self.assertNotIn(sensitive_value, rendered)
+
+    def test_json_loader_does_not_map_memory_error_or_base_exceptions(self):
+        path = self.write_text("{}", "resource-boundary.json")
+        failures = (
+            MemoryError("MEMORY_BOUNDARY"),
+            KeyboardInterrupt("INTERRUPT_BOUNDARY"),
+            SystemExit(37),
+        )
+
+        for failure in failures:
+            with self.subTest(failure=type(failure).__name__):
+                with patch(
+                    "m4_orchestrator.loader.json.loads",
+                    side_effect=failure,
+                ):
+                    with self.assertRaises(type(failure)) as raised:
+                        load_station_input(path, input_ref="input-boundary")
+
+                self.assertIs(raised.exception, failure)
+
     def test_not_found_returns_safe_error(self):
         missing = self.temp_dir / "missing.json"
 

@@ -15,7 +15,7 @@
   --orchestrator-version m4-orchestrator-b1-v1
 ```
 
-`--input` 可重复，且至少提供一次；`--output` 和 `--model-version` 必填且只能提供一次。`--orchestrator-version` 默认是 `m4-orchestrator-b1-v1`。CLI 按参数顺序加载输入，输出中的成功站点按 `station_id` 排序。
+`--input` 可重复，且至少提供一次；`--output` 和 `--model-version` 必填且只能提供一次。`--orchestrator-version` 默认是 `m4-orchestrator-b1-v1`。CLI 按参数顺序加载输入；输出中的成功站点先按 `station_id` 排序，错误站点随后按 `input_ref` 稳定排序。
 
 退出码：
 

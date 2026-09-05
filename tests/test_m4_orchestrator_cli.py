@@ -241,6 +241,147 @@ class M4OrchestratorWriterTests(unittest.TestCase):
                         created_file.close()
                         Path(created_file.name).unlink(missing_ok=True)
 
+    def test_first_temp_name_access_interrupt_removes_only_owned_temp(self):
+        interruptions = (
+            KeyboardInterrupt("INTERRUPT_FIRST_NAME_ACCESS"),
+            SystemExit(31),
+        )
+        for index, interruption in enumerate(interruptions, start=1):
+            with self.subTest(interruption=type(interruption).__name__):
+                target = self.temp_dir / f"first-name-{index}.json"
+                target.write_text("old-result\n", encoding="utf-8")
+                unrelated_temp = (
+                    target.parent / f".{target.name}.unrelated.tmp"
+                )
+                unrelated_temp.write_text("keep-me\n", encoding="utf-8")
+                created_files = []
+                owned_paths = []
+
+                class FirstNameAccessInterrupt:
+                    def __init__(self, wrapped):
+                        self.wrapped = wrapped
+                        self.name_reads = 0
+
+                    @property
+                    def name(self):
+                        self.name_reads += 1
+                        if self.name_reads == 1:
+                            raise interruption
+                        return self.wrapped.name
+
+                    @property
+                    def closed(self):
+                        return self.wrapped.closed
+
+                    def close(self):
+                        return self.wrapped.close()
+
+                def interrupting_named_temporary_file(*args, **kwargs):
+                    created_file = tempfile.NamedTemporaryFile(*args, **kwargs)
+                    created_files.append(created_file)
+                    owned_paths.append(Path(created_file.name))
+                    return FirstNameAccessInterrupt(created_file)
+
+                try:
+                    with patch(
+                        "m4_orchestrator.writer.NamedTemporaryFile",
+                        side_effect=interrupting_named_temporary_file,
+                    ):
+                        with self.assertRaises(type(interruption)) as raised:
+                            write_result_atomic(
+                                make_orchestration_result(),
+                                target,
+                            )
+
+                    self.assertIs(raised.exception, interruption)
+                    self.assertEqual(len(created_files), 1)
+                    self.assertTrue(created_files[0].closed)
+                    self.assertFalse(owned_paths[0].exists())
+                    self.assertEqual(
+                        sorted(target.parent.glob(f".{target.name}.*.tmp")),
+                        [unrelated_temp],
+                    )
+                    self.assertEqual(
+                        target.read_text(encoding="utf-8"),
+                        "old-result\n",
+                    )
+                finally:
+                    for created_file, owned_path in zip(
+                        created_files,
+                        owned_paths,
+                    ):
+                        created_file.close()
+                        owned_path.unlink(missing_ok=True)
+
+    def test_first_temp_name_access_failure_has_no_public_error_chain(self):
+        target = self.temp_dir / "first-name-failure.json"
+        target.write_text("old-result\n", encoding="utf-8")
+        unrelated_temp = target.parent / f".{target.name}.unrelated.tmp"
+        unrelated_temp.write_text("keep-me\n", encoding="utf-8")
+        created_files = []
+        owned_paths = []
+        sensitive_error = OSError(
+            "SENSITIVE_NAME_DETAIL /private/customer/result.json"
+        )
+
+        class FirstNameAccessFailure:
+            def __init__(self, wrapped):
+                self.wrapped = wrapped
+                self.name_reads = 0
+
+            @property
+            def name(self):
+                self.name_reads += 1
+                if self.name_reads == 1:
+                    raise sensitive_error
+                return self.wrapped.name
+
+            @property
+            def closed(self):
+                return self.wrapped.closed
+
+            def close(self):
+                return self.wrapped.close()
+
+        def failing_named_temporary_file(*args, **kwargs):
+            created_file = tempfile.NamedTemporaryFile(*args, **kwargs)
+            created_files.append(created_file)
+            owned_paths.append(Path(created_file.name))
+            return FirstNameAccessFailure(created_file)
+
+        try:
+            with patch(
+                "m4_orchestrator.writer.NamedTemporaryFile",
+                side_effect=failing_named_temporary_file,
+            ):
+                with self.assertRaises(OutputWriteError) as raised:
+                    write_result_atomic(make_orchestration_result(), target)
+
+            public_error = raised.exception
+            self.assertEqual(
+                str(public_error),
+                "orchestration result could not be written",
+            )
+            self.assertIsNone(public_error.__cause__)
+            self.assertIsNone(public_error.__context__)
+            self.assertNotIn("SENSITIVE_NAME_DETAIL", repr(public_error))
+            self.assertNotIn("/private/customer", repr(public_error))
+            self.assertEqual(len(created_files), 1)
+            self.assertTrue(created_files[0].closed)
+            self.assertFalse(owned_paths[0].exists())
+            self.assertEqual(
+                sorted(target.parent.glob(f".{target.name}.*.tmp")),
+                [unrelated_temp],
+            )
+            self.assertEqual(
+                target.read_text(encoding="utf-8"),
+                "old-result\n",
+            )
+        finally:
+            for created_file, owned_path in zip(created_files, owned_paths):
+                created_file.close()
+                owned_path.unlink(missing_ok=True)
+
     def test_ordinary_failure_raises_fresh_redacted_error_without_chain(self):
         target = self.temp_dir / "result.json"
         target.write_text("old-result\n", encoding="utf-8")
@@ -387,6 +528,49 @@ class M4OrchestratorCliTests(unittest.TestCase):
         self.assertNotIn("private-secret-name.json", rendered)
         self.assertNotIn("not-json", rendered)
 
+    def test_healthy_and_deep_json_write_safe_partial_failure(self):
+        healthy = self.write_request("station-healthy")
+        deep = self.temp_dir / "private-deep-input.json"
+        deep.write_text(
+            "[" * 10_000 + '"SENSITIVE_DEEP_JSON_BODY"' + "]" * 10_000,
+            encoding="utf-8",
+        )
+        output = self.temp_dir / "result.json"
+
+        exit_code, stdout, stderr, optimizer = self.invoke(
+            [healthy, deep],
+            output,
+        )
+
+        self.assertEqual(exit_code, 1)
+        self.assertEqual(stdout, "wrote orchestration result: partial_failure\n")
+        self.assertEqual(stderr, "")
+        self.assertEqual(optimizer.calls, ["station-healthy"])
+        result = self.read_result(output)
+        self.assertEqual(result.overall_status, "partial_failure")
+        self.assertEqual(
+            [
+                (
+                    station.input_ref,
+                    station.status,
+                    station.error.code if station.error is not None else None,
+                )
+                for station in result.stations
+            ],
+            [
+                ("input-1", "optimized", None),
+                ("input-2", "input_error", "INPUT_JSON_ERROR"),
+            ],
+        )
+        rendered = output.read_text(encoding="utf-8")
+        for sensitive_value in (
+            str(deep),
+            "private-deep-input.json",
+            "SENSITIVE_DEEP_JSON_BODY",
+            "RecursionError",
+        ):
+            self.assertNotIn(sensitive_value, rendered)
+
     def test_all_invalid_inputs_write_failed_result_and_return_one(self):
         missing = self.temp_dir / "hidden-missing.json"
         malformed = self.temp_dir / "hidden-malformed.json"
@@ -459,6 +643,66 @@ class M4OrchestratorCliTests(unittest.TestCase):
                     with self.assertRaises(SystemExit) as raised:
                         main(argv)
                 self.assertEqual(raised.exception.code, 2)
+
+    def test_blank_explicit_versions_exit_two_before_io_service_or_write(self):
+        input_path = self.temp_dir / "must-not-be-read.json"
+        output = self.temp_dir / "must-not-be-written.json"
+        cases = []
+        for invalid_value in ("", "   "):
+            cases.extend(
+                (
+                    (
+                        "model-version",
+                        invalid_value,
+                        [
+                            "--input",
+                            str(input_path),
+                            "--output",
+                            str(output),
+                            "--model-version",
+                            invalid_value,
+                        ],
+                    ),
+                    (
+                        "orchestrator-version",
+                        invalid_value,
+                        [
+                            "--input",
+                            str(input_path),
+                            "--output",
+                            str(output),
+                            "--model-version",
+                            "model-v1",
+                            "--orchestrator-version",
+                            invalid_value,
+                        ],
+                    ),
+                )
+            )
+
+        for argument, invalid_value, argv in cases:
+            with self.subTest(argument=argument, value=invalid_value):
+                stdout = StringIO()
+                stderr = StringIO()
+                with patch(
+                    "m4_orchestrator.cli.load_station_input"
+                ) as load_input, patch(
+                    "m4_orchestrator.cli.M4Orchestrator"
+                ) as orchestrator, patch(
+                    "m4_orchestrator.cli.write_result_atomic"
+                ) as write_result:
+                    with redirect_stdout(stdout), redirect_stderr(stderr):
+                        with self.assertRaises(SystemExit) as raised:
+                            main(argv)
+
+                self.assertEqual(raised.exception.code, 2)
+                self.assertEqual(stdout.getvalue(), "")
+                self.assertTrue(stderr.getvalue().startswith("usage:"))
+                self.assertIn("must be non-blank", stderr.getvalue())
+                load_input.assert_not_called()
+                orchestrator.assert_not_called()
+                write_result.assert_not_called()
+                self.assertFalse(output.exists())
 
     def test_repeated_singleton_arguments_exit_two_before_service_or_write(self):
         input_path = self.write_request("station-valid")

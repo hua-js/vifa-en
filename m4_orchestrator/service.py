@@ -83,13 +83,23 @@ class M4Orchestrator:
             ]
 
         finished_at = self.clock()
-        station_results.sort(
-            key=lambda item: (
-                item.station_id is None,
-                item.station_id or "",
-                item.input_ref,
-            )
+        successful_results = sorted(
+            (
+                item
+                for item in station_results
+                if item.status == "optimized"
+            ),
+            key=lambda item: (item.station_id or "", item.input_ref),
         )
+        error_results = sorted(
+            (
+                item
+                for item in station_results
+                if item.status != "optimized"
+            ),
+            key=lambda item: item.input_ref,
+        )
+        station_results = [*successful_results, *error_results]
         return M4OrchestrationResult(
             schema_version=SCHEMA_VERSION,
             run_id=self.run_id_factory(),

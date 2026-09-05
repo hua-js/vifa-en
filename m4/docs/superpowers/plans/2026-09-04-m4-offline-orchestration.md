@@ -373,14 +373,20 @@ Build `InputSummary` from the validated request only. For a successful optimizer
 
 Catch `Exception` only around one station's `optimizer.optimize()` and identity/classification processing. Do not catch around top-level contract construction, and do not catch `BaseException`.
 
-Use a stable station sort key:
+The confirmed design is authoritative: partition station results before sorting,
+with successful results first by `station_id` and error results by `input_ref`.
+This replaces the earlier unified sort-key example:
 
 ```python
-key=lambda item: (
-    item.station_id is None,
-    item.station_id or "",
-    item.input_ref,
+successful_results = sorted(
+    (item for item in station_results if item.status == "optimized"),
+    key=lambda item: (item.station_id or "", item.input_ref),
 )
+error_results = sorted(
+    (item for item in station_results if item.status != "optimized"),
+    key=lambda item: item.input_ref,
+)
+station_results = [*successful_results, *error_results]
 ```
 
 For duplicate valid station IDs, do not call the optimizer for any input. Preserve already-invalid inputs with their original error; mark every otherwise-valid input `input_error` with `DUPLICATE_STATION_ID`, and also add one top-level duplicate error.

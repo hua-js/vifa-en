@@ -24,6 +24,12 @@ class _StoreOnce(argparse.Action):
         setattr(namespace, self.dest, values)
 
 
+def _nonblank_version(value: str) -> str:
+    if not value.strip():
+        raise argparse.ArgumentTypeError("must be non-blank")
+    return value
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Run offline M4 optimization for station input files."
@@ -48,12 +54,14 @@ def _parser() -> argparse.ArgumentParser:
         "--model-version",
         action=_StoreOnce,
         required=True,
+        type=_nonblank_version,
         metavar="VALUE",
         help="optimizer model version",
     )
     parser.add_argument(
         "--orchestrator-version",
         default=DEFAULT_ORCHESTRATOR_VERSION,
+        type=_nonblank_version,
         metavar="VALUE",
         help="orchestrator version",
     )

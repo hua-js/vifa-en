@@ -35,7 +35,7 @@ def load_station_input(path: Path, *, input_ref: str | None = None) -> StationIn
         return failed("INPUT_NOT_FOUND", "input file was not found")
     except UnicodeDecodeError:
         return failed("INPUT_ENCODING_ERROR", "input file is not valid UTF-8")
-    except json.JSONDecodeError:
+    except (json.JSONDecodeError, RecursionError):
         return failed("INPUT_JSON_ERROR", "input file is not valid JSON")
     except ValidationError:
         return failed("INPUT_VALIDATION_ERROR", "input does not match OptimizationRequest")

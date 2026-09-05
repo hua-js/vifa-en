@@ -1,3 +1,4 @@
+import json
 import unittest
 from datetime import datetime, timedelta, timezone
 
@@ -45,7 +46,9 @@ def make_station_result(**overrides: object) -> StationOrchestrationResult:
         "request_id": request.request_id,
         "status": "optimized",
         "input_summary": make_input_summary(),
-        "optimization_result": make_optimization_result(),
+        "optimization_result": make_optimization_result(
+            candidate_statuses=("optimal",)
+        ),
         "error": None,
     }
     values.update(overrides)
@@ -95,6 +98,68 @@ class M4OrchestratorContractTests(unittest.TestCase):
                 }
             )
 
+    def test_input_refs_share_safe_label_validation_on_construction(self):
+        usable_result = make_optimization_result(
+            candidate_statuses=("optimal",)
+        )
+        unsafe_labels = (
+            "",
+            "   ",
+            "inputs/station.json",
+            "inputs\\station.json",
+            "station\r.json",
+            "station\n.json",
+        )
+
+        for input_ref in unsafe_labels:
+            with self.subTest(model="StationInput", input_ref=input_ref):
+                with self.assertRaises(ValidationError):
+                    StationInput(input_ref=input_ref, request=make_request())
+            with self.subTest(
+                model="StationOrchestrationResult",
+                input_ref=input_ref,
+            ):
+                with self.assertRaises(ValidationError):
+                    make_station_result(
+                        input_ref=input_ref,
+                        optimization_result=usable_result,
+                    )
+
+    def test_input_refs_share_safe_label_validation_from_json(self):
+        station_input_payload = StationInput(
+            input_ref="input-safe",
+            request=make_request(),
+        ).model_dump(mode="json")
+        station_result_payload = make_station_result(
+            input_ref="input-safe",
+            optimization_result=make_optimization_result(
+                candidate_statuses=("feasible",)
+            ),
+        ).model_dump(mode="json")
+        unsafe_labels = (
+            "",
+            "   ",
+            "inputs/station.json",
+            "inputs\\station.json",
+            "station\r.json",
+            "station\n.json",
+        )
+
+        for input_ref in unsafe_labels:
+            with self.subTest(model="StationInput", input_ref=input_ref):
+                payload = {**station_input_payload, "input_ref": input_ref}
+                with self.assertRaises(ValidationError):
+                    StationInput.model_validate_json(json.dumps(payload))
+            with self.subTest(
+                model="StationOrchestrationResult",
+                input_ref=input_ref,
+            ):
+                payload = {**station_result_payload, "input_ref": input_ref}
+                with self.assertRaises(ValidationError):
+                    StationOrchestrationResult.model_validate_json(
+                        json.dumps(payload)
+                    )
+
     def test_station_result_fixes_ai_and_ems_to_inactive_states(self):
         result = make_station_result(status="optimized")
         self.assertEqual(result.selection_status, "pending_ai")
@@ -117,6 +182,9 @@ class M4OrchestratorContractTests(unittest.TestCase):
 
         no_candidate = make_station_result(
             status="no_usable_candidate",
+            optimization_result=make_optimization_result(
+                candidate_statuses=("infeasible", "timeout", "error")
+            ),
             error=OrchestrationError(
                 code="NO_USABLE_CANDIDATE", message="no usable candidate"
             ),
@@ -140,6 +208,114 @@ class M4OrchestratorContractTests(unittest.TestCase):
             ),
         )
         self.assertEqual(optimization_error.optimization_result, None)
+
+    def test_optimized_requires_a_usable_candidate_in_models_and_json(self):
+        for usable_status in ("optimal", "feasible"):
+            with self.subTest(usable_status=usable_status):
+                result = make_station_result(
+                    optimization_result=make_optimization_result(
+                        candidate_statuses=(usable_status,)
+                    )
+                )
+                parsed = StationOrchestrationResult.model_validate_json(
+                    result.model_dump_json()
+                )
+                self.assertEqual(
+                    parsed.optimization_result.candidates[0].status,
+                    usable_status,
+                )
+
+        valid_payload = make_station_result().model_dump(mode="json")
+        unusable_statuses = (
+            (),
+            ("infeasible", "timeout", "error"),
+        )
+        for candidate_statuses in unusable_statuses:
+            optimization_result = make_optimization_result(
+                candidate_statuses=candidate_statuses
+            )
+            with self.subTest(
+                validation="construction",
+                candidate_statuses=candidate_statuses,
+            ):
+                with self.assertRaises(ValidationError):
+                    make_station_result(
+                        optimization_result=optimization_result
+                    )
+            with self.subTest(
+                validation="json",
+                candidate_statuses=candidate_statuses,
+            ):
+                payload = {
+                    **valid_payload,
+                    "optimization_result": optimization_result.model_dump(
+                        mode="json"
+                    ),
+                }
+                with self.assertRaises(ValidationError):
+                    StationOrchestrationResult.model_validate_json(
+                        json.dumps(payload)
+                    )
+
+    def test_no_usable_candidate_forbids_usable_candidates_in_models_and_json(self):
+        no_candidate_error = OrchestrationError(
+            code="NO_USABLE_CANDIDATE",
+            message="optimizer returned no usable candidate",
+        )
+        for candidate_statuses in (
+            (),
+            ("infeasible", "timeout", "error"),
+        ):
+            with self.subTest(
+                valid_candidate_statuses=candidate_statuses
+            ):
+                result = make_station_result(
+                    status="no_usable_candidate",
+                    optimization_result=make_optimization_result(
+                        candidate_statuses=candidate_statuses
+                    ),
+                    error=no_candidate_error,
+                )
+                parsed = StationOrchestrationResult.model_validate_json(
+                    result.model_dump_json()
+                )
+                self.assertEqual(parsed.status, "no_usable_candidate")
+
+        valid_payload = make_station_result(
+            status="no_usable_candidate",
+            optimization_result=make_optimization_result(
+                candidate_statuses=("infeasible",)
+            ),
+            error=no_candidate_error,
+        ).model_dump(mode="json")
+        for usable_status in ("optimal", "feasible"):
+            optimization_result = make_optimization_result(
+                candidate_statuses=(usable_status,)
+            )
+            with self.subTest(
+                validation="construction",
+                usable_status=usable_status,
+            ):
+                with self.assertRaises(ValidationError):
+                    make_station_result(
+                        status="no_usable_candidate",
+                        optimization_result=optimization_result,
+                        error=no_candidate_error,
+                    )
+            with self.subTest(
+                validation="json",
+                usable_status=usable_status,
+            ):
+                payload = {
+                    **valid_payload,
+                    "optimization_result": optimization_result.model_dump(
+                        mode="json"
+                    ),
+                }
+                with self.assertRaises(ValidationError):
+                    StationOrchestrationResult.model_validate_json(
+                        json.dumps(payload)
+                    )
 
     def test_input_error_allows_missing_identities_but_no_other_status_does(self):
         input_error = make_station_result(

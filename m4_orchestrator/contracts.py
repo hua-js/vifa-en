@@ -1,7 +1,7 @@
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
 
 from m4_optimizer.contracts import OptimizationRequest, OptimizationResult
 
@@ -25,6 +25,21 @@ ErrorCode = Literal[
 ]
 
 
+def _validate_safe_label(value: str) -> str:
+    if not value.strip() or any(
+        character in value for character in ("/", "\\", "\r", "\n")
+    ):
+        raise ValueError("input_ref must be a non-blank safe label")
+    return value
+
+
+_SafeLabel = Annotated[
+    str,
+    Field(min_length=1),
+    AfterValidator(_validate_safe_label),
+]
+
+
 class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
@@ -41,7 +56,7 @@ class OrchestrationError(StrictModel):
 
 
 class StationInput(StrictModel):
-    input_ref: str = Field(min_length=1)
+    input_ref: _SafeLabel
     station_id_hint: str | None = None
     request_id_hint: str | None = None
     request: OptimizationRequest | None = None
@@ -51,8 +66,6 @@ class StationInput(StrictModel):
     def validate_payload_state(self) -> "StationInput":
         if (self.request is None) == (self.error is None):
             raise ValueError("station input requires exactly one request or error")
-        if any(character in self.input_ref for character in ("/", "\\", "\r", "\n")):
-            raise ValueError("input_ref must be a safe label, not a path")
         return self
 
 
@@ -72,7 +85,7 @@ class InputSummary(StrictModel):
 
 
 class StationOrchestrationResult(StrictModel):
-    input_ref: str = Field(min_length=1)
+    input_ref: _SafeLabel
     station_id: str | None = None
     request_id: str | None = None
     status: StationStatus
@@ -135,6 +148,20 @@ class StationOrchestrationResult(StrictModel):
             raise ValueError(
                 "optimization_error station requires summary, no result and OPTIMIZATION_ERROR error"
             )
+
+        if self.optimization_result is not None:
+            has_usable_candidate = any(
+                candidate.status in {"optimal", "feasible"}
+                for candidate in self.optimization_result.candidates
+            )
+            if self.status == "optimized" and not has_usable_candidate:
+                raise ValueError(
+                    "optimized station requires at least one optimal or feasible candidate"
+                )
+            if self.status == "no_usable_candidate" and has_usable_candidate:
+                raise ValueError(
+                    "no_usable_candidate station cannot contain an optimal or feasible candidate"
+                )
         return self
 
 

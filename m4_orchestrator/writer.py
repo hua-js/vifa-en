@@ -45,6 +45,11 @@ def write_result_atomic(result: M4OrchestrationResult, path: Path) -> None:
             os.fsync(temporary_file.fileno())
         os.replace(temporary_path, target)
     except BaseException as error:
+        if temporary_name is None and temporary_file is not None:
+            try:
+                temporary_name = temporary_file.name
+            except BaseException:
+                pass
         if temporary_file is not None and not temporary_file.closed:
             try:
                 temporary_file.close()
