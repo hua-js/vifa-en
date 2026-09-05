@@ -1,0 +1,871 @@
+{
+  "request_id": "mock-station-2-20260904",
+  "station_id": "station-2",
+  "plan_start_at": "2026-09-04T00:00:00+08:00",
+  "input_observed_at": "2026-09-03T23:55:00+08:00",
+  "max_input_age_seconds": 1800,
+  "interval_minutes": 15,
+  "horizon_points": 96,
+  "source_versions": {
+    "load_forecast": "mock-s2-load-forecast-v1",
+    "pv_forecast": "mock-s2-pv-forecast-v1",
+    "tariff": "mock-s2-tariff-v1",
+    "capability": "mock-s2-capability-v1",
+    "constraints": "mock-s2-constraints-v1"
+  },
+  "points": [
+    {
+      "timestamp": "2026-09-04T00:00:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.3,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T00:15:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.3,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T00:30:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.3,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T00:45:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.3,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T01:00:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.3,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T01:15:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.3,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T01:30:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.3,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T01:45:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.3,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T02:00:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.3,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T02:15:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.3,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T02:30:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.3,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T02:45:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.3,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T03:00:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.3,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T03:15:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.3,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T03:30:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.3,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T03:45:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.3,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T04:00:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.3,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T04:15:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.3,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T04:30:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.3,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T04:45:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.3,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T05:00:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.3,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T05:15:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.3,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T05:30:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.3,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T05:45:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.3,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T06:00:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.3,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T06:15:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.3,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T06:30:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.3,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T06:45:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.3,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T07:00:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.75,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T07:15:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.75,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T07:30:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.75,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T07:45:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.75,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T08:00:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.75,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T08:15:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.75,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T08:30:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.75,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T08:45:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.75,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T09:00:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.75,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T09:15:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.75,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T09:30:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.75,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T09:45:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.75,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T10:00:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 900,
+      "buy_price_per_kwh": 0.75,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T10:15:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 900,
+      "buy_price_per_kwh": 0.75,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T10:30:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 900,
+      "buy_price_per_kwh": 0.75,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T10:45:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 900,
+      "buy_price_per_kwh": 0.75,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T11:00:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 900,
+      "buy_price_per_kwh": 0.75,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T11:15:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 900,
+      "buy_price_per_kwh": 0.75,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T11:30:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 900,
+      "buy_price_per_kwh": 0.75,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T11:45:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 900,
+      "buy_price_per_kwh": 0.75,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T12:00:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 900,
+      "buy_price_per_kwh": 0.75,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T12:15:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 900,
+      "buy_price_per_kwh": 0.75,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T12:30:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 900,
+      "buy_price_per_kwh": 0.75,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T12:45:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 900,
+      "buy_price_per_kwh": 0.75,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T13:00:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 900,
+      "buy_price_per_kwh": 0.75,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T13:15:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 900,
+      "buy_price_per_kwh": 0.75,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T13:30:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 900,
+      "buy_price_per_kwh": 0.75,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T13:45:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 900,
+      "buy_price_per_kwh": 0.75,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T14:00:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.75,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T14:15:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.75,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T14:30:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.75,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T14:45:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.75,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T15:00:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.75,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T15:15:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.75,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T15:30:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.75,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T15:45:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.75,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T16:00:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.75,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T16:15:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.75,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T16:30:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.75,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T16:45:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.75,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T17:00:00+08:00",
+      "load_forecast_kw": 620,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 1.5,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T17:15:00+08:00",
+      "load_forecast_kw": 620,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 1.5,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T17:30:00+08:00",
+      "load_forecast_kw": 620,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 1.5,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T17:45:00+08:00",
+      "load_forecast_kw": 620,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 1.5,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T18:00:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.75,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T18:15:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.75,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T18:30:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.75,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T18:45:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.75,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T19:00:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.75,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T19:15:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.75,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T19:30:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.75,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T19:45:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.75,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T20:00:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.75,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T20:15:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.75,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T20:30:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.75,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T20:45:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.75,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T21:00:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.75,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T21:15:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.75,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T21:30:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.75,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T21:45:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.75,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T22:00:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.75,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T22:15:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.75,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T22:30:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.75,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T22:45:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.75,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T23:00:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.3,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T23:15:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.3,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T23:30:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.3,
+      "sell_price_per_kwh": 0.15
+    },
+    {
+      "timestamp": "2026-09-04T23:45:00+08:00",
+      "load_forecast_kw": 440,
+      "pv_forecast_kw": 0,
+      "buy_price_per_kwh": 0.3,
+      "sell_price_per_kwh": 0.15
+    }
+  ],
+  "capability": {
+    "available": true,
+    "initial_soc_pct": 42,
+    "energy_capacity_kwh": 1500,
+    "max_charge_kw": 300,
+    "max_discharge_kw": 300,
+    "charge_efficiency": 0.95,
+    "discharge_efficiency": 0.95,
+    "derating_reason": null
+  },
+  "constraints": {
+    "soc_min_pct": 10,
+    "soc_max_pct": 90,
+    "preferred_soc_min_pct": 20,
+    "preferred_soc_max_pct": 80,
+    "terminal_soc_tolerance_pct": 5,
+    "demand_limit_kw": 520,
+    "grid_import_limit_kw": 800,
+    "grid_export_enabled": true,
+    "grid_export_limit_kw": 60,
+    "cycle_cost_per_kwh": 0.01
+  },
+  "profiles": [
+    {
+      "profile_id": "balanced",
+      "profile_version": "mock-s2-balanced-v1",
+      "objective_order": [
+        {
+          "name": "demand-peak",
+          "terms": {
+            "demand_peak": 1
+          },
+          "absolute_tolerance": 0.000001,
+          "relative_tolerance": 0
+        },
+        {
+          "name": "demand-duration",
+          "terms": {
+            "demand_duration": 1
+          },
+          "absolute_tolerance": 0.000001,
+          "relative_tolerance": 0
+        },
+        {
+          "name": "soc-reserve",
+          "terms": {
+            "soc_preferred_deviation": 1
+          },
+          "absolute_tolerance": 0.000001,
+          "relative_tolerance": 0
+        },
+        {
+          "name": "balanced-value",
+          "terms": {
+            "energy_cost": 0.01,
+            "pv_unused": 0.001
+          },
+          "absolute_tolerance": 0.000001,
+          "relative_tolerance": 0
+        },
+        {
+          "name": "throughput",
+          "terms": {
+            "throughput": 1
+          },
+          "absolute_tolerance": 0.000001,
+          "relative_tolerance": 0
+        }
+      ]
+    },
+    {
+      "profile_id": "cost",
+      "profile_version": "mock-s2-cost-v1",
+      "objective_order": [
+        {
+          "name": "demand-peak",
+          "terms": {
+            "demand_peak": 1
+          },
+          "absolute_tolerance": 0.000001,
+          "relative_tolerance": 0
+        },
+        {
+          "name": "demand-duration",
+          "terms": {
+            "demand_duration": 1
+          },
+          "absolute_tolerance": 0.000001,
+          "relative_tolerance": 0
+        },
+        {
+          "name": "energy-cost",
+          "terms": {
+            "energy_cost": 1
+          },
+          "absolute_tolerance": 0.000001,
+          "relative_tolerance": 0
+        },
+        {
+          "name": "pv-unused",
+          "terms": {
+            "pv_unused": 1
+          },
+          "absolute_tolerance": 0.000001,
+          "relative_tolerance": 0
+        },
+        {
+          "name": "soc-reserve",
+          "terms": {
+            "soc_preferred_deviation": 1
+          },
+          "absolute_tolerance": 0.000001,
+          "relative_tolerance": 0
+        },
+        {
+          "name": "throughput",
+          "terms": {
+            "throughput": 1
+          },
+          "absolute_tolerance": 0.000001,
+          "relative_tolerance": 0
+        }
+      ]
+    },
+    {
+      "profile_id": "pv",
+      "profile_version": "mock-s2-pv-v1",
+      "objective_order": [
+        {
+          "name": "demand-peak",
+          "terms": {
+            "demand_peak": 1
+          },
+          "absolute_tolerance": 0.000001,
+          "relative_tolerance": 0
+        },
+        {
+          "name": "demand-duration",
+          "terms": {
+            "demand_duration": 1
+          },
+          "absolute_tolerance": 0.000001,
+          "relative_tolerance": 0
+        },
+        {
+          "name": "pv-unused",
+          "terms": {
+            "pv_unused": 1
+          },
+          "absolute_tolerance": 0.000001,
+          "relative_tolerance": 0
+        },
+        {
+          "name": "energy-cost",
+          "terms": {
+            "energy_cost": 1
+          },
+          "absolute_tolerance": 0.000001,
+          "relative_tolerance": 0
+        },
+        {
+          "name": "soc-reserve",
+          "terms": {
+            "soc_preferred_deviation": 1
+          },
+          "absolute_tolerance": 0.000001,
+          "relative_tolerance": 0
+        },
+        {
+          "name": "throughput",
+          "terms": {
+            "throughput": 1
+          },
+          "absolute_tolerance": 0.000001,
+          "relative_tolerance": 0
+        }
+      ]
+    }
+  ],
+  "solver_time_limit_seconds": 30,
+  "solver_mip_rel_gap": 0.01
+}

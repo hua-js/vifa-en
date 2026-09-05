@@ -1,5 +1,7 @@
+import math
 from datetime import datetime, timedelta, timezone
 from typing import Mapping, Sequence
+from unittest import TestCase
 
 from m4_optimizer.contracts import (
     CandidateResult,
@@ -15,6 +17,49 @@ from tests.m4_optimizer_test_support import make_request
 UTC = timezone.utc
 FIXED_STARTED_AT = datetime(2026, 9, 4, 0, 0, tzinfo=UTC)
 FIXED_FINISHED_AT = FIXED_STARTED_AT + timedelta(seconds=1)
+
+
+def assert_nested_close(
+    testcase: TestCase,
+    left: object,
+    right: object,
+    path: str = "root",
+) -> None:
+    if isinstance(left, dict) and isinstance(right, dict):
+        testcase.assertEqual(left.keys(), right.keys(), msg=path)
+        for key in left:
+            assert_nested_close(
+                testcase,
+                left[key],
+                right[key],
+                f"{path}.{key}",
+            )
+        return
+    if isinstance(left, list) and isinstance(right, list):
+        testcase.assertEqual(len(left), len(right), msg=path)
+        for index, (left_item, right_item) in enumerate(zip(left, right)):
+            assert_nested_close(
+                testcase,
+                left_item,
+                right_item,
+                f"{path}[{index}]",
+            )
+        return
+    if isinstance(left, float) and isinstance(right, float):
+        testcase.assertTrue(
+            math.isfinite(left),
+            msg=f"{path}: left is not finite",
+        )
+        testcase.assertTrue(
+            math.isfinite(right),
+            msg=f"{path}: right is not finite",
+        )
+        testcase.assertTrue(
+            math.isclose(left, right, rel_tol=0.0, abs_tol=1e-6),
+            msg=f"{path}: {left!r} != {right!r}",
+        )
+        return
+    testcase.assertEqual(left, right, msg=path)
 
 
 def make_candidate_result(

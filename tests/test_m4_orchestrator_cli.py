@@ -24,6 +24,53 @@ from tests.m4_orchestrator_test_support import (
 )
 
 
+MOCK_DIR = Path(__file__).resolve().parents[1] / "m4" / "mock" / "orchestration"
+ORCHESTRATION_RESULT = MOCK_DIR / "orchestration-result.json"
+
+
+def nested_keys(value: object) -> set[str]:
+    if isinstance(value, dict):
+        return set(value).union(
+            *(nested_keys(item) for item in value.values()),
+        )
+    if isinstance(value, list):
+        return set().union(*(nested_keys(item) for item in value))
+    return set()
+
+
+class M4OrchestratorArtifactTests(unittest.TestCase):
+    def test_committed_output_is_safe_complete_and_parseable(self):
+        rendered = ORCHESTRATION_RESULT.read_text(encoding="utf-8")
+        result = M4OrchestrationResult.model_validate_json(rendered)
+
+        self.assertEqual(
+            [station.station_id for station in result.stations],
+            ["station-1", "station-2"],
+        )
+        self.assertEqual(len(result.stations), 2)
+        for station in result.stations:
+            candidates = station.optimization_result.candidates
+            self.assertEqual(
+                [candidate.profile_id for candidate in candidates],
+                ["balanced", "cost", "pv"],
+            )
+            self.assertTrue(
+                all(len(candidate.plan) == 96 for candidate in candidates)
+            )
+            self.assertEqual(station.selection_status, "pending_ai")
+            self.assertIsNone(station.selected_candidate_id)
+            self.assertEqual(station.dispatch_status, "not_dispatched")
+            self.assertIsNone(station.ems_task_id)
+
+        self.assertNotIn("http://", rendered)
+        self.assertNotIn("https://", rendered)
+        self.assertTrue(
+            {"device_commands", "access_token", "authorization"}.isdisjoint(
+                nested_keys(json.loads(rendered))
+            )
+        )
+
+
 def make_orchestration_result() -> M4OrchestrationResult:
     times = iter((FIXED_STARTED_AT, FIXED_FINISHED_AT))
     return M4Orchestrator(

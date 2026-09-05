@@ -1,13 +1,108 @@
 import unittest
+from copy import deepcopy
+from pathlib import Path
 
-from m4_orchestrator import M4Orchestrator, OrchestrationError, StationInput
+from m4_orchestrator import (
+    M4Orchestrator,
+    OrchestrationError,
+    StationInput,
+    load_station_input,
+)
 from tests.m4_optimizer_test_support import make_request
 from tests.m4_orchestrator_test_support import (
     DeterministicOptimizer,
     FIXED_FINISHED_AT,
     FIXED_STARTED_AT,
+    assert_nested_close,
     make_optimization_result,
 )
+
+
+MOCK_DIR = Path(__file__).resolve().parents[1] / "m4" / "mock" / "orchestration"
+STATION_1 = MOCK_DIR / "station-1.json"
+STATION_2 = MOCK_DIR / "station-2.json"
+
+
+def without_runtime_measurements(payload: dict[str, object]) -> dict[str, object]:
+    normalized = deepcopy(payload)
+    for field in ("run_id", "started_at", "finished_at"):
+        normalized.pop(field)
+    for station in normalized["stations"]:
+        optimization_result = station["optimization_result"]
+        for field in ("started_at", "finished_at"):
+            optimization_result.pop(field)
+        for candidate in optimization_result["candidates"]:
+            candidate.pop("solve_seconds")
+    return normalized
+
+
+class M4OrchestratorRealAcceptanceTests(unittest.TestCase):
+    def test_committed_mock_inputs_are_independent_and_complete(self):
+        first = load_station_input(STATION_1).request
+        second = load_station_input(STATION_2).request
+
+        self.assertIsNotNone(first)
+        self.assertIsNotNone(second)
+        self.assertEqual(
+            [first.station_id, second.station_id],
+            ["station-1", "station-2"],
+        )
+        self.assertNotEqual(first.request_id, second.request_id)
+        self.assertNotEqual(
+            first.capability.energy_capacity_kwh,
+            second.capability.energy_capacity_kwh,
+        )
+        self.assertNotEqual(
+            first.constraints.demand_limit_kw,
+            second.constraints.demand_limit_kw,
+        )
+        self.assertNotEqual(first.source_versions, second.source_versions)
+        self.assertEqual(len(first.points), 96)
+        self.assertEqual(len(second.points), 96)
+
+    def test_real_two_station_run_returns_six_complete_candidates(self):
+        result = M4Orchestrator(
+            model_version="m4-stage-a-v1",
+            orchestrator_version="m4-orchestrator-b1-v1",
+            clock=lambda: FIXED_STARTED_AT,
+            run_id_factory=lambda: "acceptance-run-001",
+        ).run([load_station_input(STATION_2), load_station_input(STATION_1)])
+
+        self.assertEqual(result.overall_status, "completed")
+        self.assertEqual(len(result.stations), 2)
+        for station in result.stations:
+            self.assertEqual(
+                [
+                    candidate.profile_id
+                    for candidate in station.optimization_result.candidates
+                ],
+                ["balanced", "cost", "pv"],
+            )
+            for candidate in station.optimization_result.candidates:
+                self.assertIn(candidate.status, {"optimal", "feasible"})
+                self.assertEqual(len(candidate.plan), 96)
+            self.assertEqual(station.selection_status, "pending_ai")
+            self.assertIsNone(station.selected_candidate_id)
+            self.assertEqual(station.dispatch_status, "not_dispatched")
+            self.assertIsNone(station.ems_task_id)
+
+    def test_real_two_station_runs_are_deterministic_within_solver_tolerance(self):
+        def execute(run_id: str):
+            return M4Orchestrator(
+                model_version="m4-stage-a-v1",
+                orchestrator_version="m4-orchestrator-b1-v1",
+                clock=lambda: FIXED_STARTED_AT,
+                run_id_factory=lambda: run_id,
+            ).run([load_station_input(STATION_1), load_station_input(STATION_2)])
+
+        first = without_runtime_measurements(
+            execute("determinism-run-001").model_dump(mode="json")
+        )
+        second = without_runtime_measurements(
+            execute("determinism-run-002").model_dump(mode="json")
+        )
+
+        assert_nested_close(self, first, second)
 
 
 def station_input(station_id: str, *, input_ref: str | None = None) -> StationInput:
