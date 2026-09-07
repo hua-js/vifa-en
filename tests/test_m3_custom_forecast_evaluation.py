@@ -166,22 +166,22 @@ class CustomForecastEvaluationServiceTests(unittest.TestCase):
         response = CustomPerformanceResponse.model_validate(performance)
         self.assertEqual(response.series[0].daily[-1].mape_percent, 5.0)
 
-    def test_performance_matches_exact_history_days_and_caches_mixed_run_lookups(self):
-        """The broad full-selection policy must not mix 28/60/90-day evidence."""
+    def test_performance_inherits_history_across_training_window_lengths(self):
+        """Increasing training from 29 to 37 days keeps prior comparable evidence."""
         runs = [
             make_run(
                 f"weekly-{history_days}",
                 {"selection_policy": "weekly_load_v2"},
                 history_days=history_days,
             )
-            for history_days in (28, 60, 90)
+            for history_days in (28, 29, 37)
         ]
         repository = InMemoryEvaluationRepository(
             runs,
             [
-                evaluation("weekly-28", 28.0),
-                evaluation("weekly-60", 6.0),
-                evaluation("weekly-90", 9.0),
+                evaluation("weekly-28", 3.0),
+                evaluation("weekly-29", 6.0),
+                evaluation("weekly-37", 9.0),
             ],
             reject_repeat_run_lookup=True,
         )
@@ -193,17 +193,17 @@ class CustomForecastEvaluationServiceTests(unittest.TestCase):
             station_id="ES01",
             interval_seconds=900,
             forecast_days=1,
-            history_days=60,
+            history_days=37,
             now=NOW,
         )
 
         self.assertEqual(
             [(item["run_count"], item["mape_percent"]) for item in performance["series"]],
-            [(1, 6.0), (1, 6.0)],
+            [(3, 6.0), (3, 6.0)],
         )
         self.assertEqual(
             repository._looked_up_run_ids,
-            {"weekly-28", "weekly-60", "weekly-90"},
+            {"weekly-28", "weekly-29", "weekly-37"},
         )
 
     def test_performance_excludes_old_daily_policy_evaluations(self):

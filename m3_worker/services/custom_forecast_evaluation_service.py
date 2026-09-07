@@ -319,7 +319,8 @@ class CustomForecastEvaluationService:
             return (
                 type(manifest) is dict
                 and manifest.get("selection_policy") == LOAD_SELECTION_POLICY
-                and run.config.history_days == history_days
+                # Training-window growth continues the same forecast history.
+                and run.config.model_policy == policy
             )
 
         usable_by_series: dict[str, list[dict[str, Any]]] = {}
