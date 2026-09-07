@@ -170,6 +170,8 @@ class LatestRunsApi:
             "interval_seconds": 60,
             "forecast_days": 1,
             "status": {"$in": ["succeeded", "evaluated"]},
+            "forecast_start": {"$lte": "2026-09-01T00:00:00+08:00"},
+            "forecast_end": {"$gt": "2026-09-01T00:00:00+08:00"},
         }:
             raise AssertionError(filter)
         if fields != RUN_FIELDS:
@@ -505,6 +507,7 @@ class CustomForecastRepositoryTests(unittest.TestCase):
             interval_seconds=60,
             forecast_days=1,
             selection_policy="weekly_load_v2",
+            covering_at=datetime.fromisoformat("2026-09-01T12:03:00+08:00"),
         )
 
         self.assertIsNotNone(run)

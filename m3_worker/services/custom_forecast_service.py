@@ -8,6 +8,7 @@ import re
 from threading import BoundedSemaphore, Lock
 from time import monotonic
 from typing import Callable
+from zoneinfo import ZoneInfo
 
 from m3_worker.contracts import SERIES_IDS
 from m3_worker.custom_forecast_contracts import (
@@ -141,6 +142,13 @@ class CustomForecastService:
         requested_by: str | None,
     ) -> StoredCustomRun:
         self._require_station(station_id)
+        today = self._now().astimezone(ZoneInfo("Asia/Shanghai")).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+        if request.history_end > today:
+            raise M3Error(
+                "request_invalid", "History must end before the current incomplete day"
+            )
         run = self._repository.create_or_get(
             station_id, request, requested_by=requested_by
         )
@@ -202,6 +210,7 @@ class CustomForecastService:
             interval_seconds=interval_seconds,
             forecast_days=forecast_days,
             selection_policy=LOAD_SELECTION_POLICY,
+            covering_at=self._now(),
         )
 
     def result(

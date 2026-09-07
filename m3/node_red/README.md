@@ -8,23 +8,13 @@
 - `{{{m3DashboardAuthModeJson}}}`
 - `{{{m3NocobaseParentOriginJson}}}`
 
-不得粘贴 `m3_production_gateway_page.html` 到生产 Template 节点。该文件是无
-Mustache 配置注入的页面源文件，仅供本地预览、代码编辑和生成部署产物；直接用于
-生产会显示“页面配置不可用”。
-
-也可以导入完整的 `m3_production_gateway_flow.json`，其中的页面节点与上述生产 HTML
-完全一致。
+直接维护 `m3_production_gateway_template.html`，不再保留 page.html 副本。
+只更新页面 HTML 时，不更新 `m3_production_gateway_flow.json`，也不运行旧的
+`sync_production_gateway_flow.py` 同步脚本。Flow 文件保留原有版本，不代表最新页面。
 
 ## 更新页面
 
-先同步并检查生成文件：
-
-```bash
-../../.venv/bin/python m3/node_red/sync_production_gateway_flow.py
-../../.venv/bin/python m3/node_red/sync_production_gateway_flow.py --check
-```
-
-只替换生产页面 HTML 时，在 macOS 本地复制正确文件：
+直接编辑生产 Template HTML；在 macOS 本地复制：
 
 ```bash
 pbcopy < m3/node_red/m3_production_gateway_template.html

@@ -454,7 +454,13 @@ class CustomForecastRepository:
         interval_seconds: int,
         forecast_days: int,
         selection_policy: str,
+        covering_at: datetime,
     ) -> StoredCustomRun | None:
+        if covering_at.tzinfo is None or covering_at.utcoffset() is None:
+            raise ValueError("covering_at must be timezone-aware")
+        today = covering_at.astimezone(ZoneInfo("Asia/Shanghai")).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
         rows = self._api.list_records(
             RUNS,
             filter={
@@ -462,6 +468,8 @@ class CustomForecastRepository:
                 "interval_seconds": interval_seconds,
                 "forecast_days": forecast_days,
                 "status": {"$in": ["succeeded", "evaluated"]},
+                "forecast_start": {"$lte": today.isoformat()},
+                "forecast_end": {"$gt": today.isoformat()},
             },
             fields=RUN_FIELDS,
             sort=["-completed_at", "-createdAt"],
@@ -471,6 +479,7 @@ class CustomForecastRepository:
             if (
                 run.model_manifest is not None
                 and run.model_manifest.get("selection_policy") == selection_policy
+                and run.config.forecast_start <= today < run.config.forecast_end
             ):
                 return run
         return None

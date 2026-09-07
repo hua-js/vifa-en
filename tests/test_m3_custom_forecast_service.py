@@ -447,6 +447,7 @@ class CustomForecastServiceTests(unittest.TestCase):
                     "interval_seconds": 3600,
                     "forecast_days": 1,
                     "selection_policy": "weekly_load_v2",
+                    "covering_at": NOW,
                 },
             ),
         )

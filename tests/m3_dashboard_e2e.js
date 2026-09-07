@@ -400,7 +400,7 @@ function legacyNullManifestFixture() {
   return fixture;
 }
 
-(async () => {
+if (require.main === module) (async () => {
   const fixtures = task5Fixtures();
   const payload = fixtures.ready;
   const html = fs.readFileSync(HTML_PATH);
@@ -1544,3 +1544,5 @@ function legacyNullManifestFixture() {
     server.close(() => resolve());
   })).finally(() => { process.exitCode = 1; });
 });
+
+module.exports = { task5Fixtures, weeklyEvidenceFixture };
