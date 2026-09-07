@@ -63,6 +63,7 @@ class M4OptimizerModelTests(unittest.TestCase):
                 "energy_cost",
                 "pv_unused",
                 "throughput",
+                "valley_charge_delay",
             },
         )
         self.assertEqual(built.objectives["demand_peak"][built.index.peak_demand_exceed], 1.0)

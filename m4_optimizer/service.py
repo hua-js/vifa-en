@@ -12,6 +12,9 @@ from m4_optimizer.validation import validate_candidate
 
 
 RISK_MESSAGES = {
+    "EARLY_VALLEY_PREFERENCE_INCOMPLETE": (
+        "候选保留可行计划，凌晨谷段早充偏好尚未确认最优。"
+    ),
     "PV_UNABSORBED": (
         "存在未吸收光伏余量；该值仅用于风险提示，不是光伏限发指令。"
     ),
@@ -71,6 +74,10 @@ class M4Optimizer:
                     risk_codes = []
                     if metrics.pv_unabsorbed_energy_kwh > 1e-6:
                         risk_codes.append("PV_UNABSORBED")
+                    if (any("valley_charge_delay" in item.terms
+                            for item in profile.objective_order)
+                            and solved.early_valley_optimal is not True):
+                        risk_codes.append("EARLY_VALLEY_PREFERENCE_INCOMPLETE")
                     stage = "candidate_result"
                     candidate = CandidateResult(
                         profile_id=profile.profile_id,

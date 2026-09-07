@@ -21,6 +21,7 @@ class ProfileSolveResult:
     layers: tuple[LayerResult, ...]
     message: str
     solve_seconds: float
+    early_valley_optimal: bool | None = None
 
 
 def build_layer_objective(
@@ -30,6 +31,29 @@ def build_layer_objective(
     for name, weight in layer.terms.items():
         objective += weight * built.objectives[name]
     return objective
+
+
+def _valley_reordering_locks(
+    built: BuiltModel, incumbent: NDArray[np.float64],
+) -> list[ObjectiveLock]:
+    """Only move existing valley charge; preserve discharge and other periods."""
+    locks: list[ObjectiveLock] = []
+
+    def fix(columns: list[int]) -> None:
+        vector = np.zeros(built.index.size, dtype=float)
+        vector[columns] = 1.0
+        value = float(vector @ incumbent)
+        locks.extend((ObjectiveLock(vector, value), ObjectiveLock(-vector, -value)))
+
+    eligible = {t for window in built.valley_charge_windows for t in window}
+    for column in range(built.index.discharge.start, built.index.discharge.stop):
+        fix([column])
+    for t, column in enumerate(range(built.index.charge.start, built.index.charge.stop)):
+        if t not in eligible:
+            fix([column])
+    for window in built.valley_charge_windows:
+        fix([built.index.charge.start + t for t in window])
+    return locks
 
 
 def solve_profile(
@@ -44,6 +68,7 @@ def solve_profile(
     incumbent: NDArray[np.float64] | None = None
     final_message = ""
     used_feasible_incumbent = False
+    early_valley_optimal = None
 
     for layer in profile.objective_order:
         remaining_seconds = time_limit_seconds - (monotonic() - started)
@@ -69,12 +94,15 @@ def solve_profile(
             )
 
         objective = build_layer_objective(built, layer)
+        early_valley = "valley_charge_delay" in layer.terms
+        if early_valley and incumbent is not None:
+            locks.extend(_valley_reordering_locks(built, incumbent))
         raw = solve_milp(
             built.problem,
             objective,
             tuple(locks),
             remaining_seconds,
-            mip_rel_gap,
+            0.0 if early_valley else mip_rel_gap,
         )
         final_message = raw.message
         if raw.status == "timeout" and raw.x is None and incumbent is not None:
@@ -107,6 +135,8 @@ def solve_profile(
             )
 
         incumbent = raw.x.copy()
+        if early_valley:
+            early_valley_optimal = raw.status == "optimal"
         if raw.status == "feasible":
             used_feasible_incumbent = True
 
@@ -136,4 +166,5 @@ def solve_profile(
         layers=tuple(layer_results),
         message=final_message,
         solve_seconds=monotonic() - started,
+        early_valley_optimal=early_valley_optimal,
     )

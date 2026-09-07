@@ -36,6 +36,7 @@ class BuiltModel:
     problem: MilpProblem
     index: VariableIndex
     objectives: dict[ObjectiveName, NDArray[np.float64]]
+    valley_charge_windows: tuple[tuple[int, ...], ...] = ()
 
 
 class RowBuilder:
@@ -220,7 +221,52 @@ def build_model(request: OptimizationRequest) -> BuiltModel:
         constraint_lower=constraint_lower,
         constraint_upper=constraint_upper,
     )
-    return BuiltModel(problem=problem, index=index, objectives=_build_objectives(request, index))
+    windows = _overnight_valley_windows(request)
+    objectives = _build_objectives(request, index)
+    for window in windows:
+        for elapsed, t in enumerate(window):
+            # Charge energy weighted by hours from this same-price window's start.
+            objectives["valley_charge_delay"][index.charge.start + t] = (
+                elapsed * INTERVAL_HOURS * INTERVAL_HOURS
+            )
+    return BuiltModel(problem=problem, index=index, objectives=objectives,
+                      valley_charge_windows=windows)
+
+
+def _overnight_valley_windows(
+    request: OptimizationRequest,
+) -> tuple[tuple[int, ...], ...]:
+    """Use declared daily tariff periods, keeping dates and price blocks separate.
+
+    A rolling 24-hour horizon includes every clock slot once. Reconstruct the
+    daily schedule so a horizon starting partway through the overnight valley
+    still recognizes its remaining hours. Legacy or incomplete labels are a no-op.
+    """
+    if any(point.tariff_period is None or point.timestamp.minute % 15
+           or point.timestamp.second or point.timestamp.microsecond
+           for point in request.points):
+        return ()
+    by_slot = {point.timestamp.hour * 4 + point.timestamp.minute // 15: point
+               for point in request.points}
+    if len(by_slot) != HORIZON_POINTS:
+        return ()
+    valley_end = next((slot for slot in range(HORIZON_POINTS)
+                       if by_slot[slot].tariff_period != "gu"), HORIZON_POINTS)
+    if valley_end in (0, HORIZON_POINTS):
+        return ()
+    block_by_slot = {}
+    block = 0
+    for slot in range(valley_end):
+        if slot and by_slot[slot].buy_price_per_kwh != by_slot[slot - 1].buy_price_per_kwh:
+            block += 1
+        block_by_slot[slot] = block
+    windows: dict[tuple, list[int]] = {}
+    for t, point in enumerate(request.points):
+        slot = point.timestamp.hour * 4 + point.timestamp.minute // 15
+        if slot in block_by_slot:
+            key = (point.timestamp.date(), block_by_slot[slot])
+            windows.setdefault(key, []).append(t)
+    return tuple(tuple(window) for window in windows.values())
 
 
 def _build_variable_index() -> VariableIndex:
@@ -274,6 +320,7 @@ def _build_objectives(
         "energy_cost": np.zeros(index.size, dtype=float),
         "pv_unused": np.zeros(index.size, dtype=float),
         "throughput": np.zeros(index.size, dtype=float),
+        "valley_charge_delay": np.zeros(index.size, dtype=float),
     }
     objectives["demand_peak"][index.peak_demand_exceed] = 1.0
     objectives["demand_duration"][index.demand_exceed] = INTERVAL_HOURS

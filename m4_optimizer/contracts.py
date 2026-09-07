@@ -14,6 +14,7 @@ ObjectiveName = Literal[
     "energy_cost",
     "pv_unused",
     "throughput",
+    "valley_charge_delay",
 ]
 CandidateStatus = Literal["optimal", "feasible", "infeasible", "timeout", "error"]
 FiniteFloat = Annotated[float, Field(allow_inf_nan=False)]
@@ -31,6 +32,7 @@ class ForecastPoint(StrictModel):
     pv_forecast_kw: NonNegativeFloat
     buy_price_per_kwh: NonNegativeFloat
     sell_price_per_kwh: NonNegativeFloat = 0.0
+    tariff_period: Literal["gu", "ping", "feng"] | None = None
 
 
 class CapabilitySnapshot(StrictModel):
@@ -140,6 +142,13 @@ class OptimizationRequest(StrictModel):
             if term_sets[:2] != [{"demand_peak"}, {"demand_duration"}]:
                 raise ValueError("demand objectives must be the first two layers")
             flattened = [name for layer in profile.objective_order for name in layer.terms]
+            if "valley_charge_delay" in flattened:
+                if (
+                    term_sets[-1] != {"valley_charge_delay"}
+                    or flattened.count("valley_charge_delay") != 1
+                ):
+                    raise ValueError("valley charge preference must be a separate final layer")
+                flattened = flattened[:-1]
             if set(flattened) != required_objectives or len(flattened) != len(
                 required_objectives
             ):
