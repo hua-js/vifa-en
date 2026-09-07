@@ -1,12 +1,10 @@
-"""Static deployment contracts for the isolated M3 systemd/Node-RED boundary."""
+"""Static deployment contracts for the isolated M3 Docker/Node-RED boundary."""
 
 import os
 from pathlib import Path
 import re
 import shutil
 import subprocess
-import sys
-import tempfile
 import tomllib
 import unittest
 import json
@@ -21,27 +19,9 @@ DOCKERFILE = ROOT / "Dockerfile"
 DOCKERIGNORE = ROOT / ".dockerignore"
 COMPOSE = ROOT / "compose.yaml"
 ENTRYPOINT = DEPLOY / "container-entrypoint.sh"
-FLOW = ROOT / "m3" / "node_red" / "m3_dashboard_exec_flow.json"
-PAGE_FLOW = ROOT / "m3" / "node_red" / "m3_dashboard_page_flow.json"
-NOCOBASE_BLOCK = ROOT / "m3" / "nocobase" / "m3_forecast_iframe_block.js"
 PRODUCTION_FLOW = ROOT / "m3" / "node_red" / "m3_production_gateway_flow.json"
-PRODUCTION_BLOCK = (
-    ROOT / "m3" / "nocobase" / "m3_forecast_iframe_block.production.js"
-)
-NOCOBASE_MANIFEST = (
-    ROOT / "m3" / "nocobase" / "m3_nocobase_iframe_manifest.json"
-)
-ARCHITECTURE = ROOT / "m3" / "部署架构流程图.md"
 RUNBOOK = ROOT / "m3" / "AMD64三域Docker部署手册.md"
-HOST_ENTRYPOINT = DEPLOY / "host-entrypoint.sh"
-HOST_WORKER_UNIT = DEPLOY / "vifa-m3-worker.service"
-HOST_DASHBOARD_UNIT = DEPLOY / "vifa-m3-dashboard.service"
-M3_HTML = ROOT / "m3" / "node_red" / "m3_production_gateway_page.html"
-M3_NODE_RED_HTML = (
-    ROOT / "m3" / "node_red" / "m3_production_gateway_template.html"
-)
-M3_NODE_RED_README = ROOT / "m3" / "node_red" / "README.md"
-FLOW_SYNC = ROOT / "m3" / "node_red" / "sync_production_gateway_flow.py"
+M3_HTML = ROOT / "m3" / "node_red" / "m3_production_gateway_template.html"
 
 
 CORE_NODE_RED_TYPES = {
@@ -68,24 +48,6 @@ def _environment_keys(path: Path) -> set[str]:
             continue
         keys.add(line.split("=", 1)[0])
     return keys
-
-
-def _systemd_directives(path: Path) -> dict[str, dict[str, list[str]]]:
-    sections: dict[str, dict[str, list[str]]] = {}
-    section: str | None = None
-    for raw in path.read_text(encoding="utf-8").splitlines():
-        line = raw.strip()
-        if not line or line.startswith("#"):
-            continue
-        if line.startswith("[") and line.endswith("]"):
-            section = line[1:-1]
-            sections.setdefault(section, {})
-            continue
-        if section is None or "=" not in line:
-            raise AssertionError(f"invalid systemd directive in {path}: {raw}")
-        key, value = line.split("=", 1)
-        sections[section].setdefault(key, []).append(value)
-    return sections
 
 
 class DeploymentArtifactTests(unittest.TestCase):
@@ -172,55 +134,6 @@ class DeploymentArtifactTests(unittest.TestCase):
             runbook,
         )
 
-    def test_amd64_virtualenv_units_run_two_isolated_uds_services(self):
-        self.assertFalse((DEPLOY / "vifa-m3.service").exists())
-        self.assertTrue(os.access(HOST_ENTRYPOINT, os.X_OK))
-
-        entrypoint = HOST_ENTRYPOINT.read_text(encoding="utf-8")
-        self.assertIn("set -euo pipefail", entrypoint)
-        self.assertIn(".venv/bin/python", entrypoint)
-        self.assertIn("m3_worker.main:app", entrypoint)
-        self.assertIn("m3_worker.persisted_dashboard_app:app", entrypoint)
-        self.assertIn("/userdata/holo/pyfiles/vifa-m3/run/worker.sock", entrypoint)
-        self.assertIn("/userdata/holo/pyfiles/vifa-m3/run/dashboard.sock", entrypoint)
-        self.assertIn("--workers 1", entrypoint)
-        self.assertIn('--uds "$socket_path"', entrypoint)
-        self.assertIn('test -S "$socket_path"', entrypoint)
-        self.assertNotIn("rm -rf", entrypoint)
-        self.assertNotIn("--host", entrypoint)
-        self.assertNotIn("--port", entrypoint)
-
-        worker = _systemd_directives(HOST_WORKER_UNIT)
-        dashboard = _systemd_directives(HOST_DASHBOARD_UNIT)
-        for unit, mode, environment_file in (
-            (worker, "worker", "/etc/vifa-m3/m3.env"),
-            (dashboard, "dashboard", "/etc/vifa-m3/dashboard.env"),
-        ):
-            service = unit["Service"]
-            self.assertEqual(service["User"], ["vifa-m3"])
-            self.assertEqual(service["Group"], ["vifa-m3"])
-            self.assertEqual(service["EnvironmentFile"], [environment_file])
-            self.assertEqual(
-                service["ExecStart"],
-                [
-                    "/userdata/holo/pyfiles/vifa-m3/m3/deploy/"
-                    f"host-entrypoint.sh {mode}"
-                ],
-            )
-            self.assertEqual(service["Restart"], ["on-failure"])
-            self.assertEqual(service["NoNewPrivileges"], ["true"])
-            self.assertEqual(service["PrivateTmp"], ["true"])
-            self.assertEqual(service["ProtectSystem"], ["strict"])
-            self.assertEqual(service["ProtectHome"], ["true"])
-            self.assertEqual(service["CapabilityBoundingSet"], [""])
-            self.assertEqual(service["UMask"], ["0007"])
-            writable = " ".join(service["ReadWritePaths"])
-            self.assertIn("/userdata/holo/pyfiles/vifa-m3/run", writable)
-            self.assertIn("/userdata/holo/pyfiles/vifa-m3/cache", writable)
-            rendered = HOST_WORKER_UNIT.read_text(encoding="utf-8") + HOST_DASHBOARD_UNIT.read_text(encoding="utf-8")
-            self.assertNotIn("docker", rendered.lower())
-            self.assertNotIn("--host", rendered)
-            self.assertNotIn("--port", rendered)
 
     def test_image_uses_python_312_hash_lock_and_non_root_runtime(self):
         dockerfile = DOCKERFILE.read_text(encoding="utf-8")
@@ -329,11 +242,8 @@ class DeploymentArtifactTests(unittest.TestCase):
 
     def test_production_import_package_has_exact_domains_routes_and_public_config(self):
         self.assertTrue(PRODUCTION_FLOW.exists(), str(PRODUCTION_FLOW))
-        self.assertTrue(NOCOBASE_MANIFEST.exists(), str(NOCOBASE_MANIFEST))
-        self.assertTrue(ARCHITECTURE.exists(), str(ARCHITECTURE))
 
         flow = json.loads(PRODUCTION_FLOW.read_text(encoding="utf-8"))
-        manifest = json.loads(NOCOBASE_MANIFEST.read_text(encoding="utf-8"))
         tabs = [node for node in flow if node.get("type") == "tab"]
         self.assertEqual(len(tabs), 1)
         self.assertEqual(tabs[0].get("label"), "M3 负载预测")
@@ -382,37 +292,7 @@ class DeploymentArtifactTests(unittest.TestCase):
             public_gate["wires"][2], ["m3_prod_dashboard_exec"]
         )
 
-        self.assertEqual(manifest["kind"], "vifa-m3-nocobase-iframe-manifest")
-        self.assertEqual(manifest["version"], 3)
-        self.assertFalse(manifest["nocobase_native_import"]["importable"])
-        self.assertEqual(
-            manifest["target"]["nocobase_origin"],
-            "https://ems.lvkpower.com",
-        )
-        self.assertEqual(
-            manifest["target"]["node_red_origin"],
-            "https://opdash.lvkpower.com",
-        )
-        self.assertEqual(
-            manifest["target"]["data_origin"],
-            "https://vifa.hlszh.com",
-        )
-        self.assertEqual(
-            manifest["target"]["iframe_url"],
-            "https://opdash.lvkpower.com/ett",
-        )
-
-        self.assertEqual(manifest["block"]["type"], "iframe_html")
-        self.assertEqual(
-            manifest["security"]["token_transport"],
-            "not exposed to browser",
-        )
-        rendered = "\n".join(
-            (
-                json.dumps(flow, ensure_ascii=False),
-                json.dumps(manifest, ensure_ascii=False),
-            )
-        )
+        rendered = json.dumps(flow, ensure_ascii=False)
         for forbidden in (
             "Authorization: Bearer eyJ",
             "M3_NOCOBASE_API_KEY",
@@ -422,72 +302,6 @@ class DeploymentArtifactTests(unittest.TestCase):
             self.assertNotIn(forbidden, rendered)
         self.assertNotRegex(rendered, re.compile(r"eyJ[a-zA-Z0-9_-]+\."))
 
-    def test_production_flow_embeds_current_dashboard_html(self):
-        flow = json.loads(PRODUCTION_FLOW.read_text(encoding="utf-8"))
-        page = next(
-            node for node in flow if node.get("id") == "m3_prod_page_template"
-        )
-        html = M3_HTML.read_text(encoding="utf-8")
-        marker = "  <script>\n    (() => {"
-        injection = (
-            "  <script>window.__M3_DASHBOARD_AUTH_MODE__ = "
-            "{{{m3DashboardAuthModeJson}}}; "
-            "window.__M3_NOCOBASE_PARENT_ORIGIN__ = "
-            "{{{m3NocobaseParentOriginJson}}};</script>\n"
-        )
-        self.assertEqual(html.count(marker), 1)
-        self.assertEqual(html.count("{{{m3DashboardAuthModeJson}}}"), 0)
-        self.assertEqual(html.count("{{{m3NocobaseParentOriginJson}}}"), 0)
-        self.assertEqual(page["template"], html.replace(marker, injection + marker))
-        self.assertEqual(page["template"].count(injection), 1)
-        self.assertEqual(page["template"].count("{{{m3DashboardAuthModeJson}}}"), 1)
-        self.assertEqual(page["template"].count("{{{m3NocobaseParentOriginJson}}}"), 1)
-
-    def test_flow_sync_exports_paste_ready_node_red_html(self):
-        with tempfile.TemporaryDirectory() as temporary_directory:
-            temporary = Path(temporary_directory)
-            page_path = temporary / "page.html"
-            flow_path = temporary / "flow.json"
-            template_path = temporary / "template.html"
-            page_path.write_text(M3_HTML.read_text(encoding="utf-8"), encoding="utf-8")
-            flow_path.write_text(
-                PRODUCTION_FLOW.read_text(encoding="utf-8"), encoding="utf-8"
-            )
-
-            subprocess.run(
-                [
-                    sys.executable,
-                    str(FLOW_SYNC),
-                    "--page",
-                    str(page_path),
-                    "--flow",
-                    str(flow_path),
-                    "--template-html",
-                    str(template_path),
-                ],
-                cwd=ROOT,
-                check=True,
-            )
-
-            flow = json.loads(flow_path.read_text(encoding="utf-8"))
-            template = template_path.read_text(encoding="utf-8")
-            page = next(
-                node for node in flow if node.get("id") == "m3_prod_page_template"
-            )
-            self.assertEqual(template, page["template"])
-            self.assertEqual(template.count("{{{m3DashboardAuthModeJson}}}"), 1)
-            self.assertEqual(template.count("{{{m3NocobaseParentOriginJson}}}"), 1)
-
-    def test_node_red_readme_distinguishes_source_from_deployment_html(self):
-        self.assertTrue(M3_NODE_RED_README.is_file())
-        note = M3_NODE_RED_README.read_text(encoding="utf-8")
-        deployed = M3_NODE_RED_HTML.read_text(encoding="utf-8")
-
-        self.assertIn("m3_production_gateway_template.html", note)
-        self.assertIn("生产 Node-RED Template 节点", note)
-        self.assertIn("不得粘贴 `m3_production_gateway_page.html`", note)
-        self.assertEqual(deployed.count("{{{m3DashboardAuthModeJson}}}"), 1)
-        self.assertEqual(deployed.count("{{{m3NocobaseParentOriginJson}}}"), 1)
 
     def test_production_page_describes_weekly_load_evidence(self):
         html = M3_HTML.read_text(encoding="utf-8")
@@ -520,43 +334,10 @@ class DeploymentArtifactTests(unittest.TestCase):
         self.assertNotIn("旧版日周期策略", html)
         self.assertNotIn("renderLegacyCustomPolicy", html)
 
-    def test_production_flow_sync_reports_and_repairs_drift(self):
-        python = sys.executable
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp_root = Path(temp_dir)
-            page = temp_root / "page.html"
-            flow = temp_root / "flow.json"
-            template = temp_root / "template.html"
-            shutil.copyfile(M3_HTML, page)
-            shutil.copyfile(PRODUCTION_FLOW, flow)
-            shutil.copyfile(M3_NODE_RED_HTML, template)
-            command = [
-                python,
-                str(FLOW_SYNC),
-                "--page",
-                str(page),
-                "--flow",
-                str(flow),
-                "--template-html",
-                str(template),
-            ]
-
-            clean = subprocess.run(command + ["--check"], cwd=ROOT, capture_output=True, text=True)
-            self.assertEqual(clean.returncode, 0, clean.stderr)
-            page.write_text(page.read_text(encoding="utf-8") + "\n", encoding="utf-8")
-            stale = subprocess.run(command + ["--check"], cwd=ROOT, capture_output=True, text=True)
-            self.assertEqual(stale.returncode, 1)
-            repaired = subprocess.run(command, cwd=ROOT, capture_output=True, text=True)
-            self.assertEqual(repaired.returncode, 0, repaired.stderr)
-            self.assertEqual(
-                subprocess.run(command + ["--check"], cwd=ROOT, capture_output=True, text=True).returncode,
-                0,
-            )
 
     def test_iframe_auth_uses_current_user_and_exact_origin_nonce_handshake(self):
         html = M3_HTML.read_text(encoding="utf-8")
-        block = NOCOBASE_BLOCK.read_text(encoding="utf-8")
-        page_nodes = json.loads(PAGE_FLOW.read_text(encoding="utf-8"))
+        page_nodes = json.loads(PRODUCTION_FLOW.read_text(encoding="utf-8"))
         page_flow = json.dumps(page_nodes, ensure_ascii=False)
 
         self.assertIn("window.__M3_NOCOBASE_PARENT_ORIGIN__", html)
@@ -569,23 +350,11 @@ class DeploymentArtifactTests(unittest.TestCase):
         self.assertNotIn("localStorage", html)
         self.assertNotIn('postMessage(message, "*")', html)
 
-        self.assertIn('ctx.getVar("ctx.token")', block)
-        self.assertIn("event.source !== iframe.contentWindow", block)
-        self.assertIn("event.origin !== iframeOrigin", block)
-        self.assertIn("vifa-m3-auth-ready", block)
-        self.assertIn("vifa-m3-auth-token", block)
-        self.assertIn("allow-scripts allow-same-origin", block)
-        self.assertIn("no-referrer", block)
-        self.assertNotIn("localStorage", block)
-        self.assertNotIn("sessionStorage", block)
-        self.assertNotIn("?token=", block)
-        self.assertNotRegex(block, re.compile(r"postMessage\([^\n]+,\s*[\"']\*[\"']"))
-
         self.assertIn("M3_NOCOBASE_PAGE_ORIGIN", page_flow)
         self.assertIn("Cache-Control", page_flow)
         self.assertIn("no-store", page_flow)
         page_gate = next(
-            node for node in page_nodes if node["id"] == "m3_dashboard_page_origin"
+            node for node in page_nodes if node["id"] == "m3_prod_page_origin"
         )
         self.assertIn("originPattern", page_gate["func"])
         self.assertNotIn("new URL", page_gate["func"])
@@ -593,29 +362,11 @@ class DeploymentArtifactTests(unittest.TestCase):
         self.assertNotIn("__NOCOBASE_API_TOKEN__", page_flow)
         self.assertNotRegex(page_flow, re.compile(r"eyJ[a-zA-Z0-9_-]+\."))
 
-    def test_production_iframe_block_keeps_the_tested_handshake_contract(self):
-        self.assertTrue(PRODUCTION_BLOCK.exists(), str(PRODUCTION_BLOCK))
-        block = PRODUCTION_BLOCK.read_text(encoding="utf-8")
-
-        self.assertIn('ctx.getVar("ctx.token")', block)
-        self.assertIn("event.source !== iframe.contentWindow", block)
-        self.assertIn("event.origin !== iframeOrigin", block)
-        self.assertIn("vifa-m3-auth-ready", block)
-        self.assertIn("vifa-m3-auth-token", block)
-        self.assertIn("allow-scripts allow-same-origin", block)
-        self.assertIn("no-referrer", block)
-        self.assertNotIn("localStorage", block)
-        self.assertNotIn("sessionStorage", block)
-        self.assertNotIn("?token=", block)
-        self.assertNotRegex(
-            block,
-            re.compile(r"postMessage\([^\n]+,\s*[\"']\*[\"']"),
-        )
 
     def test_node_red_dashboard_exec_calls_only_the_fixed_host_dashboard_socket(self):
-        nodes = json.loads(FLOW.read_text(encoding="utf-8"))
+        nodes = json.loads(PRODUCTION_FLOW.read_text(encoding="utf-8"))
         by_id = {node["id"]: node for node in nodes}
-        command = by_id["m3_dashboard_exec"]["command"]
+        command = by_id["m3_prod_dashboard_exec"]["command"]
 
         self.assertEqual(
             command,
@@ -624,19 +375,19 @@ class DeploymentArtifactTests(unittest.TestCase):
             "/userdata/holo/pyfiles/vifa-m3/run/dashboard.sock "
             "http://localhost/dashboard",
         )
-        self.assertFalse(by_id["m3_dashboard_exec"]["addpay"])
-        self.assertEqual(by_id["m3_dashboard_exec"]["append"], "")
-        self.assertEqual(by_id["m3_dashboard_exec"]["timer"], "35")
+        self.assertFalse(by_id["m3_prod_dashboard_exec"]["addpay"])
+        self.assertEqual(by_id["m3_prod_dashboard_exec"]["append"], "")
+        self.assertEqual(by_id["m3_prod_dashboard_exec"]["timer"], "35")
         for forbidden in ("python", "docker", "m3-forecast-api.py"):
             self.assertNotIn(forbidden, command.lower())
 
-        mapper = by_id["m3_dashboard_response_map"]["func"]
+        mapper = by_id["m3_prod_response_map"]["func"]
         self.assertIn("parts.rc.code === 28", mapper)
         self.assertIn("504", mapper)
         self.assertIn("502", mapper)
         self.assertNotIn("statusByExit", mapper)
 
-        health = by_id["m3_worker_health_exec"]["command"]
+        health = by_id["m3_prod_worker_health_exec"]["command"]
         self.assertIn(
             "--unix-socket /userdata/holo/pyfiles/vifa-m3/run/worker.sock",
             health,
@@ -644,22 +395,22 @@ class DeploymentArtifactTests(unittest.TestCase):
         self.assertNotIn("--unix-socket /run/vifa-m3/worker.sock", health)
 
     def test_node_red_dashboard_exec_does_not_wait_for_empty_stderr(self):
-        nodes = json.loads(FLOW.read_text(encoding="utf-8"))
+        nodes = json.loads(PRODUCTION_FLOW.read_text(encoding="utf-8"))
         by_id = {node["id"]: node for node in nodes}
 
         self.assertEqual(
-            by_id["m3_dashboard_exec"]["wires"],
+            by_id["m3_prod_dashboard_exec"]["wires"],
             [
-                ["m3_dashboard_stdout"],
-                ["m3_dashboard_stderr"],
-                ["m3_dashboard_rc"],
+                ["m3_prod_dashboard_stdout"],
+                ["m3_prod_dashboard_stderr"],
+                ["m3_prod_dashboard_rc"],
             ],
         )
-        self.assertEqual(by_id["m3_dashboard_stderr"]["wires"], [])
-        self.assertEqual(by_id["m3_dashboard_join"]["count"], "2")
+        self.assertEqual(by_id["m3_prod_dashboard_stderr"]["wires"], [])
+        self.assertEqual(by_id["m3_prod_dashboard_join"]["count"], "2")
         self.assertEqual(
-            by_id["m3_dashboard_join"]["name"],
-            "join stdout and exit code",
+            by_id["m3_prod_dashboard_join"]["name"],
+            "汇总标准输出与退出码",
         )
 
     def test_worker_and_dashboard_credentials_are_separate(self):

@@ -46,7 +46,8 @@ m3_worker/
 m3/requirements.lock.txt
 m3/deploy/container-entrypoint.sh
 m3/node_red/m3_production_gateway_flow.json
-m3/nocobase/m3_nocobase_iframe_manifest.json
+m3/node_red/m3_production_gateway_template.html
+m3/nocobase/M3普通iframe配置说明.md
 ```
 
 ## 3. 镜像
@@ -205,6 +206,9 @@ OPDash 页面的人都可以提交两个场站的预测任务。以后需要当�
 后续仅启用连续七日验收时不需要重新导入；启用本次自定义预测接口时必须导入新版
 `m3_production_gateway_flow.json` 并选择 `Deploy Modified Flows`，不得重启 Node-RED。
 
+完整导入 Flow 后，使用 `m3/node_red/m3_production_gateway_template.html` 覆盖
+`m3_prod_page_template` 节点。仅更新页面时直接替换该 HTML，不更新仓库中的 Flow JSON。
+
 ## 10. 人工配置 NocoBase iframe
 
 在 `https://ems.lvkpower.com` 创建普通 iframe/HTML 区块：
@@ -311,3 +315,15 @@ unset M3_PROBE_TOKEN M3_STATION_ID M3_ACCEPTANCE_RUN_ID
 ## 14. 验证范围
 
 本地交付只执行静态 JSON、Python、ripgrep 和 Git 检查；仅在受保护 env 已存在时才允许执行 Compose 配置检查。没有启动生产容器，也没有执行自动化或端到端测试。上线后的 Socket、公开路由、iframe 页面和两站数据由人工确认。
+
+
+## 权限遗留项
+
+2026-08-28 的部署记录曾注明 Worker 临时使用 root 角色 Key；本次文件整理没有核实该遗留项
+是否已经关闭，不能将文档合并视为权限整改完成。后续维护时应按
+`m3/contracts/nocobase_collections.json` 核对专用 `m3_worker` 角色的动作与字段权限，
+关闭全局默认权限。三张自定义预测表分别需要 manual_runs 的 `list/update/firstOrCreate`、
+manual_points 的 `list/create`、manual_evaluations 的 `list/updateOrCreate`。
+
+关闭条件：Worker 配置使用专用最小权限 Key，任务、完整批次、writing 批次、评估四个只读探针通过，
+root Key 已从 Worker 配置移除，不再使用的临时 Key 已撤销。具体探针和启用顺序见第 13 节。

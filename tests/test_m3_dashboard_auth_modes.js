@@ -6,8 +6,6 @@ const path = require("path");
 const vm = require("vm");
 
 const ROOT = path.resolve(__dirname, "..");
-const EXEC_FLOW = path.join(ROOT, "m3", "node_red", "m3_dashboard_exec_flow.json");
-const PAGE_FLOW = path.join(ROOT, "m3", "node_red", "m3_dashboard_page_flow.json");
 const PRODUCTION_FLOW = path.join(
   ROOT,
   "m3",
@@ -31,8 +29,8 @@ function runFunction(node, msg, environment) {
   return vm.runInNewContext(`(() => { ${node.func}\n })()`, sandbox);
 }
 
-const authPrepare = nodeById(EXEC_FLOW, "m3_dashboard_auth_prepare");
-const pagePrepare = nodeById(PAGE_FLOW, "m3_dashboard_page_origin");
+const authPrepare = nodeById(PRODUCTION_FLOW, "m3_prod_auth_prepare");
+const pagePrepare = nodeById(PRODUCTION_FLOW, "m3_prod_page_origin");
 
 {
   const request = {

@@ -24,11 +24,11 @@ const { task5Fixtures, weeklyEvidenceFixture } = require("./m3_dashboard_e2e");
     let latest = current;
     let storedOverride = null;
     let posts = 0;
-    const html = fs.readFileSync(process.env.M3_TEST_HTML || path.join(__dirname, "../m3/node_red/m3_production_gateway_page.html"), "utf8");
+    const html = fs.readFileSync(process.env.M3_TEST_HTML || path.join(__dirname, "../m3/node_red/m3_production_gateway_template.html"), "utf8");
     await page.route("http://m3.test/**", async route => {
       const url = new URL(route.request().url());
       if (url.pathname === "/ett") {
-        return route.fulfill({ contentType: "text/html", body: html.replace("<head>", '<head><script>window.__M3_DASHBOARD_AUTH_MODE__="server_token";window.__M3_NOCOBASE_PARENT_ORIGIN__="http://m3.test";</script>') });
+        return route.fulfill({ contentType: "text/html", body: html.replace("{{{m3DashboardAuthModeJson}}}", JSON.stringify("server_token")).replace("{{{m3NocobaseParentOriginJson}}}", JSON.stringify("http://m3.test")) });
       }
       let data;
       if (url.pathname.endsWith("/latest")) {

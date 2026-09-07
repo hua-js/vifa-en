@@ -4,7 +4,6 @@ import os
 from pathlib import Path
 import re
 import unittest
-from urllib.parse import parse_qs, urlsplit
 from unittest.mock import patch
 
 from m3_worker.contracts import (
@@ -36,8 +35,6 @@ ROOT = Path(__file__).resolve().parents[1]
 CONTRACT_PATH = ROOT / "m3/contracts/nocobase_collections.json"
 SMOKE_PATH = ROOT / "m3/contracts/latest-smoke-record.json"
 GUIDE_PATH = ROOT / "m3/部署说明.md"
-FLOW_PATH = ROOT / "m3/node_red/energy_forecast_flow.json"
-NODE_CONTRACT_PATH = ROOT / "m3/node_red/forecast_contract.js"
 
 COLLECTION_FIELDS = {
     "energy_forecast_latest": {
@@ -1423,161 +1420,6 @@ class CollectionContractTests(unittest.TestCase):
             "stop_update_machine_contract_and_tests_then_rereview",
         )
 
-    @unittest.skip(
-        "legacy Node-RED flow is retained but not deployed; current Flow is verified onsite"
-    )
-    def test_dashboard_list_acl_exactly_matches_task12_fixed_flow_queries(self):
-        contract = _load_contract()
-        dashboard = contract["dashboard_role"]
-        declared = {
-            collection: item["fields_by_action"]["list"]
-            for collection, item in dashboard["collections"].items()
-        }
-        self.assertEqual(declared, DASHBOARD_LIST_MATRIX)
-
-        flow = json.loads(FLOW_PATH.read_text(encoding="utf-8"))
-        functions = "\n".join(
-            node["func"] for node in flow if node.get("type") == "function"
-        )
-        requests = [
-            node
-            for node in flow
-            if node.get("type") == "http request"
-            and "/api/energy_forecast_" in node.get("url", "")
-        ]
-        self.assertEqual(len(requests), 6)
-        actual = {}
-        point_series = []
-        seen_collection_actions = set()
-        for node in requests:
-            url = node["url"]
-            match = re.search(r"/api/([a-z_]+):(\w+)\?", url)
-            self.assertIsNotNone(match, node["name"])
-            collection, action = match.groups()
-            self.assertEqual(action, "list")
-            seen_collection_actions.add((collection, action))
-            self.assertEqual(node["method"], "GET")
-            self.assertTrue(url.startswith("${M3_NOCOBASE_BASE_URL}/api/"))
-            self.assertNotIn("msg.req", url)
-            self.assertNotIn("{{{url", url)
-            query = parse_qs(urlsplit(url).query)
-            read = query["fields"][0].split(",")
-            sort = [
-                field.lstrip("-")
-                for field in query.get("sort", [""])[0].split(",")
-                if field
-            ]
-            if collection == "energy_forecast_batches":
-                self.assertEqual(query["sort"], ["-issued_at"])
-            if collection == "energy_forecast_points":
-                self.assertEqual(query["sort"], ["unique_id,data_time"])
-            if collection == "energy_forecast_points":
-                self.assertEqual(query["page"], ["1"])
-                self.assertEqual(query["pageSize"], ["672"])
-                filter_body = json.loads(query["filter"][0])
-                self.assertEqual(
-                    filter_body,
-                    {
-                        "batch.station_id": "{{{m3.pointFilterStation}}}",
-                        "batch.acceptance_run_id": "{{{m3.pointFilterRun}}}",
-                        "batch.write_state": "complete",
-                        "unique_id": filter_body["unique_id"],
-                    },
-                )
-                self.assertIn(
-                    filter_body["unique_id"],
-                    ("station_total_load", "storage_1_soc", "storage_2_soc"),
-                )
-                point_series.append(filter_body["unique_id"])
-                filter_fields = list(filter_body)
-            else:
-                filter_variable = re.fullmatch(
-                    r"\{\{\{m3\.([A-Za-z]+)\}\}\}", query["filter"][0]
-                )
-                self.assertIsNotNone(filter_variable, node["name"])
-                variable = filter_variable.group(1)
-                assignment = re.search(
-                    rf"msg\.m3\.{variable}\s*=\s*encodeURIComponent\(JSON\.stringify\(\{{(.*?)\}}\)\);",
-                    functions,
-                )
-                self.assertIsNotNone(assignment, variable)
-                filter_fields = [
-                    quoted or bare
-                    for quoted, bare in re.findall(
-                        r'(?:"([^"]+)"|([A-Za-z_][A-Za-z0-9_]*))\s*:',
-                        assignment.group(1),
-                    )
-                ]
-            request_contract = {
-                "read": read,
-                "filter": filter_fields,
-                "sort": sort,
-                "write": [],
-                "record_key": [],
-            }
-            self.assertEqual(request_contract, DASHBOARD_LIST_MATRIX[collection])
-            actual[collection] = request_contract
-        self.assertEqual(actual, DASHBOARD_LIST_MATRIX)
-        self.assertEqual(
-            seen_collection_actions,
-            {(collection, "list") for collection in DASHBOARD_LIST_MATRIX},
-        )
-        self.assertEqual(
-            point_series,
-            ["station_total_load", "storage_1_soc", "storage_2_soc"],
-        )
-        self.assertEqual(len(set(point_series)), 3)
-
-        policy = dashboard["fixed_server_query_policy"]
-        self.assertEqual(
-            policy,
-            {
-                "client_influence": {
-                    "action": False,
-                    "collection": False,
-                    "target": False,
-                    "filter": False,
-                    "sort": False,
-                },
-                "value_sources": {
-                    "station_id": "authenticated_ems_scope",
-                    "write_state": "constant_complete",
-                    "acceptance_run_id": "newest_authorized_complete_batch",
-                    "sort": "fixed_server_constants",
-                },
-            },
-        )
-        self.assertIn(
-            'const stationId = c.validateDashboardAuthorization(msg.payload);',
-            functions,
-        )
-        self.assertIn('write_state: "complete"', functions)
-        self.assertIn(
-            "const selected = c.selectAcceptanceBatches(rows, msg.m3.stationId);",
-            functions,
-        )
-        self.assertIn(
-            "msg.m3.pointFilterStation = encodeURIComponent(msg.m3.stationId);",
-            functions,
-        )
-        self.assertIn(
-            "msg.m3.pointFilterRun = encodeURIComponent(selected.runId);",
-            functions,
-        )
-        self.assertIn(
-            'keys.some((key) => key !== "token")',
-            NODE_CONTRACT_PATH.read_text(encoding="utf-8"),
-        )
-        self.assertIn("delete msg.url;", NODE_CONTRACT_PATH.read_text(encoding="utf-8"))
-        for forbidden in (
-            "msg.req.query.station_id",
-            "msg.req.query.url",
-            "msg.req.body.collection",
-            "msg.req.body.action",
-            "msg.req.body.filter",
-            "msg.req.body.sort",
-        ):
-            self.assertNotIn(forbidden, functions)
 
     def test_roles_use_only_the_declared_action_vocabulary(self):
         contract = _load_contract()

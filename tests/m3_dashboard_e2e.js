@@ -9,7 +9,7 @@ const { spawnSync } = require("child_process");
 const { chromium } = require("playwright");
 
 const ROOT = path.resolve(__dirname, "..");
-const HTML_PATH = path.join(ROOT, "m3", "node_red", "m3_production_gateway_page.html");
+const HTML_PATH = path.join(ROOT, "m3", "node_red", "m3_production_gateway_template.html");
 const PYTHON = process.env.M3_TEST_PYTHON || path.join(ROOT, ".venv", "bin", "python");
 const API_PATH = "/energy-forecast-api";
 const SERIES_IDS = ["station_total_load", "storage_soc"];
@@ -404,7 +404,9 @@ if (require.main === module) (async () => {
   const fixtures = task5Fixtures();
   const payload = fixtures.ready;
   const html = fs.readFileSync(HTML_PATH);
-  const htmlText = html.toString("utf8");
+  const htmlText = html.toString("utf8")
+    .replace("{{{m3DashboardAuthModeJson}}}", "null")
+    .replace("{{{m3NocobaseParentOriginJson}}}", "null");
   const syntaxInjectedHtml = htmlText.replace(
     "  <script>\n    (() => {",
     `  <script>window.__M3_DASHBOARD_AUTH_MODE__ = "postmessage"; window.__M3_NOCOBASE_PARENT_ORIGIN__ = ${JSON.stringify("https://ems.lvkpower.com")};</script>\n  <script>\n    (() => {`,
@@ -413,18 +415,6 @@ if (require.main === module) (async () => {
   assert.doesNotThrow(() => {
     for (const match of syntaxInjectedHtml.matchAll(/<script>([\s\S]*?)<\/script>/g)) new Function(match[1]);
   }, "postmessage-injected production page must parse before it boots");
-  const productionBlockPath = path.join(
-    ROOT,
-    "m3",
-    "nocobase",
-    "m3_forecast_iframe_block.production.js",
-  );
-  assert.strictEqual(
-    fs.existsSync(productionBlockPath),
-    true,
-    `missing production NocoBase block: ${productionBlockPath}`,
-  );
-  const nocobaseBlockText = fs.readFileSync(productionBlockPath, "utf8");
   assert.strictEqual(htmlText.includes("innerHTML"), false);
   assert.strictEqual(/<script\s+[^>]*src=/i.test(htmlText), false);
   assert.strictEqual(/<link\s+[^>]*href=/i.test(htmlText), false);
@@ -432,17 +422,11 @@ if (require.main === module) (async () => {
   assert.strictEqual(/forecast-run|model-selection-run|\/run\b/i.test(htmlText), false);
 
   let servedHtml = "";
-  let servedNocobaseHost = "";
   server = http.createServer((request, response) => {
     const pathname = decodeURIComponent(new URL(request.url, "http://127.0.0.1").pathname);
     if (pathname === "/ett") {
       response.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
       response.end(servedHtml);
-      return;
-    }
-    if (pathname === "/nocobase-host") {
-      response.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
-      response.end(servedNocobaseHost);
       return;
     }
     response.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
@@ -457,19 +441,6 @@ if (require.main === module) (async () => {
     `  <script>window.__M3_DASHBOARD_AUTH_MODE__ = "postmessage"; window.__M3_NOCOBASE_PARENT_ORIGIN__ = ${JSON.stringify(origin)};</script>\n  <script>\n    (() => {`,
   );
   assert.notStrictEqual(servedHtml, htmlText, "parent origin injection marker missing");
-  const testBlockText = nocobaseBlockText.replace(
-    'const M3_IFRAME_URL = "https://opdash.lvkpower.com/ett";',
-    `const M3_IFRAME_URL = ${JSON.stringify(`${origin}/ett`)};`,
-  );
-  assert.notStrictEqual(testBlockText, nocobaseBlockText, "NocoBase iframe URL marker missing");
-  servedNocobaseHost = `<!doctype html><html><body><div id="m3-block"></div><script>
-    window.__m3CtxVarNames = [];
-    window.ctx = {
-      element: document.querySelector("#m3-block"),
-      getVar: async (name) => { window.__m3CtxVarNames.push(name); return "wrapper-current-user-token"; },
-    };
-  </script><script>${testBlockText}</script></body></html>`;
-
   browser = await chromium.launch({ headless: true });
   const unavailableContext = await browser.newContext({ viewport: { width: 1280, height: 720 } });
   const unavailablePage = await unavailableContext.newPage();
@@ -1462,44 +1433,6 @@ if (require.main === module) (async () => {
   await page.screenshot({ path: "/tmp/m3-task6-mobile.png", fullPage: true });
   assert.ok(consoleErrors.every((message) => /status of 404 \(Not Found\)/.test(message)), JSON.stringify(consoleErrors));
   assert.deepStrictEqual(pageErrors, []);
-
-  const wrapperPage = await context.newPage();
-  const wrapperApiRequests = [];
-  await wrapperPage.route(/\/energy-forecast-api(?:\/|$|\?)/, async (route) => {
-    wrapperApiRequests.push({
-      url: route.request().url(),
-      method: route.request().method(),
-      headers: await route.request().allHeaders(),
-    });
-    const latest = new URL(route.request().url()).pathname.endsWith("/latest");
-    await route.fulfill({
-      status: latest ? 404 : 200,
-      contentType: "application/json; charset=utf-8",
-      headers: { "Cache-Control": "no-store" },
-      body: JSON.stringify(latest
-        ? { status: "error", error: { code: "not_found", message: "预测任务不存在" } }
-        : payload),
-    });
-  });
-  await wrapperPage.goto(`${origin}/nocobase-host`, { waitUntil: "domcontentloaded" });
-  const iframe = wrapperPage.locator("#m3-block iframe");
-  await iframe.waitFor();
-  assert.strictEqual(await iframe.getAttribute("src"), `${origin}/ett`);
-  assert.strictEqual(await iframe.getAttribute("sandbox"), "allow-scripts allow-same-origin");
-  assert.strictEqual(await iframe.getAttribute("referrerpolicy"), "no-referrer");
-  await wrapperPage.frameLocator("#m3-block iframe").locator("#forecast-dashboard[data-state='ready']").waitFor({ timeout: 3000 });
-  await wrapperPage.frameLocator("#m3-block iframe").locator("#task-state").getByText("暂无匹配预测结果", { exact: true }).waitFor();
-  assert.deepStrictEqual(await wrapperPage.evaluate(() => window.__m3CtxVarNames), ["ctx.token"]);
-  assert.strictEqual(wrapperApiRequests.length, 2);
-  assert.strictEqual(wrapperApiRequests[0].method, "GET");
-  assert.strictEqual(new URL(wrapperApiRequests[0].url).pathname, API_PATH);
-  assert.strictEqual(new URL(wrapperApiRequests[0].url).search, "");
-  assert.strictEqual(wrapperApiRequests[0].headers.authorization, "Bearer wrapper-current-user-token");
-  assert.strictEqual(wrapperApiRequests[0].headers.cookie, undefined);
-  assert.strictEqual(wrapperApiRequests[0].headers.referer, undefined);
-  assert.strictEqual((await wrapperPage.locator("body").innerText()).includes("wrapper-current-user-token"), false);
-  assert.deepStrictEqual(await wrapperPage.evaluate(() => [localStorage.length, sessionStorage.length]), [0, 0]);
-  await wrapperPage.close();
 
   customPayload = null;
   await page.evaluate(() => sessionStorage.clear());

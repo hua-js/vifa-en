@@ -34,10 +34,24 @@ https://opdash.lvkpower.com/ett
 - 自定义预测请求能够创建任务并返回结果；
 - 页面区分 1#、2# 电站；
 - 每站分别显示总负荷和 SOC；
-- 展示最近 24 小时实绩与未来 24 小时预测；
+- 默认展示覆盖北京时间今天的预测及相同目标时间的实际值；无匹配任务时显示空状态；
 - URL、页面源码、Node-RED Flow 和日志中没有四表只读 Key。
 
 ## 回退
 
 停用 NocoBase iframe 区块和 M3 Node-RED Flow。不要删除 M3 四表、预测历史、env 或 Token，
 不要重启 Node-RED。
+
+
+## 入口与发布检查
+
+- NocoBase 页面：`https://ems.lvkpower.com`；原始数据和结果存储：`https://vifa.hlszh.com`。
+- 本说明是人工配置步骤，不是可直接导入 NocoBase 的 JSON 文件。
+- 启用状态下只应有一个 `/ett` 和一个 `/energy-forecast-api` 入口，避免重复路由。
+- 直接打开 iframe URL 应命中 Node-RED 页面；配置后检查两站切换、任务读取和自定义预测入口。
+- 页面不携带 Dashboard Key 或 Worker 管理令牌；公开访问范围不因嵌入 NocoBase 而缩小。
+
+## 回退
+
+停用 M3 iframe 区块；按需停用 Node-RED 中 M3 页面、看板接口、自定义预测和健康检查组。
+不删除 M3 数据集合或预测历史，不修改 M1/M2。
