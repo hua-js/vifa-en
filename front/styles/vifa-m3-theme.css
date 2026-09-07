@@ -1,0 +1,126 @@
+/* Theme tokens copied from m3/node_red/m3_production_gateway_template.html. */
+:root[data-vifa-page] {
+  --m3-blue: #74a7ff;
+  --m3-cyan: #5ee7f6;
+  --m3-green: #69e6a6;
+  --m3-green-soft: rgb(105 230 166 / 9%);
+  --m3-orange: #f7d26a;
+  --m3-orange-soft: rgb(247 210 106 / 10%);
+  --m3-red: #ff7f91;
+  --m3-red-soft: rgb(255 127 145 / 10%);
+  --m3-paper: #0b1020;
+  --m3-panel: #11182a;
+  --m3-panel-soft: #151f34;
+  --m3-panel-raised: #18243b;
+  --m3-ink: #eaf0ff;
+  --m3-muted: #8fa0bf;
+  --m3-tertiary: #6f7c95;
+  --m3-line: rgb(255 255 255 / 8%);
+  --m3-line-hover: rgb(255 255 255 / 14%);
+  --m3-shadow-soft: 0 16px 36px rgb(0 0 0 / 25%);
+  --m3-card-overlay: rgb(255 255 255 / 2.6%);
+  --m3-card-overlay-end: rgb(255 255 255 / 1.2%);
+  --m3-glow-blue: rgb(72 112 255 / 14%);
+  --m3-glow-green: rgb(30 220 196 / 9%);
+}
+:root[data-vifa-page][data-theme="light"] {
+  --m3-blue: #477df0;
+  --m3-cyan: #0e96b4;
+  --m3-green: #16855a;
+  --m3-green-soft: rgb(33 167 111 / 10%);
+  --m3-orange: #a36d00;
+  --m3-orange-soft: rgb(163 109 0 / 10%);
+  --m3-red: #cf4055;
+  --m3-red-soft: rgb(224 82 101 / 10%);
+  --m3-paper: #f4f7fb;
+  --m3-panel: #ffffff;
+  --m3-panel-soft: #f8fafc;
+  --m3-panel-raised: #eef3fb;
+  --m3-ink: #172033;
+  --m3-muted: #6f7d93;
+  --m3-tertiary: #7b879a;
+  --m3-line: rgb(15 23 42 / 9%);
+  --m3-line-hover: rgb(15 23 42 / 16%);
+  --m3-shadow-soft: 0 14px 34px rgb(36 48 74 / 10%);
+  --m3-card-overlay: rgb(255 255 255 / 35%);
+  --m3-card-overlay-end: rgb(255 255 255 / 10%);
+  --m3-glow-blue: rgb(72 112 255 / 9%);
+  --m3-glow-green: rgb(30 180 155 / 7%);
+}
+
+:root[data-vifa-page][data-theme="light"] { color-scheme: light; }
+:root[data-vifa-page][data-theme="dark"] { color-scheme: dark; }
+:root[data-vifa-page] { background: var(--m3-paper) !important; }
+:root[data-vifa-page] > body {
+  background:
+    radial-gradient(circle at 12% 0%, var(--m3-glow-blue), transparent 30%),
+    radial-gradient(circle at 86% 10%, var(--m3-glow-green), transparent 25%),
+    var(--m3-paper) !important;
+}
+:root[data-vifa-page="m1"] {
+  --surface-0: var(--m3-paper); --surface-1: var(--m3-panel);
+  --surface-2: var(--m3-panel-soft); --surface-3: var(--m3-panel-raised); --surface-4: var(--m3-panel);
+  --text-primary: var(--m3-ink); --text-secondary: var(--m3-muted); --text-tertiary: var(--m3-tertiary);
+  --border: var(--m3-line); --border-hover: var(--m3-line-hover);
+  --shadow-soft: var(--m3-shadow-soft); --shadow-card: var(--m3-shadow-soft);
+}
+:root[data-vifa-page="m2"] {
+  --background: var(--m3-paper); --foreground: var(--m3-ink);
+  --card: var(--m3-panel); --popover: var(--m3-panel);
+  --secondary: var(--m3-panel-soft); --muted: var(--m3-panel-raised); --muted-foreground: var(--m3-muted);
+  --border: var(--m3-line); --border-hover: var(--m3-line-hover); --input: var(--m3-line);
+  --shadow-sm: var(--m3-shadow-soft); --shadow-card: var(--m3-shadow-soft);
+}
+:root[data-vifa-page="m1"] :is(.kpi-card, .sites-panel, .alert-panel),
+:root[data-vifa-page="m2"] #three-energy-flow .dashboard-zone {
+  background: linear-gradient(180deg, var(--m3-card-overlay), var(--m3-card-overlay-end)), var(--m3-panel);
+  border-radius: 16px;
+}
+:root[data-vifa-page="m1"] :is(.site-card, .node-group) { background: var(--m3-panel-soft); box-shadow: none; }
+:root[data-vifa-page="m1"] .node-card,
+:root[data-vifa-page="m2"] #three-energy-flow .card {
+  background: linear-gradient(180deg, var(--m3-card-overlay), var(--m3-card-overlay-end)), var(--m3-panel);
+}
+:root[data-vifa-page="m2"] #three-energy-flow .vifa-theme-toggle {
+  display: inline-flex; width: 40px; height: 40px; padding: 10px; align-items: center; justify-content: center;
+  border: 1px solid var(--m3-line); border-radius: 10px; background: var(--m3-panel-soft); color: var(--m3-muted); cursor: pointer;
+}
+:root[data-vifa-page="m2"] #three-energy-flow .vifa-theme-toggle:hover { border-color: var(--m3-line-hover); }
+:root[data-vifa-page="m2"] #three-energy-flow .vifa-theme-toggle:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.vifa-theme-toggle svg { width: 18px; height: 18px; }
+:root[data-theme="light"] .vifa-theme-toggle .theme-sun,
+:root[data-theme="dark"] .vifa-theme-toggle .theme-moon { display: none; }
+
+/* Page-specific interaction colors; M3 background tokens remain shared. */
+:root[data-vifa-page="m1"] {
+  --m1-accent: #a5b4fc;
+  --m1-accent-soft: rgb(165 180 252 / 14%);
+  --m1-soc-gradient: linear-gradient(90deg, #69c8f4 0%, #94a3ff 55%, #c4a2f5 100%);
+  --accent: var(--m1-accent); --accent-dim: var(--m1-accent-soft); --accent-glow: var(--m1-accent-soft);
+  --info: var(--m3-blue); --info-dim: rgb(71 125 240 / 10%);
+  --warn: var(--m3-orange); --warn-dim: var(--m3-orange-soft); --warn-glow: var(--m3-orange-soft);
+  --danger: var(--m3-red); --danger-dim: var(--m3-red-soft); --danger-glow: var(--m3-red-soft);
+}
+:root[data-vifa-page="m1"][data-theme="light"] {
+  --m1-accent: #5b5bd6;
+  --m1-accent-soft: rgb(91 91 214 / 10%);
+  --m1-soc-gradient: linear-gradient(90deg, #54b6ee 0%, #7588f5 55%, #a58ae9 100%);
+}
+:root[data-vifa-page="m2"] {
+  --primary: var(--m3-blue); --accent: rgb(71 125 240 / 10%); --ring: var(--m3-cyan);
+  --green: var(--m3-green); --red: var(--m3-red); --destructive: var(--m3-red);
+  --viz-series-1: var(--m3-orange); --viz-series-2: var(--m3-blue); --viz-series-3: var(--m3-green); --viz-series-4: var(--m3-red);
+}
+:root[data-vifa-page="m1"] .header-logo {
+  background: linear-gradient(135deg, #6389ef, #8b75db);
+  box-shadow: 0 6px 18px rgb(99 102 220 / 16%);
+}
+:root[data-vifa-page="m1"] .site-status-dot.online { background: var(--m3-green); box-shadow: none; }
+:root[data-vifa-page="m1"] .soc-bar-bg { height: 6px; background: color-mix(in srgb, var(--m1-accent) 10%, var(--m3-panel-soft)); }
+:root[data-vifa-page="m1"] .soc-bar-fill { background: var(--m1-soc-gradient); box-shadow: none; }
+:root[data-vifa-page="m1"] :is(.node-online, .kpi-value.online) { color: var(--m3-green); }
+:root[data-vifa-page="m1"] :is(.node-status-pill.work, .node-status-pill.charge) { background: var(--m3-green-soft); color: var(--m3-green); }
+:root[data-vifa-page="m2"] #three-energy-flow .station-tab[aria-selected="true"] {
+  color: var(--m3-blue); border-color: rgb(71 125 240 / 45%);
+  background: rgb(71 125 240 / 6%); box-shadow: inset 0 0 0 1px rgb(71 125 240 / 10%);
+}

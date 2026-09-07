@@ -35,11 +35,6 @@ async function openPage(viewport, scenario = "normal", station = "s1") {
   return { page, externalRequests, consoleErrors, pageErrors };
 }
 
-async function openStrategy(result) {
-  await result.page.getByRole("tab", { name: "策略工作台" }).click();
-  assert.strictEqual(await result.page.locator("#strategy-panel").isVisible(), true);
-}
-
 (async () => {
   const html = fs.readFileSync(HTML_PATH);
   server = http.createServer((request, response) => {
@@ -47,140 +42,202 @@ async function openStrategy(result) {
     if (pathname === "/M4优化调度控制台-线上版.html") {
       response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
       response.end(html);
-      return;
+    } else {
+      response.writeHead(404);
+      response.end("not found");
     }
-    response.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
-    response.end("not found");
   });
   server.listen(0, "127.0.0.1");
   await once(server, "listening");
-
   browser = await chromium.launch({ headless: true });
-  const desktop = await openPage({ width: 1440, height: 1000 });
-  const { page } = desktop;
+  const result = await openPage({ width: 1440, height: 1100 });
+  const { page } = result;
+  const allPages = [result];
+  const screenshots = process.env.M4_ONLINE_SCREENSHOT_DIR;
+  async function screenshot(name) {
+    if (!screenshots) return;
+    fs.mkdirSync(screenshots, { recursive: true });
+    await page.screenshot({ path: path.join(screenshots, name + ".png"), fullPage: true, animations: "disabled" });
+  }
+  async function noOverflow() {
+    const width = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, client: document.documentElement.clientWidth }));
+    assert.ok(width.scroll <= width.client, `Page overflow: ${JSON.stringify(width)}`);
+  }
+  async function closeDrawer() {
+    await page.keyboard.press("Escape");
+    assert.strictEqual(await page.locator("#detail-drawer").isVisible(), false);
+  }
 
-  assert.strictEqual((await page.locator("#mock-data-badge").textContent()).trim(), "Mock 数据");
-  assert.strictEqual(await page.locator('[role="tab"]').count(), 3);
-  assert.strictEqual(await page.getByRole("tab", { name: "调度总览" }).getAttribute("aria-selected"), "true");
-  assert.strictEqual(await page.locator("#station-switcher [data-station]").count(), 3);
-  assert.strictEqual(await page.locator('#station-switcher [data-station="s1"]').getAttribute("aria-pressed"), "true");
-  assert.match(await page.locator("#station-context-title").textContent(), /电站1/);
+  // The primary workspace is continuous; comparing a candidate does not select or dispatch it.
+  assert.strictEqual(await page.getByRole("tab").count(), 0);
+  assert.match(await page.locator("#mock-data-badge").textContent(), /静态演示.*Mock/);
   assert.strictEqual(await page.locator("[data-overview-metric]").count(), 6);
-  assert.strictEqual(await page.locator("#overview-timeline .schedule-lane").count(), 1);
-  assert.match(await page.locator("#overview-plan-copy").textContent(), /电站1.*M4-S1.*96点/);
-  assert.match(await page.locator("#automatic-operation-banner").textContent(), /全自动调度运行中.*15分钟/s);
-  assert.doesNotMatch(
-    await page.locator("body").textContent(),
-    /验收看板|附件\s*1|沟通用|评审稿|口径待确认|AI生成新策略|保存调整|执行安全预检|发送至\s*EMS|人工确认|操作员发送/,
-  );
+  assert.strictEqual(await page.locator("#plan-chart [data-point]").count(), 96);
+  assert.strictEqual(await page.locator("#candidate-grid button").count(), 3);
+  assert.strictEqual(await page.locator("#decision-name").textContent(), "节费优先");
+  assert.strictEqual(await page.locator("#candidate-comparison").getAttribute("open"), null);
+  await page.locator("#candidate-comparison summary").click();
+  const originalPath = await page.locator("#plan-chart .chart-soc").getAttribute("d");
+  await page.getByRole("button", { name: "预览光伏消纳优先曲线" }).click();
+  assert.notStrictEqual(await page.locator("#plan-chart .chart-soc").getAttribute("d"), originalPath);
+  assert.strictEqual(await page.locator('[data-candidate="pv"]').getAttribute("aria-pressed"), "true");
+  assert.strictEqual(await page.locator('[data-candidate="cost"]').getAttribute("data-selected"), "true");
+  assert.strictEqual(await page.locator("#decision-name").textContent(), "节费优先");
+  assert.strictEqual(await page.locator('[data-candidate="pv"]').evaluate(el => el === document.activeElement), true);
+  await page.locator("#restore-preview").click();
+  assert.strictEqual(await page.locator("#plan-chart .chart-soc").getAttribute("d"), originalPath);
+  await page.locator("#point-slider").focus();
+  await page.keyboard.press("End");
+  assert.strictEqual(await page.locator("#point-time").textContent(), "23:45");
+  await page.keyboard.press("Home");
+  assert.strictEqual(await page.locator("#point-time").textContent(), "00:00");
+  await page.keyboard.press("ArrowRight");
+  assert.strictEqual(await page.locator("#point-time").textContent(), "00:15");
+  await page.locator("#point-slider").fill("60");
+  await page.locator("#candidate-comparison summary").click();
+  await screenshot("m4-redesign-desktop");
 
-  const screenshotDir = process.env.M4_ONLINE_SCREENSHOT_DIR;
-  if (screenshotDir) {
-    fs.mkdirSync(screenshotDir, { recursive: true });
-    await page.screenshot({ path: path.join(screenshotDir, "m4-online-station1-overview-desktop.png"), fullPage: true });
+  // Read-only details and keyboard dismissal preserve the user's context.
+  await page.locator("#input-details summary").click();
+  assert.match(await page.locator("#input-list").textContent(), /520 kW/);
+  await page.locator("#input-details summary").click();
+  await page.locator("#open-plan").click();
+  assert.match(await page.locator("#drawer-body").textContent(), /96 点.*61% \/ 61%/s);
+  await closeDrawer();
+  assert.strictEqual(await page.locator("#open-plan").evaluate(el => el === document.activeElement), true);
+  await page.locator("#open-records").click();
+  assert.match(await page.locator("#drawer-events").textContent(), /MILP生成3个可行候选.*EMS已接收/s);
+  await page.locator("#event-filter").selectOption("exceptions");
+  assert.match(await page.locator("#drawer-events").textContent(), /没有异常/);
+  await page.locator("#close-drawer").click();
+
+  // Each station retains its own scenario and preview; a failure is visible in the site summary.
+  await page.locator("#scenario-select").selectOption("validation-failed");
+  assert.strictEqual(await page.locator("#decision-status").textContent(), "已阻断");
+  assert.match(await page.locator("#chart-preview-status").textContent(), /校验阻断.*保持原计划/);
+  await page.locator("#open-decision").click();
+  assert.match(await page.locator("#drawer-body").textContent(), /未发送.*M4-S1-20260904-060/s);
+  await screenshot("m4-redesign-blocked-drawer");
+  await closeDrawer();
+  await page.locator("#station-select").selectOption("s2");
+  assert.strictEqual(await page.locator("#decision-name").textContent(), "光伏消纳优先");
+  assert.strictEqual(await page.locator("#decision-status").textContent(), "执行中");
+  await page.locator("#open-records").click();
+  assert.match(await page.locator("#drawer-body").textContent(), /EMS-S2.*emu21–emu26/s);
+  assert.doesNotMatch(await page.locator("#drawer-events").textContent(), /电站1|M4-S1/);
+  await closeDrawer();
+  await page.locator("#station-select").selectOption("all");
+  assert.strictEqual(await page.locator("#station-workspace").isVisible(), false);
+  assert.strictEqual(await page.locator("#open-records").isDisabled(), true);
+  assert.strictEqual(await page.locator("#scenario-select").isDisabled(), true);
+  assert.match(await page.locator('[data-station-summary="s1"]').textContent(), /已阻断/);
+  assert.match(await page.locator('[data-station-summary="s2"]').textContent(), /执行中/);
+  await screenshot("m4-redesign-all-stations");
+  await page.locator('[data-open-station="s1"]').click();
+  assert.strictEqual(await page.locator("#scenario-select").inputValue(), "validation-failed");
+  assert.strictEqual(await page.locator("#station-select").evaluate(el => el === document.activeElement), true);
+
+  for (const [scenario, name, status] of [["ai-fallback", "均衡方案", "降级执行中"], ["ems-retry", "节费优先", "重算恢复"]]) {
+    await page.locator("#scenario-select").selectOption(scenario);
+    assert.strictEqual(await page.locator("#decision-name").textContent(), name);
+    assert.strictEqual(await page.locator("#decision-status").textContent(), status);
+    await page.locator("#open-records").click();
+    await page.locator("#event-filter").selectOption("exceptions");
+    assert.ok(await page.locator("#drawer-events .event").count() > 0);
+    await closeDrawer();
   }
-
-  await page.locator('#station-switcher [data-station="all"]').click();
-  assert.match(await page.locator("#station-context-title").textContent(), /全场总览/);
-  assert.strictEqual(await page.locator("#all-station-summary [data-station-summary]").count(), 2);
-  assert.strictEqual(await page.locator("#overview-timeline .schedule-lane").count(), 2);
-  assert.strictEqual(await page.getByRole("tab", { name: "策略工作台" }).isDisabled(), true);
-  assert.strictEqual(await page.getByRole("tab", { name: "执行记录" }).isDisabled(), true);
-  assert.match(await page.locator("#automatic-operation-banner").textContent(), /独立自动调度.*不生成跨站合并策略/s);
-  if (screenshotDir) {
-    await page.screenshot({ path: path.join(screenshotDir, "m4-online-all-stations-desktop.png"), fullPage: true });
-  }
-  await page.locator('#station-switcher [data-station="s1"]').click();
-
-  await openStrategy(desktop);
-  assert.match(await page.locator("#auto-cycle-summary").textContent(), /每15分钟.*下一轮/s);
-  assert.strictEqual(await page.locator("#candidate-grid [data-candidate]").count(), 3);
-  assert.match(await page.locator('#candidate-grid [data-selected="true"]').textContent(), /节费优先/);
-  assert.match(await page.locator("#ai-selection").textContent(), /大语言模型.*节费优先.*0\.91/s);
-  assert.match(await page.locator("#ai-selection").textContent(), /不生成或修改96点/);
-  assert.strictEqual(await page.locator("#pipeline .pipeline-step").count(), 7);
-  assert.match(await page.locator("#change-gate").textContent(), /未来4小时.*10%.*1%.*达到阈值/s);
-  assert.strictEqual(await page.locator("#change-gate").getAttribute("data-result"), "dispatch");
-  assert.match(await page.locator("#auto-dispatch-contract").textContent(), /电站1.*1 × 96 点.*自动下发.*EMS已接收/s);
-  assert.strictEqual(await page.locator("#validation-status").getAttribute("data-state"), "passed");
-  if (screenshotDir) {
-    await page.screenshot({ path: path.join(screenshotDir, "m4-online-strategy-desktop.png"), fullPage: true });
-  }
-
-  await page.getByRole("tab", { name: "执行记录" }).click();
-  assert.strictEqual(await page.locator("#records-panel").isVisible(), true);
-  assert.match(await page.locator("#execution-list").textContent(), /MILP生成3个可行候选.*大语言模型完成选择.*确定性校验通过.*EMS已接收/s);
-  assert.doesNotMatch(await page.locator("#execution-list").textContent(), /人工|操作员/);
-
-  await page.locator('#station-switcher [data-station="s2"]').click();
-  assert.match(await page.locator("#station-context-title").textContent(), /电站2/);
-  assert.match(await page.locator("#record-cycle-title").textContent(), /电站2.*M4-S2-CYCLE/);
-  assert.match(await page.locator("#ems-device-scope").textContent(), /emu21–emu26/);
-  assert.match(await page.locator("#execution-list").textContent(), /仅使用电站2的关口、需量和设备约束/);
-  await page.getByRole("tab", { name: "策略工作台" }).click();
-  assert.match(await page.locator('#candidate-grid [data-selected="true"]').textContent(), /光伏消纳优先/);
-  assert.match(await page.locator("#dispatch-plan-id").textContent(), /M4-S2/);
-  assert.match(await page.locator("#strategy-plan-copy").textContent(), /电站2.*1 × 96点/);
-  await page.getByRole("tab", { name: "执行记录" }).click();
-
-  const originalTheme = await page.locator("html").getAttribute("data-theme");
+  await page.locator("#scenario-select").selectOption("normal");
+  assert.strictEqual(await page.locator("#actual-power-trace").count(), 1);
+  assert.match(await page.locator("#point-reason").textContent(), /元\/kWh/);
+  assert.ok(Math.abs(Number(await page.locator("#energy-card").getAttribute("data-balance-error"))) < 1e-7);
+  await page.locator("#simulate-demand").click();
+  assert.strictEqual(await page.locator("#demand-card").getAttribute("data-triggered"), "true");
+  assert.strictEqual(await page.locator("#demand-current").textContent(), "501.2");
+  assert.strictEqual(await page.locator("#demand-margin").textContent(), "18.8");
+  assert.match(await page.locator("#execution-stats").textContent(), /60.*58.8.*1.2/s);
+  await screenshot("m4-operations-demand");
+  await page.locator("#open-records").click();
+  assert.match(await page.locator("#drawer-events").textContent(), /需量逼近.*削峰计划已接收.*EMS 实际功率已回读/s);
+  await closeDrawer();
+  await page.locator("#simulate-pv").click();
+  assert.match(await page.locator("#operating-title").textContent(), /充电 230 kW.*光伏余电/);
+  assert.strictEqual(await page.locator("#demand-current").textContent(), "0");
+  assert.match(await page.locator("#flow-breakdown").textContent(), /220.*230.*0/s);
+  assert.strictEqual(await page.locator("#point-time").textContent(), "12:00");
+  assert.strictEqual(await page.locator("#decision-name").textContent(), "光伏消纳优先");
+  assert.ok(Math.abs(Number(await page.locator("#energy-card").getAttribute("data-balance-error"))) < 1e-7);
+  await screenshot("m4-operations-pv");
+  await page.locator("#station-select").selectOption("s2");
+  assert.strictEqual(await page.locator("#scenario-select").inputValue(), "normal");
+  assert.strictEqual(await page.locator("#demand-card").getAttribute("data-triggered"), "false");
+  await page.locator("#station-select").selectOption("s1");
+  assert.strictEqual(await page.locator("#scenario-select").inputValue(), "pv-surplus");
+  await page.locator("#open-evidence").click();
+  assert.strictEqual(await page.locator("[data-evidence]").count(), 5);
+  assert.match(await page.locator('[data-evidence="4.1"]').textContent(), /M4 MILP v1.0.*MOCK-M4-S1.*96 点/s);
+  await page.locator('[data-evidence="4.4"] summary').click();
+  await page.locator('[data-evidence-demo="demand-near"]').click();
+  assert.match(await page.locator('[data-evidence="4.4"]').textContent(), /模拟已触发.*501.2/s);
+  await screenshot("m4-operations-evidence");
+  await closeDrawer();
+  await page.locator("#open-bill").click();
+  assert.strictEqual(await page.locator(".bill-hero .rate").textContent(), "6.2%");
+  assert.match(await page.locator(".bill-table").textContent(), /300,000.*281,400/s);
+  await screenshot("m4-operations-bill");
+  await page.locator("#bill-period").selectOption("2026-09");
+  assert.strictEqual(await page.locator(".bill-hero .rate").textContent(), "待验证");
+  assert.doesNotMatch(await page.locator("#drawer-body").textContent(), /模拟达标|6.2%/);
+  await closeDrawer();
+  assert.strictEqual(await page.locator("#bill-summary-value").textContent(), "待验证");
+  await page.locator("#station-select").selectOption("s2");
+  assert.strictEqual(await page.locator("#bill-summary-rate").textContent(), "6.6%");
+  await page.locator("#station-select").selectOption("s1");
+  assert.strictEqual(await page.locator("#bill-summary-value").textContent(), "待验证");
+  await page.locator("#open-bill").click();
+  await page.locator("#bill-period").selectOption("2026-08");
+  await closeDrawer();
+  await page.locator("#scenario-select").selectOption("normal");
   await page.locator("#theme-toggle").click();
-  assert.notStrictEqual(await page.locator("html").getAttribute("data-theme"), originalTheme);
+  assert.strictEqual(await page.locator("html").getAttribute("data-theme"), "dark");
+  await screenshot("m4-redesign-dark");
+  await page.locator("#theme-toggle").click();
 
-  if (screenshotDir) {
-    await page.screenshot({ path: path.join(screenshotDir, "m4-online-records-desktop.png"), fullPage: true });
+  for (const width of [1440, 1024, 768, 390, 320]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await noOverflow();
+    if (width === 320 || width === 768) await screenshot(`m4-redesign-${width}`);
+    await page.locator("#open-records").click();
+    const drawer = await page.locator("#detail-drawer").evaluate(el => ({ scroll: el.scrollWidth, client: el.clientWidth }));
+    assert.ok(drawer.scroll <= drawer.client, `Drawer overflow at ${width}px`);
+    await closeDrawer();
+    await page.locator("#open-evidence").click();
+    assert.ok(await page.locator("#detail-drawer").evaluate(el => el.scrollWidth <= el.clientWidth));
+    await closeDrawer();
+    await page.locator("#open-bill").click();
+    assert.ok(await page.locator("#detail-drawer").evaluate(el => el.scrollWidth <= el.clientWidth));
+    await closeDrawer();
   }
+  const localChart = await page.locator("#plan-chart-scroll").evaluate(el => ({ scroll: el.scrollWidth, client: el.clientWidth }));
+  assert.ok(localChart.scroll > localChart.client, "Dense chart should scroll inside its card on mobile");
+  await page.locator("#station-select").selectOption("all");
+  await noOverflow();
 
-  const aiFallback = await openPage({ width: 1280, height: 900 }, "ai-fallback");
-  await openStrategy(aiFallback);
-  assert.strictEqual(await aiFallback.page.locator("#ai-selection").getAttribute("data-mode"), "fallback");
-  assert.match(await aiFallback.page.locator('#candidate-grid [data-selected="true"]').textContent(), /均衡方案/);
-  assert.match(await aiFallback.page.locator("#ai-selection").textContent(), /大语言模型超时.*自动降级.*均衡方案/s);
-  assert.strictEqual(await aiFallback.page.locator("#validation-status").getAttribute("data-state"), "passed");
-  assert.match(await aiFallback.page.locator("#auto-dispatch-contract").textContent(), /EMS已接收/);
-
-  const validationFailed = await openPage({ width: 1280, height: 900 }, "validation-failed");
-  await openStrategy(validationFailed);
-  assert.strictEqual(await validationFailed.page.locator("#validation-status").getAttribute("data-state"), "blocked");
-  assert.strictEqual(await validationFailed.page.locator("#dispatch-status").getAttribute("data-state"), "not-sent");
-  assert.match(await validationFailed.page.locator("#auto-dispatch-contract").textContent(), /未发送.*保留电站1 EMS当前有效计划/s);
-
-  const emsRetry = await openPage({ width: 1280, height: 900 }, "ems-retry");
-  await openStrategy(emsRetry);
-  assert.strictEqual(await emsRetry.page.locator("#ems-recovery").getAttribute("data-state"), "recovered");
-  assert.match(await emsRetry.page.locator("#auto-dispatch-contract").textContent(), /EMS首次拒绝.*立即重算1次.*已恢复/s);
-
-  const mobile = await openPage({ width: 320, height: 900 });
-  const overflow = await mobile.page.evaluate(() => ({
-    scroll: document.documentElement.scrollWidth,
-    client: document.documentElement.clientWidth,
-  }));
-  assert.ok(overflow.scroll <= overflow.client, `mobile page overflow: ${JSON.stringify(overflow)}`);
-  const timelineOverflow = await mobile.page.locator("#overview-timeline").evaluate((node) => ({
-    scroll: node.scrollWidth,
-    client: node.clientWidth,
-  }));
-  assert.ok(
-    timelineOverflow.scroll > timelineOverflow.client,
-    `mobile timeline should scroll locally: ${JSON.stringify(timelineOverflow)}`,
-  );
-  if (screenshotDir) {
-    await mobile.page.screenshot({ path: path.join(screenshotDir, "m4-online-overview-mobile.png"), fullPage: true });
+  const direct = await openPage({ width: 1280, height: 900 }, "ai-fallback", "s2");
+  allPages.push(direct);
+  assert.match(await direct.page.locator("#station-context-title").textContent(), /电站2/);
+  assert.strictEqual(await direct.page.locator("#decision-name").textContent(), "均衡方案");
+  for (const item of allPages) {
+    assert.deepStrictEqual(item.externalRequests, []);
+    assert.deepStrictEqual(item.consoleErrors, []);
+    assert.deepStrictEqual(item.pageErrors, []);
+    await item.page.close();
   }
-
-  for (const result of [desktop, aiFallback, validationFailed, emsRetry, mobile]) {
-    assert.deepStrictEqual(result.externalRequests, []);
-    assert.deepStrictEqual(result.consoleErrors, []);
-    assert.deepStrictEqual(result.pageErrors, []);
-  }
-
-  await Promise.all([desktop, aiFallback, validationFailed, emsRetry, mobile].map((result) => result.page.close()));
   await browser.close();
-  await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
-  console.log("M4 online automatic scheduling console e2e passed");
-})().catch(async (error) => {
+  await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+  console.log("M4 single-page console e2e passed: preview, power balance, peak shaving, PV surplus, five evidence items, monthly bills, station isolation, keyboard, themes, responsive layouts, and no external requests");
+})().catch(async error => {
   console.error(error);
   if (browser) await browser.close().catch(() => {});
-  if (server) await new Promise((resolve) => server.close(() => resolve()));
+  if (server) await new Promise(resolve => server.close(resolve));
   process.exitCode = 1;
 });

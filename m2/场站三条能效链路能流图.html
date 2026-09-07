@@ -1,10 +1,13 @@
 <!doctype html>
-<html lang="zh-CN" data-visualize-standalone>
+<html data-vifa-page="m2" lang="zh-CN" data-theme="light" data-visualize-standalone>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="referrer" content="no-referrer">
 <title>场站三条能效链路、今日趋势与瓶颈识别</title>
+<script>
+try { document.documentElement.dataset.theme = localStorage.getItem('dashboard-theme') === 'dark' ? 'dark' : 'light'; } catch (_) {}
+</script>
 <style>:root {
   color-scheme: light dark;
   background-color: transparent !important;
@@ -820,6 +823,134 @@ svg {
   color: var(--destructive);
 }
 </style>
+<style id="vifa-m3-theme">
+/* Theme tokens copied from m3/node_red/m3_production_gateway_template.html. */
+:root[data-vifa-page] {
+  --m3-blue: #74a7ff;
+  --m3-cyan: #5ee7f6;
+  --m3-green: #69e6a6;
+  --m3-green-soft: rgb(105 230 166 / 9%);
+  --m3-orange: #f7d26a;
+  --m3-orange-soft: rgb(247 210 106 / 10%);
+  --m3-red: #ff7f91;
+  --m3-red-soft: rgb(255 127 145 / 10%);
+  --m3-paper: #0b1020;
+  --m3-panel: #11182a;
+  --m3-panel-soft: #151f34;
+  --m3-panel-raised: #18243b;
+  --m3-ink: #eaf0ff;
+  --m3-muted: #8fa0bf;
+  --m3-tertiary: #6f7c95;
+  --m3-line: rgb(255 255 255 / 8%);
+  --m3-line-hover: rgb(255 255 255 / 14%);
+  --m3-shadow-soft: 0 16px 36px rgb(0 0 0 / 25%);
+  --m3-card-overlay: rgb(255 255 255 / 2.6%);
+  --m3-card-overlay-end: rgb(255 255 255 / 1.2%);
+  --m3-glow-blue: rgb(72 112 255 / 14%);
+  --m3-glow-green: rgb(30 220 196 / 9%);
+}
+:root[data-vifa-page][data-theme="light"] {
+  --m3-blue: #477df0;
+  --m3-cyan: #0e96b4;
+  --m3-green: #16855a;
+  --m3-green-soft: rgb(33 167 111 / 10%);
+  --m3-orange: #a36d00;
+  --m3-orange-soft: rgb(163 109 0 / 10%);
+  --m3-red: #cf4055;
+  --m3-red-soft: rgb(224 82 101 / 10%);
+  --m3-paper: #f4f7fb;
+  --m3-panel: #ffffff;
+  --m3-panel-soft: #f8fafc;
+  --m3-panel-raised: #eef3fb;
+  --m3-ink: #172033;
+  --m3-muted: #6f7d93;
+  --m3-tertiary: #7b879a;
+  --m3-line: rgb(15 23 42 / 9%);
+  --m3-line-hover: rgb(15 23 42 / 16%);
+  --m3-shadow-soft: 0 14px 34px rgb(36 48 74 / 10%);
+  --m3-card-overlay: rgb(255 255 255 / 35%);
+  --m3-card-overlay-end: rgb(255 255 255 / 10%);
+  --m3-glow-blue: rgb(72 112 255 / 9%);
+  --m3-glow-green: rgb(30 180 155 / 7%);
+}
+
+:root[data-vifa-page][data-theme="light"] { color-scheme: light; }
+:root[data-vifa-page][data-theme="dark"] { color-scheme: dark; }
+:root[data-vifa-page] { background: var(--m3-paper) !important; }
+:root[data-vifa-page] > body {
+  background:
+    radial-gradient(circle at 12% 0%, var(--m3-glow-blue), transparent 30%),
+    radial-gradient(circle at 86% 10%, var(--m3-glow-green), transparent 25%),
+    var(--m3-paper) !important;
+}
+:root[data-vifa-page="m1"] {
+  --surface-0: var(--m3-paper); --surface-1: var(--m3-panel);
+  --surface-2: var(--m3-panel-soft); --surface-3: var(--m3-panel-raised); --surface-4: var(--m3-panel);
+  --text-primary: var(--m3-ink); --text-secondary: var(--m3-muted); --text-tertiary: var(--m3-tertiary);
+  --border: var(--m3-line); --border-hover: var(--m3-line-hover);
+  --shadow-soft: var(--m3-shadow-soft); --shadow-card: var(--m3-shadow-soft);
+}
+:root[data-vifa-page="m2"] {
+  --background: var(--m3-paper); --foreground: var(--m3-ink);
+  --card: var(--m3-panel); --popover: var(--m3-panel);
+  --secondary: var(--m3-panel-soft); --muted: var(--m3-panel-raised); --muted-foreground: var(--m3-muted);
+  --border: var(--m3-line); --border-hover: var(--m3-line-hover); --input: var(--m3-line);
+  --shadow-sm: var(--m3-shadow-soft); --shadow-card: var(--m3-shadow-soft);
+}
+:root[data-vifa-page="m1"] :is(.kpi-card, .sites-panel, .alert-panel),
+:root[data-vifa-page="m2"] #three-energy-flow .dashboard-zone {
+  background: linear-gradient(180deg, var(--m3-card-overlay), var(--m3-card-overlay-end)), var(--m3-panel);
+  border-radius: 16px;
+}
+:root[data-vifa-page="m1"] :is(.site-card, .node-group) { background: var(--m3-panel-soft); box-shadow: none; }
+:root[data-vifa-page="m1"] .node-card,
+:root[data-vifa-page="m2"] #three-energy-flow .card {
+  background: linear-gradient(180deg, var(--m3-card-overlay), var(--m3-card-overlay-end)), var(--m3-panel);
+}
+:root[data-vifa-page="m2"] #three-energy-flow .vifa-theme-toggle {
+  display: inline-flex; width: 40px; height: 40px; padding: 10px; align-items: center; justify-content: center;
+  border: 1px solid var(--m3-line); border-radius: 10px; background: var(--m3-panel-soft); color: var(--m3-muted); cursor: pointer;
+}
+:root[data-vifa-page="m2"] #three-energy-flow .vifa-theme-toggle:hover { border-color: var(--m3-line-hover); }
+:root[data-vifa-page="m2"] #three-energy-flow .vifa-theme-toggle:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.vifa-theme-toggle svg { width: 18px; height: 18px; }
+:root[data-theme="light"] .vifa-theme-toggle .theme-sun,
+:root[data-theme="dark"] .vifa-theme-toggle .theme-moon { display: none; }
+
+/* Page-specific interaction colors; M3 background tokens remain shared. */
+:root[data-vifa-page="m1"] {
+  --m1-accent: #a5b4fc;
+  --m1-accent-soft: rgb(165 180 252 / 14%);
+  --m1-soc-gradient: linear-gradient(90deg, #69c8f4 0%, #94a3ff 55%, #c4a2f5 100%);
+  --accent: var(--m1-accent); --accent-dim: var(--m1-accent-soft); --accent-glow: var(--m1-accent-soft);
+  --info: var(--m3-blue); --info-dim: rgb(71 125 240 / 10%);
+  --warn: var(--m3-orange); --warn-dim: var(--m3-orange-soft); --warn-glow: var(--m3-orange-soft);
+  --danger: var(--m3-red); --danger-dim: var(--m3-red-soft); --danger-glow: var(--m3-red-soft);
+}
+:root[data-vifa-page="m1"][data-theme="light"] {
+  --m1-accent: #5b5bd6;
+  --m1-accent-soft: rgb(91 91 214 / 10%);
+  --m1-soc-gradient: linear-gradient(90deg, #54b6ee 0%, #7588f5 55%, #a58ae9 100%);
+}
+:root[data-vifa-page="m2"] {
+  --primary: var(--m3-blue); --accent: rgb(71 125 240 / 10%); --ring: var(--m3-cyan);
+  --green: var(--m3-green); --red: var(--m3-red); --destructive: var(--m3-red);
+  --viz-series-1: var(--m3-orange); --viz-series-2: var(--m3-blue); --viz-series-3: var(--m3-green); --viz-series-4: var(--m3-red);
+}
+:root[data-vifa-page="m1"] .header-logo {
+  background: linear-gradient(135deg, #6389ef, #8b75db);
+  box-shadow: 0 6px 18px rgb(99 102 220 / 16%);
+}
+:root[data-vifa-page="m1"] .site-status-dot.online { background: var(--m3-green); box-shadow: none; }
+:root[data-vifa-page="m1"] .soc-bar-bg { height: 6px; background: color-mix(in srgb, var(--m1-accent) 10%, var(--m3-panel-soft)); }
+:root[data-vifa-page="m1"] .soc-bar-fill { background: var(--m1-soc-gradient); box-shadow: none; }
+:root[data-vifa-page="m1"] :is(.node-online, .kpi-value.online) { color: var(--m3-green); }
+:root[data-vifa-page="m1"] :is(.node-status-pill.work, .node-status-pill.charge) { background: var(--m3-green-soft); color: var(--m3-green); }
+:root[data-vifa-page="m2"] #three-energy-flow .station-tab[aria-selected="true"] {
+  color: var(--m3-blue); border-color: rgb(71 125 240 / 45%);
+  background: rgb(71 125 240 / 6%); box-shadow: inset 0 0 0 1px rgb(71 125 240 / 10%);
+}
+</style>
 </head>
 <body>
 <div id="three-energy-flow" data-dashboard-state="loading" role="region" aria-label="场站三条能效链路实时能流、今日效率曲线和效率瓶颈事件">
@@ -1519,6 +1650,36 @@ svg {
         min-height: 18rem;
       }
     }
+
+    #three-energy-flow [hidden] { display: none !important; }
+    #three-energy-flow .history-toolbar {
+      display: flex; flex-wrap: wrap; align-items: end; gap: .65rem;
+    }
+    #three-energy-flow .history-toolbar label { display: grid; gap: .3rem; color: var(--muted-foreground); font-size: var(--font-size-small); }
+    #three-energy-flow .history-toolbar input,
+    #three-energy-flow .history-toolbar select,
+    #three-energy-flow .history-button {
+      min-height: 40px; border: 1px solid var(--border); border-radius: .5rem;
+      background: var(--card); color: var(--foreground); padding: .45rem .7rem;
+      font: inherit; font-variant-numeric: tabular-nums;
+    }
+    #three-energy-flow .history-button { cursor: pointer; font-size: var(--font-size-small); }
+    #three-energy-flow .history-button:hover { background: var(--accent); }
+    #three-energy-flow .history-button[aria-pressed="true"] { background: var(--accent); color: var(--primary); border-color: var(--primary); }
+    #three-energy-flow .history-button:disabled { opacity: .45; cursor: default; }
+    #three-energy-flow .history-toolbar :focus-visible,
+    #three-energy-flow .history-button:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
+    #three-energy-flow .history-status { color: var(--muted-foreground); font-size: var(--font-size-small); min-height: 1.5em; }
+    #three-energy-flow .history-status[data-state="error"] { color: var(--red); }
+    #three-energy-flow .event-history-controls { display: grid; gap: .8rem; }
+    #three-energy-flow .history-pagination { display: flex; align-items: center; justify-content: flex-end; gap: .75rem; flex-wrap: wrap; }
+    #three-energy-flow .bottleneck-section[data-history-mode="true"] table { min-width: 960px; }
+    #three-energy-flow .event-time-range { white-space: pre-line; min-width: 10rem; font-variant-numeric: tabular-nums; }
+    @media (max-width: 520px) {
+      #three-energy-flow .history-toolbar label { flex: 1 1 130px; min-width: 0; }
+      #three-energy-flow .history-toolbar input, #three-energy-flow .history-toolbar select { width: 100%; min-width: 0; }
+      #three-energy-flow .history-pagination { justify-content: flex-start; }
+    }
   </style>
 
   <div class="station-loading" id="station-loading" role="status" aria-live="polite" aria-hidden="true" hidden>
@@ -1537,6 +1698,10 @@ svg {
           <div class="zone-description">场站三条能效链路与实时功率流向</div>
         </div>
       </div>
+      <button class="vifa-theme-toggle" id="m2-theme-toggle" type="button" aria-label="切换明暗主题" title="切换明暗主题" aria-pressed="false">
+        <svg class="theme-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M21 12.8A9 9 0 0 1 11.2 3 9 9 0 1 0 21 12.8Z"/></svg>
+        <svg class="theme-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/></svg>
+      </button>
     </div>
 
   <div class="flow-meta">
@@ -1747,7 +1912,7 @@ svg {
         <span class="zone-index">02</span>
         <div>
           <h2 id="efficiency-zone-title">效率图表</h2>
-          <div class="zone-description">当前链路效率与今日24小时变化趋势</div>
+          <div class="zone-description">当前链路效率与按日查询的24小时变化趋势</div>
         </div>
       </div>
     </div>
@@ -1783,6 +1948,15 @@ svg {
       <span class="text-muted text-small">无有效运行数据时曲线断开，不按0%展示</span>
     </div>
 
+    <form class="history-toolbar" id="curve-query-form" aria-label="效率曲线日期查询">
+      <button class="history-button" type="button" id="curve-prev">前一天</button>
+      <label>曲线日期<input type="date" id="curve-date" required aria-label="曲线日期"></label>
+      <button class="history-button" type="button" id="curve-next">后一天</button>
+      <button class="history-button" type="submit">查询</button>
+      <button class="history-button" type="button" id="curve-today">回到今日</button>
+    </form>
+    <div class="history-status" id="curve-query-status" role="status" aria-live="polite">按北京时间自然日查询，每分钟一个点；无运行数据时保留缺口。</div>
+
     <div class="chart-wrap" id="efficiency-chart-wrap">
       <svg class="trend-chart" id="efficiency-trend-chart" role="img" aria-labelledby="efficiency-chart-title efficiency-chart-desc">
         <title id="efficiency-chart-title">三条链路今日效率曲线</title>
@@ -1799,10 +1973,29 @@ svg {
         <span class="zone-index">03</span>
         <div>
           <h2 id="bottleneck-title">效率瓶颈事件</h2>
-          <div class="zone-description">异常区间与上方效率曲线使用同一时间轴</div>
+          <div class="zone-description" id="bottleneck-description">异常区间与上方效率曲线使用同一时间轴</div>
         </div>
       </div>
+      <div class="history-toolbar" aria-label="瓶颈事件查询模式">
+        <button class="history-button" type="button" id="events-current" aria-pressed="true">曲线当日</button>
+        <button class="history-button" type="button" id="events-history" aria-pressed="false">历史记录</button>
+      </div>
     </div>
+    <div class="event-history-controls" id="event-history-controls" hidden>
+      <form class="history-toolbar" id="event-query-form" aria-label="瓶颈历史日期查询">
+        <label>开始日期<input type="date" id="event-start-date" required></label>
+        <label>结束日期<input type="date" id="event-end-date" required></label>
+        <button class="history-button" type="submit">查询记录</button>
+        <button class="history-button" type="button" data-event-days="7">近7天</button>
+        <button class="history-button" type="button" data-event-days="30">近30天</button>
+      </form>
+      <div class="history-toolbar">
+        <label>瓶颈类型<select id="event-type-filter"><option value="">全部类型</option><option value="chain_low_efficiency">链路低效率</option><option value="inverter_low_load">逆变器低负载</option><option value="battery_temperature_rise">电池温升</option></select></label>
+        <label>事件状态<select id="event-status-filter"><option value="">全部状态</option><option value="持续中">持续中</option><option value="已恢复">已恢复</option></select></label>
+        <span class="text-muted text-small">北京时间，单次最多31天；含跨日事件，状态为最新记录。</span>
+      </div>
+    </div>
+    <div class="history-status" id="event-query-status" role="status" aria-live="polite"></div>
     <div class="table-responsive">
       <table class="table table-sm">
         <thead>
@@ -1813,12 +2006,18 @@ svg {
             <th>判定数据</th>
             <th>影响链路</th>
             <th>状态</th>
+            <th id="event-curve-header" hidden>效率曲线</th>
           </tr>
         </thead>
         <tbody id="event-table-body">
           <tr><td colspan="6" class="text-muted">正在加载瓶颈事件</td></tr>
         </tbody>
       </table>
+    </div>
+    <div class="history-pagination" id="event-pagination" hidden>
+      <button class="history-button" type="button" id="event-page-prev">上一页</button>
+      <span class="text-small text-muted" id="event-page-label"></span>
+      <button class="history-button" type="button" id="event-page-next">下一页</button>
     </div>
   </section>
 </div>
@@ -1857,6 +2056,151 @@ svg {
     let fetchInFlight = false;
     let activeController = null;
 
+    const curveDate = document.getElementById("curve-date");
+    const curveStatus = document.getElementById("curve-query-status");
+    const eventStatus = document.getElementById("event-query-status");
+    const eventStartDate = document.getElementById("event-start-date");
+    const eventEndDate = document.getElementById("event-end-date");
+    let selectedCurveDate = ""; // Empty means the live dashboard follows today.
+    let curveController = null;
+    let eventController = null;
+    let dayEvents = [];
+    let eventHistoryMode = false;
+    let eventHistoryRows = [];
+    let eventAppliedRange = null;
+    let eventPage = 1;
+    const eventPageSize = 10;
+
+    function todayDate() {
+      return new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
+    }
+
+    function shiftDate(value, days) {
+      return new Date(Date.parse(value + "T00:00:00Z") + days * 86400000).toISOString().slice(0, 10);
+    }
+
+    function updateDateLimits() {
+      [curveDate, eventStartDate, eventEndDate].forEach((input) => { input.max = todayDate(); input.min = "0001-01-01"; });
+      document.getElementById("curve-next").disabled = !curveDate.value || curveDate.value >= todayDate();
+      document.getElementById("curve-prev").disabled = !curveDate.value || curveDate.value <= "0001-01-01";
+    }
+
+    function setQueryStatus(node, state, text) {
+      node.dataset.state = state;
+      node.textContent = text;
+    }
+
+    function clearCurve(message) {
+      setQueryStatus(curveStatus, "loading", message);
+      rows = []; events = []; range = null; dayEvents = [];
+      hideTooltip();
+      svg.setAttribute("data-latest-time", "");
+      root.setAttribute("data-latest-time", "");
+      readout.textContent = message;
+      if (!eventHistoryMode) { setEventMessage(message, false); eventStatus.textContent = ""; }
+      render();
+    }
+
+    async function readHistory(params, controller) {
+      const endpoint = new URL(apiUrl, window.location.href);
+      Object.entries({ station_id: activeStationId, ...params }).forEach(([key, value]) => endpoint.searchParams.set(key, value));
+      const timeout = window.setTimeout(() => controller.abort(), 15000);
+      try {
+        const response = await fetch(endpoint, { headers: { Accept: "application/json" }, signal: controller.signal });
+        if (!response.ok) throw new Error("history_request_failed");
+        const payload = await response.json();
+        if (payload.status !== "ok" || payload.data?.operation !== params.operation || payload.data?.station_id !== activeStationId) throw new Error("invalid_history_response");
+        return payload.data;
+      } finally { window.clearTimeout(timeout); }
+    }
+
+    async function queryCurve(date) {
+      curveDate.value = date;
+      updateDateLimits();
+      if (!curveDate.checkValidity()) {
+        setQueryStatus(curveStatus, "error", "请选择有效日期，不能晚于今天。");
+        return;
+      }
+      if (curveController) curveController.abort();
+      curveController = null;
+      selectedCurveDate = date === todayDate() ? "" : date;
+      setText("trend-title", selectedCurveDate ? date + " 效率曲线" : "今日24小时效率曲线");
+      clearCurve("正在查询效率曲线…");
+      setQueryStatus(curveStatus, "loading", "正在查询 " + date + " 的分钟效率记录…");
+      if (!selectedCurveDate) { fetchData(true); return; }
+      const controller = new AbortController();
+      curveController = controller;
+      const stationId = activeStationId;
+      try {
+        const data = await readHistory({ operation: "history", date }, controller);
+        if (curveController !== controller || activeStationId !== stationId) return;
+        renderCurve(data);
+      } catch (error) {
+        if (curveController !== controller || activeStationId !== stationId) return;
+        clearCurve("历史效率曲线加载失败");
+        setQueryStatus(curveStatus, "error", error.name === "AbortError" ? "历史查询超时，请重试查询。" : "历史曲线查询失败，请重试查询。");
+      } finally { if (curveController === controller) curveController = null; }
+    }
+
+    function renderEventHistory() {
+      if (!eventHistoryMode || !eventAppliedRange) return;
+      const type = document.getElementById("event-type-filter").value;
+      const status = document.getElementById("event-status-filter").value;
+      const filtered = eventHistoryRows.filter((item) => (!type || item.event_type === type) && (!status || item.status === status));
+      const pages = Math.max(1, Math.ceil(filtered.length / eventPageSize));
+      eventPage = Math.min(eventPage, pages);
+      renderEvents(filtered.slice((eventPage - 1) * eventPageSize, eventPage * eventPageSize), true);
+      setQueryStatus(eventStatus, "ready", eventAppliedRange.start + " 至 " + eventAppliedRange.end + " · 共 " + filtered.length + " 条记录");
+      document.getElementById("event-pagination").hidden = filtered.length <= eventPageSize;
+      setText("event-page-label", eventPage + " / " + pages + " 页");
+      document.getElementById("event-page-prev").disabled = eventPage <= 1;
+      document.getElementById("event-page-next").disabled = eventPage >= pages;
+    }
+
+    async function queryEventHistory() {
+      updateDateLimits();
+      const start = eventStartDate.value;
+      const end = eventEndDate.value;
+      if (!eventStartDate.checkValidity() || !eventEndDate.checkValidity() || start > end || (Date.parse(end) - Date.parse(start)) / 86400000 >= 31) {
+        setQueryStatus(eventStatus, "error", "请选择有效的起止日期，不能晚于今天，单次最多31天。");
+        return;
+      }
+      if (eventController) eventController.abort();
+      const controller = new AbortController();
+      eventController = controller;
+      const stationId = activeStationId;
+      eventHistoryRows = []; eventAppliedRange = null; eventPage = 1;
+      document.getElementById("event-pagination").hidden = true;
+      setEventMessage("正在查询瓶颈历史记录…", true);
+      setQueryStatus(eventStatus, "loading", "正在查询 " + start + " 至 " + end + "…");
+      try {
+        const data = await readHistory({ operation: "events", start_date: start, end_date: end }, controller);
+        if (eventController !== controller || activeStationId !== stationId || !eventHistoryMode) return;
+        eventHistoryRows = (Array.isArray(data.events) ? data.events : []).sort((a, b) => Date.parse(b.start) - Date.parse(a.start));
+        eventAppliedRange = { start, end };
+        renderEventHistory();
+      } catch (error) {
+        if (eventController !== controller || activeStationId !== stationId || !eventHistoryMode) return;
+        setEventMessage("历史记录加载失败，请重试查询。", true);
+        setQueryStatus(eventStatus, "error", error.name === "AbortError" ? "历史查询超时，请重试查询。" : "瓶颈历史查询失败，请重试查询。");
+      } finally { if (eventController === controller) eventController = null; }
+    }
+
+    function setEventMode(historical) {
+      eventHistoryMode = historical;
+      document.querySelector("#three-energy-flow .bottleneck-section").dataset.historyMode = String(historical);
+      if (eventController) eventController.abort();
+      eventController = null;
+      document.getElementById("event-history-controls").hidden = !historical;
+      document.getElementById("event-curve-header").hidden = !historical;
+      document.getElementById("events-current").setAttribute("aria-pressed", String(!historical));
+      document.getElementById("events-history").setAttribute("aria-pressed", String(historical));
+      document.getElementById("event-pagination").hidden = true;
+      setText("bottleneck-description", historical ? "查询已保存的瓶颈记录，可查看事件对应日期的效率曲线" : "异常区间与上方效率曲线使用同一时间轴");
+      if (historical) queryEventHistory();
+      else { renderEvents(dayEvents); eventStatus.textContent = range ? range.start_time.slice(0, 10) + " · 共 " + dayEvents.length + " 条事件" : ""; }
+    }
+
     function syncStationUi() {
       root.dataset.stationId = activeStationId;
       stationTabs.forEach((tab) => {
@@ -1884,6 +2228,16 @@ svg {
       if (!supportedStationIds.has(stationId) || stationId === activeStationId) return;
       activeStationId = stationId;
       syncStationUi();
+      clearCurve("正在加载所选电站数据…");
+      if (selectedCurveDate) queryCurve(selectedCurveDate);
+      if (eventHistoryMode) {
+        if (eventController) eventController.abort();
+        eventController = null;
+        eventHistoryRows = []; eventAppliedRange = null; eventPage = 1;
+        document.getElementById("event-pagination").hidden = true;
+        setEventMessage("请查询所选电站的瓶颈历史记录。", true);
+        queryEventHistory();
+      }
       fetchData(true);
     }
 
@@ -2033,30 +2387,57 @@ svg {
       return names.length ? names.join("、") : "原因待判断";
     }
 
-    function renderEvents(items) {
+    function renderEvents(items, historical = false) {
       if (!eventTableBody) return;
+      document.getElementById("event-curve-header").hidden = !historical;
       eventTableBody.replaceChildren();
       if (!items.length) {
-        const row = document.createElement("tr");
-        const cell = document.createElement("td");
-        cell.colSpan = 6;
-        cell.className = "text-muted";
-        cell.textContent = "当前时间范围内无瓶颈事件";
-        row.appendChild(cell);
-        eventTableBody.appendChild(row);
+        setEventMessage("当前时间范围内无瓶颈事件", historical);
         return;
       }
       items.forEach((item) => {
         const row = document.createElement("tr");
-        [formatTime(item.start), item.type, eventDeviceLabel(item), item.evidence, item.impact.join("、"), item.status].forEach((value, index) => {
+        const eventTime = historical
+          ? fullEventTime(item.start) + "\n至 " + (item.end ? fullEventTime(item.end) : "持续中")
+          : formatTime(item.start);
+        [eventTime, item.type, eventDeviceLabel(item), item.evidence, (item.impact || []).join("、"), item.status].forEach((value, index) => {
           const cell = document.createElement("td");
           cell.textContent = value || "--";
-          if (index === 0 || index === 2) cell.className = "text-nowrap";
+          if (index === 0) cell.className = historical ? "event-time-range" : "text-nowrap";
+          if (index === 2) cell.className = "text-nowrap";
           if (index === 5 && item.status === "持续中") cell.classList.add("status-active");
           row.appendChild(cell);
         });
+        if (historical) {
+          const cell = document.createElement("td");
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "history-button text-nowrap";
+          button.textContent = "查看曲线";
+          button.addEventListener("click", () => {
+            const date = String(item.start).slice(0, 10);
+            queryCurve(date < eventAppliedRange.start ? eventAppliedRange.start : date);
+            document.getElementById("trend-title").scrollIntoView({ behavior: "smooth", block: "start" });
+          });
+          cell.appendChild(button);
+          row.appendChild(cell);
+        }
         eventTableBody.appendChild(row);
       });
+    }
+
+    function fullEventTime(value) {
+      return String(value || "--").slice(0, 16).replace("T", " ");
+    }
+
+    function setEventMessage(message, historical = eventHistoryMode) {
+      const row = document.createElement("tr");
+      const cell = document.createElement("td");
+      cell.colSpan = historical ? 7 : 6;
+      cell.className = "text-muted";
+      cell.textContent = message;
+      row.appendChild(cell);
+      eventTableBody.replaceChildren(row);
     }
 
     function renderIcons() {
@@ -2078,21 +2459,39 @@ svg {
     function renderDashboard(data) {
       renderRealtime(data.realtime || {});
       renderCurrentEfficiency(data.realtime?.result || {});
+      if (!selectedCurveDate) renderCurve(data);
+    }
+
+    function renderCurve(data) {
+      hideTooltip();
+      curveDate.value = selectedCurveDate || data.range?.start_time?.slice(0, 10) || todayDate();
+      updateDateLimits();
+      setText("trend-title", selectedCurveDate ? selectedCurveDate + " 效率曲线" : "今日24小时效率曲线");
       rows = Array.isArray(data.trend) ? data.trend : [];
       range = data.range || null;
       const currentTime = String(data.realtime?.inputs?.data_time || "").match(/T(\d{2}:\d{2})/)?.[1] || "--:--";
       const currentResult = data.realtime?.result || {};
       readout.textContent = currentTime + "　光储" + formatValue(currentResult.pv_storage_dc_efficiency) + "　储用" + formatValue(currentResult.storage_load_efficiency) + "　光用" + formatValue(currentResult.pv_load_efficiency);
       const rawEvents = Array.isArray(data.events) ? data.events : [];
-      renderEvents(rawEvents);
+      dayEvents = rawEvents;
+      if (!eventHistoryMode) {
+        renderEvents(rawEvents);
+        setQueryStatus(eventStatus, "ready", curveDate.value + " · 共 " + rawEvents.length + " 条事件");
+      }
+      const summary = data.summary || data.summary_today || {};
+      if (selectedCurveDate) {
+        readout.textContent = "当日累计效率　光储" + formatValue(summary.pv_storage_efficiency) + "　储用" + formatValue(summary.storage_load_efficiency) + "　光用" + formatValue(summary.pv_load_efficiency);
+      }
       const latestEnd = range?.latest_time;
+      setQueryStatus(curveStatus, "ready", curveDate.value + " · " + (rows.length ? "已记录 " + rows.length + " 个分钟点 · 最近记录 " + clockFromTimestamp(latestEnd) : "暂无已保存的分钟效率记录") + " · 北京时间，缺失时段保留断点");
+      const eventEnd = selectedCurveDate ? range?.cutoff_time || range?.end_time : latestEnd;
       events = rawEvents.map((item) => ({
         startRatio: timeRatio(item.start) ?? 0,
-        endRatio: timeRatio(item.end || latestEnd) ?? 0,
+        endRatio: timeRatio(item.end || eventEnd) ?? 0,
         eventType: item.event_type || "",
         status: item.status || "",
         start: item.start || "",
-        end: item.end || latestEnd || "",
+        end: item.end || eventEnd || "",
         label: item.type || "瓶颈事件",
         shortLabel: item.type || "事件",
         color: item.status === "持续中" ? "var(--red)" : "var(--viz-series-4)"
@@ -2137,7 +2536,10 @@ svg {
         root.dataset.dashboardState = "error";
         statusNode.dataset.state = "error";
         statusNode.textContent = error.name === "AbortError" ? "后端请求超时" : "后端数据加载失败";
-        readout.textContent = "光储无运行数据　储用无运行数据　光用无运行数据";
+        if (!selectedCurveDate) {
+          clearCurve("效率曲线加载失败");
+          setQueryStatus(curveStatus, "error", "今日曲线加载失败，请重试查询。");
+        }
         console.error("Energy dashboard load failed:", error);
       } finally {
         window.clearTimeout(timeout);
@@ -2193,7 +2595,7 @@ svg {
       svg.setAttribute("height", String(height));
       svg.replaceChildren();
 
-      const title = make("title", { id: "efficiency-chart-title" }, "三条链路今日效率曲线");
+      const title = make("title", { id: "efficiency-chart-title" }, selectedCurveDate ? selectedCurveDate + " 三条链路效率曲线" : "三条链路今日效率曲线");
       const desc = make("desc", { id: "efficiency-chart-desc" }, "横轴为0点至24点，纵轴为效率百分比，并标记逆变器低负载和电池温升事件。");
       const defs = make("defs");
       const eventClip = make("clipPath", { id: "efficiency-event-clip" });
@@ -2264,7 +2666,8 @@ svg {
         }, tick + "%"));
       });
 
-      [0, 4, 8, 12, 16, 20, 24].forEach((tick) => {
+      const hourTicks = width < 520 ? [0, 6, 12, 18, 24] : [0, 4, 8, 12, 16, 20, 24];
+      hourTicks.forEach((tick) => {
         const px = x(tick / 24);
         svg.appendChild(make("line", {
           x1: px,
@@ -2337,6 +2740,26 @@ svg {
       tooltip.setAttribute("aria-hidden", "true");
     }
 
+    curveDate.value = todayDate();
+    eventEndDate.value = todayDate();
+    eventStartDate.value = shiftDate(todayDate(), -6);
+    updateDateLimits();
+    document.getElementById("curve-query-form").addEventListener("submit", (event) => { event.preventDefault(); queryCurve(curveDate.value); });
+    document.getElementById("curve-prev").addEventListener("click", () => queryCurve(shiftDate(curveDate.value, -1)));
+    document.getElementById("curve-next").addEventListener("click", () => queryCurve(shiftDate(curveDate.value, 1)));
+    document.getElementById("curve-today").addEventListener("click", () => queryCurve(todayDate()));
+    curveDate.addEventListener("change", updateDateLimits);
+    document.getElementById("events-current").addEventListener("click", () => setEventMode(false));
+    document.getElementById("events-history").addEventListener("click", () => setEventMode(true));
+    document.getElementById("event-query-form").addEventListener("submit", (event) => { event.preventDefault(); queryEventHistory(); });
+    root.querySelectorAll("[data-event-days]").forEach((button) => button.addEventListener("click", () => {
+      eventEndDate.value = todayDate();
+      eventStartDate.value = shiftDate(todayDate(), 1 - Number(button.dataset.eventDays));
+      queryEventHistory();
+    }));
+    ["event-type-filter", "event-status-filter"].forEach((id) => document.getElementById(id).addEventListener("change", () => { eventPage = 1; renderEventHistory(); }));
+    document.getElementById("event-page-prev").addEventListener("click", () => { eventPage -= 1; renderEventHistory(); });
+    document.getElementById("event-page-next").addEventListener("click", () => { eventPage += 1; renderEventHistory(); });
     renderIcons();
     render();
     syncStationUi();
@@ -2593,6 +3016,19 @@ svg {
   document
     .getElementById("codex-visualization-lucide")
     ?.addEventListener("load", initialize, { once: true });
+})();
+</script>
+<script>
+(() => {
+  const button = document.getElementById('m2-theme-toggle');
+  const update = () => button.setAttribute('aria-pressed', String(document.documentElement.dataset.theme === 'dark'));
+  update();
+  button.addEventListener('click', () => {
+    const theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+    document.documentElement.dataset.theme = theme;
+    try { localStorage.setItem('dashboard-theme', theme); } catch (_) {}
+    update();
+  });
 })();
 </script>
 </body>

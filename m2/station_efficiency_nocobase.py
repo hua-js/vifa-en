@@ -303,7 +303,7 @@ def fetch_dashboard_events(
     config,
     request_json=None,
 ):
-    """读取当天活动中的事件，以及当天恢复的事件。"""
+    """读取与查询区间重叠的活动或已恢复事件，包含跨日后恢复的记录。"""
     station_text, start_utc, end_utc = _time_range(
         station_id, start_time, end_time,
     )
@@ -314,9 +314,10 @@ def fetch_dashboard_events(
                 {"status": {"$eq": "active"}},
                 {"$and": [
                     {"status": {"$eq": "recovered"}},
-                    {"end_time": {"$gte": start_utc, "$lt": end_utc}},
+                    {"end_time": {"$gte": start_utc}},
                 ]},
             ]},
+            {"start_time": {"$lt": end_utc}},
         ]
     }
     request_json = request_json or _request_get_json

@@ -14,6 +14,9 @@ import copy
 from datetime import datetime
 import json
 import math
+import os
+from pathlib import Path
+import sqlite3
 from typing import Any
 from urllib.parse import urlencode
 import urllib.request
@@ -53,7 +56,7 @@ TARGET_STATIONS = (
             "emu25",
             "emu26",
         ),
-        "pv_meter": {"name": "光伏计量表", "inverter_count": 9},
+        "pv_meter": {"name": "光伏计量表", "emu_sn": "emu27", "inverter_count": 9},
     },
 )
 
@@ -65,6 +68,8 @@ ESS_IDLE_STATUSES = frozenset({"wait", "standby", "stop"})
 # 聚合负载单条实时功率严格高于 1000 kW 时触发告警。
 LOAD_SPIKE_MIN_KW = 1000.0
 REFRESH_INTERVAL_SECONDS = 20
+ALERT_HISTORY_LIMIT = 1000
+DEFAULT_HISTORY_DB = Path(__file__).resolve().parent / "run" / "alert_history.sqlite3"
 
 # Growatt 返回的无时区时间按上海本地时间解释。
 SHANGHAI = ZoneInfo("Asia/Shanghai")
@@ -490,17 +495,23 @@ def fetch_station_load_sources(
 def fetch_station_storage_sources(
     token: str,
 ) -> tuple[dict[str, dict[str, Any]], dict[str, str]]:
-    """按目标柜体白名单读取 t_emu.latest_power，并逐电站求和。"""
+    """读取目标柜体功率/时间及光伏表时间；光伏表不参与储能求和。"""
+    station_device_sns = {
+        station["code"]: list(station["cabinet_sns"]) + (
+            [station["pv_meter"]["emu_sn"]] if station.get("pv_meter") else []
+        )
+        for station in TARGET_STATIONS
+    }
     allowed_pairs = {
         (station["code"], cabinet_sn)
         for station in TARGET_STATIONS
-        for cabinet_sn in station["cabinet_sns"]
+        for cabinet_sn in station_device_sns[station["code"]]
     }
     filters = [
         {
             "$and": [
                 {"f_es_sn": {"$eq": station["code"]}},
-                {"emu_sn": {"$in": list(station["cabinet_sns"])}},
+                {"emu_sn": {"$in": station_device_sns[station["code"]]}},
             ]
         }
         for station in TARGET_STATIONS
@@ -540,6 +551,25 @@ def fetch_station_storage_sources(
             else:
                 station_rows.append(row)
         error_key = f"storage_cabinets:{code}"
+        # 单柜时间独立保留；同站其他柜缺失不能抹去已取得的上报时间。
+        sources[code] = {
+            "cabinet_timestamps": {
+                str(row.get("emu_sn") or "").strip(): normalize_timestamp(
+                    row.get("last_time_iso") or row.get("timestamp")
+                )
+                for row in station_rows
+            },
+            "cabinet_max_temperatures_c": {
+                str(row.get("emu_sn") or "").strip(): max_temperature_c(row.get("max_temp"))
+                for row in station_rows
+            },
+        }
+        if station.get("pv_meter"):
+            pv_sn = station["pv_meter"]["emu_sn"]
+            pv_row = rows_by_pair.get((code, pv_sn), {})
+            sources[code]["pv_meter_timestamp"] = normalize_timestamp(pv_row.get("last_time_iso"))
+            if not sources[code]["pv_meter_timestamp"]:
+                errors[f"pv_meter:{code}"] = f"光伏计量表 {pv_sn} 时间缺失或无效"
         if missing:
             errors[error_key] = "缺少目标柜体：" + "、".join(missing)
             continue
@@ -552,17 +582,11 @@ def fetch_station_storage_sources(
         if any(power is None for power in powers) or any(not value for value in timestamps):
             errors[error_key] = "目标柜体功率或时间无效"
             continue
-        sources[code] = {
+        sources[code].update({
             "power": round(sum(power for power in powers if power is not None), 3),
             "timestamp": max(timestamps),
             "power_source": "t_emu.latest_power",
-            "cabinet_max_temperatures_c": {
-                str(row.get("emu_sn") or "").strip(): max_temperature_c(
-                    row.get("max_temp")
-                )
-                for row in station_rows
-            },
-        }
+        })
     return sources, errors
 
 
@@ -607,6 +631,8 @@ def apply_authoritative_power_sources(
             realtime.append(realtime_item)
             realtime_by_node[node_id] = realtime_item
         realtime_item["temperature_c"] = cabinet_max_temperatures_c[cabinet_sn]
+        source = storage_sources.get(es_code_by_id.get(str(node.get("fk_es")), ""), {})
+        realtime_item["cabinet_timestamp"] = source.get("cabinet_timestamps", {}).get(cabinet_sn, "")
 
     source_by_type = {
         "load": (load_sources, "t_es_data.load_power"),
@@ -884,6 +910,17 @@ def build_result(
         ),
         None,
     )
+    if pv_meter:
+        meter_realtime = next(
+            (item for item in data["realtime"] if str(item.get("fk_en")) == str(pv_meter["id"])),
+            None,
+        )
+        if meter_realtime is None:
+            meter_realtime = {"fk_en": pv_meter["id"]}
+            data["realtime"].append(meter_realtime)
+        # 表计自身时间独立于逆变器汇总数据，缺失时不以其他设备时间替代。
+        meter_realtime["pv_meter_timestamp"] = (storage_sources or {}).get("ES02", {}).get("pv_meter_timestamp", "")
+
     for alert in pv_alerts:
         alert["fk_site_id"] = target_site_id
         alert["fk_en_id"] = pv_meter.get("id") if pv_meter else None
@@ -934,6 +971,70 @@ def build_result(
     return {"status": raw.get("status", "ok"), "data": data}
 
 
+def record_alert_history(data: dict[str, Any], db_path: str | Path) -> dict[str, Any]:
+    """保存实际检出的告警采样；采集时间相同的记录幂等，不推断恢复状态。"""
+    path = Path(db_path).expanduser()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    recorded_at = datetime.now(SHANGHAI).isoformat()
+    with sqlite3.connect(path, timeout=10) as connection:
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS alert_samples (
+                site_id TEXT NOT NULL,
+                alert_id TEXT NOT NULL,
+                sample_time TEXT NOT NULL,
+                recorded_at TEXT NOT NULL,
+                payload TEXT NOT NULL,
+                PRIMARY KEY (site_id, alert_id, sample_time)
+            )
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS alert_samples_site_time
+            ON alert_samples (site_id, sample_time DESC)
+        """)
+        for alert in data.get("alerts", []):
+            sample_time = normalize_timestamp(alert.get("start_time"))
+            if (
+                str(alert.get("fk_site_id") or "") != TARGET_SITE_ID
+                or alert.get("category") not in {"pv_efficiency", "ess_self_loss", "load_spike"}
+                or not alert.get("id")
+                or not sample_time
+            ):
+                continue
+            payload = {**alert, "start_time": sample_time, "recorded_at": recorded_at}
+            connection.execute(
+                "INSERT OR IGNORE INTO alert_samples VALUES (?, ?, ?, ?, ?)",
+                (TARGET_SITE_ID, str(alert["id"]), sample_time, recorded_at,
+                 json.dumps(payload, ensure_ascii=False)),
+            )
+        rows = connection.execute(
+            "SELECT payload FROM alert_samples WHERE site_id = ? "
+            "ORDER BY sample_time DESC, alert_id LIMIT ?",
+            (TARGET_SITE_ID, ALERT_HISTORY_LIMIT),
+        ).fetchall()
+        total, first_recorded_at = connection.execute(
+            "SELECT COUNT(*), MIN(recorded_at) FROM alert_samples WHERE site_id = ?",
+            (TARGET_SITE_ID,),
+        ).fetchone()
+    return {
+        "status": "ok",
+        "records": [json.loads(row[0]) for row in rows],
+        "total": total,
+        "limit": ALERT_HISTORY_LIMIT,
+        "first_recorded_at": first_recorded_at,
+    }
+
+
+def attach_alert_history(result: dict[str, Any], db_path: str | Path) -> None:
+    """历史存储故障单独上报，避免阻断实时监测。"""
+    try:
+        result["data"]["alert_history"] = record_alert_history(result["data"], db_path)
+    except (OSError, sqlite3.Error, ValueError):
+        result["data"]["alert_history"] = {
+            "status": "error", "records": [],
+            "message": "历史告警读写失败，请检查存储目录权限及磁盘状态。",
+        }
+
+
 def main(argv: list[str] | None = None) -> int:
     """分别使用基础站点和能源源 Token，并输出组合后的单个 JSON 响应。"""
     parser = argparse.ArgumentParser(description="运营监控看板 API")
@@ -946,6 +1047,10 @@ def main(argv: list[str] | None = None) -> int:
         help="t_es_data / t_emu Bearer token",
     )
 
+    parser.add_argument(
+        "--history-db", default=os.environ.get("M1_ALERT_HISTORY_DB") or str(DEFAULT_HISTORY_DB),
+        help="历史告警 SQLite 文件；应位于持久化可写目录",
+    )
     args = parser.parse_args(argv)
 
     try:
@@ -977,6 +1082,7 @@ def main(argv: list[str] | None = None) -> int:
             storage_sources=storage_sources,
             source_errors=source_errors,
         )
+        attach_alert_history(result, args.history_db)
         print(json.dumps(result, ensure_ascii=False))
         return 0
     except Exception as error:

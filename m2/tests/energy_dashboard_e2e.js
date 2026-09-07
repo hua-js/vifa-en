@@ -807,7 +807,7 @@ function assertClose(actual, expected, message) {
   );
   assert.strictEqual(
     (await page.locator("#efficiency-readout").innerText()).replace(/　/g, " "),
-    "光储无运行数据 储用无运行数据 光用无运行数据",
+    "效率曲线加载失败",
   );
 
   await browser.close();

@@ -4,570 +4,411 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
-  <title>M4 优化调度控制台</title>
+  <title>M4 优化调度 · VIFA</title>
   <style>
-    :root {
-      color-scheme: dark;
-      --page: #09111f;
-      --surface: #101b2d;
-      --surface-2: #152238;
-      --surface-3: #1a2942;
-      --text: #eff5ff;
-      --muted: #94a5c0;
-      --faint: #6e809d;
-      --line: rgb(255 255 255 / 9%);
-      --line-strong: rgb(255 255 255 / 17%);
-      --blue: #74a7ff;
-      --green: #5de1a0;
-      --orange: #f4c961;
-      --red: #ff7d91;
-      --purple: #b69aff;
-      --blue-soft: rgb(116 167 255 / 11%);
-      --green-soft: rgb(93 225 160 / 10%);
-      --orange-soft: rgb(244 201 97 / 11%);
-      --red-soft: rgb(255 125 145 / 11%);
-      --purple-soft: rgb(182 154 255 / 11%);
-      --shadow: 0 16px 38px rgb(0 0 0 / 22%);
-      --radius: 15px;
-    }
+    :root{color-scheme:light;--page:#f3f6fb;--panel:#fff;--soft:#f7f9fc;--ink:#172033;--muted:#69778e;--line:#e5eaf2;--blue:#376ddb;--blue-soft:#edf3ff;--green:#168263;--green-soft:#eaf6f0;--amber:#9a6708;--amber-soft:#fff5df;--red:#c73f52;--red-soft:#fff0f2;--violet:#8160ce;--violet-soft:#f3effc;--shadow:0 3px 14px #23355304;--radius:14px}
+    html[data-theme="dark"]{color-scheme:dark;--page:#0b1020;--panel:#111a2c;--soft:#162137;--ink:#edf3ff;--muted:#9aaac4;--line:#28354c;--blue:#84aaff;--blue-soft:#1a2d50;--green:#6ad6ae;--green-soft:#15382e;--amber:#f1c675;--amber-soft:#3c3020;--red:#ff96a4;--red-soft:#3b2230;--violet:#b89ae9;--violet-soft:#2b2442;--shadow:none}
+    *{box-sizing:border-box} [hidden]{display:none!important} body{margin:0;min-width:320px;background:var(--page);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;font-size:13px;font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased}
+    button,select,input{font:inherit}
+    button,summary,select{cursor:pointer}
+    button:disabled{cursor:not-allowed;opacity:.5}
+    button,select{min-height:40px}
+    button{color:inherit}
+    button:focus-visible,select:focus-visible,summary:focus-visible,input:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--blue);outline-offset:4px}
+    button{transition:background .15s,border-color .15s}
+    button:hover{border-color:var(--blue)}svg{display:block}
+    h1,h2,h3,p{margin:0}h2{font-size:16px;line-height:1.5;letter-spacing:-.02em}h3{font-size:14px}small{font-size:11px}
+    .muted{color:var(--muted)}
+    .green{color:var(--green)}
+    .blue{color:var(--blue)}
+    .red{color:var(--red)}
+    .unit{font-size:12px;font-weight:450;color:var(--muted);margin-left:4px}
+    .icon{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}
+    .row{display:flex;align-items:center;gap:10px}
+    .spread{justify-content:space-between}
+    .wrap{flex-wrap:wrap}
+    .pill{display:inline-flex;align-items:center;gap:6px;padding:5px 9px;border-radius:6px;font-size:11px;line-height:1.3;font-weight:550;white-space:nowrap}
+    .pill.good{color:var(--green);background:var(--green-soft)}
+    .pill.info{color:var(--blue);background:var(--blue-soft)}
+    .pill.warn{color:var(--amber);background:var(--amber-soft)}
+    .pill.bad{color:var(--red);background:var(--red-soft)}
+    .dot{width:6px;height:6px;border-radius:50%;background:currentColor}
+    .button{display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:8px 13px;border:1px solid var(--line);border-radius:8px;background:var(--panel);font-weight:550;font-size:12px}
+    .button:hover{background:var(--soft)}
+    .button.quiet{background:transparent;border-color:transparent;color:var(--muted)}
+    .button.quiet:hover{background:var(--soft);color:var(--blue)}
+    .button.primary{color:white;background:#376ddb;border-color:#376ddb}
+    .button.primary:hover{background:#285ecb}
+    .text-button{padding:4px 0;min-height:40px;border:0;background:transparent;color:var(--blue);font-size:12px;display:inline-flex;align-items:center;gap:6px}
+    .text-button:hover{text-decoration:underline}
+    .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);min-width:0}
+    .card-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+    .subcopy{color:var(--muted);font-size:11px;line-height:1.65;margin-top:4px}
+    .app{width:min(1512px,100%);margin:auto;padding:0 32px 22px}
+    .masthead{height:56px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:16px}
+    .wordmark{display:flex;align-items:center;gap:9px;font-size:17px;letter-spacing:.09em;font-weight:800}
+    .wordmark .icon{color:var(--blue);width:25px;height:25px}
+    .breadcrumb{display:flex;align-items:center;gap:14px;color:var(--muted);font-size:12px}
+    .breadcrumb .slash{color:var(--line)}
+    .mock-badge{color:var(--violet);background:var(--violet-soft);border:1px solid color-mix(in srgb,var(--violet) 16%,transparent)}
+    .icon-button{width:40px;padding:8px}
+    .page-heading{display:flex;justify-content:space-between;align-items:center;gap:20px;padding:20px 0 17px}
+    .eyebrow{font-size:10px;letter-spacing:.14em;color:var(--muted);font-weight:650;margin-bottom:6px}
+    h1{font-size:25px;font-weight:680;letter-spacing:-.04em}
+    .heading-tools{display:flex;align-items:center;gap:9px}
+    .select-wrap{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:8px;background:var(--panel);padding-left:12px}
+    .select-wrap .icon{color:var(--muted);width:16px}
+    select{max-width:100%;color:var(--ink);background:transparent;border:0;padding:8px 30px 8px 2px;min-width:126px}
+    .date-label{display:flex;align-items:center;gap:8px;padding:11px 12px;border:1px solid var(--line);border-radius:8px;background:var(--panel);font-size:12px;white-space:nowrap}
+    .date-label .icon{color:var(--muted);width:16px}
+    .context{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-bottom:13px;font-size:11px}
+    .context strong{font-size:12px}
+    .context-meta{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+    .context-meta i{height:11px;width:1px;background:var(--line)}
+    .metrics{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));padding:16px 0;margin-bottom:18px}
+    .metric{padding:0 20px;min-width:0;border-right:1px solid var(--line)}
+    .metric:last-child{border:0}
+    .metric-label{font-size:11px;color:var(--muted)}
+    .metric-value{font-size:25px;line-height:1.3;font-weight:650;margin-top:7px;letter-spacing:-.035em;white-space:nowrap}
+    .metric-value .unit{letter-spacing:0;font-size:11px}
+    .metric-meta{font-size:10px;color:var(--muted);margin-top:7px;line-height:1.5}
+    .workspace{display:grid;grid-template-columns:minmax(0,1fr) 306px;gap:18px;align-items:start}
+    .main-column,.side-column{display:grid;gap:18px;min-width:0}
+    .plan-card{padding:21px 22px 15px}
+    .plan-heading{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+    .chart-note{margin-top:14px;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 11px;background:var(--soft);border-radius:7px;font-size:11px;min-height:39px}
+    .chart-note button{min-height:24px;font-size:11px}
+    .chart-scroll{overflow-x:auto;margin:14px -5px 0;position:relative}
+    .plan-svg{width:100%;min-width:620px;height:250px}
+    .chart-grid{stroke:var(--line);stroke-width:1}
+    .chart-label{fill:var(--muted);font-size:11px}
+    .chart-soc{fill:none;stroke:var(--violet);stroke-width:2.4;stroke-linejoin:round}
+    .chart-charge{fill:var(--green);opacity:.76}
+    .chart-discharge{fill:var(--blue);opacity:.85}
+    .chart-hover{stroke:var(--muted);stroke-dasharray:3 4;pointer-events:none}
+    .chart-summary{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:6px;flex-wrap:wrap}
+    .legend{display:flex;align-items:center;gap:16px;flex-wrap:wrap;color:var(--muted);font-size:10px}
+    .legend span{display:flex;align-items:center;gap:5px}
+    .legend i{width:8px;height:8px;border-radius:2px;background:var(--green)}
+    .legend i.discharge{background:var(--blue)}
+    .legend i.soc{height:2px;width:14px;background:var(--violet)}
+    .sample{margin-top:13px;padding-top:12px;border-top:1px solid var(--line);display:flex;align-items:center;gap:14px}
+    .sample label{display:flex;gap:8px;align-items:center;min-width:112px;font-size:11px}
+    .sample input{accent-color:var(--blue);min-width:40px;flex:1;height:20px;cursor:pointer}
+    .point-readout{display:flex;gap:13px;font-size:11px;white-space:nowrap;min-width:218px;justify-content:flex-end}
+    .candidate-section{padding:0}
+    .section-top{margin:0 1px 11px;display:flex;align-items:center;justify-content:space-between;gap:12px}
+    .section-top .subcopy{margin:0}
+    .candidate-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+    .candidate{position:relative;text-align:left;border:1px solid var(--line);border-radius:12px;background:var(--panel);padding:16px 16px 12px;min-width:0}
+    .candidate:hover{background:var(--soft);border-color:var(--blue)}
+    .candidate[aria-pressed="true"]{border-color:var(--blue);box-shadow:inset 0 0 0 .5px var(--blue);background:var(--panel)}
+    .candidate-top{display:flex;align-items:center;justify-content:space-between;gap:4px;min-height:21px}
+    .candidate h3{font-size:13px;font-weight:650}
+    .candidate .pill{font-size:9px;padding:4px 5px}
+    .candidate-description{font-size:10px;color:var(--muted);line-height:1.6;margin-top:6px}
+    .candidate-cost{font-size:24px;font-weight:650;margin:13px 0 10px;letter-spacing:-.04em}
+    .candidate-cost .currency{font-size:14px;margin-right:2px;color:var(--muted);font-weight:500}
+    .candidate-cost small{font-size:10px;color:var(--muted);font-weight:450;letter-spacing:0;margin-left:5px}
+    .candidate dl{display:grid;gap:8px;margin:0}
+    .candidate dl div{display:flex;justify-content:space-between;gap:5px;font-size:11px}
+    .candidate dt{color:var(--muted)}
+    .candidate dd{margin:0;font-weight:550}
+    .candidate-footer{display:flex;justify-content:space-between;align-items:center;gap:5px;border-top:1px solid var(--line);padding-top:10px;margin-top:13px;font-size:10px;color:var(--muted)}
+    .candidate-footer>span:last-child{display:flex;align-items:center;gap:4px}
+    .candidate-footer .icon{width:12px;height:12px}
+    .candidate[aria-pressed="true"] .candidate-footer{color:var(--blue)}
+    .decision-card{padding:20px;position:relative;overflow:hidden}
+    .decision-card::before{content:"";position:absolute;top:0;left:20px;right:20px;height:2px;background:var(--blue)}
+    .decision-hero{padding:18px 0 15px;border-bottom:1px solid var(--line)}
+    .decision-hero h3{font-size:20px;margin:7px 0 8px;font-weight:650}
+    .decision-copy{color:var(--muted);font-size:11px;line-height:1.85}
+    .savings{display:flex;align-items:baseline;gap:5px;margin:15px 0 3px;color:var(--green)}
+    .savings strong{font-size:28px;font-weight:650;letter-spacing:-.035em}
+    .savings span{font-size:11px}
+    .decision-stats{display:flex;justify-content:space-between;color:var(--muted);font-size:10px;margin-top:9px}
+    .steps{padding:18px 0 0;margin:0;list-style:none}
+    .step{position:relative;padding:0 0 17px 26px}
+    .step:not(:last-child)::before{position:absolute;left:8px;top:19px;bottom:0;width:1px;background:var(--line);content:""}
+    .step-mark{position:absolute;left:0;top:0;width:17px;height:17px;background:var(--green-soft);border-radius:50%;color:var(--green);font-size:10px;text-align:center;line-height:17px;font-weight:650}
+    .step.warn .step-mark{color:var(--amber);background:var(--amber-soft)}
+    .step.bad .step-mark{color:var(--red);background:var(--red-soft)}
+    .step.waiting .step-mark{color:var(--muted);background:var(--soft)}
+    .step-title{display:flex;justify-content:space-between;gap:6px;font-size:11px;line-height:17px}
+    .step-title time{color:var(--muted);font-size:10px}
+    .step p{font-size:10px;color:var(--muted);margin-top:4px;line-height:1.6}
+    .decision-bottom{border-top:1px solid var(--line);padding-top:9px;display:flex;align-items:center;justify-content:space-between;gap:5px;font-size:10px;color:var(--muted)}
+    .inputs-card{padding:16px 18px}
+    .inputs-card summary{list-style:none;display:flex;align-items:center;justify-content:space-between;min-height:40px;gap:8px}
+    .inputs-card summary::-webkit-details-marker{display:none}
+    .inputs-card summary .icon{width:15px;transition:transform .15s}
+    .inputs-card[open] summary .icon{transform:rotate(180deg)}
+    .input-summary{display:flex;gap:7px;align-items:center;font-size:10px;color:var(--green);margin-top:2px}
+    .input-list{margin:14px 0 0;display:grid;gap:12px}
+    .input-list div{display:flex;justify-content:space-between;gap:12px;font-size:11px}
+    .input-list dt{color:var(--muted)}
+    .input-list dd{margin:0;text-align:right}
+    .input-foot{font-size:10px;color:var(--muted);line-height:1.7;margin-top:15px;padding-top:12px;border-top:1px solid var(--line)}
+    .activity-card{padding:16px 20px}
+    .activity-list{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));margin-top:10px}
+    .activity{border-right:1px solid var(--line);padding:0 16px;min-width:0}
+    .activity:first-child{padding-left:0}
+    .activity:last-child{border:0}
+    .activity-head{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:10px}
+    .activity strong{font-size:11px;display:block;margin-top:7px;font-weight:550;line-height:1.6}
+    .activity .dot{color:var(--green)}
+    .activity.bad .dot{color:var(--red)}
+    .activity.warn .dot{color:var(--amber)}
+    .footer{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-top:22px;padding:15px 0 0;border-top:1px solid var(--line);font-size:10px;color:var(--muted)}
+    .scenario-control{display:flex;align-items:center;gap:6px}
+    .scenario-control select{min-height:32px;font-size:10px;padding:3px 22px 3px 6px;min-width:105px;background:var(--panel);border:1px solid var(--line);border-radius:6px}
+    .all-intro{margin-bottom:16px}
+    .all-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
+    .station-card{padding:23px}
+    .station-card .mini-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:24px 0 4px}
+    .mini-stats span{display:block;color:var(--muted);font-size:11px}
+    .mini-stats strong{display:block;font-size:22px;margin-top:6px;font-weight:650}
+    .mini-svg{width:100%;height:auto;margin:15px 0 10px}
+    .station-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;border-top:1px solid var(--line);padding-top:13px;font-size:11px}
+    .all-note{padding:16px;margin-top:18px;font-size:12px;line-height:1.75;color:var(--muted)}
+    dialog{padding:0;border:0;border-left:1px solid var(--line);background:var(--panel);color:var(--ink);position:fixed;inset:0 0 0 auto;margin:0;width:min(560px,100%);max-width:100%;max-height:100%;height:100dvh;box-shadow:-16px 0 70px #07172b20}
+    dialog::backdrop{background:#101b3350}
+    body:has(dialog[open]){overflow:hidden}
+    .drawer-head{position:sticky;top:0;z-index:2;padding:22px 24px;background:var(--panel);border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:12px}
+    .drawer-body{padding:23px 24px 36px}
+    .drawer-kicker{font-size:10px;color:var(--muted);margin-bottom:6px}
+    .drawer-filters{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:22px;color:var(--muted);font-size:11px}
+    .drawer-filters select{min-width:130px;border:1px solid var(--line);border-radius:7px;background:var(--soft);padding-left:10px}
+    .event{display:grid;grid-template-columns:64px 1fr;gap:13px;padding:17px 0;border-bottom:1px solid var(--line)}
+    .event time{color:var(--muted);font-size:11px;padding-top:3px}
+    .event strong{font-size:12px;font-weight:600}
+    .event p{margin-top:6px;color:var(--muted);font-size:11px;line-height:1.8}
+    .event .pill{font-size:9px}
+    .drawer-section{margin-bottom:24px}
+    .drawer-section h3{margin-bottom:14px}
+    .drawer-section p{line-height:1.85;font-size:12px;color:var(--muted)}
+    .drawer-dl{display:grid;gap:14px;margin:0}
+    .drawer-dl div{display:grid;grid-template-columns:105px 1fr;gap:12px;font-size:12px;line-height:1.6}
+    .drawer-dl dt{color:var(--muted)}
+    .drawer-dl dd{margin:0;overflow-wrap:anywhere}
+    .callout{padding:13px 15px;background:var(--blue-soft);border-radius:8px;font-size:11px;line-height:1.8;color:var(--blue);margin-top:16px}
+    .callout.bad{background:var(--red-soft);color:var(--red)}
+    .reason-tags{display:flex;gap:6px;flex-wrap:wrap;margin-top:12px}
+    .reason-tags span{background:var(--soft);color:var(--muted);padding:5px 7px;font-size:10px;border-radius:5px}
+    .empty{text-align:center;color:var(--muted);padding:45px 12px;font-size:12px}
+    .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+    @media(min-width:1500px){.workspace{grid-template-columns:minmax(0,1fr) 328px}
+    .app{padding-left:36px;padding-right:36px}
+    .plan-svg{height:270px}}
+    @media(max-width:1100px){.app{padding-left:22px;padding-right:22px}
+    .workspace{grid-template-columns:minmax(0,1fr) 280px;gap:14px}
+    .main-column,.side-column{gap:14px}
+    .metric{padding:0 14px}
+    .metric-value{font-size:22px}
+    .candidate-grid{gap:8px}
+    .candidate{padding:13px 11px}
+    .candidate-top{align-items:flex-start;flex-direction:column;min-height:44px;gap:5px}
+    .sample{flex-wrap:wrap;gap:7px}
+    .point-readout{justify-content:flex-start;width:100%;margin-left:0}
+    .plan-card{padding:18px 16px 14px}
+    .heading-tools .date-label{display:none}
+    .chart-scroll{margin-left:0;margin-right:0}
+    .decision-card{padding:17px}
+    .candidate-cost{font-size:22px}}
+    @media(max-width:900px){.workspace{grid-template-columns:minmax(0,1fr)}.main-column,.side-column{display:contents}.plan-card{order:1}.candidate-section{order:2}.decision-card{order:3}.inputs-card{order:4}.activity-card{order:5}
+    .side-column{grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);align-items:start}
+    .steps{display:grid;grid-template-columns:1fr 1fr;gap:3px 14px}
+    .step:not(:last-child)::before{display:none}
+    .decision-hero{padding-top:12px}
+    .decision-card::before{display:none}
+    .decision-bottom{flex-wrap:wrap}
+    .metrics{grid-template-columns:repeat(3,minmax(0,1fr));row-gap:19px}
+    .metric:nth-child(3){border:0}
+    .metric:nth-child(n+4){padding-top:17px;border-top:1px solid var(--line)}
+    .all-grid{grid-template-columns:1fr}
+    .candidate-top{flex-direction:row;align-items:center;min-height:22px}
+    .candidate{padding:16px}
+    .context .snapshot{display:none}
+    .footer{align-items:flex-start}
+    .breadcrumb .location{display:none}}
+    @media(max-width:600px){.steps{grid-template-columns:1fr}.step:not(:last-child)::before{display:block}.app{padding:0 15px 18px}
+    .masthead{height:56px}
+    .wordmark{font-size:15px}
+    .breadcrumb{gap:9px}
+    .breadcrumb .module,.breadcrumb .slash{display:none}
+    .masthead-tools{gap:5px}
+    .mock-badge{font-size:10px;padding:5px 7px}
+    .page-heading{padding:20px 0 16px;align-items:flex-start;flex-direction:column;gap:15px}
+    h1{font-size:24px}
+    .eyebrow{font-size:9px}
+    .heading-tools{width:100%;justify-content:space-between;gap:8px}
+    .select-wrap{flex:1}
+    .select-wrap select{flex:1;min-width:0}
+    .context{padding-bottom:11px}
+    .context-meta{gap:7px;font-size:10px}
+    .context-meta i{display:none}
+    .context-meta .capacity-text{display:none}
+    .context strong{font-size:11px}
+    .metrics{padding:16px 0;row-gap:14px;margin-bottom:15px}
+    .metric{padding:0 11px}
+    .metric-value{font-size:21px}
+    .metric-label{font-size:10px}
+    .metric-meta{font-size:9px}
+    .metric-value .unit{font-size:9px;margin-left:2px}
+    .metric:nth-child(n+4){padding-top:13px}
+    .plan-card{padding:16px 13px 13px}
+    .card-top{gap:8px}
+    .card-top h2{font-size:15px}
+    .subcopy{font-size:10px}
+    .plan-heading{gap:6px}
+    .plan-heading .pill{font-size:9px}
+    .plan-card .card-top .text-button{font-size:10px;white-space:nowrap}
+    .chart-note{align-items:flex-start;flex-wrap:wrap;line-height:1.6;margin-top:12px;font-size:10px}
+    .plan-svg{min-width:620px}
+    .chart-summary{gap:5px}
+    .chart-summary .muted{font-size:9px}
+    .legend{gap:10px;font-size:9px}
+    .sample{gap:7px}
+    .sample label{min-width:105px;font-size:10px}
+    .point-readout{font-size:10px;min-width:0;gap:15px}
+    .section-top{align-items:baseline}
+    .section-top h2{font-size:15px}
+    .section-top .subcopy{font-size:9px}
+    .candidate-grid{grid-template-columns:1fr;gap:9px}
+    .candidate{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:0 16px;padding:15px}
+    .candidate-top{min-height:22px;justify-content:flex-start;gap:8px}
+    .candidate-description{grid-column:1;margin-top:4px}
+    .candidate-cost{grid-column:2;grid-row:1/3;text-align:right;align-self:center;margin:0;font-size:24px}
+    .candidate-cost small{display:block;font-size:9px;margin-top:3px}
+    .candidate dl{grid-column:1/3;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:14px}
+    .candidate dl div{display:block;font-size:10px}
+    .candidate dl dd{margin-top:5px}
+    .candidate-footer{grid-column:1/3;font-size:9px;padding-top:9px;margin-top:12px}
+    .side-column{grid-template-columns:1fr}
+    .activity-card{padding:15px}
+    .activity-list{grid-template-columns:1fr;margin-top:4px}
+    .activity{padding:11px 0!important;border:0;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:15px}
+    .activity strong{margin:0;font-size:11px}
+    .activity-head{min-width:72px}
+    .footer{font-size:9px;gap:12px;line-height:1.8;margin-top:18px}
+    .footer>span{max-width:100%}
+    .scenario-control{font-size:10px}
+    .station-card{padding:18px}
+    .station-card .mini-stats{gap:6px}
+    .mini-stats strong{font-size:21px}
+    .mini-stats span{font-size:10px}
+    .station-foot{font-size:10px}
+    .drawer-head{padding:18px}
+    .drawer-body{padding:18px}
+    .drawer-dl div{grid-template-columns:90px 1fr;gap:10px;font-size:11px}
+    .event{grid-template-columns:58px 1fr;gap:9px}}
+    @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
+    .operating-strip{display:flex;align-items:center;justify-content:space-between;gap:15px;padding:12px 16px;margin-bottom:16px;background:var(--green-soft);border:1px solid color-mix(in srgb,var(--green) 16%,var(--line));border-radius:10px}
+    .operating-strip[data-tone="warn"]{background:var(--amber-soft);border-color:color-mix(in srgb,var(--amber) 20%,var(--line))}
+    .operating-strip[data-tone="bad"]{background:var(--red-soft);border-color:color-mix(in srgb,var(--red) 20%,var(--line))}
+    .operating-copy{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:11px;line-height:1.6}.operating-copy strong{font-size:13px}.model-health{display:flex;align-items:center;gap:7px;white-space:nowrap;font-size:10px;color:var(--green)}
+    .operations-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;min-width:0}.operation-card{padding:18px;min-width:0}.operation-card svg{width:100%;height:auto}.operation-card h2{font-size:15px}.operation-card .pill{font-size:10px}
+    .energy-summary{display:flex;flex-direction:column}.energy-summary .subcopy{font-size:11px;line-height:1.8;margin-top:10px}.flow-breakdown{display:grid;gap:0;margin-top:16px;font-size:11px}.flow-breakdown div{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 0;border-bottom:1px solid var(--line)}.flow-breakdown div:last-child{border-bottom:0}.flow-breakdown span{color:var(--muted)}.flow-breakdown strong{font-size:15px;font-weight:550}.flow-breakdown small{font-size:10px;color:var(--muted);font-weight:400;margin-left:4px}.energy-summary .operation-foot{justify-content:flex-end;border-top:0;margin-top:auto;padding-top:8px}
+    .operation-foot{display:flex;align-items:center;justify-content:space-between;gap:10px;border-top:1px solid var(--line);margin-top:12px;padding-top:5px;font-size:10px;line-height:1.6}.operation-foot>span{min-width:0}.operation-foot button{font-size:10px;white-space:nowrap;flex-shrink:0}
+    .demand-values{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:21px 0 10px}.demand-values div{min-width:0}.demand-values span{display:block;font-size:10px;color:var(--muted);margin-bottom:6px}.demand-values strong{font-size:23px;font-weight:620;letter-spacing:-.03em}.demand-values small{font-size:10px;color:var(--muted);margin-left:3px}.legend .baseline-key{height:2px;width:14px;background:var(--muted)}.legend .limit-key{height:2px;width:14px;background:var(--amber)}.legend .actual-key{height:2px;width:14px;background:var(--ink)}
+    .point-reason{margin-top:11px;padding:10px 11px;border-radius:7px;background:var(--soft);display:flex;align-items:flex-start;gap:10px;line-height:1.7;font-size:10px}.point-reason strong{flex-shrink:0;color:var(--blue);font-weight:550}.point-reason span{color:var(--muted)}
+    .candidate-section{padding:0;border:1px solid var(--line);border-radius:12px;background:var(--panel)}.candidate-section>summary{list-style:none;display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:55px;padding:12px 17px}.candidate-section>summary::-webkit-details-marker{display:none}.candidate-section>summary h2{font-size:13px}.candidate-section>summary span{color:var(--muted);font-size:10px}.candidate-section>summary .icon{width:15px}.candidate-section[open]>summary .icon{transform:rotate(180deg)}.candidate-section .candidate-grid{padding:0 12px 12px}.candidate-section .candidate{box-shadow:none}.candidate-section .candidate-cost{font-size:21px}
+    .execution-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;padding:14px 0;margin-bottom:8px;border-bottom:1px solid var(--line)}.execution-stats span{font-size:10px;color:var(--muted);display:block}.execution-stats strong{font-size:18px;font-weight:600;display:block;margin-top:6px}.execution-stats small{font-size:10px;color:var(--muted);font-weight:450}.execution-note{margin-top:13px;color:var(--muted);font-size:10px;line-height:1.7}
+    .bill-card{padding:18px}.bill-value{font-size:28px;font-weight:630;letter-spacing:-.04em;color:var(--green);margin:15px 0 9px}.bill-meta{display:flex;align-items:center;justify-content:space-between;font-size:10px;color:var(--muted);gap:9px}.bill-meta strong{font-size:13px;color:var(--green)}.bill-card .text-button{margin-top:12px;width:100%;justify-content:space-between;border-top:1px solid var(--line);padding-top:10px;font-size:11px}.decision-card .steps{padding-top:15px}.decision-card .step{padding-bottom:14px}.decision-hero h3{font-size:18px}.decision-card .savings strong{font-size:25px}
+    .evidence-item{border:1px solid var(--line);border-radius:10px;margin-top:11px;overflow:hidden}.evidence-item summary{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px;min-height:52px;list-style:none;font-size:12px;font-weight:550}.evidence-item summary::-webkit-details-marker{display:none}.evidence-content{padding:0 14px 16px;line-height:1.8;font-size:11px}.evidence-content p{color:var(--muted)}.evidence-item .drawer-dl{gap:9px}.evidence-item .drawer-dl div{font-size:11px;grid-template-columns:86px 1fr}.evidence-title{display:flex;align-items:center;gap:10px}.evidence-title b{color:var(--blue);font-size:11px}.evidence-item .pill{font-size:9px;flex-shrink:0}.evidence-actions{display:flex;gap:15px;margin-top:12px;flex-wrap:wrap}
+    .bill-hero{padding:20px;border:1px solid var(--line);background:var(--green-soft);border-radius:12px;margin-bottom:22px}.bill-hero.pending{background:var(--soft)}.bill-hero .rate{font-size:35px;color:var(--green);font-weight:650;display:block;margin:9px 0}.bill-hero p{font-size:11px;color:var(--muted);line-height:1.8}.bill-table{width:100%;border-collapse:collapse;font-size:11px}.bill-table th,.bill-table td{padding:11px 6px;text-align:right;border-bottom:1px solid var(--line)}.bill-table th:first-child,.bill-table td:first-child{text-align:left}.bill-table th{color:var(--muted);font-weight:500}.bill-table tfoot{font-weight:650}.bill-bar{display:flex;align-items:center;gap:10px;margin:15px 0;font-size:11px}.bill-bar>span{width:55px;flex-shrink:0;color:var(--muted)}.bill-bar>div{height:22px;flex:1;background:var(--soft);border-radius:4px;overflow:hidden}.bill-bar i{height:100%;display:block;background:var(--blue);border-radius:4px}.bill-bar.after i{background:var(--green)}.bill-bar strong{min-width:70px;text-align:right;font-size:11px}.bill-formula{font-size:11px;line-height:1.8;color:var(--muted);margin-top:16px}
+    @media(max-width:1200px){.operations-grid{grid-template-columns:1fr}.operation-card #demand-chart{max-height:180px}.flow-breakdown{grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.flow-breakdown div{display:block;border-bottom:0;padding:2px 0;line-height:1.8}.flow-breakdown strong{display:block}.operation-card .operation-foot{margin-top:10px}}
+    @media(max-width:900px){.operating-strip{align-items:flex-start}.operating-copy{gap:5px}.model-health{margin-top:3px}.operations-grid{order:2;grid-template-columns:repeat(2,minmax(0,1fr))}.activity-card{order:3}.candidate-section{order:4}.decision-card{order:5}.bill-card{order:6}.inputs-card{order:7}.flow-breakdown{grid-template-columns:1fr;gap:5px}.flow-breakdown div{display:flex;border-bottom:1px solid var(--line);padding:11px 0}.candidate-section .candidate-grid{gap:8px}.candidate-section .candidate{padding:12px}.execution-stats strong{font-size:18px}}
+    @media(max-width:650px){.heading-tools{flex-wrap:wrap}.heading-tools .select-wrap{flex-basis:100%}.heading-tools>.button{flex:1}.operations-grid{grid-template-columns:1fr}.operating-strip{flex-direction:column;gap:7px;padding:12px}.operating-copy{display:block}.operating-copy strong{display:block;font-size:12px}.operating-copy>span{display:block;font-size:10px;margin-top:3px}.model-health{font-size:9px}.operation-card{padding:15px}.flow-breakdown{grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;font-size:9px}.flow-breakdown div{display:block;border-bottom:0;padding:2px 0}.flow-breakdown strong{font-size:14px}.demand-values strong{font-size:22px}.execution-stats{grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.point-reason{flex-direction:column;gap:2px;font-size:10px}.candidate-section>summary span{font-size:9px}.candidate-section>summary{padding:12px}.candidate-section .candidate-grid{grid-template-columns:1fr}.candidate-section .candidate{padding:14px}.evidence-item summary{font-size:11px;padding:12px}.evidence-content{padding:0 12px 13px}.bill-table{font-size:10px}.bill-table th,.bill-table td{padding:10px 3px}.bill-hero{padding:16px}.drawer-filters{flex-wrap:wrap}.drawer-dl div{grid-template-columns:84px 1fr}}
 
-    html[data-theme="light"] {
-      color-scheme: light;
-      --page: #f3f6fb;
-      --surface: #fff;
-      --surface-2: #f7f9fc;
-      --surface-3: #edf2f9;
-      --text: #172033;
-      --muted: #68778f;
-      --faint: #8290a4;
-      --line: rgb(15 23 42 / 9%);
-      --line-strong: rgb(15 23 42 / 16%);
-      --blue: #477df0;
-      --green: #15845a;
-      --orange: #a46e00;
-      --red: #cd4054;
-      --purple: #7354c7;
-      --blue-soft: rgb(71 125 240 / 9%);
-      --green-soft: rgb(21 132 90 / 9%);
-      --orange-soft: rgb(164 110 0 / 9%);
-      --red-soft: rgb(205 64 84 / 9%);
-      --purple-soft: rgb(115 84 199 / 9%);
-      --shadow: 0 14px 34px rgb(36 48 74 / 8%);
-    }
-
-    * { box-sizing: border-box; }
-    [hidden] { display: none !important; }
-    html { overflow-x: hidden; background: var(--page); }
-    body {
-      min-width: 320px;
-      margin: 0;
-      overflow-x: hidden;
-      color: var(--text);
-      background:
-        radial-gradient(circle at 4% 0%, rgb(71 125 240 / 11%), transparent 26%),
-        radial-gradient(circle at 96% 0%, rgb(22 157 120 / 8%), transparent 23%),
-        var(--page);
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
-      font-variant-numeric: tabular-nums;
-      -webkit-font-smoothing: antialiased;
-    }
-    button { font: inherit; cursor: pointer; }
-    button:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
-    .app { width: min(1500px, 100%); margin: 0 auto; padding: 24px 28px 36px; }
-    .app-header { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 16px; }
-    .brand { display: flex; min-width: 0; align-items: center; gap: 12px; }
-    .brand-mark { display: grid; place-items: center; width: 45px; height: 45px; flex: 0 0 auto; color: #fff; border-radius: 13px; background: linear-gradient(135deg, var(--blue), var(--green)); box-shadow: 0 10px 24px rgb(71 125 240 / 24%); }
-    .brand-mark svg { width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-    h1 { margin: 0; font-size: clamp(22px, 3vw, 29px); line-height: 1.2; letter-spacing: -.035em; }
-    .brand-copy { margin: 5px 0 0; color: var(--muted); font-size: 12px; }
-    .header-tools { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
-    .chip, .tool-button { display: inline-flex; min-height: 39px; align-items: center; gap: 7px; padding: 7px 11px; color: var(--text); border: 1px solid var(--line); border-radius: 10px; background: var(--surface); font-size: 11px; }
-    .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 4px var(--green-soft); }
-    #mock-data-badge { color: var(--purple); background: var(--purple-soft); }
-
-    .tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin-bottom: 18px; padding: 5px; border: 1px solid var(--line); border-radius: 13px; background: var(--surface-2); }
-    .tab { min-height: 43px; padding: 8px 12px; color: var(--muted); border: 0; border-radius: 9px; background: transparent; font-weight: 720; }
-    .tab[aria-selected="true"] { color: var(--text); background: var(--surface); box-shadow: 0 5px 16px rgb(0 0 0 / 8%); }
-    .tab:disabled { cursor: not-allowed; opacity: .42; }
-    .station-context { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: 18px; padding: 12px 14px; }
-    .station-context-copy { min-width: 230px; }
-    .station-context-copy span { display: block; color: var(--muted); font-size: 9px; }
-    .station-context-copy strong { display: block; margin-top: 4px; font-size: 14px; }
-    .station-context-copy small { display: block; margin-top: 4px; color: var(--muted); font-size: 9px; line-height: 1.4; }
-    .station-switcher { display: grid; width: min(720px, 100%); grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; padding: 5px; border-radius: 11px; background: var(--surface-2); }
-    .station-button { min-height: 44px; padding: 7px 10px; color: var(--muted); border: 1px solid transparent; border-radius: 8px; background: transparent; text-align: left; }
-    .station-button strong, .station-button span { display: block; }
-    .station-button strong { color: inherit; font-size: 11px; }
-    .station-button span { margin-top: 3px; font-size: 8px; }
-    .station-button[aria-pressed="true"] { color: var(--text); border-color: var(--line); background: var(--surface); box-shadow: 0 4px 12px rgb(0 0 0 / 7%); }
-    .station-button[aria-pressed="true"] strong { color: var(--blue); }
-    .panel, .section { min-width: 0; }
-    .section { margin-bottom: 18px; }
-    .section-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 14px; margin: 0 2px 11px; }
-    .section-title { margin: 0; font-size: 17px; line-height: 1.3; }
-    .section-copy { margin: 4px 0 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
-    .card { min-width: 0; border: 1px solid var(--line); border-radius: var(--radius); background: linear-gradient(180deg, rgb(255 255 255 / 2%), transparent), var(--surface); box-shadow: var(--shadow); }
-    .card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 13px; margin-bottom: 14px; }
-    .card-title { font-size: 14px; font-weight: 760; }
-    .card-copy { margin-top: 4px; color: var(--muted); font-size: 10px; line-height: 1.5; }
-    .status { display: inline-flex; min-height: 26px; align-items: center; padding: 4px 8px; border-radius: 999px; font-size: 10px; font-weight: 760; white-space: nowrap; }
-    .status.good { color: var(--green); background: var(--green-soft); }
-    .status.info { color: var(--blue); background: var(--blue-soft); }
-    .status.warn { color: var(--orange); background: var(--orange-soft); }
-    .status.bad { color: var(--red); background: var(--red-soft); }
-
-    .operation-banner { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 20px; align-items: center; padding: 20px; background: linear-gradient(112deg, var(--blue-soft), var(--green-soft)), var(--surface); }
-    .operation-kicker { color: var(--green); font-size: 11px; font-weight: 760; }
-    .operation-title { margin: 7px 0 0; font-size: clamp(20px, 3vw, 28px); line-height: 1.25; }
-    .operation-copy { max-width: 840px; margin: 8px 0 0; color: var(--muted); font-size: 12px; line-height: 1.65; }
-    .operation-side { min-width: 230px; padding: 13px 16px; border-left: 1px solid var(--line-strong); }
-    .operation-side span { display: block; color: var(--muted); font-size: 10px; }
-    .operation-side strong { display: block; margin-top: 6px; font-size: 18px; }
-    .progress { height: 7px; margin-top: 10px; overflow: hidden; border-radius: 8px; background: var(--line); }
-    .progress > span { display: block; width: 67%; height: 100%; background: linear-gradient(90deg, var(--blue), var(--green)); }
-
-    .metrics { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; }
-    .metric { min-height: 112px; padding: 14px; }
-    .metric-label { color: var(--muted); font-size: 10px; line-height: 1.4; }
-    .metric-value { margin-top: 10px; font-size: 22px; font-weight: 800; letter-spacing: -.025em; }
-    .metric-meta { margin-top: 8px; color: var(--faint); font-size: 9px; line-height: 1.45; }
-    .metric-meta.good { color: var(--green); }
-    .metric-meta.warn { color: var(--orange); }
-    .overview-grid { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(280px, .55fr); gap: 14px; }
-    .station-summary-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-    .station-summary { padding: 16px; }
-    .station-summary-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
-    .station-summary h3 { margin: 0; font-size: 14px; }
-    .station-summary p { margin: 5px 0 0; color: var(--muted); font-size: 9px; }
-    .station-summary-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 13px; }
-    .station-summary-kpi { padding: 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface-2); }
-    .station-summary-kpi span { display: block; color: var(--muted); font-size: 8px; }
-    .station-summary-kpi strong { display: block; margin-top: 5px; font-size: 11px; }
-    .timeline-card, .stage-card, .energy-card, .effect-card, .cycle-card, .candidate-card, .ai-card, .strategy-card, .pipeline-card, .gate-card, .dispatch-card, .records-card, .detail-card { padding: 18px; }
-    .timeline-scroll { min-width: 0; overflow-x: auto; overscroll-behavior-inline: contain; }
-    .timeline-svg { display: block; width: 100%; height: auto; min-height: 235px; }
-    .chart-frame { fill: var(--surface-2); stroke: var(--line); }
-    .chart-grid { stroke: var(--line); stroke-width: 1; }
-    .chart-label { fill: var(--muted); font-size: 12px; }
-    .chart-lane { fill: var(--text); font-size: 13px; font-weight: 700; }
-    .charge { fill: var(--green); }
-    .discharge { fill: var(--blue); }
-    .standby { fill: var(--line-strong); }
-    .tariff-valley { fill: var(--green-soft); }
-    .tariff-flat { fill: var(--blue-soft); }
-    .tariff-peak { fill: var(--orange-soft); }
-    .legend { display: flex; flex-wrap: wrap; gap: 13px; margin-top: 9px; color: var(--muted); font-size: 10px; }
-    .legend span { display: inline-flex; align-items: center; gap: 6px; }
-    .legend i { width: 16px; height: 5px; border-radius: 5px; }
-    .legend .charge-key { background: var(--green); }
-    .legend .discharge-key { background: var(--blue); }
-    .legend .standby-key { background: var(--line-strong); }
-    .stage-list { display: grid; gap: 9px; }
-    .stage-item { position: relative; padding: 12px 12px 12px 33px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface-2); }
-    .stage-item::before { position: absolute; top: 14px; left: 13px; width: 9px; height: 9px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 4px var(--green-soft); content: ""; }
-    .stage-item span { display: block; color: var(--muted); font-size: 9px; }
-    .stage-item strong { display: block; margin-top: 5px; font-size: 12px; }
-    .lower-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
-    .energy-flow { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr); gap: 9px; align-items: center; }
-    .energy-node { min-height: 86px; padding: 13px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface-2); text-align: center; }
-    .energy-node span { display: block; color: var(--muted); font-size: 9px; }
-    .energy-node strong { display: block; margin-top: 7px; font-size: 16px; }
-    .energy-node.storage { color: var(--green); background: var(--green-soft); }
-    .energy-arrow { color: var(--blue); text-align: center; font-size: 17px; }
-    .effect-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
-    .effect { padding: 12px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface-2); }
-    .effect span { color: var(--muted); font-size: 9px; }
-    .effect strong { display: block; margin-top: 6px; font-size: 18px; }
-
-    .input-strip { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 9px; }
-    .input-item { padding: 12px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface); box-shadow: var(--shadow); }
-    .input-item span { display: block; color: var(--muted); font-size: 9px; }
-    .input-item strong { display: block; margin-top: 6px; font-size: 12px; }
-    .cycle-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 9px; }
-    .cycle-item { padding: 12px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface-2); }
-    .cycle-item span { display: block; color: var(--muted); font-size: 9px; }
-    .cycle-item strong { display: block; margin-top: 6px; font-size: 12px; line-height: 1.4; }
-    .candidate-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
-    .candidate { position: relative; padding: 16px; border: 1px solid var(--line); border-radius: 13px; background: var(--surface-2); }
-    .candidate[data-selected="true"] { border-color: color-mix(in srgb, var(--blue) 55%, var(--line)); background: linear-gradient(145deg, var(--blue-soft), var(--surface)); box-shadow: 0 12px 28px rgb(71 125 240 / 12%); }
-    .candidate-rank { position: absolute; top: 14px; right: 14px; color: var(--faint); font-size: 9px; }
-    .candidate h3 { margin: 0; font-size: 15px; }
-    .candidate p { min-height: 38px; margin: 7px 0 13px; color: var(--muted); font-size: 10px; line-height: 1.55; }
-    .candidate-kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
-    .candidate-kpi { padding: 9px; border: 1px solid var(--line); border-radius: 9px; background: color-mix(in srgb, var(--surface) 78%, transparent); }
-    .candidate-kpi span { display: block; color: var(--muted); font-size: 8px; }
-    .candidate-kpi strong { display: block; margin-top: 4px; font-size: 12px; }
-    .candidate-foot { display: flex; justify-content: space-between; gap: 8px; margin-top: 11px; color: var(--muted); font-size: 9px; }
-    .decision-grid { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(300px, .75fr); gap: 14px; }
-    .decision-hero { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px; border: 1px solid var(--line); border-radius: 11px; background: var(--blue-soft); }
-    .decision-hero span { display: block; color: var(--muted); font-size: 9px; }
-    .decision-hero strong { display: block; margin-top: 5px; font-size: 19px; }
-    .confidence { color: var(--green); text-align: right; }
-    .decision-copy { margin: 12px 0 0; color: var(--muted); font-size: 11px; line-height: 1.65; }
-    .reason-codes { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 12px; }
-    .reason-code { padding: 6px 8px; color: var(--blue); border-radius: 8px; background: var(--blue-soft); font-size: 9px; font-weight: 740; }
-    .boundary-note { margin-top: 12px; padding: 10px; color: var(--purple); border-radius: 10px; background: var(--purple-soft); font-size: 10px; line-height: 1.55; }
-    .summary-list { display: grid; gap: 8px; margin: 0; }
-    .summary-list div { padding-bottom: 8px; border-bottom: 1px solid var(--line); }
-    .summary-list div:last-child { padding: 0; border: 0; }
-    .summary-list dt { color: var(--muted); font-size: 9px; }
-    .summary-list dd { margin: 5px 0 0; font-size: 11px; line-height: 1.45; }
-
-    .pipeline-card { overflow: hidden; }
-    .pipeline { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 22px; padding: 4px 0; }
-    .pipeline-step { position: relative; min-height: 92px; padding: 13px 10px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface-2); }
-    .pipeline-step:not(:last-child)::after { position: absolute; z-index: 2; top: 39px; right: -18px; color: var(--faint); font-size: 18px; content: "→"; }
-    .pipeline-step b { display: grid; place-items: center; width: 22px; height: 22px; color: var(--muted); border-radius: 50%; background: var(--surface-3); font-size: 9px; }
-    .pipeline-step strong { display: block; margin-top: 8px; font-size: 10px; line-height: 1.35; }
-    .pipeline-step span { display: block; margin-top: 4px; color: var(--muted); font-size: 8px; line-height: 1.4; }
-    .pipeline-step[data-step-state="completed"] { border-color: color-mix(in srgb, var(--green) 28%, var(--line)); }
-    .pipeline-step[data-step-state="completed"] b { color: var(--green); background: var(--green-soft); }
-    .pipeline-step[data-step-state="blocked"] { border-color: color-mix(in srgb, var(--red) 45%, var(--line)); background: var(--red-soft); }
-    .pipeline-step[data-step-state="blocked"] b { color: var(--red); }
-    .pipeline-step[data-step-state="waiting"] { opacity: .55; }
-
-    .gate-dispatch-grid { display: grid; grid-template-columns: minmax(300px, .75fr) minmax(0, 1.25fr); gap: 14px; }
-    .threshold-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
-    .threshold-list li { display: grid; grid-template-columns: 19px minmax(0, 1fr); gap: 7px; color: var(--muted); font-size: 10px; line-height: 1.5; }
-    .threshold-list li::before { display: grid; place-items: center; width: 17px; height: 17px; color: var(--blue); border-radius: 50%; background: var(--blue-soft); content: "✓"; font-size: 9px; }
-    .gate-result { margin-top: 12px; padding: 11px; color: var(--green); border-radius: 10px; background: var(--green-soft); font-size: 11px; font-weight: 740; line-height: 1.5; }
-    #change-gate[data-result="blocked"] .gate-result { color: var(--red); background: var(--red-soft); }
-    .dispatch-contract { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 9px; margin: 0; }
-    .contract-item { padding: 11px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); }
-    .contract-item dt { color: var(--muted); font-size: 9px; }
-    .contract-item dd { margin: 6px 0 0; font-size: 12px; font-weight: 750; line-height: 1.4; }
-    .dispatch-state-list { display: grid; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
-    .dispatch-state { padding: 9px 10px; border-radius: 9px; background: var(--surface-2); font-size: 10px; line-height: 1.55; }
-    .dispatch-state[data-state="passed"], .dispatch-state[data-state="received"], .dispatch-state[data-state="recovered"] { color: var(--green); background: var(--green-soft); }
-    .dispatch-state[data-state="blocked"], .dispatch-state[data-state="not-sent"] { color: var(--red); background: var(--red-soft); }
-    .dispatch-state[data-state="none"] { color: var(--muted); }
-    .contract-note { margin: 11px 0 0; color: var(--muted); font-size: 9px; line-height: 1.55; }
-
-    .record-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
-    .records-layout { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(280px, .55fr); gap: 14px; }
-    #execution-list { display: grid; gap: 9px; }
-    .execution-item { display: grid; grid-template-columns: 120px minmax(0, 1fr) auto; gap: 11px; align-items: start; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); }
-    .execution-time { color: var(--muted); font-size: 9px; }
-    .execution-main strong { display: block; font-size: 11px; }
-    .execution-main p { margin: 4px 0 0; color: var(--muted); font-size: 10px; line-height: 1.5; }
-    .detail-list { display: grid; gap: 8px; margin: 0; }
-    .detail-list div { padding-bottom: 8px; border-bottom: 1px solid var(--line); }
-    .detail-list div:last-child { padding: 0; border: 0; }
-    .detail-list dt { color: var(--muted); font-size: 9px; }
-    .detail-list dd { margin: 5px 0 0; font-size: 11px; line-height: 1.5; }
-
-    @media (max-width: 1180px) {
-      .metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-      .input-strip, .cycle-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-      .pipeline { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-      .pipeline-step:not(:last-child)::after { display: none; }
-    }
-    @media (max-width: 900px) {
-      .app-header, .section-head { align-items: flex-start; flex-direction: column; }
-      .header-tools { justify-content: flex-start; }
-      .station-context { align-items: flex-start; flex-direction: column; }
-      .station-switcher { width: 100%; }
-      .operation-banner { grid-template-columns: minmax(0, 1fr); }
-      .operation-side { padding: 12px 0 0; border-top: 1px solid var(--line-strong); border-left: 0; }
-      .overview-grid, .decision-grid, .gate-dispatch-grid, .records-layout { grid-template-columns: minmax(0, 1fr); }
-      .candidate-grid { grid-template-columns: minmax(0, 1fr); }
-      .candidate p { min-height: 0; }
-    }
-    @media (max-width: 620px) {
-      .app { padding: 15px; }
-      .brand { align-items: flex-start; }
-      .brand-mark { width: 40px; height: 40px; }
-      .header-tools { width: 100%; }
-      .chip, .tool-button { flex: 1 1 auto; justify-content: center; }
-      .tabs { grid-template-columns: minmax(0, 1fr); }
-      .tab { min-height: 38px; }
-      .station-switcher, .station-summary-grid, .station-summary-kpis, .metrics, .lower-grid, .effect-grid, .input-strip, .cycle-grid, .pipeline, .dispatch-contract, .record-summary { grid-template-columns: minmax(0, 1fr); }
-      .energy-flow { grid-template-columns: minmax(0, 1fr); }
-      .energy-arrow { transform: rotate(90deg); }
-      .operation-banner, .timeline-card, .stage-card, .energy-card, .effect-card, .cycle-card, .candidate-card, .ai-card, .strategy-card, .pipeline-card, .gate-card, .dispatch-card, .records-card, .detail-card { padding: 14px; }
-      .decision-hero { align-items: flex-start; flex-direction: column; }
-      .confidence { text-align: left; }
-      .execution-item { grid-template-columns: minmax(0, 1fr); gap: 6px; }
-      .execution-item .status { justify-self: start; }
-      #overview-chart, #strategy-chart { width: 1080px; max-width: none; }
-    }
   </style>
 </head>
 <body>
+  <svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
+    <symbol id="i-energy" viewBox="0 0 24 24"><path d="m13 2-8 12h6l-1 8 9-13h-7z"/></symbol>
+    <symbol id="i-station" viewBox="0 0 24 24"><path d="M3 21h18M5 21V8l7-4 7 4v13M9 11h2m2 0h2m-6 4h2m2 0h2M10 21v-3h4v3"/></symbol>
+    <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M7 3v4m10-4v4M3 11h18"/></symbol>
+    <symbol id="i-history" viewBox="0 0 24 24"><path d="M3 10a9 9 0 1 1 1 8M3 4v6h6m3-4v6l4 2"/></symbol>
+    <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20.9 13.1A9 9 0 0 1 10.9 3 9 9 0 1 0 21 13z"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-5-5 5 5-5 5"/></symbol>
+    <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></symbol>
+  </svg>
   <main class="app" id="m4-online-app">
-    <header class="app-header">
-      <div class="brand">
-        <span class="brand-mark" aria-hidden="true">
-          <svg viewBox="0 0 24 24"><path d="M4 17h3l2-5 3 8 3-13 2 10h3"/><path d="M4 4h16v16H4z"/></svg>
-        </span>
-        <div>
-          <h1>M4 优化调度控制台</h1>
-          <p class="brand-copy">苏州示范园区 · 光储协同自动调度</p>
-        </div>
-      </div>
-      <div class="header-tools">
-        <span class="chip" id="mock-data-badge">Mock 数据</span>
-        <span class="chip"><span class="dot"></span>EMS 连接正常</span>
-        <span class="chip">数据时间&nbsp;<strong>2026/09/04 15:00</strong></span>
-        <button class="tool-button" id="theme-toggle" type="button" aria-pressed="false">切换主题</button>
-      </div>
+    <header class="masthead">
+      <div class="breadcrumb"><span class="wordmark"><svg class="icon"><use href="#i-energy"/></svg>VIFA</span><span class="slash">/</span><span class="location">苏州示范园区</span><span class="slash">/</span><span class="module">能源管理</span></div>
+      <div class="row masthead-tools"><span class="pill mock-badge" id="mock-data-badge"><span class="dot"></span>静态演示 · Mock 数据</span><button class="button quiet icon-button" id="theme-toggle" aria-label="切换深色主题" aria-pressed="false" title="切换主题"><svg class="icon"><use href="#i-moon"/></svg></button></div>
     </header>
-
-    <nav class="tabs" role="tablist" aria-label="M4 功能导航">
-      <button class="tab" id="overview-tab" role="tab" type="button" aria-selected="true" aria-controls="overview-panel">调度总览</button>
-      <button class="tab" id="strategy-tab" role="tab" type="button" aria-selected="false" aria-controls="strategy-panel">策略工作台</button>
-      <button class="tab" id="records-tab" role="tab" type="button" aria-selected="false" aria-controls="records-panel">执行记录</button>
-    </nav>
-
-    <section class="card station-context" aria-labelledby="station-context-title">
-      <div class="station-context-copy">
-        <span>当前调度范围</span>
-        <strong id="station-context-title">电站1</strong>
-        <small id="station-context-copy">独立关口、独立需量、独立策略与EMS任务</small>
-      </div>
-      <div class="station-switcher" id="station-switcher" role="group" aria-label="选择调度范围">
-        <button class="station-button" type="button" data-station="all" aria-pressed="false"><strong>全场总览</strong><span>只读汇总 · 不生成合并策略</span></button>
-        <button class="station-button" type="button" data-station="s1" aria-pressed="true"><strong>电站1</strong><span>emu11 · emu12</span></button>
-        <button class="station-button" type="button" data-station="s2" aria-pressed="false"><strong>电站2</strong><span>emu21–emu26</span></button>
+    <section class="page-heading">
+      <div><div class="eyebrow">M4 · OPTIMIZATION & DISPATCH</div><h1>优化调度</h1></div>
+      <div class="heading-tools">
+        <label class="select-wrap"><svg class="icon" aria-hidden="true"><use href="#i-station"/></svg><span class="sr-only">选择电站</span><select id="station-select"><option value="s1">电站 1</option><option value="s2">电站 2</option><option value="all">全场总览</option></select></label>
+        <span class="date-label"><svg class="icon" aria-hidden="true"><use href="#i-calendar"/></svg>2026 / 09 / 04</span>
+        <button class="button" id="open-evidence">运行验证</button>
+        <button class="button" id="open-records"><svg class="icon" aria-hidden="true"><use href="#i-history"/></svg>运行记录</button>
       </div>
     </section>
+    <div class="context"><div class="context-meta"><strong id="station-context-title">电站 1</strong><i></i><span class="muted" id="station-devices">emu11 · emu12</span><i></i><span class="muted capacity-text" id="station-capacity">1,000 kWh</span><span class="pill good" id="scope-status">独立调度</span></div><span class="muted snapshot">演示快照 · 09/04 15:00:18</span></div>
+    <section class="card metrics" id="metrics" aria-label="电站运行快照"></section>
+    <section class="operating-strip" id="operating-strip"><div class="operating-copy"><strong id="operating-title"></strong><span id="operating-description" class="muted"></span></div><span class="model-health"><span class="dot"></span>优化模型运行正常 · Mock</span></section>
+    <div class="workspace" id="station-workspace">
+      <div class="main-column">
+        <section class="card plan-card" aria-labelledby="plan-title">
+          <div class="card-top"><div><div class="plan-heading"><h2 id="plan-title">今日调度计划</h2><span class="pill info" id="plan-badge">方案预览</span></div><p class="subcopy" id="plan-meta"></p></div><button class="text-button" id="open-plan">计划详情<svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg></button></div>
+          <div class="chart-note"><span id="chart-preview-status"></span><button class="text-button" id="restore-preview" hidden>返回本轮方案</button></div>
+          <div class="chart-scroll" id="plan-chart-scroll"><svg id="plan-chart" class="plan-svg" viewBox="0 0 920 287" preserveAspectRatio="none" role="img" aria-label="未来24小时储能充放电功率与计划SOC曲线"></svg></div>
+          <div class="chart-summary"><div class="legend"><span><i></i>充电</span><span><i class="discharge"></i>放电</span><span><i class="soc"></i>计划 SOC</span><span><i class="actual-key"></i>EMS 实际功率</span></div><small class="muted">正值放电，负值充电 · 15 分钟 / 点</small></div>
+          <div class="sample"><label for="point-slider">时点 <strong id="point-time">15:00</strong></label><input id="point-slider" type="range" min="0" max="95" value="60" aria-label="查看计划时点"><output class="point-readout" id="point-readout" for="point-slider"></output></div><div class="point-reason" id="point-reason"></div>
+        </section>
+<section class="operations-grid" aria-label="现场运行效果">
+  <article class="card operation-card energy-summary" id="energy-card">
+    <h2>光伏利用</h2>
+    <p class="subcopy" id="flow-caption">光伏优先供负载，储能补充供电。</p>
+    <div class="flow-breakdown" id="flow-breakdown"></div>
+    <div class="operation-foot"><button class="text-button" id="simulate-pv">模拟光伏富余</button></div>
+  </article>
+  <article class="card operation-card" id="demand-card">
+    <div class="card-top"><div><h2>需量控制</h2><p class="subcopy">关口购电功率 · 近 16 分钟</p></div><span class="pill good" id="demand-status">余量充足</span></div>
+    <div class="demand-values"><div><span>当前购电</span><strong id="demand-current"></strong><small>kW</small></div><div><span>距上限</span><strong id="demand-margin"></strong><small>kW</small></div><div><span>控制上限</span><strong id="demand-limit"></strong><small>kW</small></div></div>
+    <svg id="demand-chart" viewBox="0 0 520 148" role="img" aria-label="调度前后关口购电功率与控制上限"></svg>
+    <div class="legend"><span><i class="baseline-key"></i>未调节参考</span><span><i class="discharge"></i>调节后购电</span><span><i class="limit-key"></i>控制上限</span></div>
+    <div class="operation-foot"><span id="demand-action"></span><button class="text-button" id="simulate-demand">模拟需量逼近</button></div>
+  </article>
+</section>
 
-    <section class="panel" id="overview-panel" role="tabpanel" aria-labelledby="overview-tab">
-      <section class="section">
-        <article class="card operation-banner" id="automatic-operation-banner">
-          <div>
-            <div class="operation-kicker">全自动调度运行中</div>
-            <h2 class="operation-title" id="overview-operation-title">节费优先方案已自动下发</h2>
-            <p class="operation-copy" id="overview-operation-copy">M4 每15分钟滚动求解：MILP生成3个可行候选，大语言模型选择方案，确定性校验后按变化阈值自动发送给EMS。</p>
-          </div>
-          <div class="operation-side">
-            <span>下一轮滚动求解</span>
-            <strong>15:15 · 还有 08:42</strong>
-            <div class="progress" role="progressbar" aria-label="当前调度周期进度" aria-valuemin="0" aria-valuemax="15" aria-valuenow="10"><span></span></div>
-          </div>
-        </article>
-      </section>
-
-      <section class="section" aria-labelledby="realtime-title">
-        <div class="section-head"><div><h2 class="section-title" id="realtime-title">实时运行</h2><p class="section-copy">M4只读汇聚现场状态，控制、暂停与应急处置由EMS负责</p></div><span class="status good">数据正常</span></div>
-        <div class="metrics">
-          <article class="card metric" data-overview-metric data-metric-key="load"><div class="metric-label">厂区负荷</div><div class="metric-value">438 kW</div><div class="metric-meta warn">较15分钟前 +2.1%</div></article>
-          <article class="card metric" data-overview-metric data-metric-key="pv"><div class="metric-label">光伏出力</div><div class="metric-value">112 kW</div><div class="metric-meta good">当前消纳率 100%</div></article>
-          <article class="card metric" data-overview-metric data-metric-key="grid"><div class="metric-label">电网购电</div><div class="metric-value">280 kW</div><div class="metric-meta">需量上限 520 kW</div></article>
-          <article class="card metric" data-overview-metric data-metric-key="soc"><div class="metric-label">储能 SOC</div><div class="metric-value">61%</div><div class="metric-meta good">容量 1,000 kWh</div></article>
-          <article class="card metric" data-overview-metric data-metric-key="power"><div class="metric-label">储能功率</div><div class="metric-value">46 kW</div><div class="metric-meta good">充电 · EMS执行中</div></article>
-          <article class="card metric" data-overview-metric data-metric-key="tariff"><div class="metric-label">当前电价</div><div class="metric-value">0.68 元</div><div class="metric-meta">平段 · 独立计费</div></article>
-        </div>
-      </section>
-
-      <section class="section" id="all-station-summary" hidden>
-        <div class="section-head"><div><h2 class="section-title">独立电站状态</h2><p class="section-copy">汇总页只读展示；两站分别求解、校验、下发与回读</p></div><span class="status info">无跨站调度</span></div>
-        <div class="station-summary-grid">
-          <article class="card station-summary" data-station-summary="s1">
-            <div class="station-summary-head"><div><h3>电站1</h3><p>emu11 · emu12 · 1,000 kWh</p></div><span class="status good">独立闭环</span></div>
-            <div class="station-summary-kpis"><div class="station-summary-kpi"><span>负荷</span><strong>438 kW</strong></div><div class="station-summary-kpi"><span>SOC</span><strong>61%</strong></div><div class="station-summary-kpi"><span>选中方案</span><strong>节费优先</strong></div><div class="station-summary-kpi"><span>EMS任务</span><strong>S1-061</strong></div></div>
-          </article>
-          <article class="card station-summary" data-station-summary="s2">
-            <div class="station-summary-head"><div><h3>电站2</h3><p>emu21–emu26 · 3,000 kWh</p></div><span class="status good">独立闭环</span></div>
-            <div class="station-summary-kpis"><div class="station-summary-kpi"><span>负荷</span><strong>688 kW</strong></div><div class="station-summary-kpi"><span>SOC</span><strong>54%</strong></div><div class="station-summary-kpi"><span>选中方案</span><strong>光伏消纳优先</strong></div><div class="station-summary-kpi"><span>EMS任务</span><strong>S2-061</strong></div></div>
-          </article>
-        </div>
-      </section>
-
-      <section class="section overview-grid">
-        <article class="card timeline-card">
-          <div class="card-head"><div><div class="card-title">当前生效计划</div><div class="card-copy" id="overview-plan-copy">电站1 · 策略 M4-S1-20260904-061 · V1 · 96点</div></div><span class="status good">EMS执行中</span></div>
-          <div class="timeline-scroll" id="overview-timeline">
-            <svg class="timeline-svg" id="overview-chart" viewBox="0 0 1080 260" role="img" aria-label="两套储能今日充放电计划"></svg>
-          </div>
-          <div class="legend"><span><i class="charge-key"></i>充电</span><span><i class="discharge-key"></i>放电</span><span><i class="standby-key"></i>待机</span></div>
-        </article>
-        <aside class="card stage-card">
-          <div class="card-head"><div><div class="card-title" id="overview-cycle-title">电站1 · 15:00 调度周期</div><div class="card-copy">从求解到EMS接收的完整状态</div></div><span class="status good" id="cycle-status">已闭环</span></div>
-          <div class="stage-list" id="overview-stage-list">
-            <div class="stage-item"><span>15:00:03</span><strong>MILP候选已生成</strong></div>
-            <div class="stage-item"><span>15:00:05</span><strong>AI选择：节费优先</strong></div>
-            <div class="stage-item"><span>15:00:05</span><strong>确定性校验通过</strong></div>
-            <div class="stage-item"><span>15:00:06</span><strong>变化阈值已达到</strong></div>
-            <div class="stage-item"><span>15:00:07</span><strong>EMS已接收 V1</strong></div>
-          </div>
-        </aside>
-      </section>
-
-      <section class="section lower-grid">
-        <article class="card energy-card">
-          <div class="card-head"><div><div class="card-title">当前能量流</div><div class="card-copy">光伏余电优先进入储能，缺口由电网补充</div></div><span class="status info">实时</span></div>
-          <div class="energy-flow">
-            <div class="energy-node"><span>光伏</span><strong id="flow-pv">112 kW</strong></div>
-            <div class="energy-arrow">→</div>
-            <div class="energy-node storage"><span>储能充电</span><strong id="flow-storage">46 kW</strong></div>
-            <div class="energy-arrow">←</div>
-            <div class="energy-node"><span>电网</span><strong id="flow-grid">280 kW</strong></div>
-          </div>
-        </article>
-        <article class="card effect-card">
-          <div class="card-head"><div><div class="card-title">选中方案预期效果</div><div class="card-copy">同一预测窗口、同一设备约束下的模型测算</div></div><span class="status info">未来24h</span></div>
-          <div class="effect-grid">
-            <div class="effect"><span>预计购电成本</span><strong id="effect-cost">¥ 6,480</strong></div>
-            <div class="effect"><span>基线节省</span><strong id="effect-saving" style="color:var(--green)">¥ 720</strong></div>
-            <div class="effect"><span>最大需量</span><strong id="effect-demand">506 kW</strong></div>
-            <div class="effect"><span>光伏消纳率</span><strong id="effect-pv">97.2%</strong></div>
-          </div>
-        </article>
-      </section>
-    </section>
-
-    <section class="panel" id="strategy-panel" role="tabpanel" aria-labelledby="strategy-tab" hidden>
-      <section class="section" aria-labelledby="input-title">
-        <div class="section-head"><div><h2 class="section-title" id="input-title">本轮调度输入</h2><p class="section-copy">通过接口汇聚；MILP使用完整数据，大语言模型只接收候选摘要</p></div><span class="status info">快照 15:00</span></div>
-        <div class="input-strip">
-          <div class="input-item"><span>负荷预测</span><strong>96点 · 已更新</strong></div>
-          <div class="input-item"><span>光伏预测</span><strong>96点 · 已更新</strong></div>
-          <div class="input-item"><span>分时电价</span><strong>尖峰 / 峰 / 平 / 谷</strong></div>
-          <div class="input-item"><span>设备与SOC</span><strong id="input-device">emu11、emu12 · 在线</strong></div>
-          <div class="input-item"><span>约束与目标</span><strong id="input-constraint">需量≤520 kW</strong></div>
-        </div>
-      </section>
-
-      <section class="section">
-        <article class="card cycle-card" id="auto-cycle-summary">
-          <div class="card-head"><div><div class="card-title">自动滚动周期</div><div class="card-copy">每15分钟重新求解；只有排序、风险或输入状态实质变化时调用大语言模型</div></div><span class="status good">周期正常</span></div>
-          <div class="cycle-grid">
-            <div class="cycle-item"><span>周期编号</span><strong id="cycle-id">M4-S1-CYCLE-1500</strong></div>
-            <div class="cycle-item"><span>开始时间</span><strong>15:00:00</strong></div>
-            <div class="cycle-item"><span>求解耗时</span><strong>3.2 秒</strong></div>
-            <div class="cycle-item"><span>决策来源</span><strong id="cycle-decision-source">大语言模型选择</strong></div>
-            <div class="cycle-item"><span>下一轮</span><strong>15:15:00</strong></div>
-          </div>
-        </article>
-      </section>
-
-      <section class="section" aria-labelledby="candidate-title">
-        <div class="section-head"><div><h2 class="section-title" id="candidate-title">MILP 可行候选</h2><p class="section-copy" id="candidate-scope-copy">电站1独立约束下生成3个可执行方案；不使用电站2的需量或设备余量</p></div><span class="status good">3 / 3 可行</span></div>
-        <div class="candidate-grid" id="candidate-grid"></div>
-      </section>
-
-      <section class="section decision-grid">
-        <article class="card ai-card" id="ai-selection" data-mode="ai">
-          <div class="card-head"><div><div class="card-title">大语言模型选择</div><div class="card-copy">输入：候选KPI摘要、风险标签、约束余量；输出：候选ID与可解释原因</div></div><span class="status info" id="ai-status">已选择</span></div>
-          <div class="decision-hero">
-            <div><span>selected_candidate_id</span><strong id="selected-candidate-name">节费优先</strong></div>
-            <div class="confidence"><span>confidence</span><strong id="ai-confidence">0.91</strong></div>
-          </div>
-          <p class="decision-copy" id="ai-summary">预计成本最低，需量与终端SOC均保有安全余量；当前预测偏差处于可接受范围。</p>
-          <div class="reason-codes" id="reason-codes"></div>
-          <div class="boundary-note">职责边界：大语言模型只在3个候选中选择并解释，不生成或修改96点数值计划，也不参与EMS执行。</div>
-        </article>
-        <aside class="card ai-card">
-          <div class="card-head"><div><div class="card-title">选择依据</div><div class="card-copy">结构化摘要，不向模型发送全部原始时序</div></div></div>
-          <dl class="summary-list">
-            <div><dt>目标收益</dt><dd id="decision-benefit">同基线相比预计节省 ¥1,960</dd></div>
-            <div><dt>约束余量</dt><dd>最大需量余量 26 kW · 终端SOC偏差 +2.1%</dd></div>
-            <div><dt>主要风险</dt><dd id="decision-risk">18:00负荷预测波动，EMS保留最终安全校验</dd></div>
-            <div><dt>配置口径</dt><dd>终端SOC默认初始SOC ±5%；光伏上网暂不计收益，M4不控制弃光</dd></div>
-          </dl>
-        </aside>
-      </section>
-
-      <section class="section">
-        <article class="card strategy-card">
-          <div class="card-head"><div><div class="card-title">选中方案的数值计划</div><div class="card-copy" id="strategy-plan-copy">电站1 · 策略 M4-S1-20260904-061 · 1 × 96点 · 15分钟粒度</div></div><span class="status info" id="selected-plan-status">待自动校验</span></div>
-          <div class="timeline-scroll">
-            <svg class="timeline-svg" id="strategy-chart" viewBox="0 0 1080 260" role="img" aria-label="选中候选的两套储能充放电策略"></svg>
-          </div>
-          <div class="legend"><span><i class="charge-key"></i>充电</span><span><i class="discharge-key"></i>放电</span><span><i class="standby-key"></i>待机</span></div>
-        </article>
-      </section>
-
-      <section class="section">
-        <div class="section-head"><div><h2 class="section-title">自动决策链路</h2><p class="section-copy">策略选择与执行解耦；任一安全条件失败都不会向EMS发送新计划</p></div></div>
-        <article class="card pipeline-card" id="pipeline">
-          <div class="pipeline">
-            <div class="pipeline-step" data-step="input"><b>1</b><strong>数据检查</strong><span>预测、设备、约束</span></div>
-            <div class="pipeline-step" data-step="milp"><b>2</b><strong>MILP求解</strong><span>生成3个候选</span></div>
-            <div class="pipeline-step" data-step="score"><b>3</b><strong>候选评估</strong><span>KPI与风险摘要</span></div>
-            <div class="pipeline-step" data-step="ai"><b>4</b><strong>AI选择/降级</strong><span>只选候选ID</span></div>
-            <div class="pipeline-step" data-step="validation"><b>5</b><strong>确定性校验</strong><span>完整性与边界</span></div>
-            <div class="pipeline-step" data-step="change"><b>6</b><strong>变化判断</strong><span>未来4小时窗口</span></div>
-            <div class="pipeline-step" data-step="dispatch"><b>7</b><strong>自动下发</strong><span>EMS接收与回读</span></div>
-          </div>
-        </article>
-      </section>
-
-      <section class="section gate-dispatch-grid">
-        <article class="card gate-card" id="change-gate" data-result="dispatch">
-          <div class="card-head"><div><div class="card-title">变化阈值门</div><div class="card-copy">校验通过后，仅在未来4小时发生实质变化时替换EMS计划</div></div><span class="status info">自动判断</span></div>
-          <ul class="threshold-list">
-            <li>运行模式发生变化；或</li>
-            <li>连续2个15分钟点的功率差达到额定功率10%；或</li>
-            <li>同窗口预计成本改善达到1%；或</li>
-            <li>设备、电价或当前计划的可行性发生变化。</li>
-          </ul>
-          <div class="gate-result" id="gate-result-text">达到阈值 · 18:00起连续3点功率差为12.4%</div>
-        </article>
-
-        <article class="card dispatch-card" id="auto-dispatch-contract">
-          <div class="card-head"><div><div class="card-title">EMS 自动下发</div><div class="card-copy">M4发送计划，EMS负责最终校验、设备控制与执行回读</div></div><span class="status good" id="dispatch-badge">已闭环</span></div>
-          <dl class="dispatch-contract">
-            <div class="contract-item"><dt>策略编号</dt><dd id="dispatch-plan-id">M4-S1-20260904-061</dd></div>
-            <div class="contract-item"><dt>策略版本</dt><dd id="dispatch-version">V1</dd></div>
-            <div class="contract-item"><dt>计划规模</dt><dd id="dispatch-plan-size">电站1 · 1 × 96 点</dd></div>
-            <div class="contract-item"><dt>触发方式</dt><dd>自动下发</dd></div>
-          </dl>
-          <div class="dispatch-state-list">
-            <div class="dispatch-state" id="validation-status" data-state="passed">确定性校验通过 · 时间连续、SOC与功率边界均满足</div>
-            <div class="dispatch-state" id="dispatch-status" data-state="received">EMS已接收 · 任务 EMS-DSP-0904-061 已进入执行队列</div>
-            <div class="dispatch-state" id="ems-recovery" data-state="none">本轮未触发EMS拒绝重算</div>
-          </div>
-          <p class="contract-note">若无可用新计划，EMS继续当前有效计划；若当前也无有效计划，则由EMS启用本地兜底规则。</p>
-        </article>
-      </section>
-    </section>
-
-    <section class="panel" id="records-panel" role="tabpanel" aria-labelledby="records-tab" hidden>
-      <section class="section" aria-labelledby="record-summary-title">
-        <div class="section-head"><div><h2 class="section-title" id="record-summary-title">执行概况</h2><p class="section-copy">滚动求解、自动下发与EMS执行回读统一留痕</p></div><span class="status good">链路正常</span></div>
-        <div class="record-summary">
-          <article class="card metric"><div class="metric-label">今日调度周期</div><div class="metric-value" id="cycle-count">61</div><div class="metric-meta">15分钟 / 次</div></article>
-          <article class="card metric"><div class="metric-label">AI选择次数</div><div class="metric-value" id="ai-call-count">18</div><div class="metric-meta">其余周期复用候选画像</div></article>
-          <article class="card metric"><div class="metric-label">自动下发</div><div class="metric-value" id="dispatch-count">7</div><div class="metric-meta">达到实质变化阈值</div></article>
-          <article class="card metric"><div class="metric-label">待处理异常</div><div class="metric-value" id="alert-count">0</div><div class="metric-meta good" id="alert-copy">无阻断问题</div></article>
-        </div>
-      </section>
-
-      <section class="section records-layout">
-        <article class="card records-card">
-          <div class="card-head"><div><div class="card-title" id="record-cycle-title">电站1 · M4-S1-CYCLE-1500 事件记录</div><div class="card-copy">记录仅属于当前电站，不与另一电站合并</div></div><span class="status info" id="record-cycle-badge">已闭环</span></div>
-          <div id="execution-list" aria-live="polite"></div>
-        </article>
-        <aside class="card detail-card">
-          <div class="card-head"><div><div class="card-title">当前执行详情</div><div class="card-copy">执行数据由EMS只读回传</div></div></div>
-          <dl class="detail-list">
-            <div><dt>EMS任务编号</dt><dd id="ems-task-id">EMS-DSP-0904-061</dd></div>
-            <div><dt>当前状态</dt><dd><span class="status good" id="ems-task-status">执行中</span></dd></div>
-            <div><dt>设备范围</dt><dd id="ems-device-scope">emu11、emu12</dd></div>
-            <div><dt>电站实际功率</dt><dd id="ems-actual-power">充电 46 kW</dd></div>
-            <div><dt>最近回读</dt><dd>2026/09/04 15:00:18</dd></div>
-            <div><dt>职责边界</dt><dd>M4优化与展示；EMS最终校验、控制、暂停和停止</dd></div>
-          </dl>
-        </aside>
-      </section>
-    </section>
+        <details class="candidate-section" id="candidate-comparison"><summary><h2 id="candidate-title">候选方案对比</h2><span class="row">3 套方案 · 点击预览<svg class="icon" aria-hidden="true"><use href="#i-chevron"/></svg></span></summary><div class="candidate-grid" id="candidate-grid" role="group" aria-label="预览候选方案"></div></details>
+        <section class="card activity-card"><div class="card-top"><h2>执行跟踪</h2><button class="text-button" id="open-all-events">查看全部<svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg></button></div><div class="execution-stats" id="execution-stats"></div><div class="activity-list" id="recent-events"></div><p class="execution-note" id="execution-note"></p></section>
+      </div>
+      <aside class="side-column">
+        <section class="card decision-card" aria-labelledby="decision-title"><div class="card-top"><h2 id="decision-title">本轮策略</h2><span class="pill good" id="decision-status"></span></div><div class="decision-hero"><div class="eyebrow" id="decision-source">AI 选择 · 15:00 周期</div><h3 id="decision-name"></h3><p class="decision-copy" id="decision-copy"></p><div class="savings"><span>预计节省</span><strong id="decision-saving"></strong><span>/ 日</span></div><div class="decision-stats"><span>相对演示基线</span><span id="decision-confidence"></span></div></div><ol class="steps" id="decision-steps"></ol><div class="decision-bottom"><span id="next-cycle">下一轮 15:15</span><button class="text-button" id="open-decision">决策详情<svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg></button></div></section>
+        <section class="card bill-card"><div class="card-top"><div><h3 id="bill-period-label">上月节费</h3><p class="subcopy">月度账单结果</p></div><span class="pill info" id="bill-summary-status">模拟账单</span></div><div class="bill-value" id="bill-summary-value"></div><div class="bill-meta"><span>电费降低比例</span><strong id="bill-summary-rate"></strong></div><button class="text-button" id="open-bill">月度节费详情<svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg></button></section>
+        <details class="card inputs-card" id="input-details"><summary><div><h3>输入与约束</h3><div class="input-summary"><span class="dot"></span>本轮数据完整 · 96 点</div></div><svg class="icon" aria-hidden="true"><use href="#i-chevron"/></svg></summary><dl class="input-list" id="input-list"></dl><p class="input-foot">两个电站分别计算。站内设备分配与执行由 EMS 负责。</p></details>
+      </aside>
+    </div>
+    <section id="all-workspace" hidden aria-labelledby="all-title"><div class="all-intro"><h2 id="all-title">两个电站，独立运行</h2><p class="subcopy">全场仅作只读汇总，进入电站查看其候选、计划与记录。</p></div><div class="all-grid" id="all-stations"></div><div class="card all-note">两站分别使用自己的关口计量、需量上限与储能能力。全场不生成合并调度计划，SOC 按站展示。</div></section>
+    <footer class="footer"><span>内置演示数据 · AI 选择、EMS 状态与节费均为模拟结果</span><label class="scenario-control">演示场景<select id="scenario-select"><option value="normal">正常调度</option><option value="demand-near">需量逼近削峰</option><option value="pv-surplus">光伏富余充电</option><option value="ai-fallback">AI 超时降级</option><option value="validation-failed">校验阻断</option><option value="ems-retry">EMS 拒绝重算</option></select></label></footer>
+    <div class="sr-only" id="live-status" aria-live="polite"></div>
   </main>
-
+  <dialog id="detail-drawer" aria-labelledby="drawer-title"><div class="drawer-head"><div><div class="drawer-kicker" id="drawer-kicker"></div><h2 id="drawer-title"></h2></div><button class="button quiet icon-button" id="close-drawer" aria-label="关闭详情"><svg class="icon"><use href="#i-close"/></svg></button></div><div class="drawer-body" id="drawer-body"></div></dialog>
   <script>
     (() => {
       "use strict";
-
-      const app = document.getElementById("m4-online-app");
-      const query = new URLSearchParams(window.location.search);
-      const scenarioKey = ["normal", "ai-fallback", "validation-failed", "ems-retry"].includes(query.get("scenario")) ? query.get("scenario") : "normal";
-      let activeStationKey = ["all", "s1", "s2"].includes(query.get("station")) ? query.get("station") : "s1";
-      const descriptions = {
-        balanced: "在成本、需量与光伏消纳之间保持稳健余量，亦作为AI异常时的默认降级方案。",
-        cost: "利用峰谷价差压低购电成本，并在晚峰维持本站需量约束与终端SOC。",
-        pv: "午间预留更多充电空间，提高本站光伏消纳，减少反送与弃光风险。",
-      };
+      const query = new URLSearchParams(location.search);
+      const validScenarios = ["normal", "ai-fallback", "validation-failed", "ems-retry", "demand-near", "pv-surplus"];
+      let scenarioKey = validScenarios.includes(query.get("scenario")) ? query.get("scenario") : "normal";
+      let activeStationKey = ["s1", "s2", "all"].includes(query.get("station")) ? query.get("station") : "s1";
+      const scenarioByStation = {s1: "normal", s2: "normal"};
+      if(activeStationKey !== "all") scenarioByStation[activeStationKey] = scenarioKey;
+      const previewByStation = {s1: null, s2: null};
+      let activePlan = [], chartScale = null, drawerType = null;
+      const $ = id => document.getElementById(id);
+      const number = value => Number(String(value).replace(/[^\d.\-]/g,""));
+      const format = value => new Intl.NumberFormat("zh-CN",{maximumFractionDigits:1}).format(value);
+      const money = value => "¥ " + format(value);
+      const timeAt = index => String(Math.floor(index / 4)).padStart(2,"0") + ":" + String(index % 4 * 15).padStart(2,"0");
+      const icon = name => `<svg class="icon" aria-hidden="true"><use href="#i-${name}"/></svg>`;
+      function el(tag,attrs={},text) {const node=document.createElement(tag);Object.entries(attrs).forEach(([k,v])=>node.setAttribute(k,String(v)));if(text!==undefined)node.textContent=text;return node;}
+      function svg(tag,attrs={},text) {const node=document.createElementNS("http://www.w3.org/2000/svg",tag);Object.entries(attrs).forEach(([k,v])=>node.setAttribute(k,String(v)));if(text!==undefined)node.textContent=text;return node;}
       const stations = {
         s1: {
           code: "S1",
@@ -589,11 +430,11 @@
             ["光伏出力", "112 kW", "当前消纳率 100%", "good"],
             ["电网购电", "280 kW", "独立需量上限 520 kW", ""],
             ["储能 SOC", "61%", "容量 1,000 kWh", "good"],
-            ["储能功率", "46 kW", "充电 · EMS执行中", "good"],
-            ["当前电价", "0.68 元", "平段 · 独立计费", ""],
+            ["储能功率", "46 kW", "放电 · EMS执行中", "good"],
+            ["当前电价", "0.68 元/kWh", "平段 · 独立计费", ""],
           ],
           flow: { pv: "112 kW", storage: "46 kW", grid: "280 kW" },
-          actualPower: "充电 46 kW",
+          actualPower: "放电 46 kW",
           counts: { cycles: "61", ai: "18", dispatch: "7" },
           candidates: [
             { id: "balanced", name: "均衡方案", cost: "¥ 6,610", saving: "¥ 590", demand: "498 kW", pv: "97.8%", throughput: "1.1 MWh", risk: "低风险", rank: "候选 A" },
@@ -625,11 +466,11 @@
             ["光伏出力", "174 kW", "当前消纳率 100%", "good"],
             ["电网购电", "426 kW", "独立需量上限 820 kW", ""],
             ["储能 SOC", "54%", "容量 3,000 kWh", "good"],
-            ["储能功率", "88 kW", "充电 · EMS执行中", "good"],
-            ["当前电价", "0.68 元", "平段 · 独立计费", ""],
+            ["储能功率", "88 kW", "放电 · EMS执行中", "good"],
+            ["当前电价", "0.68 元/kWh", "平段 · 独立计费", ""],
           ],
           flow: { pv: "174 kW", storage: "88 kW", grid: "426 kW" },
-          actualPower: "充电 88 kW",
+          actualPower: "放电 88 kW",
           counts: { cycles: "61", ai: "16", dispatch: "5" },
           candidates: [
             { id: "balanced", name: "均衡方案", cost: "¥ 12,410", saving: "¥ 1,210", demand: "768 kW", pv: "97.6%", throughput: "2.5 MWh", risk: "低风险", rank: "候选 A" },
@@ -642,15 +483,6 @@
           ],
         },
       };
-      const allMetrics = [
-        ["两站总负荷", "1,126 kW", "仅汇总展示", ""],
-        ["两站光伏", "286 kW", "两站分别计算余电", "good"],
-        ["两站购电合计", "706 kW", "不形成共享需量", ""],
-        ["电站1 SOC", "61%", "独立容量 1,000 kWh", "good"],
-        ["电站2 SOC", "54%", "独立容量 3,000 kWh", "good"],
-        ["独立调度实例", "2 / 2", "无跨站策略或下发", "good"],
-      ];
-
       function resolveDecision(profile) {
         const decision = {
           selected: profile.selected,
@@ -691,7 +523,7 @@
             summary: "模型完成本站候选选择，但确定性校验发现第58点SOC上界冲突，已阻断本轮发送。",
             reasonCodes: ["SOC_CONFLICT", "DISPATCH_BLOCKED"],
             validationState: "blocked",
-            validationText: "确定性校验失败 · 本站第58点SOC预测超过配置上限",
+            validationText: "确定性校验失败 · 本站第58点计划SOC超过配置上限",
             gateState: "blocked",
             gateText: "未进入变化判断 · 本站安全校验已阻断",
             dispatchState: "not-sent",
@@ -723,87 +555,6 @@
         return decision;
       }
 
-      function element(name, attrs, text) {
-        const node = document.createElement(name);
-        Object.entries(attrs || {}).forEach(([key, value]) => node.setAttribute(key, String(value)));
-        if (text !== undefined) node.textContent = text;
-        return node;
-      }
-
-      function svgElement(name, attrs) {
-        const node = document.createElementNS("http://www.w3.org/2000/svg", name);
-        Object.entries(attrs || {}).forEach(([key, value]) => node.setAttribute(key, String(value)));
-        return node;
-      }
-
-      function segmentAt(profile, minute) {
-        return profile.segments.find((segment) => minute >= segment[0] && minute < segment[1]);
-      }
-
-      function renderTimeline(id, scopeKey) {
-        const svg = document.getElementById(id);
-        svg.replaceChildren();
-        const left = 94;
-        const top = 28;
-        const width = 964;
-        const laneKeys = scopeKey === "all" ? ["s1", "s2"] : [scopeKey];
-        const x = (minute) => left + minute / 1440 * width;
-        svg.append(svgElement("rect", { x: left, y: top, width: width, height: 176, rx: 10, class: "chart-frame" }));
-        [[0, 360, "tariff-valley"], [360, 600, "tariff-peak"], [600, 1080, "tariff-flat"], [1080, 1320, "tariff-peak"], [1320, 1440, "tariff-flat"]].forEach((range) => {
-          svg.append(svgElement("rect", { x: x(range[0]), y: top, width: x(range[1]) - x(range[0]), height: 176, class: range[2] }));
-        });
-        for (let hour = 0; hour <= 24; hour += 2) {
-          const xx = x(hour * 60);
-          svg.append(svgElement("line", { x1: xx, y1: top, x2: xx, y2: 204, class: "chart-grid" }));
-          const label = svgElement("text", { x: xx, y: 226, class: "chart-label", "text-anchor": hour === 0 ? "start" : hour === 24 ? "end" : "middle" });
-          label.textContent = String(hour).padStart(2, "0") + ":00";
-          svg.append(label);
-        }
-        laneKeys.forEach((stationKey, laneIndex) => {
-          const profile = stations[stationKey];
-          const y = laneKeys.length === 1 ? 96 : 64 + laneIndex * 64;
-          const label = svgElement("text", { x: 14, y: y + 19, class: "chart-lane" });
-          label.textContent = profile.name;
-          svg.append(label);
-          const lane = svgElement("g", { class: "schedule-lane", "data-station-lane": stationKey });
-          for (let index = 0; index < 96; index += 1) {
-            const segment = segmentAt(profile, index * 15);
-            lane.append(svgElement("rect", { x: x(index * 15) + .8, y: y, width: Math.max(x(15) - x(0) - 1.6, 1), height: 31, rx: 2, class: segment ? segment[2] : "standby" }));
-          }
-          svg.append(lane);
-        });
-        [[0, 360, "谷"], [360, 600, "峰"], [600, 1080, "平"], [1080, 1320, "尖峰"], [1320, 1440, "平"]].forEach((range) => {
-          const label = svgElement("text", { x: (x(range[0]) + x(range[1])) / 2, y: 251, class: "chart-label", "text-anchor": "middle" });
-          label.textContent = range[2];
-          svg.append(label);
-        });
-      }
-
-      function renderCandidates(profile, decision) {
-        const grid = document.getElementById("candidate-grid");
-        grid.replaceChildren();
-        profile.candidates.forEach((candidate) => {
-          const selected = candidate.id === decision.selected;
-          const card = element("article", { class: "candidate", "data-candidate": candidate.id, "data-selected": selected });
-          card.append(element("span", { class: "candidate-rank" }, candidate.rank));
-          card.append(element("h3", {}, candidate.name));
-          card.append(element("p", {}, descriptions[candidate.id]));
-          const kpis = element("div", { class: "candidate-kpis" });
-          [["预计成本", candidate.cost], ["最大需量", candidate.demand], ["光伏消纳", candidate.pv], ["储能吞吐", candidate.throughput]].forEach((pair) => {
-            const kpi = element("div", { class: "candidate-kpi" });
-            kpi.append(element("span", {}, pair[0]));
-            kpi.append(element("strong", {}, pair[1]));
-            kpis.append(kpi);
-          });
-          card.append(kpis);
-          const foot = element("div", { class: "candidate-foot" });
-          foot.append(element("span", {}, candidate.risk));
-          foot.append(element("span", {}, selected ? "AI选中" : "可执行"));
-          card.append(foot);
-          grid.append(card);
-        });
-      }
-
       function buildEvents(profile, decision) {
         const selected = profile.candidates.find((candidate) => candidate.id === decision.selected);
         const events = [
@@ -820,7 +571,7 @@
         } else if (scenarioKey === "validation-failed") {
           events.push(
             { time: "15:00:05", title: "大语言模型完成选择", copy: "选择" + selected.name + "，置信度0.87。", badge: "已选择", tone: "info" },
-            { time: "15:00:05", title: "确定性校验失败", copy: profile.name + "第58点SOC预测超过配置上限，本轮计划未发送。", badge: "已阻断", tone: "bad" },
+            { time: "15:00:05", title: "确定性校验失败", copy: profile.name + "第58点计划SOC超过配置上限，本轮计划未发送。", badge: "已阻断", tone: "bad" },
             { time: "15:00:06", title: "EMS保持当前计划", copy: "本站继续执行" + profile.previousPlanId + "，另一电站不受影响。", badge: "保持执行", tone: "warn" },
           );
         } else if (scenarioKey === "ems-retry") {
@@ -841,201 +592,274 @@
         return events;
       }
 
-      function renderEvents(profile, decision) {
-        const list = document.getElementById("execution-list");
-        list.replaceChildren();
-        buildEvents(profile, decision).forEach((event) => {
-          const item = element("article", { class: "execution-item" });
-          item.append(element("time", { class: "execution-time" }, event.time));
-          const main = element("div", { class: "execution-main" });
-          main.append(element("strong", {}, event.title));
-          main.append(element("p", {}, event.copy));
-          item.append(main);
-          item.append(element("span", { class: "status " + event.tone }, event.badge));
-          list.append(item);
+
+      const profileCopy = {balanced:"成本与余量兼顾",cost:"利用峰谷价差降低成本",pv:"为午间光伏预留空间"};
+      function selectedCandidate(profile,decision){return profile.candidates.find(c=>c.id===decision.selected);}
+      function metricMarkup(items){return items.map(([label,value,meta,tone])=>{const match=value.match(/^([\d,.]+)\s*(.*)$/);return `<article class="metric" data-overview-metric><div class="metric-label">${label}</div><div class="metric-value">${match?match[1]+`<span class="unit">${match[2]}</span>`:value}</div><div class="metric-meta ${tone==="good"?"green":""}">${meta}</div></article>`;}).join("");}
+      function basePlan(key,profileId){
+        const profile=stations[key],capacity=number(profile.capacity),initial=number(profile.metrics[3][1]);
+        const knots={balanced:[initial,78,65,79,62,44,initial],cost:[initial,84,65,77,61,40,initial],pv:[initial,72,52,84,64,42,initial]}[profileId].map((v,i)=>key==="s2"&&i>0&&i<6?v-5:v);
+        const hours=[0,6,10,14,18,22,24],points=[];
+        for(let i=0;i<96;i++){const hour=i/4,j=hours.findIndex((h,k)=>k<6&&hour>=h&&hour<hours[k+1]);const delta=(knots[j+1]-knots[j])/(hours[j+1]-hours[j])/4;const start=knots[j]+(hour-hours[j])/(hours[j+1]-hours[j])*(knots[j+1]-knots[j]);const power=delta>0?-delta/100*capacity/.95*4:-delta/100*capacity*.95*4;points.push({index:i,time:timeAt(i),power,soc:start+delta,startSoc:start});}
+        return points;
+      }
+      function renderChart(points){
+        const chart=$("plan-chart");chart.replaceChildren();
+        const left=47,right=873,width=right-left,top=25,bottom=211,zero=(top+bottom)/2;
+        const max=Math.ceil(Math.max(...points.map(p=>Math.abs(p.power)))/50)*50;
+        const x=i=>left+i/96*width,y=p=>zero-p/max*(bottom-top)/2,sy=soc=>bottom-soc/100*(bottom-top);
+        chartScale={x,y,sy,top,bottom,zero,left,right};
+        [[0,24,"谷段",0.32,"var(--green-soft)"],[24,40,"峰段",1.45,"var(--amber-soft)"],[40,72,"平段",0.68,"var(--soft)"],[72,88,"尖峰",1.62,"var(--amber-soft)"],[88,96,"平段",0.68,"var(--soft)"]].forEach(([a,b,label,price,color])=>{
+          chart.append(svg("rect",{x:x(a),y:top,width:x(b)-x(a),height:bottom-top,fill:color,opacity:.48}));
+          chart.append(svg("rect",{x:x(a)+1,y:246,width:x(b)-x(a)-2,height:25,rx:4,fill:color}));
+          chart.append(svg("text",{x:(x(a)+x(b))/2,y:262,"text-anchor":"middle",class:"chart-label"},label+" "+price.toFixed(2)));
+        });
+        [-max,-max/2,0,max/2,max].forEach(value=>{chart.append(svg("line",{x1:left,y1:y(value),x2:right,y2:y(value),class:"chart-grid"}));chart.append(svg("text",{x:left-10,y:y(value)+4,"text-anchor":"end",class:"chart-label"},String(value)));});
+        [0,50,100].forEach(value=>chart.append(svg("text",{x:right+10,y:sy(value)+4,class:"chart-label"},String(value))));
+        chart.append(svg("text",{x:left-26,y:13,class:"chart-label"},"kW"),svg("text",{x:right+8,y:13,class:"chart-label"},"SOC %"));
+        for(let h=0;h<=24;h+=3)chart.append(svg("text",{x:x(h*4),y:231,"text-anchor":h===0?"start":h===24?"end":"middle",class:"chart-label"},String(h).padStart(2,"0")+":00"));
+        points.forEach((p,i)=>{const bar=svg("rect",{x:x(i)+1,y:Math.min(y(p.power),zero),width:width/96-2,height:Math.max(Math.abs(y(p.power)-zero),1),rx:1.5,class:p.power<0?"chart-charge":"chart-discharge","data-point":i});bar.append(svg("title",{},`${p.time} · ${p.power<0?"充电":"放电"} ${format(Math.abs(p.power))} kW · 期末 SOC ${format(p.soc)}%`));chart.append(bar);});
+        const path="M"+x(0)+","+sy(points[0].startSoc)+points.map((p,i)=>" L"+x(i+1)+","+sy(p.soc)).join("");
+        chart.append(svg("path",{d:path,class:"chart-soc"}));
+        chart.append(svg("line",{id:"chart-cursor",y1:top,y2:bottom,class:"chart-hover"}));
+        chart.append(svg("circle",{id:"chart-dot",r:4,fill:"var(--panel)",stroke:"var(--violet)","stroke-width":2}));
+        updatePoint();
+        addActualTrace();
+      }
+      function updatePoint(){if(!activePlan.length)return;const index=Number($("point-slider").value),point=activePlan[index],scale=chartScale;$("point-time").textContent=point.time;$("point-readout").innerHTML=`<span class="${point.power<0?"green":"blue"}">${point.power<0?"充电":"放电"} <b>${format(Math.abs(point.power))}</b> kW</span><span class="muted">期末 SOC <b>${format(point.soc)}%</b></span>`;$("point-slider").setAttribute("aria-valuetext",`${point.time}，${point.power<0?"充电":"放电"} ${format(Math.abs(point.power))} 千瓦，期末 SOC ${format(point.soc)}%`);$("chart-cursor").setAttribute("x1",scale.x(index+1));$("chart-cursor").setAttribute("x2",scale.x(index+1));$("chart-dot").setAttribute("cx",scale.x(index+1));$("chart-dot").setAttribute("cy",scale.sy(point.soc));updatePointReason();}
+      function renderCandidates(profile,decision){
+        const preview=previewByStation[activeStationKey];$("candidate-grid").replaceChildren();
+        profile.candidates.forEach(candidate=>{const chosen=candidate.id===decision.selected,viewing=candidate.id===preview;const card=el("button",{class:"candidate",type:"button","data-candidate":candidate.id,"data-selected":chosen,"aria-pressed":viewing,"aria-label":`预览${candidate.name}曲线`});
+          card.innerHTML=`<div class="candidate-top"><h3>${candidate.name}</h3>${chosen?`<span class="pill ${decision.aiMode==="fallback"?"warn":"info"}">${decision.validationState==="blocked"?"本轮候选":decision.aiMode==="fallback"?"降级采用":"本轮采用"}</span>`:""}</div><p class="candidate-description">${profileCopy[candidate.id]}</p><div class="candidate-cost"><span class="currency">¥</span>${format(number(candidate.cost))}<small>预计购电成本 / 日</small></div><dl><div><dt>预计节省</dt><dd class="green">${candidate.saving}</dd></div><div><dt>最大需量</dt><dd>${candidate.demand}</dd></div><div><dt>光伏消纳</dt><dd>${candidate.pv}</dd></div></dl><div class="candidate-footer"><span>${candidate.risk}</span><span>${viewing?"正在预览":"查看曲线"} ${icon("arrow")}</span></div>`;
+          card.addEventListener("click",()=>{previewByStation[activeStationKey]=candidate.id;renderPreview();document.querySelector(`[data-candidate="${candidate.id}"]`).focus({preventScroll:true});$("live-status").textContent=`已预览${candidate.name}，本轮采用方案保持不变。`;});$("candidate-grid").append(card);
         });
       }
-
-      function updateMetrics(metrics) {
-        document.querySelectorAll("[data-overview-metric]").forEach((card, index) => {
-          const metric = metrics[index];
-          card.querySelector(".metric-label").textContent = metric[0];
-          card.querySelector(".metric-value").textContent = metric[1];
-          const meta = card.querySelector(".metric-meta");
-          meta.textContent = metric[2];
-          meta.className = "metric-meta" + (metric[3] ? " " + metric[3] : "");
+      function renderPreview(){const profile=stations[activeStationKey],decision=decisionFor(activeStationKey),candidate=profile.candidates.find(c=>c.id===previewByStation[activeStationKey]);const comparing=candidate.id!==decision.selected;$("plan-meta").textContent=`${profile.name} · ${candidate.name} · 24 小时 / 96 点`;$("plan-badge").textContent=comparing?"对比预览":"本轮方案";$("chart-preview-status").textContent=decision.validationState==="blocked"?`预览：${candidate.name} · 本轮校验阻断，EMS 保持原计划`:comparing?`对比预览：${candidate.name} · 当前采用：${selectedCandidate(profile,decision).name}`:`${candidate.name} · ${decision.version} · ${decision.aiMode==="fallback"?"自动降级采用":"本轮采用"}（模拟）`;$("restore-preview").hidden=!comparing;activePlan=buildPlan(activeStationKey,candidate.id);renderChart(activePlan);renderCandidates(profile,decision);}
+      function renderDecision(profile,decision){const candidate=selectedCandidate(profile,decision),blocked=decision.validationState==="blocked";$("decision-status").textContent=decision.badge;$("decision-status").className="pill "+(blocked?"bad":decision.aiMode==="fallback"?"warn":"good");$("decision-source").textContent=decision.aiMode==="fallback"?"自动降级 · 15:00 周期":"AI 选择 · 15:00 周期";$("decision-name").textContent=candidate.name;$("decision-copy").textContent=decision.summary;$("decision-saving").textContent=candidate.saving;$("decision-confidence").textContent=decision.confidence==="—"?"规则降级":`选择置信度 ${Math.round(Number(decision.confidence)*100)}%`;const steps=[
+          ["候选生成","15:00:03","3 套候选 · 96 点计划","good"],
+          [decision.aiMode==="fallback"?"AI 超时，采用均衡方案":"AI 完成方案选择",decision.aiMode==="fallback"?"15:00:08":"15:00:05",candidate.name,decision.aiMode==="fallback"?"warn":"good"],
+          [blocked?"安全校验阻断":"确定性校验通过",decision.aiMode==="fallback"?"15:00:08":"15:00:05",blocked?"第 58 点 SOC 越界":"功率、SOC 与计划完整性",blocked?"bad":"good"],
+          [blocked?"保持原 EMS 计划":"EMS 已接收 "+decision.version,blocked?"—":decision.recoveryState==="recovered"?"15:00:11":decision.aiMode==="fallback"?"15:00:10":"15:00:07",blocked?"本轮未发送":decision.recoveryState==="recovered"?"首次拒绝后重算恢复":profile.taskId,blocked?"waiting":"good"]
+        ];$("decision-steps").innerHTML=steps.map(([title,time,copy,tone])=>`<li class="step ${tone}"><span class="step-mark" aria-hidden="true">${tone==="bad"?"!":tone==="waiting"?"–":tone==="warn"?"!":"✓"}</span><div class="step-title"><span>${title}</span><time>${time}</time></div><p>${copy}</p></li>`).join("");
+      }
+      function renderRecent(){const events=eventsFor(activeStationKey).slice(-3).reverse();$("recent-events").innerHTML=events.map(event=>`<article class="activity ${event.tone}"><div class="activity-head"><span class="dot"></span><time>${event.time}</time></div><strong>${event.title}</strong></article>`).join("");}
+      function renderInputs(profile){const items=[["负荷 / 光伏预测","各 96 点 · 完整"],["输入时间","09/04 "+runtimeFor(activeStationKey).time],["储能容量",profile.capacity],["初始 SOC",profile.metrics[3][1]],["SOC 安全范围","10%–90%"],["终端 SOC","初始值 ±5%"],["独立需量上限",profile.demandLimit],["分时电价","谷 / 平 / 峰 / 尖峰"]];$("input-list").innerHTML=items.map(([key,value])=>`<div><dt>${key}</dt><dd>${value}</dd></div>`).join("");}
+      function renderAll(){
+        $("all-stations").replaceChildren();Object.entries(stations).forEach(([key,profile])=>{const decision=decisionFor(key),candidate=selectedCandidate(profile,decision),blocked=decision.validationState==="blocked";const card=el("article",{class:"card station-card","data-station-summary":key});card.innerHTML=`<div class="card-top"><div><h2>${profile.name}</h2><p class="subcopy">${profile.emus} · ${profile.capacity} · ${runtimeFor(key).time} 快照</p></div><span class="pill ${blocked?"bad":"good"}">${decision.badge}</span></div><div class="mini-stats"><div><span>当前 SOC</span><strong>${format(runtimeFor(key).soc)}%</strong></div><div><span>负荷 <small>kW</small></span><strong>${format(runtimeFor(key).input.load)}</strong></div><div><span>候选节省估算 <small>元 / 日</small></span><strong class="green">${format(number(candidate.saving))}</strong></div></div><p class="subcopy" style="margin-top:16px">本轮候选功率预览${blocked?" · 已阻断，未发送":""}</p><svg class="mini-svg" viewBox="0 0 530 132" role="img" aria-label="${profile.name}的独立充放电计划"></svg><div class="station-foot"><span class="muted">${blocked?"本轮阻断 · 原计划继续":candidate.name+" · "+decision.version}</span><button class="text-button" data-open-station="${key}">进入电站 ${icon("arrow")}</button></div>`;
+          const chart=card.querySelector("svg.mini-svg"),points=buildPlan(key,candidate.id),max=Math.max(...points.map(p=>Math.abs(p.power)));chart.append(svg("line",{x1:0,y1:57,x2:530,y2:57,class:"chart-grid"}));points.forEach((p,i)=>chart.append(svg("rect",{x:i*530/96+1,y:p.power>0?57-p.power/max*43:57,width:530/96-2,height:Math.abs(p.power/max*43),rx:1,class:p.power>0?"chart-discharge":"chart-charge"})));[0,6,12,18,24].forEach(h=>chart.append(svg("text",{x:h/24*530,y:123,class:"chart-label","text-anchor":h===0?"start":h===24?"end":"middle"},String(h).padStart(2,"0")+":00")));card.querySelector("button").addEventListener("click",()=>{switchStation(key);$("station-select").focus();window.scrollTo({top:0,behavior:"instant"});});$("all-stations").append(card);
         });
       }
-
-      function renderOverviewStages(profile, decision) {
-        const list = document.getElementById("overview-stage-list");
-        list.replaceChildren();
-        const stages = profile
-          ? [
-              ["15:00:03", "MILP候选已生成"],
-              ["15:00:05", (decision.aiMode === "fallback" ? "自动降级：" : "AI选择：") + profile.candidates.find((candidate) => candidate.id === decision.selected).name],
-              ["15:00:05", decision.validationState === "passed" ? "确定性校验通过" : "确定性校验阻断"],
-              ["15:00:06", decision.gateState === "dispatch" ? "变化阈值已达到" : "未进入变化判断"],
-              ["15:00:07", decision.dispatchState === "received" ? "EMS已接收 " + decision.version : "EMS保持原计划"],
-            ]
-          : [
-              ["电站1 · 15:00", "独立闭环 · " + stations.s1.taskId],
-              ["电站2 · 15:00", "独立闭环 · " + stations.s2.taskId],
-              ["隔离状态", "两站无共享需量或合并计划"],
-            ];
-        stages.forEach((stage) => {
-          const item = element("div", { class: "stage-item" });
-          item.append(element("span", {}, stage[0]));
-          item.append(element("strong", {}, stage[1]));
-          list.append(item);
+      function renderBase(){const all=activeStationKey==="all";$("station-select").value=activeStationKey;$("station-workspace").hidden=all;$("all-workspace").hidden=!all;$("open-records").disabled=all;$("open-records").title=all?"进入电站查看独立运行记录":"查看本站运行记录";$("scenario-select").disabled=all;$("scope-status").textContent=all?"只读汇总":"独立调度";
+        if(all){$("station-context-title").textContent="全场总览";$("station-devices").textContent="2 个独立电站";$("station-capacity").textContent="4,000 kWh";$("metrics").innerHTML=metricMarkup([["总负荷","1,126 kW","两站负荷合计",""],["光伏出力","286 kW","两站光伏合计","good"],["电网购电","706 kW","两站独立计量",""],["电站 1 SOC","61%","1,000 kWh","good"],["电站 2 SOC","54%","3,000 kWh","good"],["独立电站","2 座","无跨站合并计划",""]]);renderAll();}
+        else{scenarioKey=scenarioByStation[activeStationKey];const profile=stations[activeStationKey],decision=decisionFor(activeStationKey);if(!previewByStation[activeStationKey])previewByStation[activeStationKey]=decision.selected;$("station-context-title").textContent=profile.name;$("station-devices").textContent=profile.emus;$("station-capacity").textContent=profile.capacity;$("scenario-select").value=scenarioKey;$("metrics").innerHTML=metricMarkup(profile.metrics);renderPreview();renderDecision(profile,decision);renderRecent();renderInputs(profile);}
+        const next=new URLSearchParams(location.search);next.set("station",activeStationKey);next.set("scenario",all?"normal":scenarioByStation[activeStationKey]);try{history.replaceState(null,"",location.pathname+"?"+next.toString());}catch{/* A directly opened local file may disallow history updates. */}
+      }
+      function switchStation(key){activeStationKey=key;$("point-slider").value=key==="all"?60:snapshotIndex(key);render();$("live-status").textContent=key==="all"?"已切换全场只读总览":`已切换${stations[key].name}，显示本站独立计划与记录。`;}
+      function descriptionList(items){return `<dl class="drawer-dl">${items.map(([label,value])=>`<div><dt>${label}</dt><dd>${value}</dd></div>`).join("")}</dl>`;}
+      function fillDrawer(){if(drawerType==="evidence"||drawerType==="bill"){fillEvidenceDrawer();return;}const profile=stations[activeStationKey],decision=decisionFor(activeStationKey),candidate=selectedCandidate(profile,decision);$("drawer-kicker").textContent=profile.name+" · 2026 / 09 / 04 · 模拟结果";const body=$("drawer-body");
+        if(drawerType==="records"){$("drawer-title").textContent="运行记录";body.innerHTML=`<div class="drawer-filters"><span>${profile.cycleId.replace("1500",runtimeFor(activeStationKey).time.replace(":",""))}</span><label><span class="sr-only">筛选事件</span><select id="event-filter"><option value="all">全部事件</option><option value="exceptions">异常与恢复</option></select></label></div><div id="drawer-events"></div><section class="drawer-section" style="margin-top:24px"><h3>EMS 执行快照</h3>${descriptionList([["任务编号",decision.validationState==="blocked"?profile.taskId.replace("-061","-060"):profile.taskId],["执行状态",decision.validationState==="blocked"?"原计划执行中":"执行中"],["设备范围",profile.emus],["实际功率",(runtimeFor(activeStationKey).actual<0?"充电 ":"放电 ")+format(Math.abs(runtimeFor(activeStationKey).actual))+" kW"],["最近回读","09/04 "+runtimeFor(activeStationKey).time+":18"]])}</section>`;$("event-filter").addEventListener("change",renderDrawerEvents);renderDrawerEvents();}
+        else if(drawerType==="decision"){$("drawer-title").textContent="决策详情";body.innerHTML=`<section class="drawer-section"><h3>${candidate.name} · ${decision.source}</h3><p>${decision.summary}</p><div class="reason-tags">${decision.reasonCodes.map(code=>`<span>${code}</span>`).join("")}</div><div class="callout">AI 只选择并解释已有候选，不生成或修改 96 点数值计划。</div></section><section class="drawer-section"><h3>校验与变化判断</h3>${descriptionList([["安全校验",decision.validationText],["变化判断",decision.gateText],["判断窗口","未来 4 小时"],["触发条件","模式变化；连续 2 点功率差达到额定功率 10%；成本改善达到 1%；设备、电价或计划可行性变化。"]])}</section><section class="drawer-section"><h3>EMS 接收与回读</h3>${descriptionList([["策略编号",profile.planId],["候选版本",decision.version],["发送状态",decision.dispatchText],["恢复状态",decision.recoveryText]])}<div class="callout ${decision.validationState==="blocked"?"bad":""}">${decision.validationState==="blocked"?"本轮方案未发送。EMS 继续执行 "+profile.previousPlanId+"。":"EMS 负责最终校验、站内设备分配及执行。"}</div></section>`;}
+        else{const viewing=profile.candidates.find(c=>c.id===previewByStation[activeStationKey]),points=activePlan;$("drawer-title").textContent="计划详情";body.innerHTML=`<section class="drawer-section"><h3>${viewing.name}</h3>${descriptionList([["计划范围",profile.name+" · 2026/09/04 00:00–24:00"],["计划规模","站级汇总 · 96 点 · 15 分钟 / 点"],["预览状态",viewing.id===decision.selected?"本轮候选（模拟）":"对比预览，未改变本轮采用方案"],["本轮策略",profile.planId+" · "+decision.version],["计划状态",decision.validationState==="blocked"?"本轮阻断 · EMS 保持原计划":"模拟结果"],["初始 / 终端 SOC",format(points[0].startSoc)+"% / "+format(points[95].soc)+"%"],["最大充电功率",format(-Math.min(...points.map(p=>p.power)))+" kW"],["最大放电功率",format(Math.max(...points.map(p=>p.power)))+" kW"],["基线电度费",money(viewing.baseline)+" / 日"],["预计购电成本",viewing.cost+" / 日"],["预计节省",viewing.saving+" / 日"],["储能吞吐量",viewing.throughput]])}<div class="callout">曲线与指标使用同一组 Mock 输入。基线按同日负荷与光伏、无储能调节估算。选择卡片仅切换预览。</div></section><section class="drawer-section"><h3>关键时段</h3>${descriptionList([["00:00–06:00","低谷充电，准备日间储能"],["06:00–10:00","早峰放电，减少电网购电"],["10:00–14:00","吸收光伏，补充储能"],["14:00–22:00","按方案释放电量，覆盖日间与晚峰"],["22:00–24:00","恢复终端 SOC"]])}</section>`;}
+      }
+      function renderDrawerEvents(){const onlyExceptions=$("event-filter").value==="exceptions";const events=eventsFor(activeStationKey).filter(e=>!onlyExceptions||e.tone==="bad"||e.tone==="warn"||e.badge==="已恢复");$("drawer-events").innerHTML=events.length?events.map(event=>`<article class="event"><time>${event.time}</time><div><div class="row spread"><strong>${event.title}</strong><span class="pill ${event.tone}">${event.badge}</span></div><p>${event.copy}</p></div></article>`).join(""):`<div class="empty">本轮没有异常或恢复事件</div>`;}
+      function openDrawer(type){if(activeStationKey==="all")return;drawerType=type;fillDrawer();$("detail-drawer").showModal();$("detail-drawer").scrollTop=0;}
+      // All station data below is local demonstration data. No external services are called.
+      const billPeriodByStation = {s1:"2026-08", s2:"2026-08"};
+      const billFixtures = {
+        s1:{beforeEnergy:282000,beforeDemand:18000,afterEnergy:265800,afterDemand:15600},
+        s2:{beforeEnergy:488000,beforeDemand:32000,afterEnergy:457680,afterDemand:28000}
+      };
+      const tariffRanges = [[0,24,"谷段",.32],[24,40,"峰段",1.45],[40,72,"平段",.68],[72,88,"尖峰",1.62],[88,96,"平段",.68]];
+      function tariffAt(index){const range=tariffRanges.find(([a,b])=>index>=a&&index<b);return {name:range[2],price:range[3]};}
+      function snapshotIndex(key){return scenarioByStation[key]==="pv-surplus"?48:60;}
+      function seriesFor(key){
+        const loadScale=key==="s1"?1:1.57,pvScale=key==="s1"?1:1.55;
+        return Array.from({length:96},(_,index)=>{
+          const hour=index/4;
+          let load=(320+45*Math.sin((hour-6)/24*Math.PI*2)+(hour>=18&&hour<22?90:0))*loadScale;
+          let pv=Math.max(0,440*Math.sin((hour-6)/12*Math.PI))*pvScale;
+          if(hour>18)pv=0;
+          if(index===60){load=key==="s1"?438:688;pv=key==="s1"?112:174;}
+          if(index===60&&scenarioByStation[key]==="demand-near")load=number(stations[key].demandLimit)+(key==="s1"?40:60)+pv;
+          if(index===48&&scenarioByStation[key]==="pv-surplus"){load=key==="s1"?220:420;pv=key==="s1"?450:900;}
+          return {index,load,pv,...tariffAt(index)};
         });
       }
-
-      function activatePanel(tab) {
-        app.querySelectorAll('[role="tab"]').forEach((candidate) => {
-          const selected = candidate === tab;
-          candidate.setAttribute("aria-selected", String(selected));
-          document.getElementById(candidate.getAttribute("aria-controls")).hidden = !selected;
-        });
-      }
-
-      function applyStationScope() {
-        const all = activeStationKey === "all";
-        const profile = all ? null : stations[activeStationKey];
-        const decision = profile ? resolveDecision(profile) : null;
-        document.querySelectorAll("#station-switcher [data-station]").forEach((button) => {
-          button.setAttribute("aria-pressed", String(button.dataset.station === activeStationKey));
-        });
-        document.getElementById("strategy-tab").disabled = all;
-        document.getElementById("records-tab").disabled = all;
-        document.getElementById("all-station-summary").hidden = !all;
-
-        if (all) {
-          activatePanel(document.getElementById("overview-tab"));
-          document.getElementById("station-context-title").textContent = "全场总览";
-          document.getElementById("station-context-copy").textContent = "只读汇总；两个电站不共享关口、需量、策略或EMS任务";
-          document.getElementById("overview-operation-title").textContent = "两座电站正在独立自动调度";
-          document.getElementById("overview-operation-copy").textContent = "全场页仅汇总展示。电站1与电站2分别每15分钟求解、校验和下发，不生成跨站合并策略。";
-          document.getElementById("overview-plan-copy").textContent = "全场只读汇总 · 两个互相独立的96点计划";
-          document.getElementById("overview-cycle-title").textContent = "15:00 独立周期";
-          document.getElementById("cycle-status").textContent = "2 / 2 正常";
-          updateMetrics(allMetrics);
-          document.getElementById("flow-pv").textContent = "286 kW";
-          document.getElementById("flow-storage").textContent = "134 kW";
-          document.getElementById("flow-grid").textContent = "706 kW";
-          document.getElementById("effect-cost").textContent = "¥ 18,760";
-          document.getElementById("effect-saving").textContent = "¥ 2,060";
-          document.getElementById("effect-demand").textContent = "506 / 776 kW";
-          document.getElementById("effect-pv").textContent = "97.2% / 99.3%";
-          renderOverviewStages(null, null);
-          renderTimeline("overview-chart", "all");
-        } else {
-          const selected = profile.candidates.find((candidate) => candidate.id === decision.selected);
-          document.getElementById("station-context-title").textContent = profile.name;
-          document.getElementById("station-context-copy").textContent = profile.emus + " · 独立关口、独立需量、独立策略与EMS任务";
-          document.getElementById("overview-operation-title").textContent = decision.title;
-          document.getElementById("overview-operation-copy").textContent = profile.name + "每15分钟独立滚动求解；所有候选、校验结果、EMS任务和执行日志均带station_id。";
-          document.getElementById("overview-plan-copy").textContent = profile.name + " · 策略 " + profile.planId + " · " + decision.version + " · 96点";
-          document.getElementById("overview-cycle-title").textContent = profile.name + " · 15:00 调度周期";
-          document.getElementById("cycle-status").textContent = decision.badge;
-          updateMetrics(profile.metrics);
-          document.getElementById("flow-pv").textContent = profile.flow.pv;
-          document.getElementById("flow-storage").textContent = profile.flow.storage;
-          document.getElementById("flow-grid").textContent = profile.flow.grid;
-          document.getElementById("effect-cost").textContent = selected.cost;
-          document.getElementById("effect-saving").textContent = selected.saving;
-          document.getElementById("effect-demand").textContent = selected.demand;
-          document.getElementById("effect-pv").textContent = selected.pv;
-          renderOverviewStages(profile, decision);
-          renderTimeline("overview-chart", activeStationKey);
-
-          document.getElementById("input-device").textContent = profile.emus + " · 在线";
-          document.getElementById("input-constraint").textContent = "本站需量≤" + profile.demandLimit;
-          document.getElementById("cycle-id").textContent = profile.cycleId;
-          document.getElementById("cycle-decision-source").textContent = decision.source;
-          document.getElementById("candidate-scope-copy").textContent = profile.name + "独立约束下生成3个可执行方案；不使用另一电站的需量或设备余量";
-          renderCandidates(profile, decision);
-          document.getElementById("ai-selection").dataset.mode = decision.aiMode;
-          document.getElementById("ai-status").textContent = decision.aiStatus;
-          document.getElementById("ai-status").className = "status " + (decision.aiMode === "fallback" ? "warn" : "info");
-          document.getElementById("selected-candidate-name").textContent = selected.name;
-          document.getElementById("ai-confidence").textContent = decision.confidence;
-          document.getElementById("ai-summary").textContent = decision.summary;
-          document.getElementById("decision-benefit").textContent = "同本站基线相比预计节省 " + selected.saving;
-          document.getElementById("decision-risk").textContent = selected.risk + " · " + profile.name + " EMS保留最终安全校验";
-          const reasonCodes = document.getElementById("reason-codes");
-          reasonCodes.replaceChildren();
-          decision.reasonCodes.forEach((code) => reasonCodes.append(element("span", { class: "reason-code" }, code)));
-
-          document.getElementById("strategy-plan-copy").textContent = profile.name + " · 策略 " + profile.planId + " · 1 × 96点 · 15分钟粒度";
-          document.getElementById("selected-plan-status").textContent = decision.validationState === "passed" ? "校验通过" : "校验阻断";
-          document.getElementById("selected-plan-status").className = "status " + (decision.validationState === "passed" ? "good" : "bad");
-          renderTimeline("strategy-chart", activeStationKey);
-
-          const validation = document.getElementById("validation-status");
-          validation.dataset.state = decision.validationState;
-          validation.textContent = decision.validationText;
-          const gate = document.getElementById("change-gate");
-          gate.dataset.result = decision.gateState;
-          document.getElementById("gate-result-text").textContent = decision.gateText;
-          document.getElementById("dispatch-plan-id").textContent = profile.planId;
-          document.getElementById("dispatch-version").textContent = decision.version;
-          document.getElementById("dispatch-plan-size").textContent = profile.name + " · 1 × 96 点";
-          const dispatch = document.getElementById("dispatch-status");
-          dispatch.dataset.state = decision.dispatchState;
-          dispatch.textContent = decision.dispatchText;
-          const recovery = document.getElementById("ems-recovery");
-          recovery.dataset.state = decision.recoveryState;
-          recovery.textContent = decision.recoveryText;
-          document.getElementById("dispatch-badge").textContent = decision.badge;
-          document.getElementById("dispatch-badge").className = "status " + (decision.validationState === "passed" ? "good" : "bad");
-          const pipelineStates = decision.validationState === "blocked"
-            ? ["completed", "completed", "completed", "completed", "blocked", "waiting", "waiting"]
-            : ["completed", "completed", "completed", "completed", "completed", "completed", "completed"];
-          document.querySelectorAll("#pipeline .pipeline-step").forEach((step, index) => {
-            step.dataset.stepState = pipelineStates[index];
-          });
-
-          document.getElementById("cycle-count").textContent = profile.counts.cycles;
-          document.getElementById("ai-call-count").textContent = scenarioKey === "ai-fallback" ? String(Number(profile.counts.ai) - 1) : profile.counts.ai;
-          document.getElementById("dispatch-count").textContent = decision.validationState === "blocked" ? String(Number(profile.counts.dispatch) - 1) : profile.counts.dispatch;
-          document.getElementById("alert-count").textContent = decision.validationState === "blocked" ? "1" : "0";
-          document.getElementById("alert-copy").textContent = decision.validationState === "blocked" ? "本站校验阻断已记录" : "本站无阻断问题";
-          document.getElementById("alert-copy").className = "metric-meta " + (decision.validationState === "blocked" ? "warn" : "good");
-          document.getElementById("record-cycle-title").textContent = profile.name + " · " + profile.cycleId + " 事件记录";
-          document.getElementById("record-cycle-badge").textContent = decision.badge;
-          document.getElementById("record-cycle-badge").className = "status " + (decision.validationState === "passed" ? "info" : "bad");
-          document.getElementById("ems-task-id").textContent = decision.validationState === "blocked" ? profile.taskId.replace("-061", "-060") : profile.taskId;
-          document.getElementById("ems-task-status").textContent = decision.validationState === "blocked" ? "原计划执行中" : "执行中";
-          document.getElementById("ems-device-scope").textContent = profile.emus;
-          document.getElementById("ems-actual-power").textContent = profile.actualPower;
-          renderEvents(profile, decision);
+      function energyDelta(power){return power<0?-power*.25*.95:-power*.25/.95;}
+      function buildPlan(key,profileId){
+        const points=basePlan(key,profileId),scenario=scenarioByStation[key];
+        if(scenario==="demand-near"||scenario==="pv-surplus"){
+          const index=snapshotIndex(key),oldPower=points[index].power;
+          points[index].power=scenario==="demand-near"?(key==="s1"?60:90):-(key==="s1"?230:480);
+          const extraEnergy=energyDelta(points[index].power)-energyDelta(oldPower);
+          // Rebalance the final charge period so each mock plan retains its initial terminal SOC.
+          for(let i=88;i<96;i++)points[i].power+=extraEnergy/(2*.95);
         }
-
-        const nextQuery = new URLSearchParams(window.location.search);
-        nextQuery.set("station", activeStationKey);
-        window.history.replaceState(null, "", window.location.pathname + "?" + nextQuery.toString());
+        let soc=number(stations[key].metrics[3][1]);
+        const capacity=number(stations[key].capacity);
+        points.forEach(point=>{point.startSoc=soc;soc+=energyDelta(point.power)/capacity*100;point.soc=soc;});
+        return points;
+      }
+      function refreshCandidateMetrics(key){
+        const series=seriesFor(key);
+        const baseline=series.reduce((sum,p)=>sum+Math.max(0,p.load-p.pv)*p.price*.25,0);
+        stations[key].candidates.forEach(candidate=>{
+          const plan=buildPlan(key,candidate.id);
+          let cost=0,peak=0,pvTotal=0,exportTotal=0,throughput=0;
+          plan.forEach((p,i)=>{const input=series[i],grid=input.load-input.pv-p.power;cost+=Math.max(0,grid)*input.price*.25;peak=Math.max(peak,grid);pvTotal+=input.pv*.25;exportTotal+=Math.max(0,-grid)*.25;throughput+=Math.abs(p.power)*.25;});
+          candidate.cost=money(cost);candidate.saving=money(baseline-cost);candidate.demand=format(peak)+" kW";candidate.pv=format((1-exportTotal/pvTotal)*100)+"%";candidate.throughput=format(throughput/1000)+" MWh";
+          candidate.baseline=baseline;candidate.costValue=cost;
+        });
+      }
+      function decisionFor(key){
+        const saved=scenarioKey;scenarioKey=scenarioByStation[key];const d=resolveDecision(stations[key]);scenarioKey=saved;
+        if(d.badge==="已闭环")d.badge="执行中";
+        if(d.badge==="降级闭环")d.badge="降级执行中";
+        if(scenarioByStation[key]==="demand-near")Object.assign(d,{selected:"cost",badge:"削峰执行中",summary:"购电功率逼近上限，已增加储能放电；EMS 回读显示购电功率已回落。",reasonCodes:["DEMAND_APPROACHING","PEAK_SHAVING"],gateText:"功率模式发生变化 · 削峰补充计划已模拟触发"});
+        if(scenarioByStation[key]==="pv-surplus")Object.assign(d,{selected:"pv",badge:"余电充电中",summary:"光伏先供应负载，剩余电量充入储能；当前电网购电为零。",reasonCodes:["PV_SURPLUS","LOCAL_ABSORPTION"],gateText:"光伏余电增加 · 已模拟调整当前充电功率"});
+        return d;
+      }
+      function runtimeFor(key){
+        const decision=decisionFor(key),index=snapshotIndex(key),input=seriesFor(key)[index];
+        const effectiveProfile=decision.validationState==="blocked"?"balanced":decision.selected;
+        const plan=buildPlan(key,effectiveProfile),power=plan[index].power;
+        // Surplus charging follows the surplus exactly; normal execution has a small mock tracking error.
+        const actualPlan=plan.map(p=>({...p,power:p.power*(scenarioByStation[key]==="pv-surplus"?1:.98)}));
+        const actual=actualPlan[index].power,grid=Math.max(0,input.load-input.pv-actual);
+        let soc=number(stations[key].metrics[3][1]);
+        actualPlan.slice(0,index).forEach(p=>soc+=energyDelta(p.power)/number(stations[key].capacity)*100);
+        soc+=energyDelta(actual)*(.3/15)/number(stations[key].capacity)*100;
+        const pvDirect=Math.min(input.load,input.pv),pvCharge=Math.min(Math.max(input.pv-pvDirect,0),Math.max(-actual,0));
+        const batteryToLoad=Math.max(actual,0),gridToCharge=Math.max(-actual-pvCharge,0),gridToLoad=Math.max(input.load-pvDirect-batteryToLoad,0);
+        return {key,index,time:timeAt(index),input,decision,plan,actualPlan,power,actual,grid,soc,pvDirect,pvCharge,batteryToLoad,gridToCharge,gridToLoad,limit:number(stations[key].demandLimit)};
+      }
+      function eventsFor(key){
+        const saved=scenarioKey;scenarioKey=scenarioByStation[key];const events=buildEvents(stations[key],decisionFor(key));scenarioKey=saved;
+        const r=runtimeFor(key),scenario=scenarioByStation[key];
+        if(scenario==="pv-surplus")events.forEach(e=>e.time=e.time.replace("15:","12:"));
+        const prefix=r.time;
+        if(scenario==="demand-near")events.push(
+          {time:prefix+":12",title:"需量逼近，触发削峰",copy:`${stations[key].name}未调节购电 ${format(r.input.load-r.input.pv)} kW，超过演示控制线 ${format(r.limit)} kW。`,badge:"已触发",tone:"warn"},
+          {time:prefix+":14",title:"削峰计划已接收",copy:`本站储能目标放电 ${format(r.power)} kW，保持 SOC 与可用功率边界。`,badge:"已接收",tone:"info"}
+        );
+        if(scenario==="pv-surplus")events.push({time:prefix+":12",title:"光伏余电转入储能",copy:`光伏直供 ${format(r.pvDirect)} kW，余电充储能 ${format(r.pvCharge)} kW。`,badge:"协同充电",tone:"good"});
+        events.push({time:prefix+":18",title:"EMS 实际功率已回读",copy:`${stations[key].name}${r.actual<0?"充电":"放电"} ${format(Math.abs(r.actual))} kW；关口购电 ${format(r.grid)} kW。`,badge:"执行中",tone:"good"});
+        return events;
+      }
+      function renderEnergySummary(r){
+        const rows=[["光伏直供",r.pvDirect],[r.actual<0?"光伏余电入储":"储能供负载",r.actual<0?r.pvCharge:r.batteryToLoad],[r.gridToCharge>0?"电网补充充电":"电网供负载",r.gridToCharge>0?r.gridToCharge:r.gridToLoad]];
+        $("flow-breakdown").innerHTML=rows.map(([label,value])=>`<div><span>${label}</span><strong>${format(value)}<small>kW</small></strong></div>`).join("");
+        $("flow-caption").textContent=r.actual<0?(r.gridToCharge>0?"光伏优先供负载，电网补充储能充电。":"光伏优先供负载，余电用于储能充电。"):"光伏优先供负载，储能补充供电。";
+        $("simulate-pv").textContent=scenarioByStation[r.key]==="pv-surplus"?"恢复正常":"模拟光伏富余";
+        $("energy-card").dataset.balanceError=String(r.input.pv+r.grid+r.actual-r.input.load);
+      }
+      function drawDemand(r){
+        const chart=$("demand-chart");chart.replaceChildren();
+        const triggered=scenarioByStation[r.key]==="demand-near",before=r.input.load-r.input.pv;
+        const offsets=triggered?[-105,-95,-80,-64,-49,-28,-16,-7,0]:[-16,-9,-14,-4,3,-2,4,1,0];
+        const rawSigned=offsets.map(delta=>before+delta*(r.key==="s2"?1.4:1));
+        const raw=rawSigned.map(value=>Math.max(0,value));
+        const adjusted=rawSigned.map((value,i)=>Math.max(0,value-(triggered?(i<5?r.actual*.4:r.actual):r.actual)));
+        const max=Math.max(r.limit,...raw)*1.12,x=i=>43+i/8*449,y=value=>112-value/max*93;
+        [0,r.limit/2,r.limit].forEach(value=>{chart.append(svg("line",{x1:43,y1:y(value),x2:492,y2:y(value),class:"chart-grid"}),svg("text",{x:35,y:y(value)+4,"text-anchor":"end",class:"chart-label"},String(Math.round(value))));});
+        chart.append(svg("line",{x1:43,y1:y(r.limit),x2:492,y2:y(r.limit),stroke:"var(--amber)","stroke-dasharray":"4 4"}));
+        const path=values=>values.map((v,i)=>(i?"L":"M")+x(i)+","+y(v)).join(" ");
+        chart.append(svg("path",{d:path(raw),fill:"none",stroke:"var(--muted)","stroke-width":1.6,"stroke-dasharray":"4 4"}),svg("path",{d:path(adjusted),fill:"none",stroke:"var(--blue)","stroke-width":2.3}),svg("circle",{cx:x(8),cy:y(r.grid),r:3.5,fill:"var(--blue)"}));
+        [0,4,8].forEach(i=>{const minute=r.index*15-16+i*2;const label=String(Math.floor(minute/60)).padStart(2,"0")+":"+String(minute%60).padStart(2,"0");chart.append(svg("text",{x:x(i),y:136,class:"chart-label","text-anchor":i===0?"start":i===8?"end":"middle"},label));});
+        if(triggered){chart.append(svg("line",{x1:x(5),x2:x(5),y1:15,y2:115,stroke:"var(--amber)","stroke-dasharray":"2 3"}),svg("text",{x:x(5)+5,y:12,class:"chart-label"},"削峰触发"));}
+        $("demand-current").textContent=format(r.grid);$("demand-margin").textContent=format(r.limit-r.grid);$("demand-limit").textContent=format(r.limit);
+        $("demand-status").textContent=triggered?"削峰执行中":"余量充足";$("demand-status").className="pill "+(triggered?"warn":"good");
+        $("demand-action").textContent=triggered?`放电 ${format(r.actual)} kW · 购电已回落`:`未触发 · 控制线 ${format(r.limit)} kW`;
+        $("simulate-demand").textContent=triggered?"恢复正常":"模拟需量逼近";
+        $("demand-card").dataset.triggered=String(triggered);
+      }
+      function addActualTrace(){
+        if(!chartScale||activeStationKey==="all")return;
+        const r=runtimeFor(activeStationKey),{x,y}=chartScale,points=r.actualPlan.slice(0,r.index+1);
+        const d=points.map((p,i)=>(i?"L":"M")+x(i)+","+y(p.power)).join(" ");
+        $("plan-chart").append(svg("path",{id:"actual-power-trace",d,fill:"none",stroke:"var(--ink)","stroke-width":1.8,"stroke-dasharray":"4 2"}));
+      }
+      function updatePointReason(){
+        if(!activePlan.length||activeStationKey==="all")return;
+        const index=Number($("point-slider").value),p=activePlan[index],input=seriesFor(activeStationKey)[index];
+        let reason=p.power<0?(input.pv>input.load?"光伏先满足负载，余电充入储能。":"利用低价电补能，满足后续用电与终端 SOC 目标。"):(input.name==="峰段"||input.name==="尖峰"?"高价时段释放储能，减少电网购电。":"储能补充负载用电，保持电网购电余量。");
+        if(scenarioByStation[activeStationKey]==="demand-near"&&index===60)reason=`关口购电预计 ${format(input.load-input.pv)} kW，触发 ${format(p.power)} kW 削峰放电。`;
+        $("point-reason").innerHTML=`<strong>${input.name} · ${input.price.toFixed(2)} 元/kWh</strong><span>${reason}</span>`;
+      }
+      function renderBillSummary(key){
+        const bill=billFixtures[key],before=bill.beforeEnergy+bill.beforeDemand,after=bill.afterEnergy+bill.afterDemand,pending=billPeriodByStation[key]==="2026-09";
+        $("bill-period-label").textContent=pending?"本月账单尚未结算":"上月节费 · 2026年08月";
+        $("bill-summary-value").textContent=pending?"待验证":money(before-after);
+        $("bill-summary-rate").textContent=pending?"—":format((before-after)/before*100)+"%";
+        $("bill-summary-status").textContent=pending?"账单待齐":"模拟账单";
+      }
+      function renderOperations(){
+        const all=activeStationKey==="all";$("operating-strip").hidden=all;$("open-evidence").disabled=all;
+        if(all){const r1=runtimeFor("s1"),r2=runtimeFor("s2");$("metrics").innerHTML=metricMarkup([["总负荷",format(r1.input.load+r2.input.load)+" kW","各站演示快照汇总",""],["光伏出力",format(r1.input.pv+r2.input.pv)+" kW","各站演示快照汇总","good"],["电网购电",format(r1.grid+r2.grid)+" kW","独立关口计量",""],["电站 1 SOC",format(r1.soc)+"%",r1.time+" 快照","good"],["电站 2 SOC",format(r2.soc)+"%",r2.time+" 快照","good"],["独立电站","2 座","无跨站合并计划",""]]);return;}
+        const r=runtimeFor(activeStationKey),profile=stations[activeStationKey],blocked=r.decision.validationState==="blocked";
+        const mode=r.actual<0?"充电":"放电";
+        $("metrics").innerHTML=metricMarkup([["负载用电",format(r.input.load)+" kW","本站独立计量",""],["光伏出力",format(r.input.pv)+" kW","优先直供负载","good"],["电网购电",format(r.grid)+" kW","控制上限 "+profile.demandLimit,""],["储能 SOC",format(r.soc)+"%","容量 "+profile.capacity,"good"],["储能功率",format(Math.abs(r.actual))+" kW",mode+" · EMS 模拟回读",""],["当前电价",r.input.price.toFixed(2)+" 元/kWh",r.input.name+" · 独立计费",""]]);
+        document.querySelector(".snapshot").textContent="演示快照 · 09/04 "+r.time+":18";
+        $("operating-strip").dataset.tone=blocked?"bad":scenarioByStation[r.key]==="demand-near"?"warn":"good";
+        $("operating-title").textContent=blocked?"本轮校验阻断，原计划继续执行":mode+" "+format(Math.abs(r.actual))+" kW · "+(scenarioByStation[r.key]==="demand-near"?"需量削峰":scenarioByStation[r.key]==="pv-surplus"?"光伏余电入储":"当前计划执行中");
+        $("operating-description").textContent=blocked?profile.previousPlanId:`${selectedCandidate(profile,r.decision).name} · 关口购电 ${format(r.grid)} kW · EMS ${r.time}:18 已回读`;
+        renderEnergySummary(r);drawDemand(r);renderBillSummary(r.key);
+        $("execution-stats").innerHTML=[["当前计划功率",format(Math.abs(r.power))+" <small>kW · "+mode+"</small>"],["EMS 实际功率",format(Math.abs(r.actual))+" <small>kW · "+mode+"</small>"],["当前跟踪偏差",format(Math.abs(r.actual-r.power))+" <small>kW</small>"],["最近回读",r.time+"<small>:18</small>"]].map(([label,value])=>`<div><span>${label}</span><strong>${value}</strong></div>`).join("");
+        $("execution-note").textContent=`${blocked?profile.previousPlanId:profile.planId} · ${profile.emus} · 执行回读为 Mock，已接收与实际执行分别记录`;
+        $("decision-source").textContent=(r.decision.aiMode==="fallback"?"规则降级":"AI 选择")+" · "+r.time+" 周期";
+        if(r.index===48)$("decision-steps").querySelectorAll("time").forEach(node=>node.textContent=node.textContent.replace("15:","12:"));
+        $("next-cycle").textContent="下一轮 "+timeAt(r.index+1);
+      }
+      function render(){Object.keys(stations).forEach(refreshCandidateMetrics);renderBase();renderOperations();}
+      function setDemoScenario(scenario){
+        if(activeStationKey==="all")return;
+        scenarioByStation[activeStationKey]=scenario;previewByStation[activeStationKey]=null;$("point-slider").value=snapshotIndex(activeStationKey);render();
+        $("live-status").textContent=`${stations[activeStationKey].name}场景已更新，另一电站保持独立状态。`;
+      }
+      function fillEvidenceDrawer(){
+        const key=activeStationKey,profile=stations[key],r=runtimeFor(key),body=$("drawer-body"),bill=billFixtures[key];
+        const before=bill.beforeEnergy+bill.beforeDemand,after=bill.afterEnergy+bill.afterDemand,rate=(before-after)/before*100;
+        $("drawer-kicker").textContent=profile.name+" · 全部为 Mock 演示证据";
+        if(drawerType==="bill"){
+          $("drawer-title").textContent="月度节费详情";
+          const pending=billPeriodByStation[key]==="2026-09";
+          body.innerHTML=`<div class="drawer-filters"><button class="text-button" id="back-evidence">查看验证依据</button><label><span class="sr-only">账单月份</span><select id="bill-period"><option value="2026-08">2026年08月</option><option value="2026-09">2026年09月（进行中）</option></select></label></div>
+            <div class="bill-hero ${pending?"pending":""}"><div class="row spread"><span>${pending?"本月节费验证":"月度电费降低比例"}</span><span class="pill ${pending?"warn":"good"}">${pending?"账单未齐":"模拟达标"}</span></div><strong class="rate">${pending?"待验证":format(rate)+"%"}</strong><p>${pending?"9 月尚未结算，当前不计算月度降低比例。":"目标 ≥5% · 2026年07月与08月的模拟账单对比"}</p></div>
+            <section class="drawer-section"><h3>账单对比 <small class="muted">单位：元</small></h3><table class="bill-table"><thead><tr><th>费用项目</th><th>${pending?"08月基准":"07月启用前"}</th><th>${pending?"09月启用后":"08月启用后"}</th></tr></thead><tbody><tr><td>电度电费</td><td>${format(pending?bill.afterEnergy:bill.beforeEnergy)}</td><td>${pending?"待结算":format(bill.afterEnergy)}</td></tr><tr><td>需量电费</td><td>${format(pending?bill.afterDemand:bill.beforeDemand)}</td><td>${pending?"待结算":format(bill.afterDemand)}</td></tr></tbody><tfoot><tr><td>电费合计</td><td>${format(pending?after:before)}</td><td>${pending?"—":format(after)}</td></tr></tfoot></table>
+            ${pending?"":`<div class="bill-bar"><span>启用前</span><div><i style="width:100%"></i></div><strong>${format(before)}</strong></div><div class="bill-bar after"><span>启用后</span><div><i style="width:${after/before*100}%"></i></div><strong>${format(after)}</strong></div><p class="bill-formula">降低比例 =（${format(before)} − ${format(after)}）÷ ${format(before)} × 100% = ${format(rate)}%<br>模拟节省 ${money(before-after)}，其中电度费 ${money(bill.beforeEnergy-bill.afterEnergy)}、需量费 ${money(bill.beforeDemand-bill.afterDemand)}。</p>`}</section>
+            <section class="drawer-section"><h3>比较口径</h3>${descriptionList([["计费范围",profile.name+"独立关口 · 电度费与需量费"],["来源标识","MOCK-BILL-"+profile.code+"-"+billPeriodByStation[key]],["对比条件","演示假设两月负荷、产量与电价可比"],["执行关联","MOCK-EMS-"+profile.code+"-MONTHLY"],["证据状态",pending?"账单未齐，不出具达标结论":"页面演示用模拟账单，不作为正式收益结论"]])}</section><div class="callout">月度账单与今日策略估算分开展示。真实验收的比较月份、账单范围和差异处理口径后续确认。</div>`;
+          $("bill-period").value=billPeriodByStation[key];
+          $("bill-period").addEventListener("change",event=>{billPeriodByStation[key]=event.target.value;renderBillSummary(key);fillEvidenceDrawer();$("bill-period").focus();});
+          $("back-evidence").addEventListener("click",()=>{drawerType="evidence";fillEvidenceDrawer();$("close-drawer").focus();});
+          return;
+        }
+        $("drawer-title").textContent="运行验证详情";
+        const triggered=scenarioByStation[key]==="demand-near",surplus=scenarioByStation[key]==="pv-surplus";
+        const evidence=(id,title,state,content,open=false)=>`<details class="evidence-item" ${open?"open":""} data-evidence="${id}"><summary><span class="evidence-title"><b>${id}</b>${title}</span><span class="pill info">${state}</span></summary><div class="evidence-content">${content}</div></details>`;
+        body.innerHTML=`<p class="decision-copy">日常运行数据关联到以下五项验证内容。此处所有状态、日志和账单均为 Mock，供确认页面效果。</p>`+
+          evidence("4.1","模型运行与策略输出","模拟运行",descriptionList([["模型版本","M4 MILP v1.0 · HiGHS（模拟）"],["部署实例","MOCK-M4-"+profile.code],["最近求解","2026/09/04 "+r.time+":03"],["求解耗时","3.2 秒（模拟）"],["候选输出","3 套站级候选 · 每套 96 点"],["本轮策略",profile.planId+" · "+r.decision.version],["决策状态",r.decision.badge]]),true)+
+          evidence("4.2","电价与充放电匹配","模拟匹配",`<p>按电价、SOC 与负载共同安排时段，点选主图可查看该时点的调度原因。</p><table class="bill-table"><thead><tr><th>时段</th><th>元/kWh</th><th>计划动作</th></tr></thead><tbody><tr><td>00–06 谷</td><td>0.32</td><td>低价充电</td></tr><tr><td>06–10 峰</td><td>1.45</td><td>储能放电</td></tr><tr><td>10–14 平</td><td>0.68</td><td>光伏补能</td></tr><tr><td>14–18 平</td><td>0.68</td><td>负载支撑</td></tr><tr><td>18–22 尖峰</td><td>1.62</td><td>优先放电</td></tr><tr><td>22–24 平</td><td>0.68</td><td>恢复终端 SOC</td></tr></tbody></table><p style="margin-top:10px">电价版本 MOCK-TOU-202609 · 同一时点的计划、SOC 和费用使用同一组演示输入。</p>`)+
+          evidence("4.3","光储协同与执行","模拟回读",descriptionList([["光伏直供",format(r.pvDirect)+" kW"],["光伏余电入储",format(r.pvCharge)+" kW"],["储能供负载",format(r.batteryToLoad)+" kW"],["电网供负载",format(r.gridToLoad)+" kW"],["电网补能",format(r.gridToCharge)+" kW"],["回读时间",r.time+":18"],["关联任务",profile.taskId]])+`<div class="evidence-actions"><button class="text-button" data-evidence-demo="pv-surplus">${surplus?"重新播放光伏富余":"模拟光伏富余"}</button><button class="text-button" data-drawer-link="records">查看执行记录</button></div>`)+
+          evidence("4.4","需量削峰触发",triggered?"模拟已触发":"等待场景模拟",descriptionList([["控制参考线",format(r.limit)+" kW（演示配置）"],["未调节购电",format(Math.max(0,r.input.load-r.input.pv))+" kW"],["调节后购电",format(r.grid)+" kW"],["触发状态",triggered?"需量逼近 → 补充放电 → EMS 回读回落":"当前余量充足，未触发削峰"],["储能执行",(r.actual<0?"充电 ":"放电 ")+format(Math.abs(r.actual))+" kW"]])+`<div class="evidence-actions"><button class="text-button" data-evidence-demo="demand-near">模拟需量逼近</button><button class="text-button" data-drawer-link="records">查看触发日志</button></div><p>本页用关口功率参考线演示触发效果；正式需量窗口与触发阈值后续配置。</p>`)+
+          evidence("4.5","月度电费降低",billPeriodByStation[key]==="2026-09"?"账单未齐":"模拟达标",`<p>${billPeriodByStation[key]==="2026-09"?"9 月账单尚未结算，不计算达标结果。":`7 月 ${money(before)} → 8 月 ${money(after)}，模拟降低 ${format(rate)}%，目标 ≥5%。`}</p><button class="text-button" data-drawer-link="bill">查看账单与计算依据 ${icon("arrow")}</button>`);
+        body.querySelectorAll("[data-drawer-link]").forEach(button=>button.addEventListener("click",()=>{drawerType=button.dataset.drawerLink;fillDrawer();$("detail-drawer").scrollTop=0;$("close-drawer").focus();}));
+        body.querySelectorAll("[data-evidence-demo]").forEach(button=>button.addEventListener("click",()=>{setDemoScenario(button.dataset.evidenceDemo);fillEvidenceDrawer();body.querySelector(`[data-evidence="${button.dataset.evidenceDemo==="pv-surplus"?"4.3":"4.4"}"]`).open=true;$("close-drawer").focus();}));
       }
 
-      app.querySelectorAll('[role="tab"]').forEach((tab) => {
-        tab.addEventListener("click", () => {
-          if (!tab.disabled) activatePanel(tab);
-        });
-      });
-      document.querySelectorAll("#station-switcher [data-station]").forEach((button) => {
-        button.addEventListener("click", () => {
-          activeStationKey = button.dataset.station;
-          applyStationScope();
-        });
-      });
-      document.getElementById("theme-toggle").addEventListener("click", (event) => {
-        const html = document.documentElement;
-        const dark = html.dataset.theme !== "dark";
-        html.dataset.theme = dark ? "dark" : "light";
-        event.currentTarget.setAttribute("aria-pressed", String(dark));
-      });
-
-      applyStationScope();
+      $("station-select").addEventListener("change",event=>switchStation(event.target.value));
+      $("scenario-select").addEventListener("change",event=>setDemoScenario(event.target.value));
+      $("theme-toggle").addEventListener("click",event=>{const dark=document.documentElement.dataset.theme!=="dark";document.documentElement.dataset.theme=dark?"dark":"light";event.currentTarget.setAttribute("aria-pressed",String(dark));event.currentTarget.setAttribute("aria-label",dark?"切换浅色主题":"切换深色主题");});
+      $("point-slider").addEventListener("input",updatePoint);
+      $("plan-chart").addEventListener("pointermove",event=>{if(event.pointerType==="touch")return;const point=$("plan-chart").createSVGPoint();point.x=event.clientX;point.y=event.clientY;const position=point.matrixTransform($("plan-chart").getScreenCTM().inverse());if(position.x<chartScale.left||position.x>chartScale.right||position.y<chartScale.top||position.y>chartScale.bottom)return;$("point-slider").value=Math.max(0,Math.min(95,Math.floor((position.x-chartScale.left)/(chartScale.right-chartScale.left)*96)));updatePoint();});
+      $("restore-preview").addEventListener("click",()=>{previewByStation[activeStationKey]=decisionFor(activeStationKey).selected;renderPreview();});
+      $("open-records").addEventListener("click",()=>openDrawer("records"));$("open-all-events").addEventListener("click",()=>openDrawer("records"));$("open-decision").addEventListener("click",()=>openDrawer("decision"));$("open-plan").addEventListener("click",()=>openDrawer("plan"));
+      $("close-drawer").addEventListener("click",()=>$("detail-drawer").close());$("detail-drawer").addEventListener("click",event=>{if(event.target!==$("detail-drawer"))return;const rect=event.currentTarget.getBoundingClientRect();if(event.clientX<rect.left||event.clientX>rect.right)event.currentTarget.close();});
+      $("open-evidence").addEventListener("click",()=>openDrawer("evidence"));
+      $("open-bill").addEventListener("click",()=>openDrawer("bill"));
+      $("simulate-pv").addEventListener("click",()=>setDemoScenario(scenarioByStation[activeStationKey]==="pv-surplus"?"normal":"pv-surplus"));
+      $("simulate-demand").addEventListener("click",()=>setDemoScenario(scenarioByStation[activeStationKey]==="demand-near"?"normal":"demand-near"));
+      $("point-slider").value=activeStationKey==="all"?60:snapshotIndex(activeStationKey);
+      render();
     })();
   </script>
 </body>

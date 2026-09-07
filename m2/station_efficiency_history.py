@@ -947,22 +947,13 @@ def _public_event_device(event):
     return "、".join(names) if names else "原因待判断"
 
 
-def build_calendar_day_dashboard(station_id, timezone_name, as_of, realtime, points, events):
-    start, end = _day_bounds(as_of, timezone_name)
-    cutoff = minute_bucket(as_of).astimezone(start.tzinfo)
-    selected = sorted(
-        (
-            point for point in points
-            if str(point.get("station_id")) == str(station_id)
-            and start <= _parse_time(point["data_time"], "data_time").astimezone(start.tzinfo) <= cutoff
-        ),
-        key=lambda point: _parse_time(point["data_time"], "data_time"),
-    )
-    keys = [(str(point["station_id"]), _canonical_minute(point["data_time"])) for point in selected]
-    if len(keys) != len(set(keys)):
-        raise HistoryError("duplicate_minute", "同一场站同一分钟只能有一个效率点")
-    latest = _public_minute(selected[-1]["data_time"], start.tzinfo) if selected else None
-    summary = summarize_today(selected)
+def build_event_history(station_id, timezone_name, start_time, end_time, events):
+    """按重叠区间读取完整事件生命周期；状态表示当前已保存的最新状态。"""
+    zone = ZoneInfo(timezone_name)
+    start = _parse_time(start_time, "start_time").astimezone(zone)
+    end = _parse_time(end_time, "end_time").astimezone(zone)
+    if start >= end:
+        raise HistoryError("invalid_range", "结束时间必须晚于开始时间")
     public_events = []
     for event in sorted(events, key=lambda item: _parse_time(item["start_time"], "start_time")):
         if str(event.get("station_id")) != str(station_id) or not _event_overlaps(event, start, end):
@@ -981,6 +972,37 @@ def build_calendar_day_dashboard(station_id, timezone_name, as_of, realtime, poi
             "impact": list(event["impact_chain"]),
             "status": "持续中" if event["status"] == "active" else "已恢复",
         })
+    return {
+        "operation": "events",
+        "station_id": station_id,
+        "range": {
+            "timezone": timezone_name,
+            "start_time": start.isoformat(),
+            "end_time": end.isoformat(),
+        },
+        "events": public_events,
+    }
+
+
+def build_calendar_day_dashboard(station_id, timezone_name, as_of, realtime, points, events):
+    start, end = _day_bounds(as_of, timezone_name)
+    cutoff = minute_bucket(as_of).astimezone(start.tzinfo)
+    selected = sorted(
+        (
+            point for point in points
+            if str(point.get("station_id")) == str(station_id)
+            and start <= _parse_time(point["data_time"], "data_time").astimezone(start.tzinfo) <= cutoff
+        ),
+        key=lambda point: _parse_time(point["data_time"], "data_time"),
+    )
+    keys = [(str(point["station_id"]), _canonical_minute(point["data_time"])) for point in selected]
+    if len(keys) != len(set(keys)):
+        raise HistoryError("duplicate_minute", "同一场站同一分钟只能有一个效率点")
+    latest = _public_minute(selected[-1]["data_time"], start.tzinfo) if selected else None
+    summary = summarize_today(selected)
+    public_events = build_event_history(
+        station_id, timezone_name, start.isoformat(), end.isoformat(), events,
+    )["events"]
     return {
         "operation": "dashboard",
         "range": {

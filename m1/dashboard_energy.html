@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html data-vifa-page="m1" lang="zh-CN">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -14,9 +14,9 @@
   --text-primary: #f0f1f5;
   --text-secondary: #9ca0af;
   --text-tertiary: #5e6372;
-  --accent: #22c55e;
-  --accent-dim: #1b4332;
-  --accent-glow: rgba(34,197,94,0.14);
+  --accent: #a5b4fc;
+  --accent-dim: rgb(165 180 252 / 14%);
+  --accent-glow: rgb(165 180 252 / 14%);
   --danger: #ef4444;
   --danger-dim: #3f1414;
   --danger-glow: rgba(239,68,68,0.14);
@@ -51,9 +51,9 @@
   --text-primary: #1a1d2b;
   --text-secondary: #6b7280;
   --text-tertiary: #9ca3af;
-  --accent: #16a34a;
-  --accent-dim: #dcfce7;
-  --accent-glow: rgba(22,163,74,0.12);
+  --accent: #5b5bd6;
+  --accent-dim: rgb(91 91 214 / 10%);
+  --accent-glow: rgb(91 91 214 / 10%);
   --danger: #dc2626;
   --danger-dim: #fee2e2;
   --danger-glow: rgba(220,38,38,0.1);
@@ -94,9 +94,9 @@ body {
 .header-left { display: flex; align-items: center; gap: 10px; }
 .header-logo {
   width: 34px; height: 34px; border-radius: var(--radius-md);
-  background: linear-gradient(135deg, var(--accent), #16a34a);
+  background: linear-gradient(135deg, #6389ef, #8b75db);
   display: flex; align-items: center; justify-content: center;
-  color: #fff; box-shadow: 0 4px 14px rgba(34,197,94,0.25);
+  color: #fff; box-shadow: 0 4px 14px rgb(99 102 220 / 16%);
 }
 .header h1 { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
 .header-right { display: flex; align-items: center; gap: 8px; }
@@ -262,7 +262,7 @@ body {
 .optional-metric { margin-top: 8px; }
 .optional-metric.metric-alert, .optional-metric.metric-alert .node-metric-value { color: var(--danger); }
 .soc-bar-bg { height: 5px; background: var(--surface-2); border-radius: var(--radius-full); overflow: hidden; margin: 6px 0; }
-.soc-bar-fill { height: 100%; border-radius: var(--radius-full); background: linear-gradient(90deg, var(--accent), #4ade80); transition: width 0.6s var(--ease-spring); }
+.soc-bar-fill { height: 100%; border-radius: var(--radius-full); background: var(--m1-soc-gradient); transition: width 0.6s var(--ease-spring); }
 .node-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; font-size: 10px; color: var(--text-tertiary); }
 .node-online { color: var(--accent); }
 .node-offline { color: var(--danger); }
@@ -311,6 +311,25 @@ body {
 .alert-category-tag.load { background: var(--danger-dim); color: var(--danger); }
 .alert-item-meta { font-size: 11px; color: var(--text-secondary); }
 .alert-item-time { font-size: 11px; color: var(--text-tertiary); margin-top: 5px; font-family: var(--font-mono); }
+.node-time { margin-top: 8px; color: var(--text-secondary); font-size: 11px; line-height: 1.6; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.node-time time { display: block; }
+.alert-controls { padding: 0 20px 8px; flex-shrink: 0; }
+.alert-mode { display: flex; gap: 6px; }
+.alert-mode button, .history-pager button, #resetAlertFilters {
+  min-height: 40px; border: 1px solid var(--border); border-radius: 8px;
+  background: var(--surface-2); color: var(--text-secondary); padding: 6px 10px; font: inherit; font-size: 12px; cursor: pointer;
+}
+.alert-mode button { flex: 1; }
+.alert-mode button[aria-pressed="true"] { background: var(--accent-glow); color: var(--accent); border-color: var(--accent); }
+.alert-controls button:hover, .history-pager button:hover { border-color: var(--accent); }
+.alert-controls button:focus-visible, .history-pager button:focus-visible, .history-dates input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.history-dates { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 8px; }
+.history-dates label { min-width: 0; color: var(--text-secondary); font-size: 11px; }
+.history-dates input { display: block; margin-top: 4px; width: 100%; min-width: 0; min-height: 40px; padding: 4px; border: 1px solid var(--border); border-radius: 6px; color: var(--text-primary); background: var(--surface-2); font: inherit; }
+.history-note { font-size: 11px; line-height: 1.6; color: var(--text-secondary); margin: 8px 0; }
+.history-pager { padding: 8px 20px; display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 11px; color: var(--text-secondary); border-top: 1px solid var(--border); }
+.history-pager button:disabled { opacity: .4; cursor: default; }
+[hidden] { display: none !important; }
 
 .empty-state { padding: 40px 16px; text-align: center; color: var(--text-tertiary); font-size: 12px; }
 .empty-state-title { color: var(--text-primary); font-size: 13px; font-weight: 600; margin-bottom: 7px; }
@@ -338,9 +357,13 @@ body {
 
 /* Tablet: sites / alerts stacked */
 @media (max-width: 900px) {
-  .main { grid-template-columns: 1fr; grid-template-rows: minmax(320px, 1fr) minmax(280px, .65fr); gap: 14px; padding: 0 16px 16px; }
-  .alert-panel { min-height: 280px; }
-  .kpi-bar { padding: 4px 16px 14px; }
+  html { height: auto; }
+  body { height: auto; min-height: 100vh; overflow: visible; display: block; }
+  .main { display: flex; flex-direction: column; min-height: auto; overflow: visible; gap: 14px; padding: 0 16px 16px; }
+  .sites-panel { overflow: visible; }
+  .alert-panel { min-height: 280px; flex-shrink: 0; }
+  .alert-list { flex: 0 0 auto; max-height: 440px; }
+  .kpi-bar { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); padding: 4px 16px 14px; }
 }
 
 /* Mobile: single column with compact UI */
@@ -375,6 +398,7 @@ body {
   .node-grid { grid-template-columns: repeat(2, 1fr); }
   .node-card { padding: 10px; }
   .node-name { font-size: 12px; }
+  .node-status-pill { white-space: nowrap; flex-shrink: 0; }
   .node-metric { font-size: 11px; }
 
   .alert-panel { min-height: 280px; border-radius: var(--radius-lg); flex-shrink: 0; }
@@ -395,6 +419,134 @@ body {
   .kpi-bar { grid-template-columns: repeat(2, 1fr); }
   .node-grid { grid-template-columns: 1fr; }
   .site-alert-pill { font-size: 10px; padding: 3px 6px; }
+}
+</style>
+<style id="vifa-m3-theme">
+/* Theme tokens copied from m3/node_red/m3_production_gateway_template.html. */
+:root[data-vifa-page] {
+  --m3-blue: #74a7ff;
+  --m3-cyan: #5ee7f6;
+  --m3-green: #69e6a6;
+  --m3-green-soft: rgb(105 230 166 / 9%);
+  --m3-orange: #f7d26a;
+  --m3-orange-soft: rgb(247 210 106 / 10%);
+  --m3-red: #ff7f91;
+  --m3-red-soft: rgb(255 127 145 / 10%);
+  --m3-paper: #0b1020;
+  --m3-panel: #11182a;
+  --m3-panel-soft: #151f34;
+  --m3-panel-raised: #18243b;
+  --m3-ink: #eaf0ff;
+  --m3-muted: #8fa0bf;
+  --m3-tertiary: #6f7c95;
+  --m3-line: rgb(255 255 255 / 8%);
+  --m3-line-hover: rgb(255 255 255 / 14%);
+  --m3-shadow-soft: 0 16px 36px rgb(0 0 0 / 25%);
+  --m3-card-overlay: rgb(255 255 255 / 2.6%);
+  --m3-card-overlay-end: rgb(255 255 255 / 1.2%);
+  --m3-glow-blue: rgb(72 112 255 / 14%);
+  --m3-glow-green: rgb(30 220 196 / 9%);
+}
+:root[data-vifa-page][data-theme="light"] {
+  --m3-blue: #477df0;
+  --m3-cyan: #0e96b4;
+  --m3-green: #16855a;
+  --m3-green-soft: rgb(33 167 111 / 10%);
+  --m3-orange: #a36d00;
+  --m3-orange-soft: rgb(163 109 0 / 10%);
+  --m3-red: #cf4055;
+  --m3-red-soft: rgb(224 82 101 / 10%);
+  --m3-paper: #f4f7fb;
+  --m3-panel: #ffffff;
+  --m3-panel-soft: #f8fafc;
+  --m3-panel-raised: #eef3fb;
+  --m3-ink: #172033;
+  --m3-muted: #6f7d93;
+  --m3-tertiary: #7b879a;
+  --m3-line: rgb(15 23 42 / 9%);
+  --m3-line-hover: rgb(15 23 42 / 16%);
+  --m3-shadow-soft: 0 14px 34px rgb(36 48 74 / 10%);
+  --m3-card-overlay: rgb(255 255 255 / 35%);
+  --m3-card-overlay-end: rgb(255 255 255 / 10%);
+  --m3-glow-blue: rgb(72 112 255 / 9%);
+  --m3-glow-green: rgb(30 180 155 / 7%);
+}
+
+:root[data-vifa-page][data-theme="light"] { color-scheme: light; }
+:root[data-vifa-page][data-theme="dark"] { color-scheme: dark; }
+:root[data-vifa-page] { background: var(--m3-paper) !important; }
+:root[data-vifa-page] > body {
+  background:
+    radial-gradient(circle at 12% 0%, var(--m3-glow-blue), transparent 30%),
+    radial-gradient(circle at 86% 10%, var(--m3-glow-green), transparent 25%),
+    var(--m3-paper) !important;
+}
+:root[data-vifa-page="m1"] {
+  --surface-0: var(--m3-paper); --surface-1: var(--m3-panel);
+  --surface-2: var(--m3-panel-soft); --surface-3: var(--m3-panel-raised); --surface-4: var(--m3-panel);
+  --text-primary: var(--m3-ink); --text-secondary: var(--m3-muted); --text-tertiary: var(--m3-tertiary);
+  --border: var(--m3-line); --border-hover: var(--m3-line-hover);
+  --shadow-soft: var(--m3-shadow-soft); --shadow-card: var(--m3-shadow-soft);
+}
+:root[data-vifa-page="m2"] {
+  --background: var(--m3-paper); --foreground: var(--m3-ink);
+  --card: var(--m3-panel); --popover: var(--m3-panel);
+  --secondary: var(--m3-panel-soft); --muted: var(--m3-panel-raised); --muted-foreground: var(--m3-muted);
+  --border: var(--m3-line); --border-hover: var(--m3-line-hover); --input: var(--m3-line);
+  --shadow-sm: var(--m3-shadow-soft); --shadow-card: var(--m3-shadow-soft);
+}
+:root[data-vifa-page="m1"] :is(.kpi-card, .sites-panel, .alert-panel),
+:root[data-vifa-page="m2"] #three-energy-flow .dashboard-zone {
+  background: linear-gradient(180deg, var(--m3-card-overlay), var(--m3-card-overlay-end)), var(--m3-panel);
+  border-radius: 16px;
+}
+:root[data-vifa-page="m1"] :is(.site-card, .node-group) { background: var(--m3-panel-soft); box-shadow: none; }
+:root[data-vifa-page="m1"] .node-card,
+:root[data-vifa-page="m2"] #three-energy-flow .card {
+  background: linear-gradient(180deg, var(--m3-card-overlay), var(--m3-card-overlay-end)), var(--m3-panel);
+}
+:root[data-vifa-page="m2"] #three-energy-flow .vifa-theme-toggle {
+  display: inline-flex; width: 40px; height: 40px; padding: 10px; align-items: center; justify-content: center;
+  border: 1px solid var(--m3-line); border-radius: 10px; background: var(--m3-panel-soft); color: var(--m3-muted); cursor: pointer;
+}
+:root[data-vifa-page="m2"] #three-energy-flow .vifa-theme-toggle:hover { border-color: var(--m3-line-hover); }
+:root[data-vifa-page="m2"] #three-energy-flow .vifa-theme-toggle:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.vifa-theme-toggle svg { width: 18px; height: 18px; }
+:root[data-theme="light"] .vifa-theme-toggle .theme-sun,
+:root[data-theme="dark"] .vifa-theme-toggle .theme-moon { display: none; }
+
+/* Page-specific interaction colors; M3 background tokens remain shared. */
+:root[data-vifa-page="m1"] {
+  --m1-accent: #a5b4fc;
+  --m1-accent-soft: rgb(165 180 252 / 14%);
+  --m1-soc-gradient: linear-gradient(90deg, #69c8f4 0%, #94a3ff 55%, #c4a2f5 100%);
+  --accent: var(--m1-accent); --accent-dim: var(--m1-accent-soft); --accent-glow: var(--m1-accent-soft);
+  --info: var(--m3-blue); --info-dim: rgb(71 125 240 / 10%);
+  --warn: var(--m3-orange); --warn-dim: var(--m3-orange-soft); --warn-glow: var(--m3-orange-soft);
+  --danger: var(--m3-red); --danger-dim: var(--m3-red-soft); --danger-glow: var(--m3-red-soft);
+}
+:root[data-vifa-page="m1"][data-theme="light"] {
+  --m1-accent: #5b5bd6;
+  --m1-accent-soft: rgb(91 91 214 / 10%);
+  --m1-soc-gradient: linear-gradient(90deg, #54b6ee 0%, #7588f5 55%, #a58ae9 100%);
+}
+:root[data-vifa-page="m2"] {
+  --primary: var(--m3-blue); --accent: rgb(71 125 240 / 10%); --ring: var(--m3-cyan);
+  --green: var(--m3-green); --red: var(--m3-red); --destructive: var(--m3-red);
+  --viz-series-1: var(--m3-orange); --viz-series-2: var(--m3-blue); --viz-series-3: var(--m3-green); --viz-series-4: var(--m3-red);
+}
+:root[data-vifa-page="m1"] .header-logo {
+  background: linear-gradient(135deg, #6389ef, #8b75db);
+  box-shadow: 0 6px 18px rgb(99 102 220 / 16%);
+}
+:root[data-vifa-page="m1"] .site-status-dot.online { background: var(--m3-green); box-shadow: none; }
+:root[data-vifa-page="m1"] .soc-bar-bg { height: 6px; background: color-mix(in srgb, var(--m1-accent) 10%, var(--m3-panel-soft)); }
+:root[data-vifa-page="m1"] .soc-bar-fill { background: var(--m1-soc-gradient); box-shadow: none; }
+:root[data-vifa-page="m1"] :is(.node-online, .kpi-value.online) { color: var(--m3-green); }
+:root[data-vifa-page="m1"] :is(.node-status-pill.work, .node-status-pill.charge) { background: var(--m3-green-soft); color: var(--m3-green); }
+:root[data-vifa-page="m2"] #three-energy-flow .station-tab[aria-selected="true"] {
+  color: var(--m3-blue); border-color: rgb(71 125 240 / 45%);
+  background: rgb(71 125 240 / 6%); box-shadow: inset 0 0 0 1px rgb(71 125 240 / 10%);
 }
 </style>
 </head>
@@ -424,6 +576,20 @@ body {
       <div class="alert-panel-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:18px;height:18px"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> 异常检测与告警</div>
       <div class="alert-panel-sub" id="alertPanelSub">全部异常</div>
     </div>
+    <div class="alert-controls">
+      <div class="alert-mode" aria-label="告警记录范围">
+        <button type="button" data-mode="current" aria-pressed="true">当前告警</button>
+        <button type="button" data-mode="history" aria-pressed="false">历史告警</button>
+      </div>
+      <div id="historyControls" hidden>
+        <div class="history-dates">
+          <label>开始日期<input type="date" id="historyStart"></label>
+          <label>结束日期<input type="date" id="historyEnd"></label>
+        </div>
+        <p class="history-note" id="historyNote"></p>
+      </div>
+      <button type="button" id="resetAlertFilters" hidden>清除筛选</button>
+    </div>
     <div class="alert-search">
       <input type="text" id="alertSearch" placeholder="搜索告警内容...">
       <span class="alert-search-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;color:var(--text-tertiary)"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg></span>
@@ -436,6 +602,11 @@ body {
     </div>
     <div class="alert-list" id="alertList">
       <div class="empty-state">暂无告警</div>
+    </div>
+    <div class="history-pager" id="historyPager" hidden>
+      <button type="button" id="historyPrev">上一页</button>
+      <span id="historyPageInfo" aria-live="polite"></span>
+      <button type="button" id="historyNext">下一页</button>
     </div>
   </div>
 </div>
@@ -471,6 +642,9 @@ let selectedEsId = null;
 let selectedNodeId = null;
 let alertSearchText = '';
 let refreshTimer = null;
+let alertMode = 'current';
+let historyPage = 1;
+const HISTORY_PAGE_SIZE = 20;
 
 // SVG icons (inline, no symbol/use)
 const ICONS = {
@@ -530,7 +704,24 @@ function showToast(msg, isError) {
 }
 function fmtTime(iso) {
   if (!iso) return '-'; const d = new Date(iso);
-  return isNaN(d) ? iso : d.toLocaleString('zh-CN', {timeZone:'Asia/Shanghai',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+  return isNaN(d) ? '--' : d.toLocaleString('zh-CN', {timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
+}
+function shanghaiDate(iso) {
+  const d = new Date(iso);
+  if (!iso || isNaN(d)) return '';
+  const parts = new Intl.DateTimeFormat('en-CA', {timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(d);
+  const part = type => parts.find(p => p.type === type).value;
+  return part('year')+'-'+part('month')+'-'+part('day');
+}
+function defaultHistoryRange() {
+  const end = shanghaiDate(new Date().toISOString());
+  const start = shanghaiDate(new Date(Date.parse(end+'T00:00:00+08:00') - 6*86400000).toISOString());
+  return {start, end};
+}
+function resetHistoryDates() {
+  const range = defaultHistoryRange();
+  document.getElementById('historyStart').value = range.start;
+  document.getElementById('historyEnd').value = range.end;
 }
 function fmtNum(n) {
   if (n == null || n === '') return '--'; const num = parseFloat(n);
@@ -669,6 +860,10 @@ function isolateCustomerData(data) {
     nodes,
     realtime,
     alerts,
+    alert_history: source.alert_history ? {
+      ...source.alert_history,
+      records: (source.alert_history.records||[]).filter(alert => isAnomalyAlert(alert) && String(alert.fk_site_id||'') === TARGET_TOPOLOGY.siteId),
+    } : null,
     pv_inverters: pvInverters,
     stats: {
       ...(source.stats||{}),
@@ -788,7 +983,7 @@ function renderSites() {
 
   const filtered = ordered.filter(site => {
     const sac = sa[site.id]||{pv_efficiency:0, ess_self_loss:0, load_spike:0};
-    if (currentAlertTab!=='all' && sac[currentAlertTab]===0) return false;
+    if (alertMode==='current' && currentAlertTab!=='all' && sac[currentAlertTab]===0) return false;
     if (currentFilter==='online' || currentFilter==='offline') {
       const isOnline = siteOnline(site.id, nodes, rtMap);
       if (currentFilter==='online' && !isOnline) return false;
@@ -893,6 +1088,18 @@ function summarizePvInverters(inverters) {
   };
 }
 
+function stationCollectionTime(station) {
+  if (!allData || !station) return '';
+  const cabinetIds = new Set((allData.nodes||[])
+    .filter(node => String(node.fk_es)===String(station.id) && node.node_type==='ess' && !node.is_aggregate)
+    .map(node => String(node.id)));
+  return (allData.realtime||[])
+    .filter(row => cabinetIds.has(String(row.fk_en)))
+    .map(row => row.cabinet_timestamp || row.timestamp)
+    .filter(value => value && Number.isFinite(Date.parse(value)))
+    .sort((a,b) => Date.parse(b)-Date.parse(a))[0] || '';
+}
+
 function renderNodeCard(node, rt, parentType, station) {
   const soc = rt&&rt.soc!=null ? rt.soc : null;
   const isPvSummaryMeter = node&&node.node_type==='meter' && parentType==='pv_grid_ac' &&
@@ -915,6 +1122,8 @@ function renderNodeCard(node, rt, parentType, station) {
   const statusText = efficiencyAlert ? '效率低' : statusLabel(status);
   const displayName = isPvSummaryMeter ? '光伏计量表' : (node.name||node.sn||'未命名');
   const footerIdentity = isPvSummaryMeter ? '9 台逆变器汇总' : (node.sn||'');
+  const collectionTime = isPvSummaryMeter ? stationCollectionTime(station) : rt && (rt.cabinet_timestamp || rt.timestamp);
+  const showCollectionTime = (isEss&&!node.is_aggregate) || (node.node_type==='meter'&&parentType==='pv_grid_ac');
   return '<div class="node-card '+(String(selectedNodeId)===String(node.id)?'selected ':'')+(efficiencyAlert?'energy-alert':'')+'" data-node-id="'+node.id+'" data-site-id="'+node.fk_site_id+'" data-node-type="'+esc(effectiveType||'')+'" data-quality="'+esc(dataQuality)+'">'+
     '<div class="node-card-header"><span class="node-name">'+esc(displayName)+'</span><span class="node-status-pill '+statusCls+'">'+esc(statusText)+'</span></div>'+
     (isPvSummaryMeter?'':
@@ -926,16 +1135,36 @@ function renderNodeCard(node, rt, parentType, station) {
     (isPv?optionalMetric('转换效率',efficiency,'%',efficiencyAlert):'')+
     (pvSummary?'<div class="node-metric optional-metric"><span>有效设备</span><span class="node-metric-value">'+pvSummary.validCount+'/'+pvSummary.totalCount+'</span></div>':'')+
     '<div class="node-footer"><span>'+esc(footerIdentity)+'</span><span class="'+(online?'node-online':'node-offline')+'">'+(online?'\u25CF 在线':'\u25CB 离线')+'</span></div>'+
+    (showCollectionTime?'<div class="node-time" title="'+(isPvSummaryMeter?'电站2储能柜最新采集时间 · ':'')+'北京时间">采集时间<time datetime="'+esc(collectionTime||'')+'">'+(collectionTime?esc(fmtTime(collectionTime)):'暂无采集时间')+'</time></div>':'')+
     '</div>';
 }
 
 function renderAlerts() {
   if (!allData) return;
-  const alerts = (allData.alerts||[]).filter(isAnomalyAlert);
+  const history = allData.alert_history;
+  const historical = alertMode === 'history';
+  const start = document.getElementById('historyStart').value;
+  const end = document.getElementById('historyEnd').value;
+  const invalidRange = historical && start && end && start > end;
+  document.getElementById('historyControls').hidden = !historical;
+  const defaults = defaultHistoryRange();
+  const customDates = historical && (start!==defaults.start || end!==defaults.end);
+  document.getElementById('resetAlertFilters').hidden = !(selectedSiteId || selectedEsId || selectedNodeId || currentAlertTab!=='all' || alertSearchText || customDates);
+  const note = document.getElementById('historyNote');
+  note.textContent = !history ? '历史记录尚未接入，请同步更新 M1 服务端。' :
+    history.status !== 'ok' ? (history.message || '历史记录暂不可用') :
+    '已保存 '+history.total+' 条采样记录；当前可筛选最近 '+Math.min(history.total,history.limit)+' 条。';
+  const alerts = (historical ? (history&&history.status==='ok'?history.records:[]) : allData.alerts||[]).filter(isAnomalyAlert);
+  const nodes = allData.nodes || [];
   const filtered = alerts.filter(a => {
     if (selectedSiteId && String(a.fk_site_id)!==String(selectedSiteId)) return false;
+    if (selectedEsId && !nodes.some(n => String(n.id)===String(a.fk_en_id) && String(n.fk_es)===String(selectedEsId))) return false;
     if (selectedNodeId && String(a.fk_en_id)!==String(selectedNodeId)) return false;
     if (currentAlertTab!=='all' && !matchAlertTab(a, currentAlertTab)) return false;
+    if (historical) {
+      const date = shanghaiDate(a.start_time);
+      if (invalidRange || (start && date < start) || (end && date > end)) return false;
+    }
     if (alertSearchText) {
       const s = alertSearchText.toLowerCase();
       if (!(a.txt||'').toLowerCase().includes(s) && !(a.device_sn||'').toLowerCase().includes(s)) return false;
@@ -945,27 +1174,34 @@ function renderAlerts() {
 
   const list = document.getElementById('alertList');
   const sub = document.getElementById('alertPanelSub');
-  if (selectedSiteId && allData.sites) {
-    const s = allData.sites.find(s=>String(s.id)===String(selectedSiteId));
-    sub.textContent = (s?s.name:'未知') + ' \u2022 ' + filtered.length + ' 条';
-  } else if (selectedNodeId && allData.nodes) {
-    const n = allData.nodes.find(n=>String(n.id)===String(selectedNodeId));
-    sub.textContent = (n?n.name:'未知') + ' \u2022 ' + filtered.length + ' 条';
-  } else {
-    sub.textContent = '全部异常 \u2022 ' + filtered.length + ' 条';
+  const selected = selectedNodeId ? nodes.find(n=>String(n.id)===String(selectedNodeId)) :
+    selectedEsId ? (allData.es_list||[]).find(s=>String(s.id)===String(selectedEsId)) :
+    selectedSiteId ? (allData.sites||[]).find(s=>String(s.id)===String(selectedSiteId)) : null;
+  sub.textContent = (selected?selected.name+' · ':'')+(historical?'历史告警':'当前告警')+' · '+filtered.length+' 条';
+  const pages = Math.max(1, Math.ceil(filtered.length/HISTORY_PAGE_SIZE));
+  historyPage = Math.min(historyPage, pages);
+  document.getElementById('historyPager').hidden = !historical || !filtered.length;
+  document.getElementById('historyPrev').disabled = historyPage <= 1;
+  document.getElementById('historyNext').disabled = historyPage >= pages;
+  document.getElementById('historyPageInfo').textContent = historyPage+' / '+pages+' 页';
+  if (filtered.length===0) {
+    const message = invalidRange ? '开始日期不能晚于结束日期' :
+      historical && (!history || history.status!=='ok') ? '历史记录暂不可用' :
+      historical ? '暂无符合条件的历史记录' : '暂无告警';
+    list.innerHTML = '<div class="empty-state">'+message+'</div>'; return;
   }
-
-  if (filtered.length===0) { list.innerHTML = '<div class="empty-state">\u2714 暂无告警</div>'; return; }
-  list.innerHTML = filtered.map(a => {
+  const shown = historical ? filtered.slice((historyPage-1)*HISTORY_PAGE_SIZE, historyPage*HISTORY_PAGE_SIZE) : filtered;
+  list.innerHTML = shown.map(a => {
     const category = String(a.category||'');
     const meta = ANOMALY_CATEGORY_META[category] || {label:'异常', short:'异常', cls:''};
     const metric = a.value!=null&&a.threshold!=null ? '<div class="alert-item-meta">实际: '+fmtNum(a.value)+esc(a.unit||'')+' / 阈值: '+fmtNum(a.threshold)+esc(a.unit||'')+'</div>' : '';
-    return '<div class="alert-item '+meta.cls+'" data-category="'+esc(category)+'" data-site-id="'+(a.fk_site_id||'')+'" data-node-id="'+(a.fk_en_id||'')+'"><div class="alert-item-header"><span class="alert-item-title">'+esc(a.txt||meta.label)+'</span><span class="alert-category-tag '+meta.cls+'">'+meta.short+'</span></div><div class="alert-item-meta">设备: '+esc(a.device_sn||'--')+'</div>'+metric+'<div class="alert-item-time">'+fmtTime(a.start_time)+'</div></div>';
+    return '<div class="alert-item '+meta.cls+'" data-category="'+esc(category)+'" data-site-id="'+esc(a.fk_site_id||'')+'" data-node-id="'+esc(a.fk_en_id||'')+'"><div class="alert-item-header"><span class="alert-item-title">'+esc(a.txt||meta.label)+'</span><span class="alert-category-tag '+meta.cls+'">'+meta.short+'</span></div><div class="alert-item-meta">设备: '+esc(a.device_sn||'--')+'</div>'+metric+'<div class="alert-item-time">采集时间 · '+esc(fmtTime(a.start_time))+'</div></div>';
   }).join('');
 }
 
 // Events
 document.getElementById('sitesPanel').addEventListener('click', e => {
+  historyPage = 1;
   const siteCard = e.target.closest('.site-card');
   const siteHeader = e.target.closest('.site-header');
   const nodeCard = e.target.closest('.node-card');
@@ -987,7 +1223,7 @@ document.getElementById('sitesPanel').addEventListener('click', e => {
 
   if (nodeCard) {
     e.stopPropagation();
-    selectedNodeId = nodeCard.dataset.nodeId;
+    selectedNodeId = selectedNodeId === nodeCard.dataset.nodeId ? null : nodeCard.dataset.nodeId;
     selectedSiteId = null; selectedEsId = null;
     renderSites(); renderAlerts();
     showToast('\u2192 已筛选该节点告警');
@@ -996,7 +1232,7 @@ document.getElementById('sitesPanel').addEventListener('click', e => {
 
   if (esHeader) {
     e.stopPropagation();
-    selectedEsId = esHeader.dataset.esId;
+    selectedEsId = selectedEsId === esHeader.dataset.esId ? null : esHeader.dataset.esId;
     selectedSiteId = esHeader.closest('.site-card')?.dataset.siteId || null;
     selectedNodeId = null;
     renderSites(); renderAlerts();
@@ -1025,6 +1261,8 @@ document.getElementById('sitesPanel').addEventListener('click', e => {
 document.getElementById('alertList').addEventListener('click', e => {
   const item = e.target.closest('.alert-item');
   if (item) {
+    historyPage = 1;
+    selectedEsId = null;
     selectedSiteId = item.dataset.siteId||null;
     selectedNodeId = item.dataset.nodeId||null;
     renderSites(); renderAlerts();
@@ -1034,14 +1272,35 @@ document.getElementById('alertList').addEventListener('click', e => {
 document.getElementById('alertTabs').addEventListener('click', e => {
   const tab = e.target.closest('.alert-tab');
   if (!tab) return;
+  historyPage = 1;
   currentFilter = 'all';
   setAlertTab(tab.dataset.tab);
   updateFilterUI(); renderSites(); renderAlerts();
 });
 
 document.getElementById('alertSearch').addEventListener('input', function() {
+  historyPage = 1;
   alertSearchText = this.value.trim();
   renderAlerts();
+});
+
+document.querySelectorAll('[data-mode]').forEach(button => button.addEventListener('click', () => {
+  alertMode = button.dataset.mode;
+  historyPage = 1;
+  document.querySelectorAll('[data-mode]').forEach(item => item.setAttribute('aria-pressed', String(item.dataset.mode===alertMode)));
+  renderSites(); renderAlerts();
+}));
+['historyStart','historyEnd'].forEach(id => document.getElementById(id).addEventListener('change', () => {
+  historyPage = 1; renderAlerts();
+}));
+document.getElementById('historyPrev').addEventListener('click', () => { historyPage--; renderAlerts(); document.getElementById('alertList').scrollTop=0; });
+document.getElementById('historyNext').addEventListener('click', () => { historyPage++; renderAlerts(); document.getElementById('alertList').scrollTop=0; });
+document.getElementById('resetAlertFilters').addEventListener('click', () => {
+  selectedSiteId = null; selectedEsId = null; selectedNodeId = null;
+  currentFilter = 'all'; alertSearchText = ''; historyPage = 1;
+  document.getElementById('alertSearch').value = '';
+  resetHistoryDates();
+  setAlertTab('all'); updateFilterUI(); renderSites(); renderAlerts();
 });
 
 // Auto refresh
@@ -1050,6 +1309,7 @@ document.addEventListener('visibilitychange', () => {
   else if(!refreshTimer) { refreshTimer=setInterval(fetchData,REFRESH_INTERVAL_MS); fetchData(); }
 });
 
+resetHistoryDates();
 fetchData();
 refreshTimer = setInterval(fetchData, REFRESH_INTERVAL_MS);
 </script>

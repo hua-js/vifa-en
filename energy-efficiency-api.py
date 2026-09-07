@@ -6,12 +6,14 @@ import math
 import os
 import sys
 from copy import deepcopy
+from datetime import date, datetime, time, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from m2.station_efficiency_history import (
     HistoryError,
     build_calendar_day_dashboard,
+    build_event_history,
     calendar_day_bounds,
     time_in_zone,
 )
@@ -146,17 +148,41 @@ class EntrypointError(ValueError):
 
 
 def parse_request(argv):
-    """只接受 dashboard/minute 加场站，或无场站的 cleanup。"""
+    """校验固定操作、场站和历史查询日期。"""
     values = list(argv)
     if values == ["cleanup"]:
         return "cleanup", None
     if (
-        len(values) != 2
-        or values[0] not in {"dashboard", "minute"}
+        len(values) < 2
+        or len(values) != {"dashboard": 2, "minute": 2, "history": 3, "events": 4}.get(values[0])
         or values[1] not in {"ES01", "ES02"}
     ):
         raise EntrypointError("invalid_arguments", "参数不正确", 2)
+    for value in values[2:]:
+        _parse_query_date(value)
     return values[0], values[1]
+
+
+def _parse_query_date(value):
+    try:
+        parsed = date.fromisoformat(value)
+        if parsed.isoformat() != value:
+            raise ValueError
+        return parsed
+    except (TypeError, ValueError):
+        raise EntrypointError("invalid_arguments", "日期必须为有效的 YYYY-MM-DD", 2) from None
+
+
+def _history_bounds(values, timezone_name, now):
+    zone = ZoneInfo(timezone_name)
+    today = now.astimezone(zone).date()
+    first = _parse_query_date(values[2])
+    last = _parse_query_date(values[-1])
+    if first > last or last > today or (last - first).days >= 31:
+        raise EntrypointError("invalid_arguments", "日期范围须按先后顺序、不能晚于今天，且最多31天", 2)
+    start = datetime.combine(first, time.min, zone)
+    end = datetime.combine(last + timedelta(days=1), time.min, zone)
+    return start, end
 
 
 def _required_config_text(environ, field, local_value):
@@ -205,10 +231,11 @@ def _optional_field(value):
     return value.strip() if isinstance(value, str) else ""
 
 
-def load_runtime_config(environ, require_nocobase=False):
+def load_runtime_config(environ, require_nocobase=False, require_source=True):
     """优先读取环境变量，未配置时使用同目录临时配置。"""
-    url = _required_config_text(environ, "VIFA_EMU_URL", LOCAL_EMU_URL)
-    token = _required_config_text(
+    source_text = _required_config_text if require_source else _optional_config_text
+    url = source_text(environ, "VIFA_EMU_URL", LOCAL_EMU_URL)
+    token = source_text(
         environ,
         "VIFA_EMU_TOKEN",
         LOCAL_EMU_TOKEN,
@@ -395,11 +422,35 @@ def execute(
     fetch_events=fetch_dashboard_events,
     process_minute=process_station_minute,
     cleanup_history=cleanup_device_history,
+    now=None,
 ):
     """执行一次看板读取或分钟保存并返回结果和退出码。"""
     try:
         operation, station_id = parse_request(argv)
-        config = load_runtime_config(environ, require_nocobase=True)
+        config = load_runtime_config(
+            environ, require_nocobase=True,
+            require_source=operation not in {"history", "events"},
+        )
+        if operation in {"history", "events"}:
+            query_time = now or datetime.now(ZoneInfo(config["timezone"]))
+            start, end = _history_bounds(argv, config["timezone"], query_time)
+            events = fetch_events(station_id, start.isoformat(), end.isoformat(), config)
+            if operation == "events":
+                dashboard = build_event_history(
+                    station_id, config["timezone"], start.isoformat(), end.isoformat(), events,
+                )
+            else:
+                points = fetch_points(station_id, start.isoformat(), end.isoformat(), config)
+                cutoff = min(query_time, end - timedelta(minutes=1))
+                dashboard = build_dashboard(
+                    station_id, config["timezone"], cutoff.isoformat(), None, points, events,
+                )
+                dashboard["operation"] = "history"
+                dashboard["range"]["cutoff_time"] = min(query_time, end).astimezone(start.tzinfo).isoformat()
+                dashboard["summary"] = dashboard.pop("summary_today")
+                dashboard.pop("realtime")
+            dashboard["station_id"] = station_id
+            return {"status": "ok", "data": dashboard}, 0
         if operation == "cleanup":
             result = cleanup_history(config)
             return {

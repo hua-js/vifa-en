@@ -296,7 +296,16 @@ class StationEfficiencyNocoBaseTests(unittest.TestCase):
 
         filter_value = json.loads(parse_qs(urlsplit(calls[0][0]).query)["filter"][0])
         self.assertEqual(filter_value["$and"][0], {"station_id": {"$eq": "ES02"}})
-        self.assertIn("$or", filter_value["$and"][1])
+        self.assertEqual(filter_value["$and"][1], {"$or": [
+            {"status": {"$eq": "active"}},
+            {"$and": [
+                {"status": {"$eq": "recovered"}},
+                {"end_time": {"$gte": "2026-08-26T16:00:00+00:00"}},
+            ]},
+        ]})
+        self.assertEqual(filter_value["$and"][2], {
+            "start_time": {"$lt": "2026-08-27T16:00:00+00:00"},
+        })
 
     def test_dashboard_events_aggregates_all_pages(self):
         calls = []

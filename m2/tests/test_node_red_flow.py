@@ -40,7 +40,7 @@ class NodeRedFlowTests(unittest.TestCase):
             "检查场站",
             {"req": {"query": {"station_id": "es01"}}},
         )
-        self.assertEqual(accepted_station[0]["payload"], "ES01")
+        self.assertEqual(accepted_station[0]["payload"], "dashboard ES01")
         self.assertIsNone(accepted_station[1])
 
         missing_station = self._run_function(
@@ -84,6 +84,32 @@ class NodeRedFlowTests(unittest.TestCase):
         self.assertEqual(schedule["onceDelay"], "5")
         self.assertFalse(schedule["once"])
         self.assertTrue(schedule["d"])
+
+    def test_history_queries_validate_dates_and_allow_only_read_operations(self):
+        for query, expected in (
+            ({"operation": "history", "date": "2026-08-25"}, "history ES02 2026-08-25"),
+            ({"operation": "events", "start_date": "2026-08-01", "end_date": "2026-08-31"}, "events ES02 2026-08-01 2026-08-31"),
+        ):
+            accepted = self._run_function("检查场站", {"req": {"query": {"station_id": "ES02", **query}}})
+            self.assertEqual(accepted[0]["payload"], expected)
+            self.assertIsNone(accepted[1])
+        invalid = [
+            {"operation": "minute"}, {"operation": "cleanup"}, {"operation": ["history"]},
+            {"operation": "history", "date": "2026-02-30"},
+            {"operation": "history", "date": "2026-08-25;id"},
+            {"operation": "history", "date": ["2026-08-25"]},
+            {"operation": "history", "date": "9999-12-31"},
+            {"operation": "events", "start_date": "2026-08-01", "end_date": "2026-09-01"},
+            {"operation": "events", "start_date": "2026-08-25", "end_date": "2026-08-24"},
+            {"operation": "events", "start_date": "2026-08-25"},
+        ]
+        for query in invalid:
+            with self.subTest(query=query):
+                rejected = self._run_function("检查场站", {"req": {"query": {"station_id": "ES02", **query}}})
+                self.assertIsNone(rejected[0])
+                self.assertEqual(rejected[1]["statusCode"], 400)
+        self.assertEqual(self.by_name["执行能效计算脚本"]["command"],
+                         "python3 /userdata/holo/pyfiles/energy-efficiency-api.py")
 
     def test_dashboard_only_returns_parsed_single_line_success_json(self):
         accepted = self._run_function(
