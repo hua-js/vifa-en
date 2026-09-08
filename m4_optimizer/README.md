@@ -106,7 +106,7 @@ result = M4Optimizer(model_version="m4-milp-v1").optimize(request)
 - `balanced`：按调用方配置生成综合候选；`cost`：按调用方配置生成成本候选；`pv`：按调用方配置生成光伏消纳候选。三者共享同一组硬约束，不代表模块替调用方选择最终方案。
 - 候选状态包括 `optimal`、`feasible`、`infeasible`、`timeout` 和 `error`。`optimal` 要求 SciPy 成功且 MIP gap 未报告或不超过 `1e-9`；有可行解但 gap 超过该阈值、或后续目标层超时而保留了前层 incumbent 时为 `feasible`。从未取得 incumbent 的超时才返回 `timeout`；后续 `error`/`infeasible` 不会被旧 incumbent 掩盖。只有 `optimal` 或 `feasible` 候选包含 96 点 `plan` 和 `metrics`。
 - 每个计划点以 `mode + target_power_kw` 表达储能动作：`charge` 为充电功率、`discharge` 为放电功率、`idle` 的目标功率为 0。并同时给出预期 SOC、电网进出功率、未吸收光伏和需量超限值，便于独立复算。
-- `grid_export_kw` 与 `pv_unabsorbed_kw` 都按 PV 归因，任一点二者之和不超过该点 `pv_forecast_kw`。这会阻止购电或电池存量被记作光伏外送，但允许电池服务本地负荷的同时把当点 PV 外送。
+- 缺省`legacy`模式下，`grid_export_kw` 与 `pv_unabsorbed_kw` 都按 PV 归因，任一点二者之和不超过该点 `pv_forecast_kw`；允许电池服务本地负荷的同时把当点 PV 外送。新光伏规则见下节，不能用旧模式验收。
 - 每个候选都有由请求、模型和 profile 版本组成的稳定 `plan_version`，失败候选也不例外。`risk_codes` 与 `risk_messages` 按索引一一对应；当前 `PV_UNABSORBED` 的说明明确它只是风险提示，不是光伏限发指令。
 - 若某个 profile 的计划解码、指标复算或独立复验出现可预期数据异常，该候选返回 `error`、空 `plan`、空 `metrics`，同时保留版本、已完成目标层和审计消息；其余 profiles 继续处理。未预期的程序错误不会被该隔离逻辑吞掉。
 
@@ -119,6 +119,19 @@ result = M4Optimizer(model_version="m4-milp-v1").optimize(request)
 负荷、光伏、电价、能力快照、约束和目标版本必须来自同一规划窗口并完成时间对齐；`source_versions` 映射不能为空，键和值也不能是空字符串或纯空白。过期能力快照、缺点、错位时间线、非法容量/效率或不完整目标配置会被拒绝。
 
 公开 `layers` 记录每层目标值与锁容差，不公开逐层 MIP gap；最终候选状态会保守汇总所有层，任一层未证明最优就不会把整个候选标为 `optimal`。
+
+### 光伏余电规则（显式启用）
+
+`OptimizationRequest.pv_dispatch_policy`缺省为`legacy`，保持历史输入回放。指定`load_first_economic`启用本地新规则：
+
+- PV先供本地负载；电池放电最多补足净负载，不能通过放电替代已有PV来制造外送或弃光。
+- PV富余时不购电；禁止逆流时，余电按充电功率及SOC安全空间尽量入储。无PV的谷段仍可从电网充电，包括PV与负载同时为0的时段。
+- `grid_export_enabled`与`grid_export_limit_kw`控制客户外送权限及上限，逐点`sell_price_per_kwh`提供上网电价。在原有需量、SOC等分层优先级内进行经济选择，不代表三个profile都变成纯收益最大化。
+- 只有允许的外送路径、储能功率或SOC空间不足时才能限发。充电吸收要求可能与期末SOC冲突，此时如实返回不可行；不放宽安全/期末约束。
+- 新模式`pv_unused`仅累计`pv_unabsorbed_energy_kwh`，合法外送不受该项惩罚；旧模式仍累计外送+未吸收。`pv_self_use_kwh`仍不包含外送，净电费仍为购电费减外送收入，循环成本仍单列。
+- 新模式结果与计划的模型版本追加`pv-load-first-economic-v1`；需要限发时返回`PV_CURTAILMENT_REQUIRED`，这是模拟计划要求，不是现场限发指令。
+
+本轮仅实现数学核心与离线请求入口，真实`m4_settings`服务未自动启用新规则，未修改客户保存配置。人工调试入口见[光伏规则验证](../m4/evaluations/2026-09-07-pv-policy-v2/验证说明.md)。
 
 ### 凌晨谷段早充偏好
 

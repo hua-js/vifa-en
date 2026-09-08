@@ -73,6 +73,7 @@ class ObjectiveProfile(StrictModel):
 
 
 class OptimizationRequest(StrictModel):
+    pv_dispatch_policy: Literal["legacy", "load_first_economic"] = "legacy"
     request_id: str = Field(min_length=1)
     station_id: str = Field(min_length=1)
     plan_start_at: datetime

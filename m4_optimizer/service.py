@@ -18,6 +18,9 @@ RISK_MESSAGES = {
     "PV_UNABSORBED": (
         "存在未吸收光伏余量；该值仅用于风险提示，不是光伏限发指令。"
     ),
+    "PV_CURTAILMENT_REQUIRED": (
+        "本地消纳与允许的外送能力不足，计划需要限发光伏；尚未下发限发指令。"
+    ),
     "CANDIDATE_PROCESSING_ERROR": (
         "候选在计划解码、指标复算或独立验证阶段失败，不能作为可用计划。"
     ),
@@ -73,7 +76,7 @@ class M4Optimizer:
                     metrics = calculate_metrics(request, plan)
                     risk_codes = []
                     if metrics.pv_unabsorbed_energy_kwh > 1e-6:
-                        risk_codes.append("PV_UNABSORBED")
+                        risk_codes.append("PV_CURTAILMENT_REQUIRED" if request.pv_dispatch_policy == "load_first_economic" else "PV_UNABSORBED")
                     if (any("valley_charge_delay" in item.terms
                             for item in profile.objective_order)
                             and solved.early_valley_optimal is not True):
@@ -121,7 +124,7 @@ class M4Optimizer:
             input_observed_at=request.input_observed_at,
             started_at=started_at,
             finished_at=datetime.now(timezone.utc),
-            model_version=self.model_version,
+            model_version=self._effective_model_version(request),
             solver_name="scipy-highs",
             solver_version=version("scipy"),
             source_versions=request.source_versions,
@@ -135,6 +138,11 @@ class M4Optimizer:
         profile_version: str,
     ) -> str:
         return (
-            f"{request.request_id}/{self.model_version}/"
+            f"{request.request_id}/{self._effective_model_version(request)}/"
             f"{profile_id}/{profile_version}"
         )
+
+    def _effective_model_version(self, request: OptimizationRequest) -> str:
+        if request.pv_dispatch_policy == "load_first_economic":
+            return f"{self.model_version}/pv-load-first-economic-v1"
+        return self.model_version

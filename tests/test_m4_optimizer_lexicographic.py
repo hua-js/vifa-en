@@ -232,6 +232,8 @@ class M4OptimizerLexicographicTests(unittest.TestCase):
             grid_import_on=empty,
             soc_low_deviation=empty,
             soc_high_deviation=empty,
+            pv_curtail_on=empty,
+            pv_storage_full=empty,
             size=2,
         )
         problem = MilpProblem(

@@ -65,6 +65,28 @@ def validate_candidate(
         ):
             _raise(label, "PV attribution boundary")
 
+        if request.pv_dispatch_policy == "load_first_economic":
+            surplus = max(source.pv_forecast_kw - source.load_forecast_kw, 0.0)
+            if (discharge_kw - max(source.load_forecast_kw - source.pv_forecast_kw, 0.0) > tolerance
+                    or point.grid_export_kw + point.pv_unabsorbed_kw - surplus > tolerance):
+                _raise(label, "PV load priority")
+            if surplus > 0.0:
+                if point.grid_import_kw > tolerance:
+                    _raise(label, "PV surplus grid import")
+                available_charge = capability.max_charge_kw if capability.available else 0.0
+                headroom_kw = max(
+                    capability.energy_capacity_kwh * constraints.soc_max_pct / 100.0
+                    - current_energy, 0.0,
+                ) / (capability.charge_efficiency * INTERVAL_HOURS)
+                absorbable = min(surplus, available_charge, headroom_kw)
+                if not constraints.grid_export_enabled or point.pv_unabsorbed_kw > tolerance:
+                    if abs(charge_kw - absorbable) > tolerance:
+                        _raise(label, "PV surplus absorption")
+                if point.pv_unabsorbed_kw > tolerance:
+                    export_limit = min(surplus, constraints.grid_export_limit_kw) if constraints.grid_export_enabled else 0.0
+                    if abs(point.grid_export_kw - export_limit) > tolerance:
+                        _raise(label, "PV curtailment before export limit")
+
         balance_error = (
             source.pv_forecast_kw
             + point.grid_import_kw

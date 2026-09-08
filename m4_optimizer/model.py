@@ -28,6 +28,8 @@ class VariableIndex:
     grid_import_on: slice
     soc_low_deviation: slice
     soc_high_deviation: slice
+    pv_curtail_on: slice
+    pv_storage_full: slice
     size: int
 
 
@@ -76,7 +78,8 @@ class RowBuilder:
 
 def build_model(request: OptimizationRequest) -> BuiltModel:
     """Build the 96-period station battery mixed-integer linear program."""
-    index = _build_variable_index()
+    load_first = request.pv_dispatch_policy == "load_first_economic"
+    index = _build_variable_index(load_first=load_first)
     lower_bounds = np.zeros(index.size, dtype=float)
     upper_bounds = np.full(index.size, np.inf, dtype=float)
     integrality = np.zeros(index.size, dtype=np.uint8)
@@ -130,6 +133,11 @@ def build_model(request: OptimizationRequest) -> BuiltModel:
     integrality[index.charge_on] = 1
     integrality[index.discharge_on] = 1
     integrality[index.grid_import_on] = 1
+    # Legacy models allocate no PV-policy binary variables.
+    upper_bounds[index.pv_curtail_on] = 0.0
+    upper_bounds[index.pv_storage_full] = 0.0
+    integrality[index.pv_curtail_on] = 1
+    integrality[index.pv_storage_full] = 1
 
     rows = RowBuilder(index.size)
     for t, point in enumerate(request.points):
@@ -197,6 +205,32 @@ def build_model(request: OptimizationRequest) -> BuiltModel:
             {grid_export_t: 1.0, pv_unabsorbed_t: 1.0},
             upper=point.pv_forecast_kw,
         )
+        if load_first:
+            surplus = max(point.pv_forecast_kw - point.load_forecast_kw, 0.0)
+            upper_bounds[discharge_t] = min(
+                effective_max_discharge_kw,
+                max(point.load_forecast_kw - point.pv_forecast_kw, 0.0),
+            )
+            rows.add({grid_export_t: 1.0, pv_unabsorbed_t: 1.0}, upper=surplus)
+            if surplus > 0.0:
+                charge_limit = min(surplus, effective_max_charge_kw)
+                export_limit = min(surplus, grid_export_big_m)
+                upper_bounds[grid_import_t] = 0.0
+                upper_bounds[charge_t] = charge_limit
+                curtail_on = index.pv_curtail_on.start + t
+                storage_full = index.pv_storage_full.start + t
+                upper_bounds[curtail_on] = 1.0
+                upper_bounds[storage_full] = 1.0
+                # Curtail only after all permitted physical routes saturate.
+                # If y=1, export is at its limit and either charging reaches
+                # its power/surplus limit (z=0), or next SOC is at safety max.
+                rows.add({pv_unabsorbed_t: 1.0, curtail_on: -surplus}, upper=0.0)
+                rows.add({grid_export_t: 1.0, curtail_on: -export_limit}, lower=0.0)
+                rows.add({charge_t: 1.0, curtail_on: -charge_limit,
+                          storage_full: charge_limit}, lower=0.0)
+                rows.add({energy_next: 1.0,
+                          storage_full: -(maximum_energy_kwh - minimum_energy_kwh)},
+                         lower=minimum_energy_kwh)
         rows.add(
             {
                 soc_low_deviation_t: 1.0,
@@ -269,7 +303,7 @@ def _overnight_valley_windows(
     return tuple(tuple(window) for window in windows.values())
 
 
-def _build_variable_index() -> VariableIndex:
+def _build_variable_index(*, load_first: bool = False) -> VariableIndex:
     cursor = 0
 
     def allocate(size: int) -> slice:
@@ -292,6 +326,8 @@ def _build_variable_index() -> VariableIndex:
     grid_import_on = allocate(HORIZON_POINTS)
     soc_low_deviation = allocate(HORIZON_POINTS)
     soc_high_deviation = allocate(HORIZON_POINTS)
+    pv_curtail_on = allocate(HORIZON_POINTS if load_first else 0)
+    pv_storage_full = allocate(HORIZON_POINTS if load_first else 0)
     return VariableIndex(
         charge=charge,
         discharge=discharge,
@@ -306,6 +342,8 @@ def _build_variable_index() -> VariableIndex:
         grid_import_on=grid_import_on,
         soc_low_deviation=soc_low_deviation,
         soc_high_deviation=soc_high_deviation,
+        pv_curtail_on=pv_curtail_on,
+        pv_storage_full=pv_storage_full,
         size=cursor,
     )
 
@@ -336,6 +374,7 @@ def _build_objectives(
         objectives["energy_cost"][index.grid_export.start + t] = (
             -point.sell_price_per_kwh * INTERVAL_HOURS
         )
-        objectives["pv_unused"][index.grid_export.start + t] = INTERVAL_HOURS
+        if request.pv_dispatch_policy == "legacy":
+            objectives["pv_unused"][index.grid_export.start + t] = INTERVAL_HOURS
         objectives["pv_unused"][index.pv_unabsorbed.start + t] = INTERVAL_HOURS
     return objectives
