@@ -973,6 +973,25 @@ def build_result(
 
 def record_alert_history(data: dict[str, Any], db_path: str | Path) -> dict[str, Any]:
     """保存实际检出的告警采样；采集时间相同的记录幂等，不推断恢复状态。"""
+    station_ids = {
+        str(station["id"]) for station in data.get("es_list", [])
+        if station.get("id") is not None
+        and str(station.get("fk_site") or "") == TARGET_SITE_ID
+        and station_code(station) in {"ES01", "ES02"}
+    }
+    node_ids = {
+        str(node["id"]) for node in data.get("nodes", [])
+        if node.get("id") is not None and str(node.get("fk_es")) in station_ids
+        and str(node.get("fk_site_id") or "") == TARGET_SITE_ID
+    }
+
+    def belongs_to_site(alert: dict[str, Any]) -> bool:
+        return (
+            str(alert.get("fk_site_id") or "") == TARGET_SITE_ID
+            and str(alert.get("fk_en_id") or "") in node_ids
+            and alert.get("category") in {"pv_efficiency", "ess_self_loss", "load_spike"}
+        )
+
     path = Path(db_path).expanduser()
     path.parent.mkdir(parents=True, exist_ok=True)
     recorded_at = datetime.now(SHANGHAI).isoformat()
@@ -994,8 +1013,7 @@ def record_alert_history(data: dict[str, Any], db_path: str | Path) -> dict[str,
         for alert in data.get("alerts", []):
             sample_time = normalize_timestamp(alert.get("start_time"))
             if (
-                str(alert.get("fk_site_id") or "") != TARGET_SITE_ID
-                or alert.get("category") not in {"pv_efficiency", "ess_self_loss", "load_spike"}
+                not belongs_to_site(alert)
                 or not alert.get("id")
                 or not sample_time
             ):
@@ -1007,17 +1025,26 @@ def record_alert_history(data: dict[str, Any], db_path: str | Path) -> dict[str,
                  json.dumps(payload, ensure_ascii=False)),
             )
         rows = connection.execute(
-            "SELECT payload FROM alert_samples WHERE site_id = ? "
-            "ORDER BY sample_time DESC, alert_id LIMIT ?",
-            (TARGET_SITE_ID, ALERT_HISTORY_LIMIT),
-        ).fetchall()
-        total, first_recorded_at = connection.execute(
-            "SELECT COUNT(*), MIN(recorded_at) FROM alert_samples WHERE site_id = ?",
+            "SELECT payload, recorded_at FROM alert_samples WHERE site_id = ? "
+            "ORDER BY sample_time DESC, alert_id",
             (TARGET_SITE_ID,),
-        ).fetchone()
+        )
+        records = []
+        total = 0
+        first_recorded_at = None
+        # 先校验归属，再计数与截取；旧库中的无关记录保留但不展示。
+        for payload_text, saved_at in rows:
+            payload = json.loads(payload_text)
+            if not belongs_to_site(payload):
+                continue
+            total += 1
+            if first_recorded_at is None or saved_at < first_recorded_at:
+                first_recorded_at = saved_at
+            if len(records) < ALERT_HISTORY_LIMIT:
+                records.append(payload)
     return {
         "status": "ok",
-        "records": [json.loads(row[0]) for row in rows],
+        "records": records,
         "total": total,
         "limit": ALERT_HISTORY_LIMIT,
         "first_recorded_at": first_recorded_at,

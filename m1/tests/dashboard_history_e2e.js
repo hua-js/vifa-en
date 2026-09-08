@@ -37,7 +37,7 @@ const fixture = {status:'ok', data:{
     {sn:'emu3',timestamp:'invalid',online:false,data_quality:'missing'},
     {sn:'outside',timestamp:'2099-09-07T08:00:00+08:00'},
   ],
-  alert_history:{status:'ok',records:[...records, {...records[0],fk_site_id:'other',txt:'其他客户'}],total:25,limit:1000},
+  alert_history:{status:'ok',records:[...records, {...records[0],fk_site_id:'other',txt:'其他客户'}, {...records[0],fk_en_id:'foreign',txt:'其他站点设备'}, {...records[0],fk_en_id:null,txt:'归属不明设备'}],total:25,limit:1000},
 }};
 let payload = structuredClone(fixture);
 let browser;

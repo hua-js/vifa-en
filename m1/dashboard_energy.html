@@ -840,7 +840,7 @@ function isolateCustomerData(data) {
     name: TARGET_TOPOLOGY.stationNames[code],
   }));
   const esIds = new Set(esList.map(station => String(station.id)));
-  const nodes = (source.nodes||[]).filter(node => esIds.has(String(node.fk_es)));
+  const nodes = (source.nodes||[]).filter(node => esIds.has(String(node.fk_es)) && String(node.fk_site_id||'') === TARGET_TOPOLOGY.siteId);
   const nodeIds = new Set(nodes.map(node => String(node.id)));
   const realtime = (source.realtime||[]).filter(item => nodeIds.has(String(item.fk_en)));
   const alerts = (source.alerts||[]).filter(alert => {
@@ -862,7 +862,7 @@ function isolateCustomerData(data) {
     alerts,
     alert_history: source.alert_history ? {
       ...source.alert_history,
-      records: (source.alert_history.records||[]).filter(alert => isAnomalyAlert(alert) && String(alert.fk_site_id||'') === TARGET_TOPOLOGY.siteId),
+      records: (source.alert_history.records||[]).filter(alert => isAnomalyAlert(alert) && String(alert.fk_site_id||'') === TARGET_TOPOLOGY.siteId && nodeIds.has(String(alert.fk_en_id||''))),
     } : null,
     pv_inverters: pvInverters,
     stats: {

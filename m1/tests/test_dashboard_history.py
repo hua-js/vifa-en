@@ -20,16 +20,43 @@ def alert(timestamp="2026-09-07T08:00:00+08:00", **extra):
     }
 
 
+def history_data(**extra):
+    return {
+        "es_list": [{"id": "s1", "fk_site": api.TARGET_SITE_ID, "station_code": "ES01"}],
+        "nodes": [{"id": "load1", "fk_es": "s1", "fk_site_id": api.TARGET_SITE_ID}],
+        **extra,
+    }
+
+
 class AlertHistoryTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.path = Path(self.temp.name) / "state" / "history.sqlite3"
 
+    def record_history(self, data, path):
+        return api.record_alert_history(history_data(**data), path)
+
+    def test_same_site_foreign_nodes_are_excluded_before_limit_and_count(self):
+        self.record_history({"alerts": [alert()]}, self.path)
+        with sqlite3.connect(self.path) as connection:
+            for node in ("foreign", "", None):
+                row = alert("2026-09-08T08:00:00+08:00", id=str(node), fk_en_id=node)
+                connection.execute("INSERT INTO alert_samples VALUES (?, ?, ?, ?, ?)",
+                                   (api.TARGET_SITE_ID, str(node), row["start_time"], "2026-09-01", json.dumps(row)))
+        with patch.object(api, "ALERT_HISTORY_LIMIT", 1):
+            history = self.record_history({"alerts": [alert(id="new-foreign", fk_en_id="foreign")]}, self.path)
+        self.assertEqual(history["total"], 1)
+        self.assertEqual(history["records"][0]["fk_en_id"], "load1")
+        self.assertNotEqual(history["first_recorded_at"], "2026-09-01")
+        self.assertEqual(api.record_alert_history({}, self.path)["total"], 0)
+        with sqlite3.connect(self.path) as connection:
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM alert_samples").fetchone()[0], 4)
+
     def test_duplicate_samples_and_empty_current_survive_reopening(self):
-        api.record_alert_history({"alerts": [alert()]}, self.path)
-        api.record_alert_history({"alerts": [alert("2026-09-07T00:00:00Z", value=1400)]}, self.path)
-        history = api.record_alert_history({"alerts": []}, self.path)
+        self.record_history({"alerts": [alert()]}, self.path)
+        self.record_history({"alerts": [alert("2026-09-07T00:00:00Z", value=1400)]}, self.path)
+        history = self.record_history({"alerts": []}, self.path)
         self.assertEqual(history["total"], 1)
         self.assertEqual(history["records"][0]["value"], 1200)
         self.assertIn("recorded_at", history["records"][0])
@@ -37,13 +64,13 @@ class AlertHistoryTests(unittest.TestCase):
     def test_new_samples_sorted_and_limited_without_deleting_archive(self):
         rows = [alert(f"2026-09-0{day}T08:00:00+08:00") for day in (7, 5, 6)]
         with patch.object(api, "ALERT_HISTORY_LIMIT", 2):
-            history = api.record_alert_history({"alerts": rows}, self.path)
+            history = self.record_history({"alerts": rows}, self.path)
         self.assertEqual(history["total"], 3)
         self.assertEqual([r["start_time"][8:10] for r in history["records"]], ["07", "06"])
-        self.assertEqual(api.record_alert_history({}, self.path)["total"], 3)
+        self.assertEqual(self.record_history({}, self.path)["total"], 3)
 
     def test_invalid_samples_and_other_sites_are_excluded(self):
-        history = api.record_alert_history({"alerts": [
+        history = self.record_history({"alerts": [
             alert("invalid"), alert(fk_site_id="other"), alert(category="unknown"),
             alert(id=""), alert(),
         ]}, self.path)
@@ -51,17 +78,17 @@ class AlertHistoryTests(unittest.TestCase):
         with sqlite3.connect(self.path) as connection:
             connection.execute("INSERT INTO alert_samples VALUES (?, ?, ?, ?, ?)",
                                ("other", "x", "2099", "2099", json.dumps(alert(fk_site_id="other"))))
-        self.assertEqual(api.record_alert_history({}, self.path)["total"], 1)
+        self.assertEqual(self.record_history({}, self.path)["total"], 1)
 
     def test_storage_failure_does_not_break_realtime(self):
-        result = {"status": "ok", "data": {"alerts": [alert()]}}
+        result = {"status": "ok", "data": history_data(alerts=[alert()])}
         api.attach_alert_history(result, self.temp.name)  # Directory is not a database file.
         self.assertEqual(result["status"], "ok")
         self.assertEqual(len(result["data"]["alerts"]), 1)
         self.assertEqual(result["data"]["alert_history"]["status"], "error")
 
     def test_cli_wires_persistence_without_network(self):
-        result = {"status": "ok", "data": {"alerts": [alert()]}}
+        result = {"status": "ok", "data": history_data(alerts=[alert()])}
         output = io.StringIO()
         with patch.object(api, "fetch_raw_data", return_value={}), \
              patch.object(api, "fetch_growatt_rows", return_value=([], None)), \
