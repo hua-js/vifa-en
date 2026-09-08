@@ -118,6 +118,17 @@ class RealtimeTests(unittest.TestCase):
                 row = cabinet('emu11', emu_status=status, **{field: status for field in COMPONENTS})
                 self.assertTrue(self.snapshot([row, cabinet('emu12')])['available'])
 
+    def test_pcs_work_is_supported_without_bypassing_alert_or_other_components(self):
+        rows=[cabinet('emu11',pcs1_status='work',pcs2_status='work',alert_status='alert'),
+              cabinet('emu12',pcs1_status='work',pcs2_status='work',emu_status='discharge')]
+        result=self.snapshot(rows)
+        self.assertEqual(result['participating_cabinet_ids'],['emu12'])
+        self.assertEqual(result['available_energy_capacity_kwh'],250.0)
+        self.assertEqual(result['cabinets'][0]['issues'],['alert_status 存在活动告警或未知告警状态'])
+        for field in ['emu_status','bcu1_status','bcu2_status']:
+            changed=copy.deepcopy(rows);changed[1][field]='work'
+            self.assertEqual(self.snapshot(changed)['participating_cabinet_ids'],[])
+
     def test_unknown_or_unsafe_state_only_excludes_affected_cabinet(self):
         for field in ('emu_status', *COMPONENTS):
             for status in ('stop', 'offline', 'fault', 'debug', 'alert', 'exception', 'other', '', None, 1, []):

@@ -3,6 +3,7 @@ import ast
 import os
 from pathlib import Path
 from types import SimpleNamespace
+from uuid import UUID
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
@@ -38,7 +39,12 @@ class CalculateCandidates(BaseModel):
     configuration_version: str = Field(min_length=1, max_length=200)
 
 
-def create_app(settings_path: Path | None = None, *, control_reader=None, input_service=None, candidate_service=None) -> FastAPI:
+class StartAiRun(BaseModel):
+    model_config = ConfigDict(extra='forbid', strict=True)
+    request_id: str = Field(pattern=r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$')
+
+
+def create_app(settings_path: Path | None = None, *, control_reader=None, input_service=None, candidate_service=None, selection_service=None) -> FastAPI:
     path = settings_path or Path(os.environ.get('M4_SETTINGS_DB', str(ROOT / 'm4/run/settings.sqlite3')))
     store = SettingsStore(path)
     reader = control_reader
@@ -54,7 +60,13 @@ def create_app(settings_path: Path | None = None, *, control_reader=None, input_
     from .candidates import CandidateError, CandidateService
     candidates = candidate_service if candidate_service is not None else CandidateService(
         store=store, fetch_inputs=input_service.fetch, read_controls=read_controls)
+    from .selection import PolicyStore, SavePolicy, SelectCandidate, StationPolicy, LiveSelectionResult, LiveSelectionService
+    policies = PolicyStore(path)
+    selections = selection_service if selection_service is not None else LiveSelectionService(
+        store=store, policies=policies, candidates=candidates, fetch_inputs=input_service.fetch)
     app = FastAPI(title='M4 调度参数', docs_url=None, redoc_url=None)
+    from .ai_results import AiResultsReader
+    ai_results = AiResultsReader(Path(os.environ.get('M4_AI_RESULTS_DIR', str(ROOT / 'm4/run/station1-ai-chain'))))
     # This factory serves a local workstation. Production must use the platform's authenticated adapter.
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=['127.0.0.1', 'localhost', '[::1]', 'testserver'])
 
@@ -138,6 +150,77 @@ def create_app(settings_path: Path | None = None, *, control_reader=None, input_
             raise HTTPException(error.status_code, error.detail) from None
         except Exception:
             raise HTTPException(503, '候选计算失败，请检查输入后重试') from None
+
+    @app.get('/m4-api/stations/{station_id}/selection-policy')
+    def get_selection_policy(station_id: str) -> StationPolicy:
+        station_exists(station_id)
+        try:
+            return policies.get(station_id)
+        except Exception:
+            raise HTTPException(503, '无法读取本站选择偏好') from None
+
+    @app.put('/m4-api/stations/{station_id}/selection-policy')
+    def save_selection_policy(station_id: str, body: SavePolicy) -> StationPolicy:
+        station_exists(station_id)
+        try:
+            return policies.save(station_id, body.preferences, expected_revision=body.expected_revision)
+        except SettingsConflict as error:
+            raise HTTPException(409, str(error)) from None
+        except Exception:
+            raise HTTPException(503, '无法保存选择偏好，原配置未被替换') from None
+
+    @app.post('/m4-api/stations/{station_id}/selection')
+    def select_live_candidate(station_id: str, body: SelectCandidate) -> LiveSelectionResult:
+        station_exists(station_id)
+        try:
+            return selections.select(station_id, body.candidate_run_id, body.policy_revision)
+        except CandidateError as error:
+            raise HTTPException(error.status_code, error.detail) from None
+        except Exception:
+            raise HTTPException(503, '选择预览失败，请重新核对输入') from None
+
+    @app.get('/m4-api/stations/{station_id}/ai-selection')
+    def get_ai_selection(station_id: str) -> dict:
+        station_exists(station_id)
+        try:
+            return ai_results.latest(station_id)
+        except Exception:
+            raise HTTPException(503, 'AI 结果记录读取或校验失败，请检查本地联调记录后刷新') from None
+
+    # Reuse the same service handlers and their version checks without a self-HTTP request.
+    def chain_request(method, path, data=None):
+        from m4_selection.live_chain import BASE
+        routes = {
+            ('GET', BASE + 'settings'): lambda: get_settings('station-1'),
+            ('GET', BASE + 'selection-policy'): lambda: get_selection_policy('station-1'),
+            ('GET', BASE + 'inputs'): lambda: get_inputs('station-1'),
+            ('POST', BASE + 'candidates'): lambda: calculate_candidates('station-1', CalculateCandidates.model_validate(data)),
+            ('POST', BASE + 'selection'): lambda: select_live_candidate('station-1', SelectCandidate.model_validate(data)),
+        }
+        result = routes[(method, path)]()
+        return result.model_dump(mode='json') if isinstance(result, BaseModel) else result
+
+    from .ai_runs import AiRunError, AiRunManager
+    ai_runs = AiRunManager(ai_results.root, SimpleNamespace(request=chain_request))
+
+    @app.get('/m4-api/stations/{station_id}/ai-runs')
+    def get_ai_run(station_id: str) -> dict:
+        station_exists(station_id)
+        try:
+            return ai_runs.latest(station_id)
+        except Exception:
+            raise HTTPException(503, '无法读取 AI 运行状态，请刷新后再操作') from None
+
+    @app.post('/m4-api/stations/{station_id}/ai-runs', status_code=202)
+    def start_ai_run(station_id: str, body: StartAiRun) -> dict:
+        station_exists(station_id)
+        try:
+            job = ai_runs.start(station_id, str(UUID(body.request_id)))
+            return dict(station_id=station_id, usage='preview_only', dispatch_status='not_dispatched', job=job)
+        except AiRunError as error:
+            raise HTTPException(error.status_code, error.detail) from None
+        except Exception:
+            raise HTTPException(503, '无法启动 AI 预览，请先刷新运行状态；未自动重试') from None
 
     @app.get('/m4', include_in_schema=False)
     def console() -> FileResponse:

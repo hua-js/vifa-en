@@ -15,6 +15,7 @@ from .roster import CABINET_ISOLATION_POLICY, STATION_CABINETS
 
 SOC_METHOD = 'configured_equal_capacity_weighted'
 OPERATING_STATES = frozenset(('wait', 'standby', 'charge', 'discharge'))
+PCS_OPERATING_STATES = OPERATING_STATES | {'work'}
 STATUS_FIELDS = ('emu_status', 'bcu1_status', 'bcu2_status', 'pcs1_status', 'pcs2_status')
 SOURCE_FIELDS = ('f_es_sn', 'emu_sn', 'latest_soc', 'last_time_iso', 'alert_status', *STATUS_FIELDS)
 
@@ -131,7 +132,8 @@ def build_realtime_snapshot(
 
             for field in STATUS_FIELDS:
                 value = row.get(field)
-                if not isinstance(value, str) or value not in OPERATING_STATES:
+                allowed = PCS_OPERATING_STATES if field in ('pcs1_status', 'pcs2_status') else OPERATING_STATES
+                if not isinstance(value, str) or value not in allowed:
                     issues.append(f'{field} 缺失、未知或不允许参与调度')
             if 'alert_status' not in row:
                 issues.append('alert_status 缺失，无法确认无活动告警')
