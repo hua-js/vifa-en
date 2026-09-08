@@ -62,7 +62,7 @@ async function openPage(viewport) {
 
   assert.strictEqual(
     (await page.locator("#demo-mode").textContent()).trim(),
-    "静态演示模式 · 不连接真实 AI/EMS",
+    "静态演示模式 · 不连接真实服务 / EMS",
   );
   assert.strictEqual(await page.locator('[role="tab"]').count(), 3);
   assert.strictEqual(await page.locator("#io-overview .flow-step").count(), 5);

@@ -81,7 +81,7 @@ class M4OrchestratorRealAcceptanceTests(unittest.TestCase):
             for candidate in station.optimization_result.candidates:
                 self.assertIn(candidate.status, {"optimal", "feasible"})
                 self.assertEqual(len(candidate.plan), 96)
-            self.assertEqual(station.selection_status, "pending_ai")
+            self.assertEqual(station.selection_status, "pending_selection")
             self.assertIsNone(station.selected_candidate_id)
             self.assertEqual(station.dispatch_status, "not_dispatched")
             self.assertIsNone(station.ems_task_id)
@@ -161,7 +161,7 @@ class M4OrchestratorServiceTests(unittest.TestCase):
         self.assertEqual(self.optimizer.calls, ["station-2", "station-1"])
         self.assertTrue(all(item.status == "optimized" for item in result.stations))
         self.assertTrue(
-            all(item.selection_status == "pending_ai" for item in result.stations)
+            all(item.selection_status == "pending_selection" for item in result.stations)
         )
         self.assertTrue(
             all(item.selected_candidate_id is None for item in result.stations)
@@ -170,7 +170,7 @@ class M4OrchestratorServiceTests(unittest.TestCase):
             all(item.dispatch_status == "not_dispatched" for item in result.stations)
         )
         self.assertTrue(all(item.ems_task_id is None for item in result.stations))
-        self.assertEqual(result.schema_version, "m4-orchestration-v1")
+        self.assertEqual(result.schema_version, "m4-orchestration-v2")
         self.assertEqual(result.run_id, "run-test-001")
         self.assertEqual(result.started_at, FIXED_STARTED_AT)
         self.assertEqual(result.finished_at, FIXED_FINISHED_AT)

@@ -385,7 +385,7 @@
         </span>
         <div>
           <h1>M4 能源优化调度</h1>
-          <p class="subtitle">AI 生成策略 · 人工调整 · EMS 执行 · M4 回读留证</p>
+          <p class="subtitle">数学模型生成策略 · 求解器决策 · 人工确认 · EMS 执行</p>
         </div>
       </div>
       <div class="tools">
@@ -396,7 +396,7 @@
     </header>
 
     <div class="demo-strip" role="note">
-      <span id="demo-mode">静态演示模式 · 不连接真实 AI/EMS</span>
+      <span id="demo-mode">静态演示模式 · 不连接真实服务 / EMS</span>
       <span>所有策略、状态和节费数字均为沟通用演示数据</span>
     </div>
 
@@ -440,12 +440,12 @@
       </section>
 
       <section class="zone" aria-labelledby="strategy-title">
-        <header class="zone-head"><span class="zone-index">02</span><div><div class="zone-title" id="strategy-title">M4 输出一 · 统一策略草案</div><div class="zone-copy">未来 24 小时 · 15 分钟粒度 · 两套储能各 96 点，由 AI 统一决策</div></div></header>
+        <header class="zone-head"><span class="zone-index">02</span><div><div class="zone-title" id="strategy-title">M4 输出一 · 统一策略草案</div><div class="zone-copy">未来 24 小时 · 15 分钟粒度 · 两套储能各 96 点，由求解器分别计算与决策</div></div></header>
         <div class="strategy-grid">
           <article class="card schedule-card">
             <div class="card-head">
               <div><div class="card-title">24 小时充放电时间轴</div><div class="card-copy">策略编号 M4-DEMO-20260903 · 当前版本 <strong id="strategy-version">V1</strong></div></div>
-              <span class="status-label good" id="draft-state">AI 草案已生成</span>
+              <span class="status-label good" id="draft-state">优化草案已生成</span>
             </div>
             <div id="schedule-points" data-point-count="96">
               <svg id="schedule-chart" viewBox="0 0 1100 270" role="img" aria-labelledby="schedule-chart-title schedule-chart-desc">
@@ -462,7 +462,7 @@
           </article>
 
           <aside class="card insight-card">
-            <div class="card-head"><div><div class="card-title">AI 决策说明</div><div class="card-copy">策略理由和风险由 AI 提供，执行层不使用 AI</div></div><span class="status-label info">可解释草案</span></div>
+            <div class="card-head"><div><div class="card-title">优化决策说明</div><div class="card-copy">策略依据来自数学目标、约束与已保存偏好</div></div><span class="status-label info">可解释草案</span></div>
             <ul class="insight-list">
               <li class="insight"><strong>低谷补能</strong><p>00:00–06:00 利用谷电补充 SOC，为白天光伏消纳和晚峰削峰保留空间。</p></li>
               <li class="insight"><strong>光伏余电优先</strong><p>10:00–14:00 预留充电容量，吸收预计无法被厂区负荷即时消纳的光伏。</p></li>
@@ -544,7 +544,7 @@
 
     <section id="records-panel" role="tabpanel" aria-labelledby="records-tab" hidden>
       <section class="zone" aria-labelledby="records-title">
-        <header class="zone-head"><span class="zone-index">01</span><div><div class="zone-title" id="records-title">策略与执行记录</div><div class="zone-copy">关联 AI 原始策略、人工修改、EMS 接收状态和执行回读</div></div></header>
+        <header class="zone-head"><span class="zone-index">01</span><div><div class="zone-title" id="records-title">策略与执行记录</div><div class="zone-copy">关联优化原始策略、人工修改、EMS 接收状态和执行回读</div></div></header>
         <article class="card interface-map-card">
           <div class="card-head"><div><div class="card-title">M4—EMS 对接边界大图</div><div class="card-copy">点击图片可打开原始 SVG；放大后文字仍保持清晰</div></div><span class="status-label info">沟通用</span></div>
           <a class="interface-map-link" href="M4-EMS对接流程图.svg" target="_blank" rel="noopener">
@@ -558,14 +558,14 @@
             <div id="record-list" aria-live="polite">
               <article class="record-item"><time class="record-time">15:04:18</time><div class="record-main"><strong>EMS 执行回读 · V1</strong><p>1#、2# 储能计划均已进入待执行队列；设备控制仍由 EMS 负责。</p></div><span class="status-label good">已回读</span></article>
               <article class="record-item"><time class="record-time">15:03:52</time><div class="record-main"><strong>策略发送 EMS · V1</strong><p>发送 96 点计划与安全预检摘要，M4 未直接调用 PCS/BMS。</p></div><span class="status-label good">已接收</span></article>
-              <article class="record-item"><time class="record-time">15:02:31</time><div class="record-main"><strong>AI 策略草案生成 · V1</strong><p>生成两套储能 24 小时计划、理由、效果预估与风险提示。</p></div><span class="status-label info">已生成</span></article>
+              <article class="record-item"><time class="record-time">15:02:31</time><div class="record-main"><strong>求解器策略草案生成 · V1</strong><p>生成两套储能 24 小时计划、理由、效果预估与风险提示。</p></div><span class="status-label info">已生成</span></article>
             </div>
           </article>
 
           <aside class="card boundary-card">
             <div class="card-head"><div><div class="card-title">控制边界</div><div class="card-copy">一条策略链路，一个设备执行入口</div></div></div>
             <div class="boundary-flow">
-              <div class="boundary-node"><strong>AI</strong><span>只生成结构化策略草案</span></div>
+              <div class="boundary-node"><strong>Pyomo + HiGHS</strong><span>生成数值计划并按偏好决策</span></div>
               <div class="boundary-arrow">↓</div>
               <div class="boundary-node"><strong>M4 控制台</strong><span>展示、人工调整、安全预检、发送与留证</span></div>
               <div class="boundary-arrow">↓ 发送策略</div>
@@ -583,7 +583,7 @@
       <section class="zone" aria-labelledby="acceptance-title">
         <header class="zone-head"><span class="zone-index">01</span><div><div class="zone-title" id="acceptance-title">附件 1 · M4 验收映射</div><div class="zone-copy">展示系统如何形成证据，不把静态演示数据作为正式验收结论</div></div></header>
         <div class="acceptance-grid">
-          <article class="card acceptance-item" data-acceptance="4.1"><div class="acceptance-number">4.1</div><h3>优化调度算法模型</h3><p>AI 根据预测、电价、设备能力与业务目标生成 96 点策略草案。</p><div class="evidence">演示证据：策略编号、输入摘要、AI 理由、安全预检和版本记录。</div><span class="acceptance-state ready">演示证据已具备</span></article>
+          <article class="card acceptance-item" data-acceptance="4.1"><div class="acceptance-number">4.1</div><h3>优化调度算法模型</h3><p>数学模型根据预测、电价、设备能力与业务目标求解 96 点策略草案。</p><div class="evidence">演示证据：策略编号、输入摘要、决策依据、安全预检和版本记录。</div><span class="acceptance-state ready">演示证据已具备</span></article>
           <article class="card acceptance-item" data-acceptance="4.2"><div class="acceptance-number">4.2</div><h3>电价策略决策</h3><p>谷段充电、峰段放电，策略使用外部电价接口表而非代码常量。</p><div class="evidence">演示证据：电价版本、时段映射和策略片段。</div><span class="acceptance-state ready">演示证据已具备</span></article>
           <article class="card acceptance-item" data-acceptance="4.3"><div class="acceptance-number">4.3</div><h3>光伏与储能调度</h3><p>优先直供负载，预计余电时预留储能容量；设备执行由 EMS 完成。</p><div class="evidence" id="acceptance-43-evidence">演示证据：光伏余电策略、谷充峰放计划及 EMS 回读。</div><span class="acceptance-state ready" id="acceptance-43-state">演示证据已具备</span></article>
           <article class="card acceptance-item" data-acceptance="4.4"><div class="acceptance-number">4.4</div><h3>削峰填谷策略</h3><p>需量逼近时建议储能协同放电，不控制生产负载。</p><div class="evidence">演示证据：需量目标、削峰动作、人工发送和 EMS 执行状态。</div><span class="acceptance-state ready">演示证据已具备</span></article>

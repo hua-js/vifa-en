@@ -105,7 +105,7 @@ class PVPolicyTests(unittest.TestCase):
 
     def test_old_midday_plan_remains_valid_only_under_legacy_policy(self):
         root = Path(__file__).resolve().parents[1]
-        folder = root/'m4/evaluations/2026-09-07-router-benchmark-v1/cases/S03'
+        folder = root/'tests/fixtures/m4_pv_legacy_midday'
         from m4_optimizer.contracts import OptimizationResult
         old_request = OptimizationRequest.model_validate_json((folder/'optimizer-input.json').read_text())
         old_result = OptimizationResult.model_validate_json((folder/'optimizer-result.json').read_text())

@@ -61,7 +61,7 @@ class ComparisonStep(StrictModel):
 
 class SelectionResult(StrictModel):
     schema_version: Literal['m4-selection-v1'] = 'm4-selection-v1'
-    selector_version: Literal['demand-then-preference-v1', 'demand-then-profile-v1'] = 'demand-then-preference-v1'
+    selector_version: Literal['demand-then-preference-v1', 'demand-then-profile-v1', 'pyomo-highs-selection-v2'] = 'demand-then-preference-v1'
     usage: Literal['preview_only'] = 'preview_only'
     dispatch_status: Literal['not_dispatched'] = 'not_dispatched'
     request_id: str

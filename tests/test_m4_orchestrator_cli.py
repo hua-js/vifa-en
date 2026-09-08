@@ -57,7 +57,7 @@ class M4OrchestratorArtifactTests(unittest.TestCase):
             self.assertTrue(
                 all(len(candidate.plan) == 96 for candidate in candidates)
             )
-            self.assertEqual(station.selection_status, "pending_ai")
+            self.assertEqual(station.selection_status, "pending_selection")
             self.assertIsNone(station.selected_candidate_id)
             self.assertEqual(station.dispatch_status, "not_dispatched")
             self.assertIsNone(station.ems_task_id)

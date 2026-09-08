@@ -42,6 +42,22 @@ const url = pathToFileURL(path.join(root, 'm4/M4优化调度控制台-线上版.
       await page.setInputFiles('#offline-file', {name:'result.json',mimeType:'application/json',buffer:Buffer.from(typeof data==='string'?data:JSON.stringify(data))});
       await page.waitForFunction(() => document.querySelector('#offline-load-status').dataset.state !== 'loading');
     };
+    // Only the current neutral schema is accepted; retired states and versions are rejected.
+    const current = structuredClone(result);
+    current.schema_version = 'm4-orchestration-v2';
+    current.stations.forEach(station => station.selection_status = 'pending_selection');
+    await upload(current);
+    assert.equal(await page.locator('#offline-load-status').getAttribute('data-state'),'ready');
+    const crossVersion = structuredClone(current);
+    crossVersion.stations[0].selection_status = 'pending_ai';
+    await upload(crossVersion);
+    assert.equal(await page.locator('#offline-load-status').getAttribute('data-state'),'error');
+    const retired = structuredClone(result);
+    retired.schema_version = 'm4-orchestration-v1';
+    retired.stations.forEach(station => station.selection_status = 'pending_ai');
+    await upload(retired);
+    assert.equal(await page.locator('#offline-load-status').getAttribute('data-state'),'error');
+    await upload(result);
     const partial = structuredClone(result);
     partial.overall_status='partial_failure';
     Object.assign(partial.stations[0], {status:'optimization_error', optimization_result:null,error:{code:'OPTIMIZATION_ERROR',message:'本站优化失败'}});

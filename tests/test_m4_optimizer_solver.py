@@ -1,13 +1,18 @@
 import unittest
-import warnings
+from concurrent.futures import ThreadPoolExecutor
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import numpy as np
-from scipy.optimize import OptimizeResult
+import pyomo.environ as pyo
+from pyomo.common.collections import ComponentMap
+from pyomo.contrib.appsi.base import TerminationCondition
 from scipy.sparse import csr_matrix
 
 import m4_optimizer.solver as solver_module
-from m4_optimizer.solver import MilpProblem, solve_milp
+from m4_optimizer.model import build_model
+from m4_optimizer.solver import MilpProblem, ObjectiveLock, solve_milp
+from tests.m4_optimizer_test_support import make_request
 
 
 class M4OptimizerSolverTests(unittest.TestCase):
@@ -20,13 +25,7 @@ class M4OptimizerSolverTests(unittest.TestCase):
             constraint_lower=np.array([1.0]),
             constraint_upper=np.array([np.inf]),
         )
-        result = solve_milp(
-            problem,
-            objective=np.array([1.0, 2.0]),
-            locks=(),
-            time_limit_seconds=2.0,
-            mip_rel_gap=0.0,
-        )
+        result = solve_milp(problem, np.array([1.0, 2.0]), (), 2.0, 0.0)
         self.assertEqual(result.status, "optimal")
         np.testing.assert_allclose(result.x, [1.0, 0.0], atol=1e-7)
 
@@ -39,108 +38,120 @@ class M4OptimizerSolverTests(unittest.TestCase):
             constraint_lower=np.array([2.0]),
             constraint_upper=np.array([np.inf]),
         )
-        result = solve_milp(
-            problem,
-            objective=np.array([1.0]),
-            locks=(),
-            time_limit_seconds=2.0,
-            mip_rel_gap=0.0,
-        )
+        result = solve_milp(problem, np.array([1.0]), (), 2.0, 0.0)
         self.assertEqual(result.status, "infeasible")
         self.assertIsNone(result.x)
 
+    def solve_mock(self, termination, values, best=0.5, bound=0.5, problem=None):
+        backend = SimpleNamespace(config=SimpleNamespace(), highs_options={})
+        result = SimpleNamespace(termination_condition=termination,
+                                 best_feasible_objective=best,
+                                 best_objective_bound=bound)
+
+        def solve(model):
+            backend.variables = tuple(model.component_data_objects(pyo.Var))
+            return result
+
+        backend.solve = solve
+        backend.set_instance = lambda model: None
+        backend.get_primals = lambda variables: ComponentMap(zip(variables, values))
+        with patch("m4_optimizer.solver.Highs", return_value=backend) as factory:
+            solved = solve_milp(problem or self.make_one_variable_problem(),
+                                np.array([1.0]), (), 2.0, 0.01)
+        factory.assert_called_once_with(only_child_vars=True)
+        self.assertFalse(backend.config.load_solution)
+        self.assertLessEqual(backend.config.time_limit, 2.0)
+        self.assertEqual(backend.config.mip_gap, 0.01)
+        self.assertEqual(backend.highs_options["mip_feasibility_tolerance"], 1e-9)
+        return solved
+
     def test_time_limited_finite_incumbent_is_feasible(self):
-        problem = self.make_one_variable_problem()
-        fake = OptimizeResult(
-            status=1,
-            x=np.array([0.5]),
-            message="time limit",
-            mip_gap=0.2,
-        )
-        with patch("m4_optimizer.solver.milp", return_value=fake):
-            result = solve_milp(problem, np.array([1.0]), (), 2.0, 0.0)
+        result = self.solve_mock(TerminationCondition.maxTimeLimit, [0.5], bound=0.4)
         self.assertEqual(result.status, "feasible")
         self.assertAlmostEqual(result.objective_value, 0.5)
+        self.assertAlmostEqual(result.mip_gap, 0.2)
 
     def test_time_limit_without_an_incumbent_is_timeout(self):
-        problem = self.make_one_variable_problem()
-        fake = OptimizeResult(status=1, x=None, message="time limit")
-        with patch("m4_optimizer.solver.milp", return_value=fake):
-            result = solve_milp(problem, np.array([1.0]), (), 2.0, 0.0)
+        result = self.solve_mock(TerminationCondition.maxTimeLimit, [], best=None)
         self.assertEqual(result.status, "timeout")
         self.assertIsNone(result.x)
 
-    def test_success_status_with_nonzero_mip_gap_is_only_feasible(self):
-        fake = OptimizeResult(
-            status=0,
-            x=np.array([0.5]),
-            message="gap target reached",
-            mip_gap=1e-4,
-        )
-
-        with patch("m4_optimizer.solver.milp", return_value=fake):
-            result = solve_milp(
-                self.make_one_variable_problem(), np.array([1.0]), (), 2.0, 0.01
-            )
-
+    def test_success_with_nonzero_gap_is_only_feasible(self):
+        result = self.solve_mock(TerminationCondition.optimal, [0.5], bound=0.49)
         self.assertEqual(result.status, "feasible")
-        self.assertEqual(result.mip_gap, 1e-4)
+        self.assertAlmostEqual(result.mip_gap, 0.02)
 
-    def test_success_status_with_zero_or_near_zero_mip_gap_is_optimal(self):
+    def test_success_with_zero_or_near_zero_gap_is_optimal(self):
         threshold = solver_module.PROVEN_OPTIMAL_MIP_GAP_TOLERANCE
-        for mip_gap in (0.0, threshold / 2.0):
-            with self.subTest(mip_gap=mip_gap):
-                fake = OptimizeResult(
-                    status=0,
-                    x=np.array([0.5]),
-                    message="optimal",
-                    mip_gap=mip_gap,
-                )
-                with patch("m4_optimizer.solver.milp", return_value=fake):
-                    result = solve_milp(
-                        self.make_one_variable_problem(),
-                        np.array([1.0]),
-                        (),
-                        2.0,
-                        0.01,
-                    )
+        for gap in (0.0, threshold / 2.0):
+            with self.subTest(gap=gap):
+                result = self.solve_mock(TerminationCondition.optimal, [0.5],
+                                         bound=0.5 * (1.0 - gap))
                 self.assertEqual(result.status, "optimal")
 
-    def test_only_the_expected_scipy_passthrough_warning_is_suppressed(self):
-        targeted = (
-            "Unrecognized options detected: {'mip_feasibility_tolerance'}. "
-            "These will be passed to HiGHS verbatim."
-        )
-        combined = (
-            "Unrecognized options detected: {'other_option', "
-            "'mip_feasibility_tolerance'}. These will be passed to HiGHS verbatim."
-        )
-        related = "mip_feasibility_tolerance behavior changed"
-        fake = OptimizeResult(
-            status=0,
-            x=np.array([0.0]),
-            message="optimal",
-            mip_gap=0.0,
-        )
+    def test_success_without_finite_bound_does_not_prove_optimality(self):
+        for bound in (None, float("nan"), float("inf")):
+            with self.subTest(bound=bound):
+                result = self.solve_mock(TerminationCondition.optimal, [0.5], bound=bound)
+                self.assertEqual(result.status, "feasible")
 
-        def warning_milp(**kwargs):
-            warnings.warn(targeted, RuntimeWarning, stacklevel=2)
-            warnings.warn(combined, RuntimeWarning, stacklevel=2)
-            warnings.warn(related, RuntimeWarning, stacklevel=2)
-            return fake
+    def test_optimal_without_a_finite_incumbent_is_error(self):
+        for values, best in (([float("nan")], 0.5), ([float("inf")], 0.5), ([], None)):
+            with self.subTest(values=values):
+                result = self.solve_mock(TerminationCondition.optimal, values, best=best)
+                self.assertEqual(result.status, "error")
+                self.assertIsNone(result.x)
 
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
-            with patch("m4_optimizer.solver.milp", side_effect=warning_milp):
-                solve_milp(
-                    self.make_one_variable_problem(),
-                    np.array([1.0]),
-                    (),
-                    2.0,
-                    0.0,
-                )
+    def test_infeasible_and_error_terminations_ignore_backend_values(self):
+        for termination, expected in ((TerminationCondition.infeasible, "infeasible"),
+                                      (TerminationCondition.unbounded, "error"),
+                                      (TerminationCondition.error, "error"),
+                                      (TerminationCondition.unknown, "error")):
+            with self.subTest(termination=termination):
+                result = self.solve_mock(termination, [0.5])
+                self.assertEqual(result.status, expected)
+                self.assertIsNone(result.x)
 
-        self.assertEqual([str(item.message) for item in caught], [combined, related])
+    def test_native_model_keeps_no_old_solution_or_previous_objective_locks(self):
+        built = build_model(make_request())
+        first = solve_milp(built.problem, built.objectives["throughput"], (), 2.0, 0.0)
+        self.assertEqual(first.status, "optimal")
+        impossible = ObjectiveLock(built.objectives["throughput"], -1.0)
+        second = solve_milp(built.problem, built.objectives["throughput"], (impossible,), 2.0, 0.0)
+        self.assertEqual(second.status, "infeasible")
+        self.assertIsNone(second.x)
+        third = solve_milp(built.problem, built.objectives["throughput"], (), 2.0, 0.0)
+        self.assertEqual(third.status, "optimal")
+        self.assertTrue(all(var.value is None for var in built.problem.variables))
+        self.assertFalse(hasattr(built.problem.model, "objective_locks"))
+
+    def test_parallel_requests_do_not_share_models_or_solutions(self):
+        def run(objective):
+            return solve_milp(self.make_one_variable_problem(), np.array([objective]), (), 2.0, 0.0)
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            low, high = list(pool.map(run, (1.0, -1.0)))
+        self.assertEqual((low.status, high.status), ("optimal", "optimal"))
+        np.testing.assert_allclose(low.x, [0.0])
+        np.testing.assert_allclose(high.x, [1.0])
+
+    def test_exhausted_budget_does_not_start_backend(self):
+        with patch("m4_optimizer.solver.Highs") as factory:
+            result = solve_milp(self.make_one_variable_problem(), np.array([1.0]), (), 0.0, 0.0)
+        self.assertEqual(result.status, "timeout")
+        factory.assert_not_called()
+
+    def test_model_translation_consumes_the_remaining_budget(self):
+        clock = [0.0]
+        with (
+            patch("m4_optimizer.solver.monotonic", side_effect=lambda: clock[0]),
+            patch("m4_optimizer.solver.Highs") as factory,
+        ):
+            backend = factory.return_value
+            backend.set_instance.side_effect = lambda model: clock.__setitem__(0, 3.0)
+            result = solve_milp(self.make_one_variable_problem(), np.array([1.0]), (), 2.0, 0.0)
+        self.assertEqual(result.status, "timeout")
+        backend.set_instance.assert_called_once()
+        backend.solve.assert_not_called()
 
     def make_one_variable_problem(self):
         return MilpProblem(

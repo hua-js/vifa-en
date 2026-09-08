@@ -28,6 +28,11 @@ def select_candidate(
     Invalid structures/bindings raise ValueError. Semantically invalid individual
     plans are excluded with diagnostics. No optimizer, AI or dispatch is invoked.
     """
+    return _select_candidate(request, result, policy)
+
+
+def _select_candidate(request, result, policy=None, *, minimum_selector=None) -> SelectionResult:
+    """Shared validation and exact tolerance semantics for both decision engines."""
     # model_validate(instance) alone can trust mutated Pydantic objects. Dump to
     # Python data first to revalidate strict types without JSON coercion/NaN loss.
     try:
@@ -86,12 +91,16 @@ def select_candidate(
         # Exact decimal-string ratios avoid both binary addition errors and
         # rounding from a caller-modified thread-local Decimal context.
         ratios = {pid: Fraction(str(value)) for pid, value in values.items()}
-        minimum = min(ratios.values())
+        minimum = (ratios[minimum_selector(ratios)] if minimum_selector is not None
+                   else min(ratios.values()))
         remaining = [pid for pid in remaining
                      if ratios[pid] - minimum <= Fraction(str(tolerance))]
         steps.append(ComparisonStep(metric=metric, tolerance=tolerance, values=values,
                                     minimum=float(minimum), remaining_ids=remaining.copy()))
-    chosen_id = next(pid for pid in policy.tie_order if pid in remaining)
+    chosen_id = (minimum_selector({pid: Fraction(policy.tie_order.index(pid))
+                                  for pid in remaining})
+                 if minimum_selector is not None
+                 else next(pid for pid in policy.tie_order if pid in remaining))
     chosen = usable[chosen_id][0]
     if policy.metric == 'profile_priority':
         reason = '需量逐层筛选后，按配置的候选顺序选择。'

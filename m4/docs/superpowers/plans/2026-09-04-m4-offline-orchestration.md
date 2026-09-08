@@ -15,7 +15,7 @@
 - Work on branch `feat/m4-offline-orchestration`; do not merge or push without user direction.
 - The package is importable repository code, not a new deployed service.
 - Do not modify either M4 HTML file in this plan.
-- Do not call or simulate AI; every station result keeps `selection_status="pending_ai"` and `selected_candidate_id=null`.
+- Do not call or simulate AI; every station result keeps `selection_status="pending_selection"` and `selected_candidate_id=null`.
 - Do not call EMS; every station result keeps `dispatch_status="not_dispatched"` and `ems_task_id=null`.
 - Do not add HTTP routes, database access, schedulers, network calls, credentials, or production configuration.
 - Reuse `m4_optimizer.OptimizationRequest`, `M4Optimizer`, and `OptimizationResult`; do not duplicate or weaken their validation.
@@ -68,7 +68,7 @@
 
 - [ ] **Step 1: Write contract tests that fail before the package exists**
 
-Create tests covering exact status literals, the mutually exclusive `StationInput.request/error` states, success/failure field alignment, fixed AI/EMS empty states, timezone-aware top-level timestamps, and strict rejection of extra fields.
+Create tests covering exact status literals, the mutually exclusive `StationInput.request/error` states, success/failure field alignment, fixed selection/EMS empty states, timezone-aware top-level timestamps, and strict rejection of extra fields.
 
 ```python
 class M4OrchestratorContractTests(unittest.TestCase):
@@ -88,7 +88,7 @@ class M4OrchestratorContractTests(unittest.TestCase):
 
     def test_station_result_fixes_ai_and_ems_to_inactive_states(self):
         result = make_station_result(status="optimized")
-        self.assertEqual(result.selection_status, "pending_ai")
+        self.assertEqual(result.selection_status, "pending_selection")
         self.assertIsNone(result.selected_candidate_id)
         self.assertEqual(result.dispatch_status, "not_dispatched")
         self.assertIsNone(result.ems_task_id)
@@ -170,7 +170,7 @@ class StationInput(StrictModel):
 `StationOrchestrationResult` must use defaults whose types prohibit fabricated values:
 
 ```python
-selection_status: Literal["pending_ai"] = "pending_ai"
+selection_status: Literal["pending_selection"] = "pending_selection"
 selected_candidate_id: None = None
 dispatch_status: Literal["not_dispatched"] = "not_dispatched"
 ems_task_id: None = None
@@ -562,7 +562,7 @@ def test_real_two_station_run_returns_six_complete_candidates(self):
         for candidate in station.optimization_result.candidates:
             self.assertIn(candidate.status, {"optimal", "feasible"})
             self.assertEqual(len(candidate.plan), 96)
-        self.assertEqual(station.selection_status, "pending_ai")
+        self.assertEqual(station.selection_status, "pending_selection")
         self.assertIsNone(station.selected_candidate_id)
         self.assertEqual(station.dispatch_status, "not_dispatched")
 ```
@@ -668,9 +668,9 @@ The README must include:
 - a compact output field table;
 - `completed/partial_failure/failed` and all station statuses;
 - exit codes 0, 1, and 2;
-- AI/EMS fixed empty states;
+- selection/EMS fixed empty states;
 - input safety, station isolation, duplicate rejection, atomic replacement, and deterministic-field rules;
-- future FastAPI, AI, and EMS adapter boundaries;
+- future FastAPI, selection, and EMS adapter boundaries;
 - an explicit statement that the result is Mock/offline and not a production schedule or savings claim.
 
 - [ ] **Step 2: Write the stage B1 acceptance note**
@@ -741,7 +741,7 @@ Repeat Steps 3–6 against the final HEAD. Do not report completion from pre-rev
 - The CLI loads repeated independent JSON inputs and atomically writes one strict result.
 - The committed result contains two stations, three candidates per station, and 96 points per usable candidate.
 - One station failure does not block another; duplicate station IDs prevent every solve.
-- AI and EMS fields remain explicitly inactive and cannot accept non-null values.
+- Selection and EMS fields remain explicitly inactive and cannot accept non-null values.
 - Public errors are stable and do not leak sensitive or diagnostic internals.
 - The output sample round-trips through `M4OrchestrationResult`.
 - Existing `m4_optimizer` behavior remains unchanged.

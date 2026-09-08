@@ -9,7 +9,8 @@ from typing import Literal
 
 from pydantic import Field, model_validator
 from m4_optimizer.contracts import NonNegativeFloat, OptimizationRequest, OptimizationResult, ProfileId, StrictModel
-from m4_selection import SelectionPolicy, SelectionResult, select_candidate
+from m4_selection import SelectionPolicy, SelectionResult
+from m4_selection.solver_selection import select_candidate_with_solver as select_candidate
 from m4_selection.contracts import PreferenceMetric
 from .candidates import CandidateError
 from .live_inputs import request_from_inputs

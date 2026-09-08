@@ -39,7 +39,7 @@ class CalculateCandidates(BaseModel):
     configuration_version: str = Field(min_length=1, max_length=200)
 
 
-class StartAiRun(BaseModel):
+class StartDecisionRun(BaseModel):
     model_config = ConfigDict(extra='forbid', strict=True)
     request_id: str = Field(pattern=r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$')
 
@@ -65,8 +65,9 @@ def create_app(settings_path: Path | None = None, *, control_reader=None, input_
     selections = selection_service if selection_service is not None else LiveSelectionService(
         store=store, policies=policies, candidates=candidates, fetch_inputs=input_service.fetch)
     app = FastAPI(title='M4 调度参数', docs_url=None, redoc_url=None)
-    from .ai_results import AiResultsReader
-    ai_results = AiResultsReader(Path(os.environ.get('M4_AI_RESULTS_DIR', str(ROOT / 'm4/run/station1-ai-chain'))))
+    from .decision_results import DecisionResultsReader
+    decision_results = DecisionResultsReader(Path(os.environ.get(
+        'M4_DECISION_RESULTS_DIR', str(ROOT / 'm4/run/solver-decisions'))))
     # This factory serves a local workstation. Production must use the platform's authenticated adapter.
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=['127.0.0.1', 'localhost', '[::1]', 'testserver'])
 
@@ -179,48 +180,52 @@ def create_app(settings_path: Path | None = None, *, control_reader=None, input_
         except Exception:
             raise HTTPException(503, '选择预览失败，请重新核对输入') from None
 
-    @app.get('/m4-api/stations/{station_id}/ai-selection')
-    def get_ai_selection(station_id: str) -> dict:
-        station_exists(station_id)
-        try:
-            return ai_results.latest(station_id)
-        except Exception:
-            raise HTTPException(503, 'AI 结果记录读取或校验失败，请检查本地联调记录后刷新') from None
-
     # Reuse the same service handlers and their version checks without a self-HTTP request.
     def chain_request(method, path, data=None):
-        from m4_selection.live_chain import BASE
+        prefix = '/m4-api/stations/'
+        if not path.startswith(prefix):
+            raise ValueError('unsupported decision API path')
+        station_id, route = path.removeprefix(prefix).split('/', 1)
+        station_exists(station_id)
         routes = {
-            ('GET', BASE + 'settings'): lambda: get_settings('station-1'),
-            ('GET', BASE + 'selection-policy'): lambda: get_selection_policy('station-1'),
-            ('GET', BASE + 'inputs'): lambda: get_inputs('station-1'),
-            ('POST', BASE + 'candidates'): lambda: calculate_candidates('station-1', CalculateCandidates.model_validate(data)),
-            ('POST', BASE + 'selection'): lambda: select_live_candidate('station-1', SelectCandidate.model_validate(data)),
+            ('GET', 'settings'): lambda: get_settings(station_id),
+            ('GET', 'selection-policy'): lambda: get_selection_policy(station_id),
+            ('GET', 'inputs'): lambda: get_inputs(station_id),
+            ('POST', 'candidates'): lambda: calculate_candidates(station_id, CalculateCandidates.model_validate(data)),
+            ('POST', 'selection'): lambda: select_live_candidate(station_id, SelectCandidate.model_validate(data)),
         }
-        result = routes[(method, path)]()
+        result = routes[(method, route)]()
         return result.model_dump(mode='json') if isinstance(result, BaseModel) else result
 
-    from .ai_runs import AiRunError, AiRunManager
-    ai_runs = AiRunManager(ai_results.root, SimpleNamespace(request=chain_request))
+    from .decision_runs import DecisionRunError, DecisionRunManager
+    decision_runs = DecisionRunManager(decision_results.root, SimpleNamespace(request=chain_request))
 
-    @app.get('/m4-api/stations/{station_id}/ai-runs')
-    def get_ai_run(station_id: str) -> dict:
+    @app.get('/m4-api/stations/{station_id}/decision-result')
+    def get_decision_result(station_id: str) -> dict:
         station_exists(station_id)
         try:
-            return ai_runs.latest(station_id)
+            return decision_results.latest(station_id)
         except Exception:
-            raise HTTPException(503, '无法读取 AI 运行状态，请刷新后再操作') from None
+            raise HTTPException(503, '决策记录读取或独立复验失败，请检查本地记录后刷新') from None
 
-    @app.post('/m4-api/stations/{station_id}/ai-runs', status_code=202)
-    def start_ai_run(station_id: str, body: StartAiRun) -> dict:
+    @app.get('/m4-api/stations/{station_id}/decision-runs')
+    def get_decision_run(station_id: str) -> dict:
         station_exists(station_id)
         try:
-            job = ai_runs.start(station_id, str(UUID(body.request_id)))
+            return decision_runs.latest(station_id)
+        except Exception:
+            raise HTTPException(503, '无法读取决策运行状态，请刷新后再操作') from None
+
+    @app.post('/m4-api/stations/{station_id}/decision-runs', status_code=202)
+    def start_decision_run(station_id: str, body: StartDecisionRun) -> dict:
+        station_exists(station_id)
+        try:
+            job = decision_runs.start(station_id, str(UUID(body.request_id)))
             return dict(station_id=station_id, usage='preview_only', dispatch_status='not_dispatched', job=job)
-        except AiRunError as error:
+        except DecisionRunError as error:
             raise HTTPException(error.status_code, error.detail) from None
         except Exception:
-            raise HTTPException(503, '无法启动 AI 预览，请先刷新运行状态；未自动重试') from None
+            raise HTTPException(503, '无法启动求解器决策，请先刷新运行状态；未自动重试') from None
 
     @app.get('/m4', include_in_schema=False)
     def console() -> FileResponse:

@@ -1,6 +1,8 @@
-# M4 确定性候选选择
+# M4 求解器候选决策
 
-输入已经求解的三套候选，程序复验并按明确配置选择，输出中文模板和审计信息。无需 AI，不再求解，不发送设备指令。该模块和 CLI 已可用于本地预览，并通过 `m4_settings.selection.LiveSelectionService` 接入本地实时 API 和页面，见[选择偏好配置说明](../m4/选择偏好配置说明.md)。B1 原有 `pending_ai` 状态不变，选择结果独立返回。
+输入已经求解的三套候选，独立复验后由 Pyomo/HiGHS 按明确配置选定最终方案，输出中文模板和审计信息。无需 AI，不发送设备指令。`LiveSelectionService` 默认使用新求解器入口；原 `select_candidate` 与离线快照 CLI 保留为确定性审计基线。新编排输出 `pending_selection`，最终选择独立返回。完整无 AI 运行入口见[求解器决策说明](../m4/求解器决策说明.md)。
+
+`select_candidate_with_solver` 每层构建单选二进制模型，用精确指标的顺序排名作为小整数目标，避免极大/极小数值缩放改变顺序；每层求解后用原始精确十进制容差筛选下一层的合法候选。最终并列顺序同样由求解器最小化。未证明最优、非单选解或独立基线复核不一致均报错，不能返回已选状态。
 
 ## 选择规则
 
@@ -19,19 +21,20 @@
 | `pv_unabsorbed_energy_kwh` | 未吸收光伏，不包含合法外送 | kWh |
 | `profile_priority` | 需量两层筛选后，按 `tie_order` 选首个剩余候选 | 排名容差必须为 0 |
 
-`profile_priority` 第三层审计记录配置顺序的 0/1/2 排名，使用 `selector_version=demand-then-profile-v1`；原指标模式保持 `demand-then-preference-v1`。balanced 指候选 ID，不等同 SOC 指标。排名模式仍先复验并筛选两层需量；balanced 可能因需量较差或复验失败而被淘汰。
+`profile_priority` 第三层审计记录配置顺序的 0/1/2 排名。新求解器决策统一使用 `selector_version=pyomo-highs-selection-v2`；历史审计基线使用 `demand-then-profile-v1` / `demand-then-preference-v1`。balanced 指候选 ID，不等同 SOC 指标。排名模式仍先复验并筛选两层需量；balanced 可能因需量较差或复验失败而被淘汰。
 
-这里的累计超限层沿用数学核心的第二需量目标。旧 AI 摘要实验仅比较峰值需量，两者并非完全相同的选择契约。
+这里的累计超限层沿用数学核心的第二需量目标。
 
 ## Python 调用
 
 ```python
-from m4_selection import select_candidate, SelectionPolicy
+from m4_selection import SelectionPolicy
+from m4_selection.solver_selection import select_candidate_with_solver
 
 # request/result 是现有严格 OptimizationRequest/OptimizationResult。
-preview = select_candidate(request, result)  # 缺偏好，不选择
+preview = select_candidate_with_solver(request, result)  # 缺偏好，不选择
 # 有经确认的站级配置后才传入 SelectionPolicy。
-preview = select_candidate(request, result, policy)
+preview = select_candidate_with_solver(request, result, policy)
 ```
 
 `SelectionPolicy` 所有字段必填，无默认客户偏好。以下仅为**本地评测示例**，不代表正式站级配置；station_id 必须与输入一致：
@@ -68,4 +71,4 @@ preview = select_candidate(request, result, policy)
 - `input_sha256` 对严格重验后的 `{request,result}` 进行键排序、紧凑 UTF-8 JSON 编码后计算，绑定完整快照。数组顺序变化会改变哈希，但不会改变选择和比较结论。策略全文另存于输出。
 - 支持历史回放，**不判断快照在当前墙钟是否过期**，不保证当前现场状态或经济最优。实时 API 已在选择前后复用时效、逐柜、配置/来源版本校验，并确认候选快照未变化；该门禁不改变核心模块的历史回放行为。
 - 电站 1 已按用户明确的 balanced 优先规则保存本地偏好；电站 2 尚未配置。本地评测规则不能自动进入生产配置。
-- 新测试：`.venv/bin/python -m unittest discover -s tests -p 'test_m4_selection*.py'`。真实保存工况的回放记录见 `m4/run/deterministic-selection-debug/`（本地生成，不作为单测依赖）。
+- 新测试：`.venv/bin/python -m unittest discover -s tests -p 'test_m4_selection*.py'`。

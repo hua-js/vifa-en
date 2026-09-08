@@ -92,7 +92,7 @@ class StationOrchestrationResult(StrictModel):
     input_summary: InputSummary | None = None
     optimization_result: OptimizationResult | None = None
     error: OrchestrationError | None = None
-    selection_status: Literal["pending_ai"] = "pending_ai"
+    selection_status: Literal["pending_selection"] = "pending_selection"
     selected_candidate_id: None = None
     dispatch_status: Literal["not_dispatched"] = "not_dispatched"
     ems_task_id: None = None
@@ -166,7 +166,7 @@ class StationOrchestrationResult(StrictModel):
 
 
 class M4OrchestrationResult(StrictModel):
-    schema_version: str = Field(min_length=1)
+    schema_version: Literal["m4-orchestration-v2"] = "m4-orchestration-v2"
     run_id: str = Field(min_length=1)
     started_at: datetime
     finished_at: datetime

@@ -8,7 +8,7 @@
 
 M4 阶段 A 已完成独立的 `m4_optimizer` 数学优化核心：单个电站输入一份完整的 96 点请求，输出 `balanced`、`cost`、`pv` 三套候选，并对计划和指标执行确定性复验。
 
-下一步需要在数学优化器与未来前端、AI、EMS 之间建立稳定的编排边界。本阶段只完成离线编排：读取两个电站的独立 Mock JSON，逐站调用真实优化器，并生成统一结果 JSON。
+下一步需要在数学优化器与未来前端、候选决策、EMS 之间建立稳定的编排边界。本阶段只完成离线编排：读取两个电站的独立 Mock JSON，逐站调用真实优化器，并生成统一结果 JSON。
 
 本阶段不修改 HTML，不调用 AI，不连接 EMS、数据库、HTTP 服务或真实设备。
 
@@ -18,14 +18,14 @@ M4 阶段 A 已完成独立的 `m4_optimizer` 数学优化核心：单个电站�
 - 从外部 JSON 文件读取每个电站的优化请求，不把站点输入写死在 Python 中；
 - 对任意数量的唯一 `station_id` 独立编排，本次 Mock 和验收固定覆盖两个电站；
 - 每个成功电站保留三套候选的完整 96 点计划、指标、风险和审计信息；
-- 明确输出 AI 尚未介入、EMS 尚未下发；
+- 明确输出 候选尚未选择、EMS 尚未下发；
 - 单站失败不阻断其他站，重复 `station_id` 则整体拒绝；
-- 为未来 FastAPI 路由、AI 选择器和 EMS 适配器提供可复用的稳定入口。
+- 为未来 FastAPI 路由、数学选择器和 EMS 适配器提供可复用的稳定入口。
 
 ## 3. 非目标
 
 - 不修改 `m4/M4优化调度控制台-线上版.html` 或其他前端文件；
-- 不实现真实或模拟 AI 选择，不生成选择理由；
+- 不实现候选选择，不生成选择理由；
 - 不实现 EMS 计划下发、接收状态、执行日志或设备控制；
 - 不读取 M1、M2、M3、NocoBase 或生产配置；
 - 不建设定时任务、常驻进程、HTTP API、数据库表或消息队列；
@@ -164,13 +164,13 @@ result = M4Orchestrator(
 | `status` | `optimized`、`no_usable_candidate`、`input_error` 或 `optimization_error` |
 | `input_summary` | 成功输入的时间窗、来源版本、SOC、能力和核心约束摘要 |
 | `optimization_result` | 成功调用阶段 A 服务后的完整结果，包含三候选及各自 96 点计划；调用失败时为 `null` |
-| `selection_status` | 本阶段固定为 `pending_ai` |
+| `selection_status` | 本阶段固定为 `pending_selection` |
 | `selected_candidate_id` | 本阶段固定为 `null` |
 | `dispatch_status` | 本阶段固定为 `not_dispatched` |
 | `ems_task_id` | 本阶段固定为 `null` |
 | `error` | 失败时的安全错误代码与说明，成功时为 `null` |
 
-即使某站输入或优化失败，`selection_status` 仍表示“本阶段没有调用 AI”，不是表示该站已有可供 AI 选择的候选。是否存在可用候选必须读取 `status` 和候选状态。
+即使某站输入或优化失败，`selection_status` 仍表示“本阶段没有选择候选”，不是表示该站已有可供选择的候选。是否存在可用候选必须读取 `status` 和候选状态。
 
 ### 8.3 错误契约
 
@@ -196,7 +196,7 @@ result = M4Orchestrator(
 5. 否则逐站调用 `M4Optimizer.optimize()`；
 6. 某站调用异常时转为该站 `optimization_error`，继续下一站；
 7. 正常结果至少有一个 `optimal` 或 `feasible` 候选时标记 `optimized`，否则标记 `no_usable_candidate`；
-8. 组装固定的 AI/EMS 空状态并计算顶层状态；
+8. 组装固定的 选择/EMS 空状态并计算顶层状态；
 9. writer 将完整 Pydantic 结果序列化为 UTF-8 JSON；
 10. 先在目标文件同目录创建临时文件，写入、刷新并关闭后使用 `os.replace()` 原子替换；
 11. CLI 在 `completed` 时退出 0，在 `partial_failure` 或 `failed` 时退出 1；参数错误沿用 `argparse` 的退出码 2，结果文件写入失败也退出 1。
@@ -228,9 +228,9 @@ Mock 输入使用固定计划日期和固定时区，避免每天打开项目都
 
 未来新增 FastAPI 路由时，路由只负责认证、请求/响应序列化和调用 `M4Orchestrator.run()`；不得在路由中复制站点隔离、候选判断或错误映射逻辑。前端消费与离线 JSON 相同的输出契约。
 
-### 12.2 接 AI
+### 12.2 候选决策
 
-在 `optimization_result` 与 `selection_status` 之间增加候选选择适配器。AI 只能返回已有且有效的 `profile_id`，不能修改 96 点计划。接入前本阶段字段保持 `pending_ai` 和 `null`。
+候选结果由独立数学决策模块读取，按已保存偏好选择并实时复核。最终结果独立返回，不回写编排快照；编排固定 `pending_selection` 和 `null`。
 
 ### 12.3 接 EMS
 
@@ -278,7 +278,7 @@ EMS 适配器必须位于选择与下发前确定性复验之后。只有明确�
 
 - `m4_orchestrator` 可作为 Python 包导入，并可通过 `python -m m4_orchestrator` 运行；
 - 两个电站 Mock 输入独立、完整且不写死在 Python；
-- 统一结果包含每站三候选的完整计划，以及明确的 AI/EMS 空状态；
+- 统一结果包含每站三候选的完整计划，以及明确的 选择/EMS 空状态；
 - 站级错误隔离和重复站点整体拒绝均有自动化测试；
 - 结果文件原子生成并能通过自身契约反序列化；
 - 不修改 HTML，不出现网络、AI、EMS、数据库或设备写入；

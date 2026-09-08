@@ -69,7 +69,7 @@ class CandidateTests(unittest.TestCase):
         self.assertEqual(request.capability.max_discharge_kw, 45)
         station = result['result']['stations'][0]
         self.assertEqual(station['status'], 'optimized')
-        self.assertEqual(station['selection_status'], 'pending_ai')
+        self.assertEqual(station['selection_status'], 'pending_selection')
         self.assertIsNone(station['selected_candidate_id'])
         self.assertEqual(station['dispatch_status'], 'not_dispatched')
         self.assertIsNone(station['ems_task_id'])

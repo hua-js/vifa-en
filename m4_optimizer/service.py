@@ -125,8 +125,8 @@ class M4Optimizer:
             started_at=started_at,
             finished_at=datetime.now(timezone.utc),
             model_version=self._effective_model_version(request),
-            solver_name="scipy-highs",
-            solver_version=version("scipy"),
+            solver_name="pyomo-highs",
+            solver_version=f"HiGHS {version('highspy')}; Pyomo {version('pyomo')}",
             source_versions=request.source_versions,
             candidates=candidates,
         )
@@ -143,6 +143,7 @@ class M4Optimizer:
         )
 
     def _effective_model_version(self, request: OptimizationRequest) -> str:
+        model_version = f"{self.model_version}/pyomo-v1"
         if request.pv_dispatch_policy == "load_first_economic":
-            return f"{self.model_version}/pv-load-first-economic-v1"
-        return self.model_version
+            return f"{model_version}/pv-load-first-economic-v1"
+        return model_version

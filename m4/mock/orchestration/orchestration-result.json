@@ -1,12 +1,12 @@
 {
   "errors": [],
-  "finished_at": "2026-09-05T01:59:02.554029Z",
-  "model_version": "m4-stage-a-v1",
+  "finished_at": "2026-09-08T10:26:59.422613Z",
+  "model_version": "m4-milp-v2",
   "orchestrator_version": "m4-orchestrator-b1-v1",
   "overall_status": "completed",
-  "run_id": "d43fb28d-0fd0-433b-a066-36aa0cf22044",
-  "schema_version": "m4-orchestration-v1",
-  "started_at": "2026-09-05T01:59:01.970884Z",
+  "run_id": "04c9b7c3-d55d-4066-b70c-392dd4d2c3e1",
+  "schema_version": "m4-orchestration-v2",
+  "started_at": "2026-09-08T10:26:56.963745Z",
   "stations": [
     {
       "dispatch_status": "not_dispatched",
@@ -58,22 +58,22 @@
                 "name": "balanced-value"
               },
               {
-                "best_value": 350.17849381629617,
+                "best_value": 350.1784938162957,
                 "lock_tolerance": 1e-06,
                 "name": "throughput"
               }
             ],
             "metrics": {
-              "charge_energy_kwh": 171.57870897045794,
-              "cycle_cost": 3.5017849381629618,
+              "charge_energy_kwh": 171.57870897045768,
+              "cycle_cost": 3.5017849381629573,
               "demand_exceed_energy_kwh": 9.999999974752427e-07,
-              "discharge_energy_kwh": 178.59978484583826,
+              "discharge_energy_kwh": 178.59978484583806,
               "energy_cost": 3184.5973546907926,
               "export_revenue": 0.0,
               "grid_export_energy_kwh": 0.0,
               "import_cost": 3184.5973546907926,
               "max_grid_import_kw": 260.000001,
-              "max_soc_pct": 79.999954514387,
+              "max_soc_pct": 79.99995451438697,
               "min_soc_pct": 42.39999981000001,
               "peak_demand_exceed_kw": 9.999999974752427e-07,
               "preferred_soc_deviation": 0.0,
@@ -81,7 +81,7 @@
               "pv_self_use_rate": 1.0,
               "pv_unabsorbed_energy_kwh": 0.0,
               "terminal_soc_pct": 50.0,
-              "throughput_energy_kwh": 350.17849381629617
+              "throughput_energy_kwh": 350.1784938162957
             },
             "plan": [
               {
@@ -216,47 +216,47 @@
               },
               {
                 "demand_exceed_kw": 0.0,
+                "expected_soc_pct": 55.00000000000001,
+                "grid_export_kw": 0.0,
+                "grid_import_kw": 220.0,
+                "mode": "idle",
+                "pv_unabsorbed_kw": 0.0,
+                "target_power_kw": 0.0,
+                "timestamp": "2026-09-04T03:15:00+08:00"
+              },
+              {
+                "demand_exceed_kw": 0.0,
                 "expected_soc_pct": 56.89999999999999,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 260.0,
                 "mode": "charge",
                 "pv_unabsorbed_kw": 0.0,
                 "target_power_kw": 40.0,
-                "timestamp": "2026-09-04T03:15:00+08:00"
-              },
-              {
-                "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 57.199954514386995,
-                "grid_export_kw": 0.0,
-                "grid_import_kw": 226.3148318818317,
-                "mode": "charge",
-                "pv_unabsorbed_kw": 0.0,
-                "target_power_kw": 6.314831881831721,
                 "timestamp": "2026-09-04T03:30:00+08:00"
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 57.199954514386995,
-                "grid_export_kw": 0.0,
-                "grid_import_kw": 220.0,
-                "mode": "idle",
-                "pv_unabsorbed_kw": 0.0,
-                "target_power_kw": 0.0,
-                "timestamp": "2026-09-04T03:45:00+08:00"
-              },
-              {
-                "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 59.099954514387,
+                "expected_soc_pct": 58.8,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 260.0,
                 "mode": "charge",
                 "pv_unabsorbed_kw": 0.0,
                 "target_power_kw": 40.0,
+                "timestamp": "2026-09-04T03:45:00+08:00"
+              },
+              {
+                "demand_exceed_kw": 0.0,
+                "expected_soc_pct": 59.099954514386965,
+                "grid_export_kw": 0.0,
+                "grid_import_kw": 226.3148318818308,
+                "mode": "charge",
+                "pv_unabsorbed_kw": 0.0,
+                "target_power_kw": 6.314831881830797,
                 "timestamp": "2026-09-04T04:00:00+08:00"
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 60.999954514387,
+                "expected_soc_pct": 60.999954514386964,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 260.0,
                 "mode": "charge",
@@ -266,7 +266,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 62.899954514387005,
+                "expected_soc_pct": 62.89995451438697,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 260.0,
                 "mode": "charge",
@@ -276,7 +276,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 64.799954514387,
+                "expected_soc_pct": 64.79995451438697,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 260.0,
                 "mode": "charge",
@@ -286,7 +286,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 66.699954514387,
+                "expected_soc_pct": 66.69995451438697,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 260.0,
                 "mode": "charge",
@@ -296,7 +296,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 68.59995451438701,
+                "expected_soc_pct": 68.59995451438697,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 260.0,
                 "mode": "charge",
@@ -306,7 +306,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 70.499954514387,
+                "expected_soc_pct": 70.49995451438697,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 260.0,
                 "mode": "charge",
@@ -316,7 +316,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 72.399954514387,
+                "expected_soc_pct": 72.39995451438696,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 260.0,
                 "mode": "charge",
@@ -326,7 +326,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 74.299954514387,
+                "expected_soc_pct": 74.29995451438697,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 260.0,
                 "mode": "charge",
@@ -336,7 +336,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 76.199954514387,
+                "expected_soc_pct": 76.19995451438697,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 260.0,
                 "mode": "charge",
@@ -346,7 +346,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 78.09995451438701,
+                "expected_soc_pct": 78.09995451438697,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 260.0,
                 "mode": "charge",
@@ -356,7 +356,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 79.999954514387,
+                "expected_soc_pct": 79.99995451438697,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 260.0,
                 "mode": "charge",
@@ -366,7 +366,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 73.6841650407028,
+                "expected_soc_pct": 73.68416504070277,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 100.0,
                 "mode": "discharge",
@@ -376,22 +376,22 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 67.66315770473685,
+                "expected_soc_pct": 73.68416504070277,
                 "grid_export_kw": 0.0,
-                "grid_import_kw": 105.60086061664701,
-                "mode": "discharge",
+                "grid_import_kw": 220.0,
+                "mode": "idle",
                 "pv_unabsorbed_kw": 0.0,
-                "target_power_kw": 114.39913938335299,
+                "target_power_kw": 0.0,
                 "timestamp": "2026-09-04T07:15:00+08:00"
               },
               {
                 "demand_exceed_kw": 0.0,
                 "expected_soc_pct": 67.66315770473685,
                 "grid_export_kw": 0.0,
-                "grid_import_kw": 220.0,
-                "mode": "idle",
+                "grid_import_kw": 105.60086061664785,
+                "mode": "discharge",
                 "pv_unabsorbed_kw": 0.0,
-                "target_power_kw": 0.0,
+                "target_power_kw": 114.39913938335215,
                 "timestamp": "2026-09-04T07:30:00+08:00"
               },
               {
@@ -1045,13 +1045,13 @@
                 "timestamp": "2026-09-04T23:45:00+08:00"
               }
             ],
-            "plan_version": "mock-station-1-20260904/m4-stage-a-v1/balanced/mock-s1-balanced-v1",
+            "plan_version": "mock-station-1-20260904/m4-milp-v2/pyomo-v1/balanced/mock-s1-balanced-v1",
             "profile_id": "balanced",
             "profile_version": "mock-s1-balanced-v1",
             "risk_codes": [],
             "risk_messages": [],
-            "solve_seconds": 0.08772875000431668,
-            "solver_message": "Optimization terminated successfully. (HiGHS Status 7: Optimal)",
+            "solve_seconds": 0.42825274998904206,
+            "solver_message": "HiGHS: optimal",
             "status": "optimal"
           },
           {
@@ -1077,35 +1077,35 @@
                 "name": "pv-unused"
               },
               {
-                "best_value": 3.8342096702453885,
+                "best_value": 3.8342096702452606,
                 "lock_tolerance": 1e-06,
                 "name": "soc-reserve"
               },
               {
-                "best_value": 416.37118618065927,
+                "best_value": 416.37118618065847,
                 "lock_tolerance": 1e-06,
                 "name": "throughput"
               }
             ],
             "metrics": {
-              "charge_energy_kwh": 206.37118853122698,
-              "cycle_cost": 4.1637118618065925,
+              "charge_energy_kwh": 206.37118853122652,
+              "cycle_cost": 4.1637118618065845,
               "demand_exceed_energy_kwh": 9.999999974752427e-07,
-              "discharge_energy_kwh": 209.99999764943232,
-              "energy_cost": 3171.238782163435,
+              "discharge_energy_kwh": 209.99999764943192,
+              "energy_cost": 3171.2387821634356,
               "export_revenue": 0.0,
               "grid_export_energy_kwh": 0.0,
-              "import_cost": 3171.238782163435,
+              "import_cost": 3171.2387821634356,
               "max_grid_import_kw": 260.000001,
-              "max_soc_pct": 86.61052563093313,
+              "max_soc_pct": 86.61052563093304,
               "min_soc_pct": 42.39999981000001,
               "peak_demand_exceed_kw": 9.999999974752427e-07,
-              "preferred_soc_deviation": 3.834209670245354,
+              "preferred_soc_deviation": 3.8342096702452544,
               "pv_self_use_kwh": 360.0,
               "pv_self_use_rate": 1.0,
               "pv_unabsorbed_energy_kwh": 0.0,
               "terminal_soc_pct": 50.0,
-              "throughput_energy_kwh": 416.37118618065927
+              "throughput_energy_kwh": 416.37118618065847
             },
             "plan": [
               {
@@ -1200,27 +1200,27 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 55.00000000000001,
+                "expected_soc_pct": 56.21052563093305,
+                "grid_export_kw": 0.0,
+                "grid_import_kw": 245.48475012490613,
+                "mode": "charge",
+                "pv_unabsorbed_kw": 0.0,
+                "target_power_kw": 25.484750124906117,
+                "timestamp": "2026-09-04T02:15:00+08:00"
+              },
+              {
+                "demand_exceed_kw": 0.0,
+                "expected_soc_pct": 56.21052563093305,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 220.0,
                 "mode": "idle",
                 "pv_unabsorbed_kw": 0.0,
                 "target_power_kw": 0.0,
-                "timestamp": "2026-09-04T02:15:00+08:00"
-              },
-              {
-                "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 56.21052563093313,
-                "grid_export_kw": 0.0,
-                "grid_import_kw": 245.4847501249079,
-                "mode": "charge",
-                "pv_unabsorbed_kw": 0.0,
-                "target_power_kw": 25.484750124907894,
                 "timestamp": "2026-09-04T02:30:00+08:00"
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 56.21052563093313,
+                "expected_soc_pct": 56.21052563093305,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 220.0,
                 "mode": "idle",
@@ -1230,7 +1230,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 58.11052563093313,
+                "expected_soc_pct": 58.11052563093304,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 260.0,
                 "mode": "charge",
@@ -1240,7 +1240,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 60.01052563093312,
+                "expected_soc_pct": 60.010525630933046,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 260.0,
                 "mode": "charge",
@@ -1250,7 +1250,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 61.91052563093312,
+                "expected_soc_pct": 61.910525630933044,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 260.0,
                 "mode": "charge",
@@ -1260,7 +1260,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 63.81052563093312,
+                "expected_soc_pct": 63.81052563093304,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 260.0,
                 "mode": "charge",
@@ -1270,7 +1270,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 65.71052563093312,
+                "expected_soc_pct": 65.71052563093305,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 260.0,
                 "mode": "charge",
@@ -1280,7 +1280,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 67.61052563093313,
+                "expected_soc_pct": 67.61052563093305,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 260.0,
                 "mode": "charge",
@@ -1290,7 +1290,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 69.51052563093313,
+                "expected_soc_pct": 69.51052563093305,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 260.0,
                 "mode": "charge",
@@ -1300,7 +1300,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 71.41052563093314,
+                "expected_soc_pct": 71.41052563093304,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 260.0,
                 "mode": "charge",
@@ -1310,7 +1310,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 73.31052563093311,
+                "expected_soc_pct": 73.31052563093304,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 260.0,
                 "mode": "charge",
@@ -1320,7 +1320,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 75.21052563093312,
+                "expected_soc_pct": 75.21052563093305,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 260.0,
                 "mode": "charge",
@@ -1330,7 +1330,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 77.11052563093313,
+                "expected_soc_pct": 77.11052563093304,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 260.0,
                 "mode": "charge",
@@ -1340,7 +1340,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 79.01052563093313,
+                "expected_soc_pct": 79.01052563093305,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 260.0,
                 "mode": "charge",
@@ -1350,7 +1350,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 80.91052563093312,
+                "expected_soc_pct": 80.91052563093305,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 260.0,
                 "mode": "charge",
@@ -1360,7 +1360,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 82.81052563093313,
+                "expected_soc_pct": 82.81052563093304,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 260.0,
                 "mode": "charge",
@@ -1370,7 +1370,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 84.71052563093312,
+                "expected_soc_pct": 84.71052563093305,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 260.0,
                 "mode": "charge",
@@ -1380,7 +1380,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 86.61052563093313,
+                "expected_soc_pct": 86.61052563093304,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 260.0,
                 "mode": "charge",
@@ -1390,7 +1390,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 80.29473615724892,
+                "expected_soc_pct": 80.29473615724883,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 100.0,
                 "mode": "discharge",
@@ -1400,7 +1400,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 73.9789466835647,
+                "expected_soc_pct": 73.97894668356463,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 100.0,
                 "mode": "discharge",
@@ -1410,22 +1410,22 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 73.9789466835647,
+                "expected_soc_pct": 67.66315770473685,
                 "grid_export_kw": 0.0,
-                "grid_import_kw": 220.0,
-                "mode": "idle",
+                "grid_import_kw": 100.00000940227233,
+                "mode": "discharge",
                 "pv_unabsorbed_kw": 0.0,
-                "target_power_kw": 0.0,
+                "target_power_kw": 119.99999059772767,
                 "timestamp": "2026-09-04T07:30:00+08:00"
               },
               {
                 "demand_exceed_kw": 0.0,
                 "expected_soc_pct": 67.66315770473685,
                 "grid_export_kw": 0.0,
-                "grid_import_kw": 100.00000940227073,
-                "mode": "discharge",
+                "grid_import_kw": 220.0,
+                "mode": "idle",
                 "pv_unabsorbed_kw": 0.0,
-                "target_power_kw": 119.99999059772927,
+                "target_power_kw": 0.0,
                 "timestamp": "2026-09-04T07:45:00+08:00"
               },
               {
@@ -2069,13 +2069,13 @@
                 "timestamp": "2026-09-04T23:45:00+08:00"
               }
             ],
-            "plan_version": "mock-station-1-20260904/m4-stage-a-v1/cost/mock-s1-cost-v1",
+            "plan_version": "mock-station-1-20260904/m4-milp-v2/pyomo-v1/cost/mock-s1-cost-v1",
             "profile_id": "cost",
             "profile_version": "mock-s1-cost-v1",
             "risk_codes": [],
             "risk_messages": [],
-            "solve_seconds": 0.08922620899102185,
-            "solver_message": "Optimization terminated successfully. (HiGHS Status 7: Optimal)",
+            "solve_seconds": 0.4167673340125475,
+            "solver_message": "HiGHS: optimal",
             "status": "feasible"
           },
           {
@@ -2101,35 +2101,35 @@
                 "name": "energy-cost"
               },
               {
-                "best_value": 3.8342096702453885,
+                "best_value": 3.8342096702452606,
                 "lock_tolerance": 1e-06,
                 "name": "soc-reserve"
               },
               {
-                "best_value": 416.37118618065927,
+                "best_value": 416.37118618065847,
                 "lock_tolerance": 1e-06,
                 "name": "throughput"
               }
             ],
             "metrics": {
-              "charge_energy_kwh": 206.37118853122698,
-              "cycle_cost": 4.1637118618065925,
+              "charge_energy_kwh": 206.37118853122652,
+              "cycle_cost": 4.1637118618065845,
               "demand_exceed_energy_kwh": 9.999999974752427e-07,
-              "discharge_energy_kwh": 209.99999764943232,
-              "energy_cost": 3171.238782163435,
+              "discharge_energy_kwh": 209.99999764943192,
+              "energy_cost": 3171.2387821634356,
               "export_revenue": 0.0,
               "grid_export_energy_kwh": 0.0,
-              "import_cost": 3171.238782163435,
+              "import_cost": 3171.2387821634356,
               "max_grid_import_kw": 260.000001,
-              "max_soc_pct": 86.61052563093313,
+              "max_soc_pct": 86.61052563093304,
               "min_soc_pct": 42.39999981000001,
               "peak_demand_exceed_kw": 9.999999974752427e-07,
-              "preferred_soc_deviation": 3.834209670245354,
+              "preferred_soc_deviation": 3.8342096702452544,
               "pv_self_use_kwh": 360.0,
               "pv_self_use_rate": 1.0,
               "pv_unabsorbed_energy_kwh": 0.0,
               "terminal_soc_pct": 50.0,
-              "throughput_energy_kwh": 416.37118618065927
+              "throughput_energy_kwh": 416.37118618065847
             },
             "plan": [
               {
@@ -2224,27 +2224,27 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 55.00000000000001,
+                "expected_soc_pct": 56.21052563093305,
+                "grid_export_kw": 0.0,
+                "grid_import_kw": 245.48475012490613,
+                "mode": "charge",
+                "pv_unabsorbed_kw": 0.0,
+                "target_power_kw": 25.484750124906117,
+                "timestamp": "2026-09-04T02:15:00+08:00"
+              },
+              {
+                "demand_exceed_kw": 0.0,
+                "expected_soc_pct": 56.21052563093305,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 220.0,
                 "mode": "idle",
                 "pv_unabsorbed_kw": 0.0,
                 "target_power_kw": 0.0,
-                "timestamp": "2026-09-04T02:15:00+08:00"
-              },
-              {
-                "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 56.21052563093313,
-                "grid_export_kw": 0.0,
-                "grid_import_kw": 245.4847501249079,
-                "mode": "charge",
-                "pv_unabsorbed_kw": 0.0,
-                "target_power_kw": 25.484750124907894,
                 "timestamp": "2026-09-04T02:30:00+08:00"
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 56.21052563093313,
+                "expected_soc_pct": 56.21052563093305,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 220.0,
                 "mode": "idle",
@@ -2254,7 +2254,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 58.11052563093313,
+                "expected_soc_pct": 58.11052563093304,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 260.0,
                 "mode": "charge",
@@ -2264,7 +2264,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 60.01052563093312,
+                "expected_soc_pct": 60.010525630933046,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 260.0,
                 "mode": "charge",
@@ -2274,7 +2274,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 61.91052563093312,
+                "expected_soc_pct": 61.910525630933044,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 260.0,
                 "mode": "charge",
@@ -2284,7 +2284,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 63.81052563093312,
+                "expected_soc_pct": 63.81052563093304,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 260.0,
                 "mode": "charge",
@@ -2294,7 +2294,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 65.71052563093312,
+                "expected_soc_pct": 65.71052563093305,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 260.0,
                 "mode": "charge",
@@ -2304,7 +2304,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 67.61052563093313,
+                "expected_soc_pct": 67.61052563093305,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 260.0,
                 "mode": "charge",
@@ -2314,7 +2314,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 69.51052563093313,
+                "expected_soc_pct": 69.51052563093305,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 260.0,
                 "mode": "charge",
@@ -2324,7 +2324,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 71.41052563093314,
+                "expected_soc_pct": 71.41052563093304,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 260.0,
                 "mode": "charge",
@@ -2334,7 +2334,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 73.31052563093311,
+                "expected_soc_pct": 73.31052563093304,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 260.0,
                 "mode": "charge",
@@ -2344,7 +2344,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 75.21052563093312,
+                "expected_soc_pct": 75.21052563093305,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 260.0,
                 "mode": "charge",
@@ -2354,7 +2354,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 77.11052563093313,
+                "expected_soc_pct": 77.11052563093304,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 260.0,
                 "mode": "charge",
@@ -2364,7 +2364,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 79.01052563093313,
+                "expected_soc_pct": 79.01052563093305,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 260.0,
                 "mode": "charge",
@@ -2374,7 +2374,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 80.91052563093312,
+                "expected_soc_pct": 80.91052563093305,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 260.0,
                 "mode": "charge",
@@ -2384,7 +2384,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 82.81052563093313,
+                "expected_soc_pct": 82.81052563093304,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 260.0,
                 "mode": "charge",
@@ -2394,7 +2394,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 84.71052563093312,
+                "expected_soc_pct": 84.71052563093305,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 260.0,
                 "mode": "charge",
@@ -2404,7 +2404,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 86.61052563093313,
+                "expected_soc_pct": 86.61052563093304,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 260.0,
                 "mode": "charge",
@@ -2414,7 +2414,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 80.29473615724892,
+                "expected_soc_pct": 80.29473615724883,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 100.0,
                 "mode": "discharge",
@@ -2424,7 +2424,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 73.9789466835647,
+                "expected_soc_pct": 73.97894668356463,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 100.0,
                 "mode": "discharge",
@@ -2434,22 +2434,22 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 73.9789466835647,
+                "expected_soc_pct": 67.66315770473685,
                 "grid_export_kw": 0.0,
-                "grid_import_kw": 220.0,
-                "mode": "idle",
+                "grid_import_kw": 100.00000940227233,
+                "mode": "discharge",
                 "pv_unabsorbed_kw": 0.0,
-                "target_power_kw": 0.0,
+                "target_power_kw": 119.99999059772767,
                 "timestamp": "2026-09-04T07:30:00+08:00"
               },
               {
                 "demand_exceed_kw": 0.0,
                 "expected_soc_pct": 67.66315770473685,
                 "grid_export_kw": 0.0,
-                "grid_import_kw": 100.00000940227073,
-                "mode": "discharge",
+                "grid_import_kw": 220.0,
+                "mode": "idle",
                 "pv_unabsorbed_kw": 0.0,
-                "target_power_kw": 119.99999059772927,
+                "target_power_kw": 0.0,
                 "timestamp": "2026-09-04T07:45:00+08:00"
               },
               {
@@ -3093,23 +3093,23 @@
                 "timestamp": "2026-09-04T23:45:00+08:00"
               }
             ],
-            "plan_version": "mock-station-1-20260904/m4-stage-a-v1/pv/mock-s1-pv-v1",
+            "plan_version": "mock-station-1-20260904/m4-milp-v2/pyomo-v1/pv/mock-s1-pv-v1",
             "profile_id": "pv",
             "profile_version": "mock-s1-pv-v1",
             "risk_codes": [],
             "risk_messages": [],
-            "solve_seconds": 0.08625745799508877,
-            "solver_message": "Optimization terminated successfully. (HiGHS Status 7: Optimal)",
+            "solve_seconds": 0.37217620899900794,
+            "solver_message": "HiGHS: optimal",
             "status": "feasible"
           }
         ],
-        "finished_at": "2026-09-05T01:59:02.239312Z",
+        "finished_at": "2026-09-08T10:26:58.240738Z",
         "input_observed_at": "2026-09-03T23:55:00+08:00",
-        "model_version": "m4-stage-a-v1",
+        "model_version": "m4-milp-v2/pyomo-v1",
         "plan_start_at": "2026-09-04T00:00:00+08:00",
         "request_id": "mock-station-1-20260904",
-        "solver_name": "scipy-highs",
-        "solver_version": "1.18.1",
+        "solver_name": "pyomo-highs",
+        "solver_version": "HiGHS 1.15.1; Pyomo 6.10.1",
         "source_versions": {
           "capability": "mock-s1-capability-v1",
           "constraints": "mock-s1-constraints-v1",
@@ -3117,12 +3117,12 @@
           "pv_forecast": "mock-s1-pv-forecast-v1",
           "tariff": "mock-s1-tariff-v1"
         },
-        "started_at": "2026-09-05T01:59:01.970949Z",
+        "started_at": "2026-09-08T10:26:56.964052Z",
         "station_id": "station-1"
       },
       "request_id": "mock-station-1-20260904",
       "selected_candidate_id": null,
-      "selection_status": "pending_ai",
+      "selection_status": "pending_selection",
       "station_id": "station-1",
       "status": "optimized"
     },
@@ -3171,35 +3171,35 @@
                 "name": "soc-reserve"
               },
               {
-                "best_value": 45.117204037228475,
+                "best_value": 45.11799379843485,
                 "lock_tolerance": 1e-06,
                 "name": "balanced-value"
               },
               {
-                "best_value": 3074.3332011491075,
+                "best_value": 3073.9345223576997,
                 "lock_tolerance": 1e-06,
                 "name": "throughput"
               }
             ],
             "metrics": {
-              "charge_energy_kwh": 1578.4931412084663,
-              "cycle_cost": 30.743332011491077,
+              "charge_energy_kwh": 1578.2835859961626,
+              "cycle_cost": 30.739345223576997,
               "demand_exceed_energy_kwh": 9.999999974752427e-07,
-              "discharge_energy_kwh": 1495.840059940641,
-              "energy_cost": 4422.4573521439015,
+              "discharge_energy_kwh": 1495.650936361537,
+              "energy_cost": 4422.5363282645385,
               "export_revenue": 36.0,
               "grid_export_energy_kwh": 240.0,
-              "import_cost": 4458.4573521439015,
+              "import_cost": 4458.5363282645385,
               "max_grid_import_kw": 520.000001,
-              "max_soc_pct": 80.0,
-              "min_soc_pct": 19.999995999999996,
+              "max_soc_pct": 80.000004,
+              "min_soc_pct": 20.0,
               "peak_demand_exceed_kw": 9.999999974752427e-07,
               "preferred_soc_deviation": 1.0000000010279564e-06,
               "pv_self_use_kwh": 2707.3684842105263,
               "pv_self_use_rate": 0.7520468011695907,
               "pv_unabsorbed_energy_kwh": 652.6315157894736,
               "terminal_soc_pct": 37.0,
-              "throughput_energy_kwh": 3074.3332011491075
+              "throughput_energy_kwh": 3073.9345223576997
             },
             "plan": [
               {
@@ -3214,17 +3214,17 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 44.53333333333334,
+                "expected_soc_pct": 43.957956383090306,
                 "grid_export_kw": 0.0,
-                "grid_import_kw": 520.0,
+                "grid_import_kw": 483.6604031425453,
                 "mode": "charge",
                 "pv_unabsorbed_kw": 0.0,
-                "target_power_kw": 80.0,
+                "target_power_kw": 43.660403142545306,
                 "timestamp": "2026-09-04T00:15:00+08:00"
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 45.800000000000004,
+                "expected_soc_pct": 45.22462304975697,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 520.0,
                 "mode": "charge",
@@ -3234,7 +3234,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 47.06666666666667,
+                "expected_soc_pct": 46.49128971642364,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 520.0,
                 "mode": "charge",
@@ -3244,7 +3244,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 48.333333333333336,
+                "expected_soc_pct": 47.7579563830903,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 520.0,
                 "mode": "charge",
@@ -3254,7 +3254,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 49.6,
+                "expected_soc_pct": 49.02462304975697,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 520.0,
                 "mode": "charge",
@@ -3264,7 +3264,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 50.866666666666674,
+                "expected_soc_pct": 50.291289716423634,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 520.0,
                 "mode": "charge",
@@ -3274,7 +3274,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 52.13333333333333,
+                "expected_soc_pct": 51.5579563830903,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 520.0,
                 "mode": "charge",
@@ -3284,7 +3284,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 53.400000000000006,
+                "expected_soc_pct": 52.824623049756966,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 520.0,
                 "mode": "charge",
@@ -3294,7 +3294,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 54.666666666666664,
+                "expected_soc_pct": 54.09128971642363,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 520.0,
                 "mode": "charge",
@@ -3304,17 +3304,17 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 55.37122821320287,
+                "expected_soc_pct": 55.357956383090304,
                 "grid_export_kw": 0.0,
-                "grid_import_kw": 484.49862399176027,
+                "grid_import_kw": 520.0,
                 "mode": "charge",
                 "pv_unabsorbed_kw": 0.0,
-                "target_power_kw": 44.49862399176025,
+                "target_power_kw": 80.0,
                 "timestamp": "2026-09-04T02:30:00+08:00"
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 56.63789487986954,
+                "expected_soc_pct": 56.62462304975696,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 520.0,
                 "mode": "charge",
@@ -3324,7 +3324,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 57.9045615465362,
+                "expected_soc_pct": 57.891289716423636,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 520.0,
                 "mode": "charge",
@@ -3334,7 +3334,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 59.17122821320287,
+                "expected_soc_pct": 59.1579563830903,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 520.0,
                 "mode": "charge",
@@ -3344,7 +3344,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 60.43789487986954,
+                "expected_soc_pct": 60.42462304975697,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 520.0,
                 "mode": "charge",
@@ -3354,7 +3354,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 61.704561546536205,
+                "expected_soc_pct": 61.69128971642364,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 520.0,
                 "mode": "charge",
@@ -3364,7 +3364,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 62.97122821320287,
+                "expected_soc_pct": 62.9579563830903,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 520.0,
                 "mode": "charge",
@@ -3374,7 +3374,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 64.23789487986954,
+                "expected_soc_pct": 64.22462304975697,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 520.0,
                 "mode": "charge",
@@ -3384,7 +3384,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 65.50456154653621,
+                "expected_soc_pct": 65.49128971642362,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 520.0,
                 "mode": "charge",
@@ -3394,7 +3394,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 66.77122821320287,
+                "expected_soc_pct": 66.7579563830903,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 520.0,
                 "mode": "charge",
@@ -3404,7 +3404,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 68.03789487986954,
+                "expected_soc_pct": 68.02462304975697,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 520.0,
                 "mode": "charge",
@@ -3414,7 +3414,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 69.3045615465362,
+                "expected_soc_pct": 69.29128971642365,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 520.0,
                 "mode": "charge",
@@ -3424,7 +3424,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 70.57122821320287,
+                "expected_soc_pct": 70.5579563830903,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 520.0,
                 "mode": "charge",
@@ -3434,7 +3434,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 71.83789487986954,
+                "expected_soc_pct": 71.82462304975698,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 520.0,
                 "mode": "charge",
@@ -3444,7 +3444,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 73.1045615465362,
+                "expected_soc_pct": 73.09128971642363,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 520.0,
                 "mode": "charge",
@@ -3454,7 +3454,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 74.37122821320288,
+                "expected_soc_pct": 74.35795638309031,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 520.0,
                 "mode": "charge",
@@ -3464,7 +3464,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 75.63789487986953,
+                "expected_soc_pct": 75.62462304975698,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 520.0,
                 "mode": "charge",
@@ -3474,7 +3474,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 76.90456154653621,
+                "expected_soc_pct": 76.89128971642364,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 520.0,
                 "mode": "charge",
@@ -3484,7 +3484,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 71.64140365179937,
+                "expected_soc_pct": 71.6281318216868,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 140.0,
                 "mode": "discharge",
@@ -3494,7 +3494,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 66.37824575706252,
+                "expected_soc_pct": 66.36497392694996,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 140.0,
                 "mode": "discharge",
@@ -3504,7 +3504,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 61.11508786232568,
+                "expected_soc_pct": 61.10181603221311,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 140.0,
                 "mode": "discharge",
@@ -3514,7 +3514,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 55.851929967588845,
+                "expected_soc_pct": 55.83865813747627,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 140.0,
                 "mode": "discharge",
@@ -3524,7 +3524,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 50.588772072851995,
+                "expected_soc_pct": 50.57550024273944,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 140.0,
                 "mode": "discharge",
@@ -3534,7 +3534,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 45.32561417811516,
+                "expected_soc_pct": 45.312342348002595,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 140.0,
                 "mode": "discharge",
@@ -3544,7 +3544,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 40.06245628337832,
+                "expected_soc_pct": 40.04918445326575,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 140.0,
                 "mode": "discharge",
@@ -3554,27 +3554,27 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 35.78946968421052,
-                "grid_export_kw": 0.0,
-                "grid_import_kw": 196.43976384743578,
-                "mode": "discharge",
-                "pv_unabsorbed_kw": 0.0,
-                "target_power_kw": 243.56023615256422,
-                "timestamp": "2026-09-04T08:45:00+08:00"
-              },
-              {
-                "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 30.52631178947368,
+                "expected_soc_pct": 34.78602655852891,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 140.0,
                 "mode": "discharge",
                 "pv_unabsorbed_kw": 0.0,
                 "target_power_kw": 300.0,
+                "timestamp": "2026-09-04T08:45:00+08:00"
+              },
+              {
+                "demand_exceed_kw": 0.0,
+                "expected_soc_pct": 30.526315789473678,
+                "grid_export_kw": 0.0,
+                "grid_import_kw": 197.19648616385177,
+                "mode": "discharge",
+                "pv_unabsorbed_kw": 0.0,
+                "target_power_kw": 242.80351383614823,
                 "timestamp": "2026-09-04T09:00:00+08:00"
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 25.263153894736845,
+                "expected_soc_pct": 25.26315789473684,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 140.0,
                 "mode": "discharge",
@@ -3584,22 +3584,22 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 25.263153894736845,
-                "grid_export_kw": 0.0,
-                "grid_import_kw": 440.0,
-                "mode": "idle",
-                "pv_unabsorbed_kw": 0.0,
-                "target_power_kw": 0.0,
-                "timestamp": "2026-09-04T09:30:00+08:00"
-              },
-              {
-                "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 19.999995999999996,
+                "expected_soc_pct": 20.0,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 140.0,
                 "mode": "discharge",
                 "pv_unabsorbed_kw": 0.0,
                 "target_power_kw": 300.0,
+                "timestamp": "2026-09-04T09:30:00+08:00"
+              },
+              {
+                "demand_exceed_kw": 0.0,
+                "expected_soc_pct": 20.0,
+                "grid_export_kw": 0.0,
+                "grid_import_kw": 440.0,
+                "mode": "idle",
+                "pv_unabsorbed_kw": 0.0,
+                "target_power_kw": 0.0,
                 "timestamp": "2026-09-04T09:45:00+08:00"
               },
               {
@@ -3607,9 +3607,9 @@
                 "expected_soc_pct": 20.0,
                 "grid_export_kw": 60.0,
                 "grid_import_kw": 0.0,
-                "mode": "charge",
-                "pv_unabsorbed_kw": 399.99974736842097,
-                "target_power_kw": 0.00025263157902755714,
+                "mode": "idle",
+                "pv_unabsorbed_kw": 400.0,
+                "target_power_kw": 0.0,
                 "timestamp": "2026-09-04T10:00:00+08:00"
               },
               {
@@ -3644,17 +3644,17 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 27.750000000000004,
+                "expected_soc_pct": 29.5,
                 "grid_export_kw": 60.0,
                 "grid_import_kw": 0.0,
                 "mode": "charge",
-                "pv_unabsorbed_kw": 210.52631578947367,
-                "target_power_kw": 189.47368421052633,
+                "pv_unabsorbed_kw": 100.0,
+                "target_power_kw": 300.0,
                 "timestamp": "2026-09-04T11:00:00+08:00"
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 32.5,
+                "expected_soc_pct": 34.25,
                 "grid_export_kw": 60.0,
                 "grid_import_kw": 0.0,
                 "mode": "charge",
@@ -3664,17 +3664,17 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 37.25,
+                "expected_soc_pct": 37.250004000000004,
                 "grid_export_kw": 60.0,
                 "grid_import_kw": 0.0,
                 "mode": "charge",
-                "pv_unabsorbed_kw": 100.0,
-                "target_power_kw": 300.0,
+                "pv_unabsorbed_kw": 210.5260631578944,
+                "target_power_kw": 189.4739368421056,
                 "timestamp": "2026-09-04T11:30:00+08:00"
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 42.0,
+                "expected_soc_pct": 42.000004000000004,
                 "grid_export_kw": 60.0,
                 "grid_import_kw": 0.0,
                 "mode": "charge",
@@ -3684,7 +3684,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 46.75,
+                "expected_soc_pct": 46.750004000000004,
                 "grid_export_kw": 60.0,
                 "grid_import_kw": 0.0,
                 "mode": "charge",
@@ -3694,7 +3694,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 51.5,
+                "expected_soc_pct": 51.50000400000001,
                 "grid_export_kw": 60.0,
                 "grid_import_kw": 0.0,
                 "mode": "charge",
@@ -3704,7 +3704,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 56.25,
+                "expected_soc_pct": 56.25000400000001,
                 "grid_export_kw": 60.0,
                 "grid_import_kw": 0.0,
                 "mode": "charge",
@@ -3714,7 +3714,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 61.0,
+                "expected_soc_pct": 61.000004000000004,
                 "grid_export_kw": 60.0,
                 "grid_import_kw": 0.0,
                 "mode": "charge",
@@ -3724,7 +3724,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 65.75,
+                "expected_soc_pct": 65.750004,
                 "grid_export_kw": 60.0,
                 "grid_import_kw": 0.0,
                 "mode": "charge",
@@ -3734,7 +3734,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 70.5,
+                "expected_soc_pct": 70.500004,
                 "grid_export_kw": 60.0,
                 "grid_import_kw": 0.0,
                 "mode": "charge",
@@ -3744,7 +3744,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 75.25,
+                "expected_soc_pct": 75.250004,
                 "grid_export_kw": 60.0,
                 "grid_import_kw": 0.0,
                 "mode": "charge",
@@ -3754,7 +3754,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 80.0,
+                "expected_soc_pct": 80.000004,
                 "grid_export_kw": 60.0,
                 "grid_import_kw": 0.0,
                 "mode": "charge",
@@ -3764,17 +3764,17 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 79.3017543226316,
+                "expected_soc_pct": 74.73684610526315,
                 "grid_export_kw": 0.0,
-                "grid_import_kw": 400.1999963900004,
+                "grid_import_kw": 140.0,
                 "mode": "discharge",
                 "pv_unabsorbed_kw": 0.0,
-                "target_power_kw": 39.80000360999957,
+                "target_power_kw": 300.0,
                 "timestamp": "2026-09-04T14:00:00+08:00"
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 74.03859642789475,
+                "expected_soc_pct": 69.4736882105263,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 140.0,
                 "mode": "discharge",
@@ -3784,7 +3784,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 68.7754385331579,
+                "expected_soc_pct": 64.21053031578947,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 140.0,
                 "mode": "discharge",
@@ -3794,7 +3794,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 63.512280638421046,
+                "expected_soc_pct": 58.94737242105263,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 140.0,
                 "mode": "discharge",
@@ -3804,22 +3804,22 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 63.512280638421046,
+                "expected_soc_pct": 58.24912274368421,
                 "grid_export_kw": 0.0,
-                "grid_import_kw": 440.0,
-                "mode": "idle",
+                "grid_import_kw": 400.19976839000014,
+                "mode": "discharge",
                 "pv_unabsorbed_kw": 0.0,
-                "target_power_kw": 0.0,
+                "target_power_kw": 39.800231609999855,
                 "timestamp": "2026-09-04T15:00:00+08:00"
               },
               {
                 "demand_exceed_kw": 0.0,
                 "expected_soc_pct": 58.24912274368421,
                 "grid_export_kw": 0.0,
-                "grid_import_kw": 140.0,
-                "mode": "discharge",
+                "grid_import_kw": 440.0,
+                "mode": "idle",
                 "pv_unabsorbed_kw": 0.0,
-                "target_power_kw": 300.0,
+                "target_power_kw": 0.0,
                 "timestamp": "2026-09-04T15:15:00+08:00"
               },
               {
@@ -4163,7 +4163,7 @@
                 "timestamp": "2026-09-04T23:45:00+08:00"
               }
             ],
-            "plan_version": "mock-station-2-20260904/m4-stage-a-v1/balanced/mock-s2-balanced-v1",
+            "plan_version": "mock-station-2-20260904/m4-milp-v2/pyomo-v1/balanced/mock-s2-balanced-v1",
             "profile_id": "balanced",
             "profile_version": "mock-s2-balanced-v1",
             "risk_codes": [
@@ -4172,8 +4172,8 @@
             "risk_messages": [
               "存在未吸收光伏余量；该值仅用于风险提示，不是光伏限发指令。"
             ],
-            "solve_seconds": 0.09652841700881254,
-            "solver_message": "Optimization terminated successfully. (HiGHS Status 7: Optimal)",
+            "solve_seconds": 0.38005537501885556,
+            "solver_message": "HiGHS: optimal",
             "status": "feasible"
           },
           {
@@ -4199,7 +4199,7 @@
                 "name": "pv-unused"
               },
               {
-                "best_value": 7.075438503749379,
+                "best_value": 7.075438503749387,
                 "lock_tolerance": 1e-06,
                 "name": "soc-reserve"
               },
@@ -4210,7 +4210,7 @@
               }
             ],
             "metrics": {
-              "charge_energy_kwh": 1832.409969645769,
+              "charge_energy_kwh": 1832.4099696457688,
               "cycle_cost": 35.574099672510755,
               "demand_exceed_energy_kwh": 9.999999974752427e-07,
               "discharge_energy_kwh": 1724.9999976053066,
@@ -4222,10 +4222,10 @@
               "max_soc_pct": 89.82807011210528,
               "min_soc_pct": 13.828070112105294,
               "peak_demand_exceed_kw": 9.999999974752427e-07,
-              "preferred_soc_deviation": 7.075438580657889,
-              "pv_self_use_kwh": 2960.0,
-              "pv_self_use_rate": 0.8222222222222222,
-              "pv_unabsorbed_energy_kwh": 400.0000000000002,
+              "preferred_soc_deviation": 7.0754385806578854,
+              "pv_self_use_kwh": 2959.9999999999995,
+              "pv_self_use_rate": 0.8222222222222221,
+              "pv_unabsorbed_energy_kwh": 400.00000000000034,
               "terminal_soc_pct": 37.0,
               "throughput_energy_kwh": 3557.4099672510756
             },
@@ -4582,17 +4582,17 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 34.88070152300399,
+                "expected_soc_pct": 34.88070169105266,
                 "grid_export_kw": 0.0,
-                "grid_import_kw": 140.0,
+                "grid_import_kw": 140.00000957877376,
                 "mode": "discharge",
                 "pv_unabsorbed_kw": 0.0,
-                "target_power_kw": 300.0,
+                "target_power_kw": 299.99999042122624,
                 "timestamp": "2026-09-04T08:45:00+08:00"
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 29.617543628267157,
+                "expected_soc_pct": 29.617543796315815,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 140.0,
                 "mode": "discharge",
@@ -4602,7 +4602,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 24.354385733530314,
+                "expected_soc_pct": 24.354385901578976,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 140.0,
                 "mode": "discharge",
@@ -4614,10 +4614,10 @@
                 "demand_exceed_kw": 0.0,
                 "expected_soc_pct": 19.091228006842137,
                 "grid_export_kw": 0.0,
-                "grid_import_kw": 140.00000957877376,
+                "grid_import_kw": 140.0,
                 "mode": "discharge",
                 "pv_unabsorbed_kw": 0.0,
-                "target_power_kw": 299.99999042122624,
+                "target_power_kw": 300.0,
                 "timestamp": "2026-09-04T09:30:00+08:00"
               },
               {
@@ -4702,17 +4702,17 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 51.828070112105294,
+                "expected_soc_pct": 51.82807011210527,
                 "grid_export_kw": 60.0,
                 "grid_import_kw": 0.0,
                 "mode": "charge",
-                "pv_unabsorbed_kw": 100.0,
-                "target_power_kw": 300.0,
+                "pv_unabsorbed_kw": 100.00000000000142,
+                "target_power_kw": 299.9999999999986,
                 "timestamp": "2026-09-04T11:45:00+08:00"
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 56.578070112105294,
+                "expected_soc_pct": 56.57807011210527,
                 "grid_export_kw": 60.0,
                 "grid_import_kw": 0.0,
                 "mode": "charge",
@@ -4722,7 +4722,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 61.328070112105294,
+                "expected_soc_pct": 61.32807011210527,
                 "grid_export_kw": 60.0,
                 "grid_import_kw": 0.0,
                 "mode": "charge",
@@ -4732,7 +4732,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 66.0780701121053,
+                "expected_soc_pct": 66.07807011210527,
                 "grid_export_kw": 60.0,
                 "grid_import_kw": 0.0,
                 "mode": "charge",
@@ -4742,7 +4742,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 70.82807011210531,
+                "expected_soc_pct": 70.82807011210528,
                 "grid_export_kw": 60.0,
                 "grid_import_kw": 0.0,
                 "mode": "charge",
@@ -4752,7 +4752,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 75.5780701121053,
+                "expected_soc_pct": 75.57807011210528,
                 "grid_export_kw": 60.0,
                 "grid_import_kw": 0.0,
                 "mode": "charge",
@@ -4762,7 +4762,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 80.3280701121053,
+                "expected_soc_pct": 80.32807011210528,
                 "grid_export_kw": 60.0,
                 "grid_import_kw": 0.0,
                 "mode": "charge",
@@ -4776,8 +4776,8 @@
                 "grid_export_kw": 60.0,
                 "grid_import_kw": 0.0,
                 "mode": "charge",
-                "pv_unabsorbed_kw": 100.00000000000097,
-                "target_power_kw": 299.99999999999903,
+                "pv_unabsorbed_kw": 100.0,
+                "target_power_kw": 300.0,
                 "timestamp": "2026-09-04T13:30:00+08:00"
               },
               {
@@ -5191,7 +5191,7 @@
                 "timestamp": "2026-09-04T23:45:00+08:00"
               }
             ],
-            "plan_version": "mock-station-2-20260904/m4-stage-a-v1/cost/mock-s2-cost-v1",
+            "plan_version": "mock-station-2-20260904/m4-milp-v2/pyomo-v1/cost/mock-s2-cost-v1",
             "profile_id": "cost",
             "profile_version": "mock-s2-cost-v1",
             "risk_codes": [
@@ -5200,8 +5200,8 @@
             "risk_messages": [
               "存在未吸收光伏余量；该值仅用于风险提示，不是光伏限发指令。"
             ],
-            "solve_seconds": 0.10297387500759214,
-            "solver_message": "Optimization terminated successfully. (HiGHS Status 7: Optimal)",
+            "solve_seconds": 0.36308424998424016,
+            "solver_message": "HiGHS: optimal",
             "status": "feasible"
           },
           {
@@ -5227,7 +5227,7 @@
                 "name": "energy-cost"
               },
               {
-                "best_value": 7.075438503749335,
+                "best_value": 7.075438503749356,
                 "lock_tolerance": 1e-06,
                 "name": "soc-reserve"
               },
@@ -5250,10 +5250,10 @@
               "max_soc_pct": 89.82807011210528,
               "min_soc_pct": 13.828070112105294,
               "peak_demand_exceed_kw": 9.999999974752427e-07,
-              "preferred_soc_deviation": 7.075438580657889,
-              "pv_self_use_kwh": 2960.0,
-              "pv_self_use_rate": 0.8222222222222222,
-              "pv_unabsorbed_energy_kwh": 400.0000000000002,
+              "preferred_soc_deviation": 7.0754385806578854,
+              "pv_self_use_kwh": 2959.9999999999995,
+              "pv_self_use_rate": 0.8222222222222221,
+              "pv_unabsorbed_energy_kwh": 400.00000000000034,
               "terminal_soc_pct": 37.0,
               "throughput_energy_kwh": 3557.409967251071
             },
@@ -5610,17 +5610,17 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 34.88070152300384,
+                "expected_soc_pct": 34.88070169105266,
                 "grid_export_kw": 0.0,
-                "grid_import_kw": 140.0,
+                "grid_import_kw": 140.00000957878245,
                 "mode": "discharge",
                 "pv_unabsorbed_kw": 0.0,
-                "target_power_kw": 300.0,
+                "target_power_kw": 299.99999042121755,
                 "timestamp": "2026-09-04T08:45:00+08:00"
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 29.617543628267,
+                "expected_soc_pct": 29.617543796315815,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 140.0,
                 "mode": "discharge",
@@ -5630,7 +5630,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 24.35438573353016,
+                "expected_soc_pct": 24.354385901578976,
                 "grid_export_kw": 0.0,
                 "grid_import_kw": 140.0,
                 "mode": "discharge",
@@ -5642,10 +5642,10 @@
                 "demand_exceed_kw": 0.0,
                 "expected_soc_pct": 19.091228006842137,
                 "grid_export_kw": 0.0,
-                "grid_import_kw": 140.00000957878245,
+                "grid_import_kw": 140.0,
                 "mode": "discharge",
                 "pv_unabsorbed_kw": 0.0,
-                "target_power_kw": 299.99999042121755,
+                "target_power_kw": 300.0,
                 "timestamp": "2026-09-04T09:30:00+08:00"
               },
               {
@@ -5730,17 +5730,17 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 51.828070112105294,
+                "expected_soc_pct": 51.82807011210527,
                 "grid_export_kw": 60.0,
                 "grid_import_kw": 0.0,
                 "mode": "charge",
-                "pv_unabsorbed_kw": 100.0,
-                "target_power_kw": 300.0,
+                "pv_unabsorbed_kw": 100.00000000000142,
+                "target_power_kw": 299.9999999999986,
                 "timestamp": "2026-09-04T11:45:00+08:00"
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 56.578070112105294,
+                "expected_soc_pct": 56.57807011210527,
                 "grid_export_kw": 60.0,
                 "grid_import_kw": 0.0,
                 "mode": "charge",
@@ -5750,7 +5750,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 61.328070112105294,
+                "expected_soc_pct": 61.32807011210527,
                 "grid_export_kw": 60.0,
                 "grid_import_kw": 0.0,
                 "mode": "charge",
@@ -5760,7 +5760,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 66.0780701121053,
+                "expected_soc_pct": 66.07807011210527,
                 "grid_export_kw": 60.0,
                 "grid_import_kw": 0.0,
                 "mode": "charge",
@@ -5770,7 +5770,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 70.82807011210531,
+                "expected_soc_pct": 70.82807011210528,
                 "grid_export_kw": 60.0,
                 "grid_import_kw": 0.0,
                 "mode": "charge",
@@ -5780,7 +5780,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 75.5780701121053,
+                "expected_soc_pct": 75.57807011210528,
                 "grid_export_kw": 60.0,
                 "grid_import_kw": 0.0,
                 "mode": "charge",
@@ -5790,7 +5790,7 @@
               },
               {
                 "demand_exceed_kw": 0.0,
-                "expected_soc_pct": 80.3280701121053,
+                "expected_soc_pct": 80.32807011210528,
                 "grid_export_kw": 60.0,
                 "grid_import_kw": 0.0,
                 "mode": "charge",
@@ -5804,8 +5804,8 @@
                 "grid_export_kw": 60.0,
                 "grid_import_kw": 0.0,
                 "mode": "charge",
-                "pv_unabsorbed_kw": 100.00000000000097,
-                "target_power_kw": 299.99999999999903,
+                "pv_unabsorbed_kw": 100.0,
+                "target_power_kw": 300.0,
                 "timestamp": "2026-09-04T13:30:00+08:00"
               },
               {
@@ -6219,7 +6219,7 @@
                 "timestamp": "2026-09-04T23:45:00+08:00"
               }
             ],
-            "plan_version": "mock-station-2-20260904/m4-stage-a-v1/pv/mock-s2-pv-v1",
+            "plan_version": "mock-station-2-20260904/m4-milp-v2/pyomo-v1/pv/mock-s2-pv-v1",
             "profile_id": "pv",
             "profile_version": "mock-s2-pv-v1",
             "risk_codes": [
@@ -6228,18 +6228,18 @@
             "risk_messages": [
               "存在未吸收光伏余量；该值仅用于风险提示，不是光伏限发指令。"
             ],
-            "solve_seconds": 0.10404537500289734,
-            "solver_message": "Optimization terminated successfully. (HiGHS Status 7: Optimal)",
+            "solve_seconds": 0.4251517499797046,
+            "solver_message": "HiGHS: optimal",
             "status": "feasible"
           }
         ],
-        "finished_at": "2026-09-05T01:59:02.551320Z",
+        "finished_at": "2026-09-08T10:26:59.421616Z",
         "input_observed_at": "2026-09-03T23:55:00+08:00",
-        "model_version": "m4-stage-a-v1",
+        "model_version": "m4-milp-v2/pyomo-v1",
         "plan_start_at": "2026-09-04T00:00:00+08:00",
         "request_id": "mock-station-2-20260904",
-        "solver_name": "scipy-highs",
-        "solver_version": "1.18.1",
+        "solver_name": "pyomo-highs",
+        "solver_version": "HiGHS 1.15.1; Pyomo 6.10.1",
         "source_versions": {
           "capability": "mock-s2-capability-v1",
           "constraints": "mock-s2-constraints-v1",
@@ -6247,12 +6247,12 @@
           "pv_forecast": "mock-s2-pv-forecast-v1",
           "tariff": "mock-s2-tariff-v1"
         },
-        "started_at": "2026-09-05T01:59:02.243759Z",
+        "started_at": "2026-09-08T10:26:58.244029Z",
         "station_id": "station-2"
       },
       "request_id": "mock-station-2-20260904",
       "selected_candidate_id": null,
-      "selection_status": "pending_ai",
+      "selection_status": "pending_selection",
       "station_id": "station-2",
       "status": "optimized"
     }

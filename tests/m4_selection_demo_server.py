@@ -23,20 +23,7 @@ def main():
     now=datetime.now(ZoneInfo('Asia/Shanghai')).replace(microsecond=0)
     start=(now+timedelta(minutes=15)).replace(minute=((now.minute//15+1)*15)%60,second=0)
     with tempfile.TemporaryDirectory(prefix='m4-selection-browser-') as directory:
-        os.environ['M4_AI_RESULTS_DIR'] = str(Path(directory) / 'ai-results')
-        if '--ai-results' in sys.argv:
-            from test_m4_live_chain import LiveChainTests
-            from m4_selection.live_chain import run_chain
-            from test_m4_ai_results import save_mock_transport
-            fixture = LiveChainTests(); fixture.setUp()
-            try:
-                def model(payload, output):
-                    answer = fixture.model(payload, output)
-                    fixture.fixture.client.devices[1]['latest_soc'] = 49.0
-                    return save_mock_transport(payload, output, answer)
-                run_chain(fixture.api, model, Path(os.environ['M4_AI_RESULTS_DIR']) / 'browser-fixture')
-            finally:
-                fixture.doCleanups()
+        os.environ['M4_DECISION_RESULTS_DIR'] = str(Path(directory) / 'decision-results')
         path=Path(directory)/'settings.db';store=SettingsStore(path);policies=PolicyStore(path)
         clients={};controls={}
         for station in ['station-1','station-2']:

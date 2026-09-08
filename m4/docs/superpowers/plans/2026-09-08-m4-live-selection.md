@@ -8,7 +8,7 @@
 ## 约束
 
 - GET/PUT `/m4-api/stations/{station_id}/selection-policy`，PUT 必带 expected_revision，preferences 为显式指标/三容差/完整并列顺序或 null（清除）。服务器生成 policy_id/version；初始 policy=null，不修改现存 settings 参数或自动配置客户偏好。
-- POST `/m4-api/stations/{station_id}/selection` 必带 candidate_run_id 和 policy_revision。只用服务器当前候选，拒绝浏览器传计划或指标。输出独立 `m4-live-selection-v1`，绑定 run/config/revision/有效期；B1 保持 pending_ai/not_dispatched。
+- POST `/m4-api/stations/{station_id}/selection` 必带 candidate_run_id 和 policy_revision。只用服务器当前候选，拒绝浏览器传计划或指标。输出独立 `m4-live-selection-v1`，绑定 run/config/revision/有效期；B1 保持 pending_selection/not_dispatched。
 - 选择前后复核候选仍同一快照、参数与偏好版本、过期时间、控制/预测/电价、参与柜、SOC 和能力；复用 request_from_inputs 的时效及柜级校验。新采样只有时间/source_version改变而决策内容完全一致时可接受；旧候选原到期时间不延长。其它决策输入变化返回409，读取失败返回502/503，旧选择不回填。
 - UI 偏好六项全显式，支持清除与并发冲突恢复；保存偏好不改数学候选。每站独立缓存及请求代次，切站、刷新输入、候选新轮、配置/偏好变化、过期、读取失败均不能让旧选择成为当前结果。
 - UI 展示“待配置/待选择/复核中/已选预览/需重选”，已选方案与手动曲线对比不同；显式未下发。含中文模板、所选计划版本和比较记录，安全插入文本。沿用页面主题与响应式布局，账单不变。

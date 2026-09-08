@@ -66,13 +66,30 @@ class LiveSelectionTests(unittest.TestCase):
         self.assertEqual(response.candidate_run_id,before['result']['run_id'])
         self.assertEqual(response.selection.dispatch_status,'not_dispatched')
         self.assertEqual(self.candidates.latest('station-1'),before)
-        self.assertEqual(before['result']['stations'][0]['selection_status'],'pending_ai')
+        self.assertEqual(before['result']['stations'][0]['selection_status'],'pending_selection')
 
     def test_old_revision_or_run_is_rejected(self):
         self.calculate();self.policies.save('station-1',preferences(),expected_revision=0)
         with self.assertRaises(CandidateError) as caught:self.select(0)
         self.assertEqual(caught.exception.status_code,409)
         with self.assertRaises(CandidateError):self.service.select('station-1','old-run',1)
+
+    def test_expiration_during_mathematical_selection_rejects_the_result(self):
+        from datetime import datetime
+        from m4_selection import solver_selection
+        self.calculate()
+        self.policies.save('station-1', preferences(), expected_revision=0)
+        solve = solver_selection.solve_pyomo_model
+
+        def solve_and_expire(*args, **kwargs):
+            result = solve(*args, **kwargs)
+            self.now = datetime.fromisoformat(self.envelope['expires_at'])
+            return result
+
+        with patch.object(solver_selection, 'solve_pyomo_model', side_effect=solve_and_expire):
+            with self.assertRaises(CandidateError) as caught:
+                self.select(1)
+        self.assertEqual(caught.exception.status_code, 409)
 
     def test_expired_and_changed_inputs_cannot_select(self):
         self.calculate()
@@ -150,7 +167,7 @@ class LiveSelectionTests(unittest.TestCase):
                 candidate_run_id=self.envelope['result']['run_id'],policy_revision=1))
             self.assertEqual(selected.status_code,200,selected.text)
             decision=selected.json()['selection']
-            self.assertEqual(decision['selector_version'],'demand-then-profile-v1')
+            self.assertEqual(decision['selector_version'],'pyomo-highs-selection-v2')
             self.assertEqual(decision['steps'][-1]['metric'],'profile_priority')
             remaining=decision['steps'][1]['remaining_ids']
             self.assertEqual(decision['selected']['profile_id'],next(pid for pid in values['tie_order'] if pid in remaining))

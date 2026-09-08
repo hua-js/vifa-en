@@ -1,5 +1,9 @@
 # M4 数学优化器
 
+更新：2026-09-08。主模型已迁移为 **Pyomo 6.10.1 + HiGHS 1.15.1**。`model.py` 使用具名变量、约束和目标表达式，`solver.py` 通过 Pyomo APPSI 调用 HiGHS；向量索引仅供目标组合、计划解码及历史小型矩阵调用兼容。主模型不再使用手工稀疏矩阵或 SciPy `milp`。
+
+完整 M4 决策使用 [`m4_selection.solver_selection`](../m4_selection/solver_selection.py)，同样由 Pyomo/HiGHS 选定最终候选。运行入口见[求解器决策说明](../m4/求解器决策说明.md)。
+
 ## 职责边界
 
 `m4_optimizer` 接收一个站点完整、时间对齐的 96 点预测、储能能力快照、硬约束和三套外部目标配置，在不启动 FastAPI 的情况下生成 `balanced`、`cost`、`pv` 三类数学候选。模块负责 MILP 建模、分层目标求解、公开计划解码、指标复算和结果校验。
@@ -104,13 +108,15 @@ result = M4Optimizer(model_version="m4-milp-v1").optimize(request)
 ## 输出解释
 
 - `balanced`：按调用方配置生成综合候选；`cost`：按调用方配置生成成本候选；`pv`：按调用方配置生成光伏消纳候选。三者共享同一组硬约束，不代表模块替调用方选择最终方案。
-- 候选状态包括 `optimal`、`feasible`、`infeasible`、`timeout` 和 `error`。`optimal` 要求 SciPy 成功且 MIP gap 未报告或不超过 `1e-9`；有可行解但 gap 超过该阈值、或后续目标层超时而保留了前层 incumbent 时为 `feasible`。从未取得 incumbent 的超时才返回 `timeout`；后续 `error`/`infeasible` 不会被旧 incumbent 掩盖。只有 `optimal` 或 `feasible` 候选包含 96 点 `plan` 和 `metrics`。
+- 候选状态包括 `optimal`、`feasible`、`infeasible`、`timeout` 和 `error`。`optimal` 要求 HiGHS 正常结束、具有有限可行解与有限目标界，计算的相对 gap 不超过 `1e-9`；有可行解但不能证实该界、或后续目标层超时而保留前层 incumbent 时为 `feasible`。从未取得 incumbent 的超时才返回 `timeout`；后续 `error`/`infeasible` 不会被旧 incumbent 掩盖。只有 `optimal` 或 `feasible` 候选包含 96 点 `plan` 和 `metrics`。
 - 每个计划点以 `mode + target_power_kw` 表达储能动作：`charge` 为充电功率、`discharge` 为放电功率、`idle` 的目标功率为 0。并同时给出预期 SOC、电网进出功率、未吸收光伏和需量超限值，便于独立复算。
 - 缺省`legacy`模式下，`grid_export_kw` 与 `pv_unabsorbed_kw` 都按 PV 归因，任一点二者之和不超过该点 `pv_forecast_kw`；允许电池服务本地负荷的同时把当点 PV 外送。新光伏规则见下节，不能用旧模式验收。
 - 每个候选都有由请求、模型和 profile 版本组成的稳定 `plan_version`，失败候选也不例外。`risk_codes` 与 `risk_messages` 按索引一一对应；当前 `PV_UNABSORBED` 的说明明确它只是风险提示，不是光伏限发指令。
 - 若某个 profile 的计划解码、指标复算或独立复验出现可预期数据异常，该候选返回 `error`、空 `plan`、空 `metrics`，同时保留版本、已完成目标层和审计消息；其余 profiles 继续处理。未预期的程序错误不会被该隔离逻辑吞掉。
 
 排除 `started_at`、`finished_at` 与 `solve_seconds` 这些运行时字段后，固定输入和版本的公开候选内容可重复验证；本文不对求解耗时做确定性承诺。
+
+新结果 `solver_name=pyomo-highs`，`solver_version` 同时报告 HiGHS/Pyomo 实际版本，模型版本追加 `/pyomo-v1` 区分旧计划。旧 `scipy-highs` 快照仍可读取和独立复验。不同后端版本可能得到同目标值的不同合法计划，不要求逐点或逐字节一致。
 
 ## 输入要求
 

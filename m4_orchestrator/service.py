@@ -16,7 +16,7 @@ from .contracts import (
 )
 
 
-SCHEMA_VERSION = "m4-orchestration-v1"
+SCHEMA_VERSION = "m4-orchestration-v2"
 
 
 class Optimizer(Protocol):

@@ -241,7 +241,7 @@ class OptimizationResult(StrictModel):
     started_at: datetime
     finished_at: datetime
     model_version: str
-    solver_name: Literal["scipy-highs"]
+    solver_name: Literal["scipy-highs", "pyomo-highs"]
     solver_version: str
     source_versions: dict[str, str]
     candidates: list[CandidateResult]

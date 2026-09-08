@@ -1,6 +1,7 @@
 import unittest
 
 import numpy as np
+import pyomo.environ as pyo
 
 from m4_optimizer.model import build_model
 from m4_optimizer.solver import solve_milp
@@ -12,6 +13,22 @@ from tests.m4_optimizer_test_support import (
 
 
 class M4OptimizerModelTests(unittest.TestCase):
+    def test_main_model_uses_named_pyomo_variables_constraints_and_expressions(self):
+        built = build_model(make_request())
+        model = built.problem.model
+
+        self.assertIsInstance(model, pyo.ConcreteModel)
+        self.assertEqual(len(model.charge), 96)
+        self.assertEqual(len(model.energy), 97)
+        self.assertTrue(model.charge_on[0].is_binary())
+        self.assertEqual(len(model.power_balance), 96)
+        self.assertEqual(len(model.energy_transition), 96)
+        self.assertEqual(len(model.storage_exclusivity), 96)
+        self.assertEqual(len(model.grid_export_mode), 96)
+        self.assertIsInstance(model.energy_cost, pyo.Expression)
+        self.assertIs(built.problem.variables[built.index.charge.start], model.charge[0])
+        self.assertFalse(hasattr(built.problem, "matrix"))
+
     def solve(self, request, objective_name="throughput"):
         built = build_model(request)
         result = solve_milp(

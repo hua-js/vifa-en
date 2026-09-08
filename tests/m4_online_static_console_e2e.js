@@ -29,7 +29,7 @@ async function openPage(viewport, scenario = "normal", station = "s1") {
   page.on("pageerror", (error) => pageErrors.push(error.message));
 
   const port = server.address().port;
-  const query = new URLSearchParams({ scenario, station });
+  const query = new URLSearchParams({ source: "demo", scenario, station });
   await page.goto(`http://127.0.0.1:${port}/M4%E4%BC%98%E5%8C%96%E8%B0%83%E5%BA%A6%E6%8E%A7%E5%88%B6%E5%8F%B0-%E7%BA%BF%E4%B8%8A%E7%89%88.html?${query}`);
   await page.waitForLoadState("networkidle");
   return { page, externalRequests, consoleErrors, pageErrors };
@@ -137,7 +137,7 @@ async function openPage(viewport, scenario = "normal", station = "s1") {
   assert.strictEqual(await page.locator("#scenario-select").inputValue(), "validation-failed");
   assert.strictEqual(await page.locator("#station-select").evaluate(el => el === document.activeElement), true);
 
-  for (const [scenario, name, status] of [["ai-fallback", "均衡方案", "降级执行中"], ["ems-retry", "节费优先", "重算恢复"]]) {
+  for (const [scenario, name, status] of [["solver-unproven", "无最终方案", "已阻断"], ["ems-retry", "节费优先", "重算恢复"]]) {
     await page.locator("#scenario-select").selectOption(scenario);
     assert.strictEqual(await page.locator("#decision-name").textContent(), name);
     assert.strictEqual(await page.locator("#decision-status").textContent(), status);
@@ -222,10 +222,10 @@ async function openPage(viewport, scenario = "normal", station = "s1") {
   await page.locator("#station-select").selectOption("all");
   await noOverflow();
 
-  const direct = await openPage({ width: 1280, height: 900 }, "ai-fallback", "s2");
+  const direct = await openPage({ width: 1280, height: 900 }, "solver-unproven", "s2");
   allPages.push(direct);
   assert.match(await direct.page.locator("#station-context-title").textContent(), /电站2/);
-  assert.strictEqual(await direct.page.locator("#decision-name").textContent(), "均衡方案");
+  assert.strictEqual(await direct.page.locator("#decision-name").textContent(), "无最终方案");
   for (const item of allPages) {
     assert.deepStrictEqual(item.externalRequests, []);
     assert.deepStrictEqual(item.consoleErrors, []);

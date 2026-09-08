@@ -57,7 +57,7 @@ def make_station_result(**overrides: object) -> StationOrchestrationResult:
 
 def make_orchestration_result(**overrides: object) -> M4OrchestrationResult:
     values: dict[str, object] = {
-        "schema_version": "m4-orchestration-v1",
+        "schema_version": "m4-orchestration-v2",
         "run_id": "run-test-001",
         "started_at": FIXED_STARTED_AT,
         "finished_at": FIXED_FINISHED_AT,
@@ -72,6 +72,33 @@ def make_orchestration_result(**overrides: object) -> M4OrchestrationResult:
 
 
 class M4OrchestratorContractTests(unittest.TestCase):
+    def test_schema_and_selection_status_accept_current_version(self):
+        for schema, status in (
+            ("m4-orchestration-v2", "pending_selection"),
+        ):
+            with self.subTest(schema=schema, status=status):
+                result = make_orchestration_result(
+                    schema_version=schema,
+                    stations=[make_station_result(selection_status=status)],
+                )
+                parsed = M4OrchestrationResult.model_validate_json(result.model_dump_json())
+                self.assertEqual(parsed.stations[0].selection_status, status)
+
+    def test_schema_rejects_cross_version_and_unknown_states(self):
+        baseline = make_orchestration_result().model_dump(mode="json")
+        for schema, status in (
+            ("m4-orchestration-v1", "pending_ai"),
+            ("m4-orchestration-v1", "pending_selection"),
+            ("m4-orchestration-v2", "pending_ai"),
+            ("m4-orchestration-v3", "pending_selection"),
+        ):
+            with self.subTest(schema=schema, status=status):
+                payload = json.loads(json.dumps(baseline))
+                payload["schema_version"] = schema
+                payload["stations"][0]["selection_status"] = status
+                with self.assertRaises(ValidationError):
+                    M4OrchestrationResult.model_validate_json(json.dumps(payload))
+
     def test_station_input_requires_exactly_one_request_or_error(self):
         request = make_request()
         with self.assertRaises(ValidationError):
@@ -160,9 +187,9 @@ class M4OrchestratorContractTests(unittest.TestCase):
                         json.dumps(payload)
                     )
 
-    def test_station_result_fixes_ai_and_ems_to_inactive_states(self):
+    def test_station_result_defaults_to_pending_selection_and_inactive_ems(self):
         result = make_station_result(status="optimized")
-        self.assertEqual(result.selection_status, "pending_ai")
+        self.assertEqual(result.selection_status, "pending_selection")
         self.assertIsNone(result.selected_candidate_id)
         self.assertEqual(result.dispatch_status, "not_dispatched")
         self.assertIsNone(result.ems_task_id)
