@@ -80,7 +80,7 @@ class OptimizationRequest(StrictModel):
     input_observed_at: datetime
     max_input_age_seconds: int = Field(gt=0, strict=True)
     interval_minutes: Literal[15]
-    horizon_points: Literal[96]
+    horizon_points: Annotated[int, Field(ge=95, le=96, strict=True)]
     source_versions: dict[str, str]
     points: list[ForecastPoint]
     capability: CapabilitySnapshot
@@ -91,8 +91,8 @@ class OptimizationRequest(StrictModel):
 
     @model_validator(mode="after")
     def validate_cross_fields(self) -> "OptimizationRequest":
-        if len(self.points) != HORIZON_POINTS:
-            raise ValueError("request must contain exactly 96 points")
+        if len(self.points) != self.horizon_points:
+            raise ValueError(f"request must contain exactly {self.horizon_points} points")
         timestamp_values = [
             ("plan_start_at", self.plan_start_at),
             ("input_observed_at", self.input_observed_at),
@@ -111,7 +111,7 @@ class OptimizationRequest(StrictModel):
             raise ValueError("request timestamps must use the same UTC offset")
         expected = [
             self.plan_start_at + timedelta(minutes=INTERVAL_MINUTES * index)
-            for index in range(HORIZON_POINTS)
+            for index in range(self.horizon_points)
         ]
         if [point.timestamp for point in self.points] != expected:
             raise ValueError("points must form one contiguous 15-minute timeline")

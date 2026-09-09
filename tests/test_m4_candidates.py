@@ -54,7 +54,7 @@ class CandidateTests(unittest.TestCase):
         self.assertIsNone(service.latest('station-1'))
 
     def test_real_solver_uses_partial_capacity_and_returns_preview_only_snapshot(self):
-        self.client.devices[0]['alert_status'] = 'alert'
+        self.client.devices[0]['emu_status'] = 'fault'
         self.controls.result['demand']['need_kw'] = 140.0
         service = self.service()
         result = self.run_once(service)

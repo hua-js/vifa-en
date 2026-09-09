@@ -144,6 +144,8 @@ class M4Optimizer:
 
     def _effective_model_version(self, request: OptimizationRequest) -> str:
         model_version = f"{self.model_version}/pyomo-v1"
+        if request.horizon_points == 95:
+            model_version += '/horizon-95-v1'
         if request.pv_dispatch_policy == "load_first_economic":
             return f"{model_version}/pv-load-first-economic-v1"
         return model_version

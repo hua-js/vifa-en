@@ -14,6 +14,7 @@ class Client:
  def __init__(self,runs,points=None):self.runs=runs;self.points=points;self.calls=[]
  def list_rows(self,table,**kwargs):
   self.calls.append((table,kwargs))
+  if table=='energy_forecast_latest':return []
   if table=='energy_forecast_manual_runs':return self.runs
   identifier=kwargs['filters']['$and'][0]['run_pk']['$eq']
   item=next(r for r in self.runs if r['id']==identifier)

@@ -49,7 +49,8 @@ class Client:
         label = 'history' if table == 't_es_data' and kwargs.get('limit') != 1 else table
         if label in self.failures:
             raise RuntimeError('Bearer secret-must-never-appear https://private.invalid')
-        mapping = {'energy_forecast_manual_runs': self.runs,
+        mapping = {'energy_forecast_latest': getattr(self, 'rolling', []),
+                   'energy_forecast_manual_runs': self.runs,
                    'energy_forecast_manual_points': self.forecasts,
                    't_emu': self.devices, 't_es_data': self.station_rows,
                    't_peak_diy': self.periods, 't_rate': self.rates, 'history': self.history}
@@ -71,6 +72,27 @@ class Controls:
 
 
 class LiveInputTests(unittest.TestCase):
+    def test_rolling_source_and_manual_tail_reach_request_with_visible_provenance(self):
+        from test_m4_rolling_forecast_source import rolling
+        client = Client()
+        client.rolling = [rolling(START-timedelta(minutes=30))]
+        result = self.fetch(client)
+        self.assertEqual(result['status'], 'ready')
+        self.assertEqual(result['sources']['load']['rolling_points'], 94)
+        self.assertEqual(result['sources']['load']['manual_points'], 2)
+        self.assertEqual(result['points'][0]['load_forecast_kw'], 1002)
+        self.assertEqual(result['points'][-1]['load_forecast_kw'], 195)
+        self.assertTrue(any('手动预测补充2点' in item for item in result['warnings']))
+        request = self.request(configuration(), result)
+        self.assertEqual(request.points[0].load_forecast_kw, 1002)
+        self.assertEqual(request.source_versions['load'], result['sources']['load']['version'])
+        client.runs = []
+        incomplete = self.fetch(client)
+        self.assertEqual(incomplete['status'], 'blocked')
+        self.assertEqual(incomplete['sources']['load']['coverage_points'], 94)
+        self.assertEqual(incomplete['points'], [])
+        with self.assertRaises(ValueError): self.request(configuration(), incomplete)
+
     def fetch(self, client=None, controls=None, config=None, now=NOW):
         from m4_settings.live_inputs import LiveInputService
         return LiveInputService(client or Client(), controls or Controls()).fetch(config or configuration(), now=now)
@@ -212,9 +234,26 @@ class LiveInputTests(unittest.TestCase):
         self.assertIsNone(result['sources']['realtime']['initial_soc_pct'])
         self.assertEqual(len(result['points']), 96)
 
-    def test_alerted_cabinet_is_excluded_while_remaining_cabinet_can_plan(self):
+    def test_emu11_advisory_flows_into_request_and_legacy_policy_stays_strict(self):
         client = Client()
         client.devices[0].update(alert_status='alert', latest_soc=30.0)
+        client.devices[1]['latest_soc'] = 60.0
+        result = self.fetch(client)
+        self.assertEqual(result['sources']['realtime']['participating_cabinet_ids'], ['emu11', 'emu12'])
+        request = self.request(configuration(), result)
+        self.assertEqual(request.capability.energy_capacity_kwh, 500)
+        self.assertEqual(request.capability.initial_soc_pct, 45)
+        self.assertEqual(request.source_versions['alarm_policy'], 'emu11-alert-advisory-v1')
+        for policy in [None, 'unknown']:
+            changed = copy.deepcopy(result)
+            if policy is None: changed['sources']['realtime'].pop('alarm_policy')
+            else: changed['sources']['realtime']['alarm_policy'] = policy
+            with self.subTest(policy=policy), self.assertRaises(ValueError):
+                self.request(configuration(), changed)
+
+    def test_faulted_cabinet_is_excluded_while_remaining_cabinet_can_plan(self):
+        client = Client()
+        client.devices[0].update(emu_status='fault', latest_soc=30.0)
         client.devices[1]['latest_soc'] = 60.0
         result = self.fetch(client)
         self.assertEqual(result['status'], 'ready')
@@ -236,7 +275,7 @@ class LiveInputTests(unittest.TestCase):
     def test_all_cabinets_excluded_still_blocks_new_request(self):
         client = Client()
         for row in client.devices:
-            row['alert_status'] = 'alert'
+            row['emu_status'] = 'fault'
         result = self.fetch(client)
         self.assertEqual(result['status'], 'blocked')
         self.assertIsNone(result['sources']['realtime']['initial_soc_pct'])
@@ -258,7 +297,7 @@ class LiveInputTests(unittest.TestCase):
 
     def test_request_rechecks_participation_scope_capacity_soc_and_oldest_time(self):
         client = Client()
-        client.devices[0].update(alert_status='alert', latest_soc=30.0)
+        client.devices[0].update(emu_status='fault', latest_soc=30.0)
         client.devices[1]['latest_soc'] = 60.0
         original = self.fetch(client)
         changes = [

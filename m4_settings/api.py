@@ -3,16 +3,17 @@ import ast
 import os
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Annotated
 from uuid import UUID
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from .models import SaveSettings, StationConfiguration
 from .store import SettingsConflict, SettingsStore
 from .control_sources import ControlSourceError, ControlSourceReader
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, UUID4
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -207,6 +208,26 @@ def create_app(settings_path: Path | None = None, *, control_reader=None, input_
             return decision_results.latest(station_id)
         except Exception:
             raise HTTPException(503, '决策记录读取或独立复验失败，请检查本地记录后刷新') from None
+
+    @app.get('/m4-api/stations/{station_id}/decision-history')
+    def get_decision_history(station_id: str,
+            limit: Annotated[int, Query(ge=1, le=20)] = 10,
+            offset: Annotated[int, Query(ge=0, le=100000)] = 0) -> dict:
+        station_exists(station_id)
+        try:
+            return decision_results.history(station_id, limit=limit, offset=offset)
+        except Exception:
+            raise HTTPException(503, '历史记录读取失败，请刷新后重试') from None
+
+    @app.get('/m4-api/stations/{station_id}/decision-results/{run_id}')
+    def get_historical_decision(station_id: str, run_id: UUID4) -> dict:
+        station_exists(station_id)
+        try:
+            return decision_results.by_run(station_id, str(run_id))
+        except FileNotFoundError:
+            raise HTTPException(404, '本站没有这条历史记录') from None
+        except Exception:
+            raise HTTPException(503, '历史记录读取或独立复验失败，未显示其他记录') from None
 
     @app.get('/m4-api/stations/{station_id}/decision-runs')
     def get_decision_run(station_id: str) -> dict:

@@ -1,0 +1,49 @@
+name: vifa-m4
+
+services:
+  m4-api:
+    platform: linux/amd64
+    image: ${M4_IMAGE:-vifa-m4-api:socket-20260909}
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        PYTHON_IMAGE: ${PYTHON_IMAGE:-python:3.12-slim-bookworm}
+    restart: unless-stopped
+    init: true
+    environment:
+      M4_SETTINGS_DB: /data/settings.sqlite3
+      M4_DECISION_RESULTS_DIR: /data/solver-decisions
+      M4_NOCOBASE_TOKEN_FILE: /run/secrets/nocobase_token
+      TZ: Asia/Shanghai
+    secrets:
+      - nocobase_token
+    volumes:
+      - m4-data:/data
+      - ${M4_SOCKET_DIR:-/opt/vifa/m4/socket}:/run/vifa-m4
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=256m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_READ_SEARCH
+      - SETGID
+      - SETUID
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  m4-data:
+    name: ${M4_DATA_VOLUME:-vifa-m4-data}
+
+secrets:
+  nocobase_token:
+    file: ../secrets/nocobase_token.txt

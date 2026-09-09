@@ -19,6 +19,7 @@ _TABLES = {
     't_es_data': '电站历史与实时数据',
     't_peak_diy': '峰谷时段',
     't_rate': '电价',
+    'energy_forecast_latest': 'M3滚动预测',
     'energy_forecast_manual_runs': '预测任务',
     'energy_forecast_manual_points': '预测时序',
 }

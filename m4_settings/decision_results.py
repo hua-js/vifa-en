@@ -9,31 +9,85 @@ from m4_selection.decision_chain import (EVIDENCE_NAMES, FINAL_STATUSES, SELECTO
     candidate_snapshot, read_bytes, read_json, parse_json, timestamp, validate_identity,
     verify_precheck_inputs, verify_request_inputs, verify_selection)
 from .models import StationConfiguration
+from .peak_preparation import summarize_peak_preparation
 from .selection import LiveSelectionResult, StationPolicy
 
 
 METRICS = ('peak_demand_exceed_kw', 'demand_exceed_energy_kwh', 'energy_cost',
-           'preferred_soc_deviation', 'pv_unabsorbed_energy_kwh')
+           'preferred_soc_deviation', 'pv_unabsorbed_energy_kwh', 'max_grid_import_kw')
 
 
 class DecisionResultsReader:
     def __init__(self, root):
         self.root = Path(root)
 
-    def latest(self, station_id):
-        validate_identity(station_id)
-        view = dict(schema_version='m4-decision-results-v1', station_id=station_id,
+    @staticmethod
+    def _view(station_id):
+        return dict(schema_version='m4-decision-results-v1', station_id=station_id,
             usage='historical_preview_only', dispatch_status='not_dispatched', status='empty', record=None)
+
+    def _paths(self, station_id):
+        validate_identity(station_id)
         directory = self.root / station_id
-        if not directory.exists():
-            return view
         if directory.is_symlink():
             raise ValueError('symlink evidence directory is not supported')
+        if not directory.exists():
+            return []
         paths = [child / 'report.json' for child in directory.iterdir()
                  if child.is_dir() and not child.is_symlink() and (child / 'report.json').exists()]
-        if not paths:
-            return view
-        path = max(paths, key=lambda item: (item.stat().st_mtime_ns, item.parent.name))
+        return sorted(paths, key=lambda item: (item.stat().st_mtime_ns, item.parent.name), reverse=True)
+
+    def latest(self, station_id):
+        paths = self._paths(station_id)
+        return self._read(station_id, paths[0]) if paths else self._view(station_id)
+
+    def by_run(self, station_id, run_id):
+        validate_identity(station_id, run_id)
+        matches = []
+        for path in self._paths(station_id):
+            if path.parent.name == run_id:
+                matches.append(path)
+                continue
+            # CLI outputs may use a human-readable directory. Their report
+            # identity still has to be a canonical UUID and pass full checks.
+            try:
+                if read_json(path).get('run_id') == run_id:
+                    matches.append(path)
+            except (ValueError, TypeError, AttributeError, OSError):
+                continue
+        if not matches:
+            raise FileNotFoundError('decision record not found')
+        if len(matches) != 1:
+            raise ValueError('ambiguous decision identity')
+        view = self._read(station_id, matches[0])
+        if view['record']['run_id'] != run_id:
+            raise ValueError('requested decision identity mismatch')
+        return view
+
+    def history(self, station_id, *, limit=10, offset=0):
+        if type(limit) is not int or not 1 <= limit <= 20 or type(offset) is not int or not 0 <= offset <= 100000:
+            raise ValueError('invalid history page')
+        paths = self._paths(station_id)
+        items = []
+        for path in paths[offset:offset+limit]:
+            try:
+                record = self._read(station_id, path)['record']
+                chosen = next((c for c in record['candidates']
+                               if c['profile_id'] == (record['selected'] or {}).get('profile_id')), None)
+                items.append(dict(run_id=record['run_id'], status=record['status'],
+                    started_at=record['started_at'], finished_at=record['finished_at'],
+                    plan_start_at=record['plan_start_at'], selected=record['selected'],
+                    metrics=chosen['metrics'] if chosen else None, issues=record['issues']))
+            except (ValueError, KeyError, TypeError, AttributeError, OSError, OverflowError):
+                items.append(dict(run_id=None, status='unreadable', started_at=None, finished_at=None,
+                    plan_start_at=None, selected=None, metrics=None, issues=['此条记录读取或独立校验失败']))
+        return dict(schema_version='m4-decision-history-v1', station_id=station_id,
+            usage='historical_preview_only', dispatch_status='not_dispatched', items=items,
+            offset=offset, next_offset=offset+limit if offset+limit < len(paths) else None,
+            order='newest_saved_first')
+
+    def _read(self, station_id, path):
+        view = self._view(station_id)
         report = read_json(path)
         validate_identity(report['station_id'], report['run_id'])
         if (report['station_id'] != station_id
@@ -69,7 +123,7 @@ class DecisionResultsReader:
             solve_seconds=None, solver_name=None, solver_version=None, model_version=None,
             selector_version=None, candidate_run_id=report.get('candidate_run_id'),
             selected=None, reason='', checked_at=None, expires_at=None, input_sha256=None,
-            comparison=[], candidates=[], policy=None, plan_start_at=None,
+            comparison=[], candidates=[], policy=None, plan_start_at=None, peak_preparation=None, input_summary=None,
             issues=report['issues'], stages=report['stages'])
         configuration = policy = None
         if 'configuration.json' in evidence:
@@ -95,6 +149,15 @@ class DecisionResultsReader:
                     raise ValueError('missing optimization result')
                 view.update(status='available', record=record)
                 return view
+            record['input_summary'] = dict(configuration_version=configuration.version,
+                horizon_points=request.horizon_points,
+                source_versions=dict(request.source_versions),
+                initial_soc_pct=request.capability.initial_soc_pct,
+                energy_capacity_kwh=request.capability.energy_capacity_kwh,
+                max_charge_kw=request.capability.max_charge_kw,
+                max_discharge_kw=request.capability.max_discharge_kw,
+                demand_limit_kw=request.constraints.demand_limit_kw,
+                input_observed_at=request.input_observed_at.isoformat())
             preview = select_candidate(request, result, policy.policy)
             record.update(plan_start_at=request.plan_start_at.isoformat(),
                 solve_seconds=sum(candidate.solve_seconds for candidate in result.candidates),
@@ -127,6 +190,9 @@ class DecisionResultsReader:
                     or timestamp(report['expires_at']) != live.expires_at):
                 raise ValueError('completed report disagrees with final decision')
             record.update(selected=report['selected'], reason=report['reason'])
+            chosen = next(candidate for candidate in result.candidates
+                          if candidate.profile_id == live.selection.selected.profile_id)
+            record['peak_preparation'] = summarize_peak_preparation(request, chosen)
         elif report.get('selected') is not None:
             raise ValueError('blocked decision cannot select a plan')
         view.update(status='available', record=record)

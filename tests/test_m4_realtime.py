@@ -46,6 +46,23 @@ class RealtimeTests(unittest.TestCase):
             now=now, **({'plan_start_at': plan_start_at} if plan_start_at is not None else {}),
         )
 
+    def test_emu11_alert_is_advisory_without_hiding_source_or_other_failures(self):
+        rows = [cabinet('emu11', 20, alert_status='alert'), cabinet('emu12', 60)]
+        result = self.snapshot(rows)
+        self.assertEqual(result['participating_cabinet_ids'], ['emu11', 'emu12'])
+        self.assertEqual(result['initial_soc_pct'], 40)
+        self.assertEqual(result['available_energy_capacity_kwh'], 500)
+        self.assertEqual(result['cabinets'][0]['alert_status'], 'alert')
+        self.assertEqual(result['cabinets'][0]['issues'], [])
+        self.assertTrue(any('仅提示' in x for x in result['warnings']))
+        self.assertEqual(result['alarm_policy'], 'emu11-alert-advisory-v1')
+        for change in [{'emu_status':'offline'}, {'bcu1_status':'fault'}, {'latest_soc':0}, {'age':301}]:
+            with self.subTest(change=change):
+                changed=[cabinet('emu11',alert_status='alert',**change),cabinet('emu12')]
+                self.assertEqual(self.snapshot(changed)['participating_cabinet_ids'], ['emu12'])
+        peer=self.snapshot([cabinet('emu11',alert_status='alert'),cabinet('emu12',alert_status='alert')])
+        self.assertEqual(peer['participating_cabinet_ids'], ['emu11'])
+
     def test_equal_configured_capacity_weights_all_fixed_cabinets(self):
         result = self.snapshot([cabinet('emu11', 40, age=20), cabinet('emu12', 60, age=80)])
         self.assertTrue(result['available'])
@@ -119,12 +136,12 @@ class RealtimeTests(unittest.TestCase):
                 self.assertTrue(self.snapshot([row, cabinet('emu12')])['available'])
 
     def test_pcs_work_is_supported_without_bypassing_alert_or_other_components(self):
-        rows=[cabinet('emu11',pcs1_status='work',pcs2_status='work',alert_status='alert'),
-              cabinet('emu12',pcs1_status='work',pcs2_status='work',emu_status='discharge')]
+        rows=[cabinet('emu12',pcs1_status='work',pcs2_status='work',alert_status='alert'),
+              cabinet('emu11',pcs1_status='work',pcs2_status='work',emu_status='discharge')]
         result=self.snapshot(rows)
-        self.assertEqual(result['participating_cabinet_ids'],['emu12'])
+        self.assertEqual(result['participating_cabinet_ids'],['emu11'])
         self.assertEqual(result['available_energy_capacity_kwh'],250.0)
-        self.assertEqual(result['cabinets'][0]['issues'],['alert_status 存在活动告警或未知告警状态'])
+        self.assertEqual(result['cabinets'][1]['issues'],['alert_status 存在活动告警或未知告警状态'])
         for field in ['emu_status','bcu1_status','bcu2_status']:
             changed=copy.deepcopy(rows);changed[1][field]='work'
             self.assertEqual(self.snapshot(changed)['participating_cabinet_ids'],[])
@@ -148,13 +165,13 @@ class RealtimeTests(unittest.TestCase):
     def test_only_explicit_null_alert_is_accepted(self):
         for alert in ('alert', 'normal', 'ok', '', 'unknown', False, 0, []):
             with self.subTest(alert=alert):
-                result = self.snapshot([cabinet('emu11', alert_status=alert), cabinet('emu12')])
+                result = self.snapshot([cabinet('emu12', alert_status=alert), cabinet('emu11')])
                 self.assertTrue(result['available'])
-                self.assertEqual(result['participating_cabinet_ids'], ['emu12'])
+                self.assertEqual(result['participating_cabinet_ids'], ['emu11'])
                 self.assertEqual(result['initial_soc_pct'], 50)
-        row = cabinet('emu11')
+        row = cabinet('emu12')
         del row['alert_status']
-        self.assertEqual(self.snapshot([row, cabinet('emu12')])['participating_cabinet_ids'], ['emu12'])
+        self.assertEqual(self.snapshot([row, cabinet('emu11')])['participating_cabinet_ids'], ['emu11'])
 
     def test_soc_must_be_finite_numeric_nonboolean_in_physical_range(self):
         for value in (None, True, False, '50', float('nan'), float('inf'), -0.1, 100.1, [], {}):
@@ -242,7 +259,7 @@ class RealtimeTests(unittest.TestCase):
         self.assertEqual(first['source_version'], self.snapshot(irrelevant)['source_version'])
 
     def test_single_alarm_uses_only_healthy_soc_and_half_of_total_power(self):
-        result = self.snapshot([cabinet('emu11', 20, age=80, alert_status='alert'), cabinet('emu12', 70)])
+        result = self.snapshot([cabinet('emu12', 20, age=80, alert_status='alert'), cabinet('emu11', 70)])
         self.assertTrue(result['available'])
         self.assertEqual(result['initial_soc_pct'], 70)
         self.assertEqual(result['full_station_soc_pct'], 45)
@@ -251,12 +268,12 @@ class RealtimeTests(unittest.TestCase):
         self.assertEqual(result['available_energy_capacity_kwh'], 250)
         self.assertEqual(result['available_max_charge_kw'], 40)
         self.assertEqual(result['available_max_discharge_kw'], 45)
-        self.assertEqual(result['participating_cabinet_ids'], ['emu12'])
-        self.assertEqual(result['excluded_cabinet_ids'], ['emu11'])
+        self.assertEqual(result['participating_cabinet_ids'], ['emu11'])
+        self.assertEqual(result['excluded_cabinet_ids'], ['emu12'])
         self.assertEqual(result['participation_status'], 'partial')
         self.assertEqual(datetime.fromisoformat(result['observed_at']), NOW - timedelta(seconds=30))
         self.assertEqual(result['issues'], [])
-        self.assertTrue(any('emu11' in warning and 'alert_status' in warning for warning in result['warnings']))
+        self.assertTrue(any('emu12' in warning and 'alert_status' in warning for warning in result['warnings']))
 
     def test_station_two_two_participants_keep_one_third_of_total_capability(self):
         rows = [cabinet(f'emu{n}', float(n), station='ES02', alert_status=None if n < 23 else 'alert')
@@ -273,7 +290,7 @@ class RealtimeTests(unittest.TestCase):
         self.assertEqual([item['capacity_kwh'] for item in result['cabinets']], [200] * 6)
 
     def test_all_cabinets_excluded_blocks_station_with_no_fabricated_soc_or_time(self):
-        result = self.snapshot([cabinet('emu11', 30, alert_status='alert'), cabinet('emu12', 70, age=301)])
+        result = self.snapshot([cabinet('emu11', 30, emu_status='fault'), cabinet('emu12', 70, age=301)])
         self.assertFalse(result['available'])
         self.assertIsNone(result['initial_soc_pct'])
         self.assertIsNone(result['observed_at'])

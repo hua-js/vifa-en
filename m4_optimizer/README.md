@@ -6,7 +6,7 @@
 
 ## 职责边界
 
-`m4_optimizer` 接收一个站点完整、时间对齐的 96 点预测、储能能力快照、硬约束和三套外部目标配置，在不启动 FastAPI 的情况下生成 `balanced`、`cost`、`pv` 三类数学候选。模块负责 MILP 建模、分层目标求解、公开计划解码、指标复算和结果校验。
+`m4_optimizer` 接收一个站点完整、时间对齐的 95 或 96 点预测、储能能力快照、硬约束和三套外部目标配置，在不启动 FastAPI 的情况下生成 `balanced`、`cost`、`pv` 三类数学候选。模块负责 MILP 建模、分层目标求解、公开计划解码、指标复算和结果校验。
 
 模块不负责预测数据生产、候选策略选择、真实节费承诺、EMS 指令编排、数据库持久化或设备执行。此模块不会连接 AI、EMS 或真实设备。
 
@@ -108,7 +108,7 @@ result = M4Optimizer(model_version="m4-milp-v1").optimize(request)
 ## 输出解释
 
 - `balanced`：按调用方配置生成综合候选；`cost`：按调用方配置生成成本候选；`pv`：按调用方配置生成光伏消纳候选。三者共享同一组硬约束，不代表模块替调用方选择最终方案。
-- 候选状态包括 `optimal`、`feasible`、`infeasible`、`timeout` 和 `error`。`optimal` 要求 HiGHS 正常结束、具有有限可行解与有限目标界，计算的相对 gap 不超过 `1e-9`；有可行解但不能证实该界、或后续目标层超时而保留前层 incumbent 时为 `feasible`。从未取得 incumbent 的超时才返回 `timeout`；后续 `error`/`infeasible` 不会被旧 incumbent 掩盖。只有 `optimal` 或 `feasible` 候选包含 96 点 `plan` 和 `metrics`。
+- 候选状态包括 `optimal`、`feasible`、`infeasible`、`timeout` 和 `error`。`optimal` 要求 HiGHS 正常结束、具有有限可行解与有限目标界，计算的相对 gap 不超过 `1e-9`；有可行解但不能证实该界、或后续目标层超时而保留前层 incumbent 时为 `feasible`。从未取得 incumbent 的超时才返回 `timeout`；后续 `error`/`infeasible` 不会被旧 incumbent 掩盖。只有 `optimal` 或 `feasible` 候选包含与请求点数一致的 `plan` 和 `metrics`。
 - 每个计划点以 `mode + target_power_kw` 表达储能动作：`charge` 为充电功率、`discharge` 为放电功率、`idle` 的目标功率为 0。并同时给出预期 SOC、电网进出功率、未吸收光伏和需量超限值，便于独立复算。
 - 缺省`legacy`模式下，`grid_export_kw` 与 `pv_unabsorbed_kw` 都按 PV 归因，任一点二者之和不超过该点 `pv_forecast_kw`；允许电池服务本地负荷的同时把当点 PV 外送。新光伏规则见下节，不能用旧模式验收。
 - 每个候选都有由请求、模型和 profile 版本组成的稳定 `plan_version`，失败候选也不例外。`risk_codes` 与 `risk_messages` 按索引一一对应；当前 `PV_UNABSORBED` 的说明明确它只是风险提示，不是光伏限发指令。
@@ -120,7 +120,7 @@ result = M4Optimizer(model_version="m4-milp-v1").optimize(request)
 
 ## 输入要求
 
-请求必须提供完整的 96 个 15 分钟点。`plan_start_at`、`input_observed_at` 和每个点都必须有可计算的 UTC offset，且同一请求全部使用相同 offset；混用 UTC 与 `+08:00` 会被拒绝。阶段 A 采用固定 offset 口径，跨 DST 跳变的窗口应由调用方先转换为 UTC 或固定 offset，优化器不会猜测 DST 重复/缺失时段。
+请求必须提供完整的95或96个15分钟点，`horizon_points`与列表长度一致。95点为23小时45分钟，期末SOC落在实际最后时段终点。`plan_start_at`、`input_observed_at` 和每个点都必须有可计算的 UTC offset，且同一请求全部使用相同 offset；混用 UTC 与 `+08:00` 会被拒绝。阶段 A 采用固定 offset 口径，跨 DST 跳变的窗口应由调用方先转换为 UTC 或固定 offset，优化器不会猜测 DST 重复/缺失时段。
 
 负荷、光伏、电价、能力快照、约束和目标版本必须来自同一规划窗口并完成时间对齐；`source_versions` 映射不能为空，键和值也不能是空字符串或纯空白。过期能力快照、缺点、错位时间线、非法容量/效率或不完整目标配置会被拒绝。
 
@@ -143,7 +143,7 @@ result = M4Optimizer(model_version="m4-milp-v1").optimize(request)
 
 `ForecastPoint.tariff_period` 可选，取 `gu/ping/feng`，旧请求默认 `None`。这是真实每日重复电价规则的标签；价格最低不代表谷段。保留原六项目标，可在最后单独追加 `valley_charge_delay`，不得提前、混入其他层或重复。
 
-该层从 96 点滚动窗口重建自然日时段，识别 00:00 起连续的谷段，再按自然日和连续同价区间拆分。缺少标签、未对齐整刻度、全天没有时段边界时不启用重排。求解时固定全部放电及区间外充电，锁定每个区间已有充电总量，再最小化电量乘充电时延；现有硬约束和前序目标锁继续生效。
+该层从95或96点滚动窗口的已知标签重建自然日时段，识别 00:00 起连续的谷段，再按自然日和连续同价区间拆分。缺少午夜连续谷段至其已知终点的必要标签、未对齐整刻度、全天没有时段边界时不启用重排。求解时固定全部放电及区间外充电，锁定每个区间已有充电总量，再最小化电量乘充电时延；现有硬约束和前序目标锁继续生效。
 
 末层使用零 MIP gap 目标，仍受原 profile 总时间预算限制。没有新解时沿用现有超时回退；未证明该层最优时输出 `EARLY_VALLEY_PREFERENCE_INCOMPLETE`。该提示独立于前序层状态：前层仅可行、末层已最优时，整个候选仍为 `feasible`，但不误报早充未完成。实时适配的模型与目标版本均已升级至 `v2-early-valley`，历史 B1 输入及输出格式兼容。
 

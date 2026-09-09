@@ -92,7 +92,7 @@ class UpstreamTests(unittest.TestCase):
         self.assertNotIn('test-secret', request.full_url)
 
     def test_all_allowed_tables_and_large_history_pages(self):
-        for table in ('t_emu', 't_es_data', 't_peak_diy', 't_rate', 'energy_forecast_manual_runs', 'energy_forecast_manual_points'):
+        for table in ('t_emu', 't_es_data', 't_peak_diy', 't_rate', 'energy_forecast_latest', 'energy_forecast_manual_runs', 'energy_forecast_manual_points'):
             with self.subTest(table=table):
                 rows, _ = self.read(table=table, page_size=2000)
                 self.assertEqual(len(rows), 5)

@@ -80,7 +80,7 @@ def build_request(
         station_id=configuration.station_id,plan_start_at=plan_start_at,
         input_observed_at=live_state.observed_at,
         max_input_age_seconds=parameters.max_input_age_seconds,
-        interval_minutes=15,horizon_points=96,points=points,
+        interval_minutes=15,horizon_points=len(points),points=points,
         capability=capability,constraints=constraints,profiles=profiles,
         source_versions={**source_versions,
             'constraints':f'{configuration.version}/{control_limits.source_version}',

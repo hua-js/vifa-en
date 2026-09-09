@@ -44,7 +44,8 @@ class BuiltModel:
 def build_model(request: OptimizationRequest) -> BuiltModel:
     """Build the station rules as named Pyomo variables and constraints."""
     load_first = request.pv_dispatch_policy == "load_first_economic"
-    index = _build_variable_index(load_first=load_first)
+    horizon = request.horizon_points
+    index = _build_variable_index(load_first=load_first, horizon=horizon)
     capability, constraints = request.capability, request.constraints
     charge_max = capability.max_charge_kw if capability.available else 0.0
     discharge_max = capability.max_discharge_kw if capability.available else 0.0
@@ -62,9 +63,9 @@ def build_model(request: OptimizationRequest) -> BuiltModel:
     windows = _overnight_valley_windows(request)
 
     model = pyo.ConcreteModel(name="station_battery_dispatch")
-    model.periods = pyo.RangeSet(0, HORIZON_POINTS - 1)
-    model.energy_states = pyo.RangeSet(0, HORIZON_POINTS)
-    model.pv_policy_periods = pyo.Set(initialize=range(HORIZON_POINTS) if load_first else (), ordered=True)
+    model.periods = pyo.RangeSet(0, horizon - 1)
+    model.energy_states = pyo.RangeSet(0, horizon)
+    model.pv_policy_periods = pyo.Set(initialize=range(horizon) if load_first else (), ordered=True)
     model.pv_surplus_periods = pyo.Set(initialize=[t for t in model.periods if load_first and surplus[t] > 0], ordered=True)
 
     def charge_bound(m, t):
@@ -78,7 +79,7 @@ def build_model(request: OptimizationRequest) -> BuiltModel:
     def energy_bound(m, t):
         if t == 0:
             return initial_energy, initial_energy
-        if t == HORIZON_POINTS:
+        if t == horizon:
             return max(minimum_energy, initial_energy - terminal_tolerance), min(maximum_energy, initial_energy + terminal_tolerance)
         return minimum_energy, maximum_energy
 
@@ -178,9 +179,9 @@ def _overnight_valley_windows(
 ) -> tuple[tuple[int, ...], ...]:
     """Use declared daily tariff periods, keeping dates and price blocks separate.
 
-    A rolling 24-hour horizon includes every clock slot once. Reconstruct the
-    daily schedule so a horizon starting partway through the overnight valley
-    still recognizes its remaining hours. Legacy or incomplete labels are a no-op.
+    Reconstruct the known midnight-connected tariff block. With 95 points a
+    missing clock slot outside that block is harmless; a gap before its known
+    end disables the preference rather than inferring the missing tariff.
     """
     if any(point.tariff_period is None or point.timestamp.minute % 15
            or point.timestamp.second or point.timestamp.microsecond
@@ -188,11 +189,9 @@ def _overnight_valley_windows(
         return ()
     by_slot = {point.timestamp.hour * 4 + point.timestamp.minute // 15: point
                for point in request.points}
-    if len(by_slot) != HORIZON_POINTS:
-        return ()
     valley_end = next((slot for slot in range(HORIZON_POINTS)
-                       if by_slot[slot].tariff_period != "gu"), HORIZON_POINTS)
-    if valley_end in (0, HORIZON_POINTS):
+                       if slot not in by_slot or by_slot[slot].tariff_period != "gu"), HORIZON_POINTS)
+    if valley_end in (0, HORIZON_POINTS) or valley_end not in by_slot:
         return ()
     block_by_slot = {}
     block = 0
@@ -209,7 +208,7 @@ def _overnight_valley_windows(
     return tuple(tuple(window) for window in windows.values())
 
 
-def _build_variable_index(*, load_first: bool = False) -> VariableIndex:
+def _build_variable_index(*, load_first: bool = False, horizon: int = HORIZON_POINTS) -> VariableIndex:
     cursor = 0
 
     def allocate(size: int) -> slice:
@@ -218,22 +217,22 @@ def _build_variable_index(*, load_first: bool = False) -> VariableIndex:
         cursor += size
         return result
 
-    charge = allocate(HORIZON_POINTS)
-    discharge = allocate(HORIZON_POINTS)
-    grid_import = allocate(HORIZON_POINTS)
-    grid_export = allocate(HORIZON_POINTS)
-    pv_unabsorbed = allocate(HORIZON_POINTS)
-    energy = allocate(HORIZON_POINTS + 1)
-    demand_exceed = allocate(HORIZON_POINTS)
+    charge = allocate(horizon)
+    discharge = allocate(horizon)
+    grid_import = allocate(horizon)
+    grid_export = allocate(horizon)
+    pv_unabsorbed = allocate(horizon)
+    energy = allocate(horizon + 1)
+    demand_exceed = allocate(horizon)
     peak_demand_exceed = cursor
     cursor += 1
-    charge_on = allocate(HORIZON_POINTS)
-    discharge_on = allocate(HORIZON_POINTS)
-    grid_import_on = allocate(HORIZON_POINTS)
-    soc_low_deviation = allocate(HORIZON_POINTS)
-    soc_high_deviation = allocate(HORIZON_POINTS)
-    pv_curtail_on = allocate(HORIZON_POINTS if load_first else 0)
-    pv_storage_full = allocate(HORIZON_POINTS if load_first else 0)
+    charge_on = allocate(horizon)
+    discharge_on = allocate(horizon)
+    grid_import_on = allocate(horizon)
+    soc_low_deviation = allocate(horizon)
+    soc_high_deviation = allocate(horizon)
+    pv_curtail_on = allocate(horizon if load_first else 0)
+    pv_storage_full = allocate(horizon if load_first else 0)
     return VariableIndex(
         charge=charge,
         discharge=discharge,

@@ -11,7 +11,7 @@ from .adapter import build_request as build_optimizer_request
 from .control_sources import ControlSourceError
 from .forecast_source import load_forecast
 from .models import LiveStationState, ResolvedControlLimits, StationConfiguration
-from .realtime import SOURCE_FIELDS, build_realtime_snapshot
+from .realtime import ALARM_POLICY, SOURCE_FIELDS, alarm_is_advisory, build_realtime_snapshot
 from .roster import CABINET_ISOLATION_POLICY, STATION_CABINETS
 from .timeseries import InputDataError, build_pv_reference, build_tariff_points
 from .upstream import SourceReadError
@@ -36,17 +36,17 @@ def _ceil_quarter(value):
     return floor if value == floor else floor + timedelta(minutes=15)
 
 
-def _complete(values):
+def _complete(values, horizon=HORIZON):
     try:
-        return (isinstance(values, list) and len(values) == HORIZON
+        return (isinstance(values, list) and len(values) == horizon
                 and all(isinstance(value, (int, float)) and not isinstance(value, bool)
                         and math.isfinite(value) and value >= 0 for value in values))
     except (ValueError, OverflowError):
         return False
 
 
-def _complete_tariff_periods(period_types):
-    return (isinstance(period_types, list) and len(period_types) == HORIZON
+def _complete_tariff_periods(period_types, horizon=HORIZON):
+    return (isinstance(period_types, list) and len(period_types) == horizon
             and all(isinstance(kind, str) and kind in ('gu', 'ping', 'feng') for kind in period_types))
 
 
@@ -151,6 +151,7 @@ class LiveInputService:
         station_id = configuration.station_id
         source_station, roster = STATION_CABINETS[station_id]
         issues, warnings, sources = [], [], {}
+        horizon = HORIZON
 
         with ThreadPoolExecutor(max_workers=4) as pool:
             pending = {
@@ -171,16 +172,25 @@ class LiveInputService:
                     warnings.extend(result.get('warnings', []))
                     warnings.extend(result.get('issues', []))
                 else:
-                    complete = _complete(result.get('values'))
+                    if key == 'load' and result.get('horizon_points') == 95:
+                        horizon = 95
+                    # PV/tariff adapters still validate their full daily source.
+                    # Export only the same actual window as the load forecast.
+                    if key in ('pv','tariff') and horizon == 95 and _complete(result.get('values')):
+                        result = {**result, 'values':result['values'][:horizon], 'coverage_points':horizon}
+                        if key == 'tariff' and _complete_tariff_periods(result.get('period_types')):
+                            result['period_types'] = result['period_types'][:horizon]
+                    warnings.extend(result.get('warnings', []))
+                    complete = _complete(result.get('values'), horizon)
                     source_issues = result.get('issues', [])
-                    if key == 'tariff' and not _complete_tariff_periods(result.get('period_types')):
+                    if key == 'tariff' and not _complete_tariff_periods(result.get('period_types'), horizon):
                         complete = False
-                        source_issues = [*source_issues, '共用电价缺少完整有效的 96 点时段标签']
+                        source_issues = [*source_issues, f'共用电价缺少完整有效的 {horizon} 点时段标签']
                     status = 'ready' if complete and not source_issues else 'incomplete'
                     sources[key] = {**result, 'status': status, 'issues': source_issues,
-                                    'coverage_points': result.get('coverage_points', HORIZON if complete else 0)}
+                                    'coverage_points': result.get('coverage_points', horizon if complete else 0)}
                     if status != 'ready':
-                        issues.extend(source_issues or [f'{labels[key]}缺少完整有效的 96 点数据'])
+                        issues.extend(source_issues or [f'{labels[key]}缺少完整有效的 {horizon} 点数据'])
         if station_id == 'station-2' and sources['pv']['status'] == 'ready':
             warnings.append('光伏使用七个完整历史日的同时段参考基线，尚无光伏预测接口')
 
@@ -221,19 +231,19 @@ class LiveInputService:
                 issues.append(error)
 
         points = []
-        if all(sources[key]['status'] == 'ready' and _complete(sources[key].get('values'))
+        if all(sources[key]['status'] == 'ready' and _complete(sources[key].get('values'), horizon)
                for key in ('load', 'pv', 'tariff')):
             points = [{'timestamp': (plan_start+timedelta(minutes=15*i)).isoformat(),
                 'load_forecast_kw': float(sources['load']['values'][i]),
                 'pv_forecast_kw': float(sources['pv']['values'][i]),
                 'buy_price_per_kwh': float(sources['tariff']['values'][i]),
                 'tariff_period': sources['tariff']['period_types'][i],
-                'sell_price_per_kwh': 0.0} for i in range(HORIZON)]
+                'sell_price_per_kwh': 0.0} for i in range(horizon)]
         ready = (not issues and configuration.parameters is not None and bool(configuration.version)
-                 and len(points) == HORIZON and all(source['status'] == 'ready' for source in sources.values()))
+                 and len(points) == horizon and all(source['status'] == 'ready' for source in sources.values()))
         return {'station_id': station_id, 'fetched_at': finished_at.isoformat(),
-            'plan_start_at': plan_start.isoformat(), 'plan_end_at': (plan_start+timedelta(days=1)).isoformat(),
-            'configuration_version': configuration.version, 'interval_minutes': 15, 'horizon_points': HORIZON,
+            'plan_start_at': plan_start.isoformat(), 'plan_end_at': (plan_start+timedelta(minutes=15*horizon)).isoformat(),
+            'configuration_version': configuration.version, 'interval_minutes': 15, 'horizon_points': horizon,
             'status': 'ready' if ready else 'blocked', 'issues': list(dict.fromkeys(issues)),
             'warnings': list(dict.fromkeys(warnings)), 'sources': sources, 'points': points}
 
@@ -243,7 +253,9 @@ def _validate_participation(configuration, snapshot, *, start, checked_at, fetch
     parameters = configuration.parameters
     _, roster = STATION_CABINETS[configuration.station_id]
     cabinets = snapshot.get('cabinets')
+    alarm_policy = snapshot.get('alarm_policy')
     if (snapshot.get('participation_policy') != CABINET_ISOLATION_POLICY
+            or alarm_policy not in (None, ALARM_POLICY)
             or snapshot.get('issues') or not isinstance(cabinets, list)
             or len(cabinets) != len(roster)
             or any(not isinstance(c, dict) for c in cabinets)
@@ -283,7 +295,9 @@ def _validate_participation(configuration, snapshot, *, start, checked_at, fetch
         soc = cabinet.get('soc_pct')
         if (type(soc) not in (int, float)
                 or not parameters.soc_min_pct <= soc <= parameters.soc_max_pct or not math.isfinite(soc)
-                or cabinet.get('issues') != [] or cabinet.get('alert_status', 'unknown') is not None
+                or cabinet.get('issues') != []
+                or (not alarm_is_advisory(configuration.station_id, cabinet['emu_sn'], alarm_policy)
+                    and cabinet.get('alert_status', 'unknown') is not None)
                 or cabinet.get('status') not in ('wait', 'standby', 'charge', 'discharge')):
             raise ValueError('参与柜的 SOC、告警或运行状态未通过校验')
         try:
@@ -321,10 +335,13 @@ def request_from_inputs(configuration: StationConfiguration, bundle: dict, profi
             or snapshot.get('configuration_version') != configuration.version
             or controls.get('station_id') != configuration.station_id):
         raise ValueError('实时可用状态或控制配置与本站不一致')
-    if any(not _complete(sources[key].get('values')) for key in ('load', 'pv', 'tariff')):
-        raise ValueError('必需来源必须各自包含完整的 96 点有限非负数值')
-    if not _complete_tariff_periods(sources['tariff'].get('period_types')):
-        raise ValueError('共用电价必须包含完整的 96 点有效时段标签')
+    horizon = bundle.get('horizon_points')
+    if type(horizon) is not int or horizon not in (95,96):
+        raise ValueError('输入计划必须包含连续95或96点')
+    if any(not _complete(sources[key].get('values'), horizon) for key in ('load', 'pv', 'tariff')):
+        raise ValueError(f'必需来源必须各自包含完整的 {horizon} 点有限非负数值')
+    if not _complete_tariff_periods(sources['tariff'].get('period_types'), horizon):
+        raise ValueError(f'共用电价必须包含完整的 {horizon} 点有效时段标签')
     try:
         start = _aware(datetime.fromisoformat(bundle['plan_start_at']))
         end = _aware(datetime.fromisoformat(bundle['plan_end_at']))
@@ -332,9 +349,9 @@ def request_from_inputs(configuration: StationConfiguration, bundle: dict, profi
         observed_at = _aware(datetime.fromisoformat(snapshot['observed_at']))
     except (KeyError, TypeError, ValueError, OverflowError):
         raise ValueError('输入的计划、读取与实时采样时间必须有效且携带时区') from None
-    if (bundle.get('interval_minutes') != 15 or bundle.get('horizon_points') != HORIZON
-            or _ceil_quarter(start) != start or end != start+timedelta(days=1)):
-        raise ValueError('输入计划必须是对齐 15 分钟的完整 24 小时时间轴')
+    if (bundle.get('interval_minutes') != 15
+            or _ceil_quarter(start) != start or end != start+timedelta(minutes=15*horizon)):
+        raise ValueError('输入计划必须是对齐15分钟、与实际95或96点一致的时间轴')
     if checked_at > start:
         raise ValueError('当前时间已超过计划起点，请重新读取真实输入')
     if not observed_at <= fetched_at <= checked_at:
@@ -345,8 +362,8 @@ def request_from_inputs(configuration: StationConfiguration, bundle: dict, profi
         raise ValueError('输入读取时间已过期，请重新读取真实输入')
     participants = _validate_participation(configuration, snapshot, start=start, checked_at=checked_at,
         fetched_at=fetched_at, observed_at=observed_at)
-    if not isinstance(bundle.get('points'), list) or len(bundle['points']) != HORIZON:
-        raise ValueError('输入必须包含完整的 96 个计划点')
+    if not isinstance(bundle.get('points'), list) or len(bundle['points']) != horizon:
+        raise ValueError(f'输入必须包含完整的 {horizon} 个计划点')
     points = [ForecastPoint(**{**point, 'timestamp': _aware(datetime.fromisoformat(point['timestamp']))})
               for point in bundle['points']]
     for index, point in enumerate(points):
@@ -362,6 +379,10 @@ def request_from_inputs(configuration: StationConfiguration, bundle: dict, profi
         participating_cabinet_ids=participants,
         source_version=snapshot['source_version'])
     versions = {key: sources[key]['version'] for key in ('load','pv','tariff')}
+    # Legacy evidence without this field keeps its original strict semantics
+    # and request identity; new snapshots carry the explicit alarm policy.
+    if snapshot.get('alarm_policy') is not None:
+        versions['alarm_policy'] = snapshot['alarm_policy']
     digest = hashlib.sha256(json.dumps({'start': start.isoformat(), 'sources': versions,
         'live': live.source_version}, sort_keys=True).encode()).hexdigest()[:20]
     limits = ResolvedControlLimits(station_id=configuration.station_id, source_version=controls['version'],

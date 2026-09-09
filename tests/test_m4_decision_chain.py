@@ -78,8 +78,28 @@ class DecisionChainTests(unittest.TestCase):
         self.assertEqual(len(record['comparison']), 3)
         self.assertEqual(len(record['candidates']), 3)
         self.assertTrue(all(len(item['plan']) == 96 for item in record['candidates']))
+        self.assertEqual(record['peak_preparation']['plan_version'],report['selected']['plan_version'])
+        self.assertEqual(record['peak_preparation']['basis'],'selected_plan_forecast')
+        self.assertIn('max_grid_import_kw',record['candidates'][0]['metrics'])
         self.assertEqual(before, self.api.calls)
         self.assertEqual(self.client.get('/m4-api/stations/station-2/decision-result').json()['status'], 'empty')
+
+    def test_95_point_preview_selection_and_persisted_evidence_keep_actual_window(self):
+        from test_m4_rolling_forecast_source import rolling
+        from test_m4_live_inputs import START
+        self.fixture.client.rolling=[rolling(START-timedelta(minutes=15))]
+        for point in self.fixture.client.rolling[0]['series_payload'][0]['points']:
+            point.update(raw_forecast=100.0,forecast_value=100.0)
+        self.fixture.client.runs=[]
+        report=self.run_preview()
+        self.assertEqual(report['status'],'completed',report)
+        record=DecisionResultsReader(self.root).latest('station-1')['record']
+        self.assertEqual(record['input_summary']['horizon_points'],95)
+        self.assertTrue(all(len(c['plan'])==95 for c in record['candidates']))
+        self.assertEqual(record['peak_preparation']['plan_end_at'],(START+timedelta(minutes=1425)).isoformat())
+        envelope=json.loads((self.output/'candidates.json').read_text())
+        self.assertEqual(envelope['inputs']['horizon_points'],95)
+        self.assertEqual(report['dispatch_status'],'not_dispatched')
 
     def test_missing_preferences_and_forecast_block_before_solving(self):
         self.fixture.policies.save('station-1', None, expected_revision=1)
@@ -87,6 +107,7 @@ class DecisionChainTests(unittest.TestCase):
         self.assertEqual(report['status'], 'blocked_configuration')
         self.assertFalse(any(method == 'POST' for method, _ in self.api.calls))
         self.assertIsNone(report['selected'])
+        self.assertIsNone(DecisionResultsReader(self.root).latest('station-1')['record']['peak_preparation'])
         self.assertEqual(DecisionResultsReader(self.root).latest('station-1')['record']['status'], 'blocked_configuration')
 
     def test_missing_input_and_changed_state_during_decision_cannot_select(self):

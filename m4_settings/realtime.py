@@ -18,6 +18,12 @@ OPERATING_STATES = frozenset(('wait', 'standby', 'charge', 'discharge'))
 PCS_OPERATING_STATES = OPERATING_STATES | {'work'}
 STATUS_FIELDS = ('emu_status', 'bcu1_status', 'bcu2_status', 'pcs1_status', 'pcs2_status')
 SOURCE_FIELDS = ('f_es_sn', 'emu_sn', 'latest_soc', 'last_time_iso', 'alert_status', *STATUS_FIELDS)
+ALARM_POLICY = 'emu11-alert-advisory-v1'
+
+
+def alarm_is_advisory(station_id, emu_sn, policy):
+    """User-authorized exception for emu11; never applies to other cabinets."""
+    return policy == ALARM_POLICY and station_id == 'station-1' and emu_sn == 'emu11'
 
 
 def _soc(value):
@@ -60,6 +66,7 @@ def _source_version(configuration, grouped_rows, participating_cabinet_ids):
         'parameters': configuration.parameters.model_dump() if configuration.parameters else None,
         'soc_method': SOC_METHOD,
         'participation_policy': CABINET_ISOLATION_POLICY,
+        'alarm_policy': ALARM_POLICY,
         'participating_cabinet_ids': participating_cabinet_ids,
         'rows': rows,
     }
@@ -74,8 +81,9 @@ def build_realtime_snapshot(
     """Return cabinet eligibility and the remaining configured station capability.
 
     The current mapping accepts ``alert_status: null`` as no reported alert.
-    The upstream flag semantics remain distinct from M1 operating status. Missing keys and any non-null alert state remain unknown
-    or active and exclude only that cabinet. Nothing here writes an EMS plan.
+    emu11's alarm flag is advisory by user instruction. Other cabinets retain
+    strict alarm checks. All operating-state, SOC and freshness checks remain.
+    Nothing here writes an EMS plan.
     """
     configuration = StationConfiguration.model_validate(configuration.model_dump())
     if now.utcoffset() is None:
@@ -102,6 +110,8 @@ def build_realtime_snapshot(
     station_warnings = []
     for emu_sn, records in grouped_rows.items():
         issues = []
+        advisories = []
+        advisory = alarm_is_advisory(configuration.station_id, emu_sn, ALARM_POLICY)
         row = records[0] if len(records) == 1 else {}
         observed_at = None
         soc_pct = None
@@ -135,10 +145,14 @@ def build_realtime_snapshot(
                 allowed = PCS_OPERATING_STATES if field in ('pcs1_status', 'pcs2_status') else OPERATING_STATES
                 if not isinstance(value, str) or value not in allowed:
                     issues.append(f'{field} 缺失、未知或不允许参与调度')
-            if 'alert_status' not in row:
-                issues.append('alert_status 缺失，无法确认无活动告警')
-            elif row['alert_status'] is not None:
-                issues.append('alert_status 存在活动告警或未知告警状态')
+            alarm_issue = ('alert_status 缺失，无法确认无活动告警' if 'alert_status' not in row
+                           else 'alert_status 存在活动告警或未知告警状态' if row['alert_status'] is not None
+                           else None)
+            if alarm_issue:
+                if advisory:
+                    advisories.append(alarm_issue + '；仅提示，不影响输入准入')
+                else:
+                    issues.append(alarm_issue)
 
         cabinets.append({
             'emu_sn': emu_sn,
@@ -146,11 +160,13 @@ def build_realtime_snapshot(
             'capacity_kwh': cabinet_capacity,
             'status': row.get('emu_status') if isinstance(row.get('emu_status'), str) else None,
             'alert_status': row.get('alert_status') if isinstance(row.get('alert_status'), str) else None,
+            'alert_validation': 'advisory' if advisory else 'strict',
+            'advisories': advisories,
             'observed_at': observed_at.isoformat() if observed_at else None,
             'available': bool(parameters and configuration.version and not issues),
             'issues': issues,
         })
-        station_warnings.extend(f'{emu_sn}：{issue}' for issue in issues)
+        station_warnings.extend(f'{emu_sn}：{issue}' for issue in [*issues, *advisories])
 
     participating_cabinets = [item for item in cabinets if item['available']]
     participating_cabinet_ids = [item['emu_sn'] for item in participating_cabinets]
@@ -187,6 +203,7 @@ def build_realtime_snapshot(
         'configuration_version': configuration.version,
         'soc_method': SOC_METHOD,
         'participation_policy': CABINET_ISOLATION_POLICY,
+        'alarm_policy': ALARM_POLICY,
         'participation_status': participation_status,
         'participating_cabinet_ids': participating_cabinet_ids,
         'excluded_cabinet_ids': excluded_cabinet_ids,

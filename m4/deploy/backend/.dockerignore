@@ -1,0 +1,17 @@
+# Allow only the generated runtime payload and explicit build inputs.
+*
+!Dockerfile
+!requirements.lock.txt
+!entrypoint.py
+!healthcheck.py
+!preflight.py
+!app/
+!app/**
+app/**/__pycache__/
+app/**/*.pyc
+app/**/.env
+app/**/.env.*
+app/**/energy_efficiency_local_config.py
+app/**/run/
+app/**/tests/
+app/**/.git/
