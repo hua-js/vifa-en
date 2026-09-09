@@ -381,6 +381,9 @@
     @media(max-width:650px){.daily-mode .page-heading{display:block;padding:20px 0 16px}.daily-mode .heading-tools{display:flex;justify-content:flex-start;flex-wrap:wrap;margin-top:17px}.daily-mode .heading-tools>.select-wrap{flex:1;min-width:110px}.daily-mode .heading-tools>.button{flex:0 1 auto}.daily-mode .heading-tools #start-decision-run{flex:1}.daily-mode .heading-tools .date-label{display:none}.daily-mode .context{gap:7px;align-items:flex-start;flex-direction:column}.daily-nav{gap:0;margin-bottom:16px}.daily-tab{flex:1;padding:12px 10px;font-size:12px;gap:5px}.daily-tab .icon{display:none}.daily-tab[aria-selected="true"]::after{left:10px;right:10px}.daily-mode .metrics{grid-template-columns:repeat(2,minmax(0,1fr));padding:0;margin-bottom:16px}.daily-mode .metric{padding:17px 15px;border-bottom:1px solid var(--line)}.daily-mode .metric:nth-child(2){border-right:0}.daily-mode .metric:nth-child(n+3){border-bottom:0}.daily-mode .metric-value{font-size:26px}.daily-mode .metric-meta{font-size:10px}.daily-mode #solver-result-panel,.daily-plan-card,.daily-history-card,.daily-mode #live-input-panel{padding:17px}.daily-mode .side-column{grid-template-columns:1fr}.daily-panel-heading{align-items:flex-start}.daily-panel-heading h2{font-size:17px}.daily-panel-heading p{font-size:11px}.daily-mode .solver-result-grid>div{padding:12px;gap:12px}.daily-mode .solver-result-grid strong{font-size:17px}.daily-mode .solver-result-grid span{font-size:11px}.daily-mode .live-source-item{padding:12px}.daily-mode .live-source-item strong{font-size:18px}.daily-overview-links{gap:8px}.daily-overview-links .text-button{font-size:12px}.daily-plan-card #decision-plan-chart{height:230px}}
     @media(max-width:650px){.daily-mode .heading-tools{display:grid;grid-template-columns:minmax(0,1fr) auto}.daily-mode .heading-tools>.select-wrap{min-width:0}.daily-mode .heading-tools>.button{width:100%;white-space:nowrap}.daily-mode .heading-tools #start-decision-run{min-width:132px}}
     .history-technical{margin-top:18px;border-top:1px solid var(--line);font-size:12px}.history-technical>summary{min-height:44px;padding:13px 0;color:var(--muted)}.history-technical-context{white-space:pre-wrap;line-height:1.8;overflow-wrap:anywhere}
+    .billing-card{padding:24px;min-width:0}.billing-toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:16px}.billing-toolbar label{display:flex;align-items:center;gap:10px;font-size:13px}.billing-toolbar input{min-width:0;min-height:42px;border:1px solid var(--line);border-radius:8px;padding:8px;color:var(--ink);background:var(--soft);font:inherit}.billing-toolbar .button{min-height:42px}.billing-meta{display:flex;gap:12px;align-items:center;flex-wrap:wrap;font-size:12px;color:var(--muted);margin:22px 0 14px}.billing-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.billing-metric{background:var(--soft);border:1px solid var(--line);padding:20px;border-radius:12px;min-width:0}.billing-metric>span{font-size:12px;color:var(--muted)}.billing-metric strong{display:block;font-size:28px;margin-top:12px;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}.billing-metric small{font-size:12px;font-weight:400;color:var(--muted)}.billing-section{margin-top:25px;min-width:0}.billing-section h3{font-size:14px}.billing-section summary{cursor:pointer;min-height:44px;line-height:44px;font-size:13px}.billing-scroll-hint{display:none}.billing-daily-scroll{max-height:520px}.billing-days thead th{position:sticky;top:0;background:var(--panel);z-index:1}.billing-days{min-width:850px}.billing-compare{min-width:430px}.billing-days th,.billing-days td{white-space:nowrap}.billing-issues{font-size:12px;line-height:1.9;padding:12px 12px 12px 30px;border-radius:9px;background:var(--amber-soft);color:var(--amber)}.billing-negative,#billing-status[data-state="error"]{color:var(--red)}.billing-section .history-note{overflow-wrap:anywhere}.billing-toolbar input:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+    @media(max-width:650px){.billing-scroll-hint{display:block}.billing-card{padding:16px}.billing-metrics{grid-template-columns:1fr;gap:8px}.billing-metric{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:15px}.billing-metric strong{font-size:23px;margin:0}.billing-toolbar label{width:100%}.billing-toolbar input{flex:1;width:0}.billing-toolbar .button{flex:1}.daily-tab{white-space:nowrap;padding-left:4px;padding-right:4px;font-size:11px}}
+    .billing-chart-scroll{overflow-x:auto;max-width:100%;margin-top:12px}.billing-chart-scroll svg{display:block;width:100%;min-width:560px;height:auto;max-height:330px}.billing-chart-scroll text{fill:var(--muted);font-size:11px}.billing-trend-legend{display:flex;gap:14px;flex-wrap:wrap;margin-top:12px}.billing-trend-legend label{display:flex;align-items:center;gap:6px;font-size:12px;min-height:40px;cursor:pointer}.billing-trend-legend i{height:3px;width:16px;border-radius:2px}.billing-trend-legend input{accent-color:var(--blue)}.billing-day-control{display:flex;gap:14px;align-items:center;font-size:12px;margin-top:12px}.billing-day-control input{flex:1;min-width:0;accent-color:var(--blue)}#billing-trend-readout{min-height:38px;overflow-wrap:anywhere}.billing-month-compare{min-width:600px}.billing-month-compare td,.billing-month-compare th{white-space:nowrap}#billing-month-comparison .history-note{overflow-wrap:anywhere;line-height:1.9}#billing-trend-empty:empty{display:none}
   </style>
 </head>
 <body>
@@ -935,6 +938,7 @@
         $("point-reason").innerHTML=`<strong>${input.name} · ${input.price.toFixed(2)} 元/kWh</strong><span>${reason}</span>`;
       }
       function renderBillSummary(key){
+        if(liveMode){$("bill-summary-value").textContent="—";$("bill-summary-rate").textContent="—";$("bill-summary-status").textContent="统计账单";return;}
         const bill=billFixtures[key],before=bill.beforeEnergy+bill.beforeDemand,after=bill.afterEnergy+bill.afterDemand,pending=billPeriodByStation[key]==="2026-09";
         $("bill-period-label").textContent=pending?"本月账单尚未结算":"上月节费 · 2026年08月";
         $("bill-summary-value").textContent=pending?"待验证":money(before-after);
@@ -1163,7 +1167,7 @@
         const saving=offlineSaving(activeStationKey,c);if(saving)rows.push(["无储能购电基线",money(saving.baseline)],["购电费用差额",money(saving.saving)]);
         body.innerHTML=`<section class="drawer-section">${offlineList(rows)}</section><div class="callout">曲线与候选指标直接读取 B1 输出；购电费用差额仅比较同输入下的购电成本，不含需量账单、上网收益或循环成本，不作为真实收益结论。${liveMode?"候选仅供对比预览，最终方案见优化决策记录；当前计算不调用 EMS，也不下发设备指令。":"离线导入校验用于展示，不构成 EMS 下发前的安全复验。"}</div>`;
         if(drawerType==="evidence"){
-          body.insertAdjacentHTML("beforeend",`<section class="drawer-section"><h3>来源版本</h3>${offlineList(Object.entries(s?.input_summary?.source_versions||{}))}</section><p>${liveMode?"本轮证据来自真实输入与数学求解；调试目标配置尚未作为生产策略批准，EMS 未下发。":"本阶段仅有数学求解与离线输入证据；最终决策与 EMS 执行未包含在该离线快照。"}月度账单保留原演示内容。</p>`);
+          body.insertAdjacentHTML("beforeend",`<section class="drawer-section"><h3>来源版本</h3>${offlineList(Object.entries(s?.input_summary?.source_versions||{}))}</section><p>${liveMode?"本轮证据来自真实输入与数学求解；调试目标配置尚未作为生产策略批准，EMS 未下发。":"本阶段仅有数学求解与离线输入证据；最终决策与 EMS 执行未包含在该离线快照。"}${liveMode?"月度收支见账单统计页。":"月度账单保留原演示内容。"}</p>`);
         }
       }
       async function importOfflineFile(file){
@@ -1412,7 +1416,7 @@
         renderOfflineInputs();renderOfflineCandidates();
         if(candidate){const savings=offlineSaving(key,candidate);$("decision-saving").textContent=savings?money(savings.saving):"未提供基线";$("plan-badge").textContent=stale?"历史":statusNames[candidate.status];$("chart-preview-status").textContent=(stale?"历史结果 · ":"只读预览 · ")+candidate.plan_version;activePlan=offlinePoints(key,candidate);renderChart(activePlan);drawOfflineDemand(candidate);}
         else{$("offline-empty").textContent=station.error?.message||"本轮没有可用候选，未展示旧曲线。";}
-        document.querySelector(".footer > span").textContent="真实输入与数学候选 · 优化决策见上方记录 · EMS 未下发 · 账单保留原演示内容";
+        document.querySelector(".footer > span").textContent="真实输入与数学候选 · 优化决策见上方记录 · EMS 未下发 · 账单统计按站查询";
       }
       function draftFor(key){
         if(settingsDrafts[key])return settingsDrafts[key];
@@ -1902,6 +1906,152 @@
       for(const id of ["history-a","history-b"])$(id).addEventListener("change",updateHistoryCompare);
       $("history-compare").addEventListener("click",()=>{if(!$("history-compare").disabled)showHistory([$("history-a").value,$("history-b").value]);});
 
+      const billingState={key:null,generation:0,controller:null,data:null,previous:null,comparisonStatus:"empty",comparisonError:"",months:{s1:null,s2:null}};
+      function currentBillingMonth(){return new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit'}).format(new Date());}
+      function billNumber(value){return typeof value==='number'&&Number.isFinite(value)?value.toLocaleString('zh-CN',{minimumFractionDigits:2,maximumFractionDigits:2}):'—';}
+      function resetBilling(key){
+        billingState.controller?.abort();billingState.generation++;billingState.key=key;billingState.data=null;
+        $('billing-output').replaceChildren();$('billing-status').textContent='选择月份后查询电站统计';$('billing-status').dataset.state='empty';
+        $('billing-export').disabled=true;$('billing-refresh').disabled=false;
+        if(key!=='all'){$('billing-month').value=billingState.months[key]||currentBillingMonth();billingState.months[key]=$('billing-month').value;}
+      }
+      function validateBilling(data,key,month){
+        const fail=()=>{throw new Error('账单返回格式、电站或月份不匹配，请重新查询');};
+        const number=v=>v===null||typeof v==='number'&&Number.isFinite(v);
+        if(data?.schema_version!=='m4-billing-v1'||data.station_id!==(key==='s1'?'station-1':'station-2')||data.month!==month||!['ready','partial','empty','error'].includes(data.status)||!['ongoing','historical','future'].includes(data.period_status)||!Array.isArray(data.daily)||data.daily.length>31||!Array.isArray(data.issues)||!data.issues.every(v=>typeof v==='string')||!data.coverage||!data.sources?.monthly||!data.sources?.daily||!data.daily_totals||!data.differences)fail();
+        const seen=new Set();
+        for(const row of data.daily){if(!row||!/^\d{4}-\d{2}-\d{2}$/.test(row.date)||!row.date.startsWith(month+'-')||seen.has(row.date)||!['day_charge','day_discharge','charge_cost','discharge_earnings','day_earnings'].every(field=>number(row[field])))fail();seen.add(row.date);}
+        if(data.monthly!==null&&(!data.monthly||!['month_charge','month_discharge','month_earnings','month_costs','month_income','profit'].every(field=>number(data.monthly[field]))))fail();
+        return data;
+      }
+      // Billing analytics: pure calculations, also exercised by the local contract tests.
+      const billingAnalysisFields=[['day_charge','充电量','kWh'],['day_discharge','放电量','kWh'],['charge_cost','充电成本','元'],['discharge_earnings','放电收益','元'],['day_earnings','净收益（来源统计）','元']];
+      function billingDays(month){const [year,m]=month.split('-').map(Number);return new Date(Date.UTC(year,m,0)).getUTCDate();}
+      function previousBillingMonth(month){const [year,m]=month.split('-').map(Number);return m===1?`${year-1}-12`:`${year}-${String(m-1).padStart(2,'0')}`;}
+      function billingDate(value){return new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(value));}
+      function billingComparison(current,previous){
+        if(!previous||current.station_id!==previous.station_id||previous.month!==previousBillingMonth(current.month))throw new Error('对比账单的电站或月份不匹配');
+        const today=billingDate(current.fetched_at),ongoing=current.month===today.slice(0,7),future=current.month>today.slice(0,7);
+        const cutoff=ongoing?Math.min(Number(today.slice(8)),billingDays(previous.month)):null;
+        const counts=future?[0,0]:ongoing?[cutoff,cutoff]:[billingDays(current.month),billingDays(previous.month)];
+        const summarize=(data,count)=>{
+          const days=new Map(data.daily.map(row=>[row.date,row])),missing=[];
+          const rows=Array.from({length:count},(_,i)=>{const date=data.month+'-'+String(i+1).padStart(2,'0'),row=days.get(date);if(!row)missing.push(date);return row;});
+          const metrics=Object.fromEntries(billingAnalysisFields.map(([field])=>{
+            const complete=count>0&&data.sources.daily.status==='ready'&&rows.every(row=>row&&typeof row[field]==='number'&&Number.isFinite(row[field]));
+            return [field,complete?rows.reduce((sum,row)=>sum+Math.round(row[field]*100),0)/100:null];
+          }));
+          return {month:data.month,start:count?data.month+'-01':null,end:count?data.month+'-'+String(count).padStart(2,'0'):null,expected:count,recorded:rows.filter(Boolean).length,missing,metrics};
+        };
+        const a=summarize(current,counts[0]),b=summarize(previous,counts[1]);
+        return {mode:future?'future':ongoing?'same_days':'full_month',cutoff,clamped:ongoing&&cutoff<Number(today.slice(8)),current:a,previous:b,
+          metrics:billingAnalysisFields.map(([field,label,unit])=>{
+            const value=a.metrics[field],baseline=b.metrics[field],delta=value!==null&&baseline!==null?Math.round((value-baseline)*100)/100:null;
+            return {field,label,unit,current:value,previous:baseline,delta,percent:delta!==null&&baseline>0?delta/baseline*100:null};
+          })};
+      }
+      function billingTrendModel(data,visible=['charge_cost','discharge_earnings','day_earnings']){
+        const count=Math.min(billingDays(data.month),Math.max(0,data.coverage.expected_days)),map=new Map(data.daily.map(row=>[row.date,row]));
+        const days=Array.from({length:count},(_,index)=>({date:data.month+'-'+String(index+1).padStart(2,'0'),row:map.get(data.month+'-'+String(index+1).padStart(2,'0'))||null}));
+        const values=days.flatMap(day=>visible.map(field=>day.row?.[field]).filter(value=>typeof value==='number'&&Number.isFinite(value)));
+        let min=Math.min(0,...values),max=Math.max(0,...values);if(min===max){min=-1;max=1;}else{const pad=(max-min)*.1;min-=pad;max+=pad;}
+        const x=index=>60+(count<=1?350:index/(count-1)*700),y=value=>220-(value-min)/(max-min)*190;
+        const series=visible.map(field=>{const segments=[];let segment=[];
+          for(let index=0;index<days.length;index++){const value=days[index].row?.[field];if(typeof value==='number'&&Number.isFinite(value)){segment.push({index,value,x:x(index),y:y(value)});}else if(segment.length){segments.push(segment);segment=[];}}
+          if(segment.length)segments.push(segment);return {field,segments};
+        });
+        return {days,series,min,max,zero:y(0),x,y,hasValues:values.length>0};
+      }
+      // End pure billing analytics.
+      const billingTrendSeries=[['charge_cost','充电成本','var(--amber)'],['discharge_earnings','放电收益','var(--blue)'],['day_earnings','净收益（来源统计）','var(--green)']];
+      function drawBillingTrend(data){
+        const enabled=[...document.querySelectorAll('[data-billing-series]:checked')].map(node=>node.dataset.billingSeries),model=billingTrendModel(data,enabled),svg=$('billing-trend-chart');
+        const colors=Object.fromEntries(billingTrendSeries.map(([field,,color])=>[field,color]));
+        let content='<title>每日充电成本、放电收益与净收益，单位元</title><desc>缺失值留空，负收益在零线下方。通过下方日期滑块查看精确值。</desc>';
+        for(let i=0;i<=4;i++){const value=model.min+(model.max-model.min)*i/4,y=model.y(value);content+=`<line x1="60" x2="760" y1="${y}" y2="${y}" stroke="var(--line)"/><text x="52" y="${y+4}" text-anchor="end">${escapeHtml(Math.round(value).toLocaleString('zh-CN'))}</text>`;}
+        content+=`<line x1="60" x2="760" y1="${model.zero}" y2="${model.zero}" stroke="var(--muted)" stroke-dasharray="4 4"/><text x="10" y="16">元</text>`;
+        model.days.forEach((day,index)=>{if(index===0||index===model.days.length-1||index%5===0)content+=`<text x="${model.x(index)}" y="246" text-anchor="middle">${index+1}日</text>`;});
+        for(const series of model.series){for(const segment of series.segments){content+=`<polyline data-series="${series.field}" fill="none" stroke="${colors[series.field]}" stroke-width="2.5" points="${segment.map(p=>p.x+','+p.y).join(' ')}"/>`;for(const point of segment)content+=`<circle cx="${point.x}" cy="${point.y}" r="3" fill="${colors[series.field]}"/>`;}}
+        svg.innerHTML=content;
+        $('billing-trend-empty').textContent=!enabled.length?'请勾选至少一条曲线':!model.hasValues?'本月暂无可绘制的日收支数据':'';
+        const slider=$('billing-trend-day');slider.max=String(Math.max(0,model.days.length-1));slider.disabled=!model.days.length;slider.value=String(Math.min(Number(slider.value),Number(slider.max)));
+        const selected=model.days[Number(slider.value)];
+        $('billing-trend-readout').textContent=selected?selected.date+' · '+billingTrendSeries.map(([field,label])=>label+' '+billNumber(selected.row?.[field])+' 元').join(' · '):'暂无日期可查看';
+        if(selected){svg.insertAdjacentHTML('beforeend',`<line x1="${model.x(Number(slider.value))}" x2="${model.x(Number(slider.value))}" y1="25" y2="220" stroke="var(--muted)" stroke-dasharray="2 4"/>`);slider.setAttribute('aria-valuetext',$('billing-trend-readout').textContent);}
+      }
+      function setupBillingAnalytics(data){
+        const host=$('billing-analytics');
+        host.innerHTML=`<section class="billing-section"><h3>每日收益趋势</h3><p class="history-note">按日统计展示，缺失处断开；今日数据持续更新。净收益沿用来源统计，不额外扣除未提供的费用。</p><div class="billing-trend-legend">${billingTrendSeries.map(([field,label,color])=>`<label><input type="checkbox" data-billing-series="${field}" checked><i style="background:${color}"></i>${label}</label>`).join('')}</div><div class="billing-chart-scroll"><svg id="billing-trend-chart" viewBox="0 0 800 260" role="img" aria-label="每日收支趋势，单位元"></svg></div><p id="billing-trend-empty" class="history-note" role="status"></p><label class="billing-day-control" for="billing-trend-day">查看日期<input id="billing-trend-day" type="range" min="0" value="0" step="1"></label><p id="billing-trend-readout" class="history-note" aria-live="polite"></p></section><section class="billing-section"><h3>月份对比</h3><div id="billing-month-comparison" aria-live="polite"></div></section>`;
+        host.querySelectorAll('[data-billing-series]').forEach(input=>input.addEventListener('change',()=>drawBillingTrend(data)));
+        $('billing-trend-day').addEventListener('input',()=>drawBillingTrend(data));
+        $('billing-trend-chart').addEventListener('click',event=>{const rect=event.currentTarget.getBoundingClientRect(),max=Number($('billing-trend-day').max);$('billing-trend-day').value=String(Math.max(0,Math.min(max,Math.round(((event.clientX-rect.left)/rect.width*800-60)/700*max))));drawBillingTrend(data);});
+        drawBillingTrend(data);renderBillingComparison();
+      }
+      function renderBillingComparison(){
+        const host=$('billing-month-comparison');if(!host)return;
+        if(billingState.comparisonStatus==='loading'){host.innerHTML='<p class="history-note">正在读取上月统计…</p>';return;}
+        if(!billingState.previous){host.innerHTML='<p class="history-note">'+escapeHtml(billingState.comparisonError||'暂无上月数据可比较')+'</p>';return;}
+        const comparison=billingComparison(billingState.data,billingState.previous),a=comparison.current,b=comparison.previous;
+        if(comparison.mode==='future'){host.innerHTML='<p class="history-note">未来月份不进行收益比较</p>';return;}
+        const signed=value=>value===null?'—':(value>0?'+':'')+billNumber(value);
+        host.innerHTML=`<p class="history-note">${comparison.mode==='same_days'?'本月与上月同期':'历史整月对比'} · ${a.start} 至 ${a.end} / ${b.start} 至 ${b.end}<br>日记录覆盖：本期 ${a.recorded}/${a.expected} 天，上期 ${b.recorded}/${b.expected} 天。${comparison.clamped?'上月天数较少，两期均截取至 '+comparison.cutoff+' 日。':''}${comparison.mode==='same_days'?'今日尚未结束；上月对应日期为全天统计，当前对比为暂时结果，不是同一时刻对比。':''}</p>
+          <div class="live-table-scroll"><table class="bill-table billing-month-compare"><thead><tr><th>项目</th><th>${a.month}</th><th>${b.month}</th><th>变化量</th><th>变化率</th></tr></thead><tbody>${comparison.metrics.map(row=>`<tr data-comparison-field="${row.field}"><td>${row.label} / ${row.unit}</td><td>${billNumber(row.current)}</td><td>${billNumber(row.previous)}</td><td>${signed(row.delta)}</td><td>${row.percent===null?'—':signed(row.percent)+'%'}</td></tr>`).join('')}</tbody></table></div>
+          <p class="history-note">统一按上述日期范围的日统计汇总，与月表可能有差额。任一期间缺日、读取失败或某项字段缺失，该项不计算变化；上期值为零或负数时仅展示变化量。变化量 = 本期 − 上期；变化率 = 变化量 ÷ 上期 × 100%。金额变化不等于调度节费。</p>
+          ${a.missing.length||b.missing.length?'<p class="billing-issues">缺少日期：'+escapeHtml([...a.missing,...b.missing].join('、'))+'</p>':''}
+          ${billingState.previous.sources.daily.status==='error'?'<p class="billing-issues">上月每日统计读取失败，请重新查询。</p>':''}`;
+      }
+
+      function renderBilling(data){
+        const m=data.monthly,t=data.daily_totals,n=billNumber,html=escapeHtml;
+        const metric=(label,value,unit)=>`<div class="billing-metric"><span>${label}</span><strong>${n(value)} <small>${unit}</small></strong></div>`;
+        const fields=[['充电量','month_charge','day_charge','kWh'],['放电量','month_discharge','day_discharge','kWh'],['统计收益','month_earnings','day_earnings','元']];
+        const tableHead='<tr><th>日期</th><th>充电量 / kWh</th><th>放电量 / kWh</th><th>充电成本 / 元</th><th>放电收益 / 元</th><th>统计收益 / 元</th><th>更新时间</th></tr>';
+        $('billing-output').innerHTML=`<div class="billing-meta"><span class="pill ${data.period_status==='ongoing'?'info':''}">${data.period_status==='ongoing'?'本月累计 · 持续更新':data.period_status==='future'?'未来月份':'历史月统计'}</span><span>${html(stations[billingState.key].name)} · ${html(data.month)} · 北京时间</span></div>
+          <div class="billing-metrics">${metric('月统计收益',m?.month_earnings,'元')}${metric('月充电量',m?.month_charge,'kWh')}${metric('月放电量',m?.month_discharge,'kWh')}</div>
+          <p class="history-note">月统计更新：${m?html(liveTime(m.updated_at)):'暂无月记录'} · 日统计覆盖 ${html(data.coverage.recorded_days)} / ${html(data.coverage.expected_days)} 天</p>
+          ${data.issues.length?'<ul class="billing-issues">'+data.issues.map(v=>'<li>'+html(v)+'</li>').join('')+'</ul>':''}
+          <div id="billing-analytics"></div><section class="billing-section"><h3>日月统计核对</h3><p class="history-note">日合计按已返回记录相加；差额 = 月统计 − 日合计，更新时间或统计口径不同均可能产生差额。</p><div class="live-table-scroll"><table class="bill-table billing-compare"><thead><tr><th>项目</th><th>月统计</th><th>日合计</th><th>差额</th></tr></thead><tbody>${fields.map(([label,mf,df,unit])=>`<tr><td>${label} / ${unit}</td><td>${n(m?.[mf])}</td><td>${n(t[df])}</td><td>${n(data.differences[mf])}</td></tr>`).join('')}</tbody></table></div></section>
+          <section class="billing-section"><h3>每日明细</h3><p class="billing-scroll-hint history-note">左右滑动表格查看完整明细</p><div class="live-table-scroll billing-daily-scroll"><table class="bill-table billing-days"><thead>${tableHead}</thead><tbody>${data.daily.map(row=>`<tr><td>${html(row.date)}</td>${['day_charge','day_discharge','charge_cost','discharge_earnings','day_earnings'].map(f=>`<td${f==='day_earnings'&&row[f]<0?' class="billing-negative"':''}>${n(row[f])}</td>`).join('')}<td>${html(liveTime(row.updated_at))}</td></tr>`).join('')||'<tr><td colspan="7">'+(data.sources.daily.status==='error'?'每日统计读取失败，可重新查询':'本月暂无每日记录')+'</td></tr>'}</tbody><tfoot><tr><td>已返回日合计</td>${['day_charge','day_discharge','charge_cost','discharge_earnings','day_earnings'].map(f=>'<td>'+n(t[f])+'</td>').join('')}<td>—</td></tr></tfoot></table></div></section>
+          <details class="billing-section"><summary>统计口径与来源</summary><p class="history-note">日统计来自 t_es_stat，月统计来自 t_es_count_stat。统计周期按 createdAt 转北京时间归属；没有单独的账期字段。收益沿用来源值，不重算、不将缺失值补零。</p><p class="history-note">月表费用 ${n(m?.month_costs)} 元、收入 ${n(m?.month_income)} 元、利润 ${n(m?.profit)} 元，均为来源原值；与月统计收益为独立字段。未提供需量电费、正式结算状态或可比基准账单，因此不计算电费降低比例或达标结论。</p><p class="history-note">缺少日期：${html(data.coverage.missing_dates?.join('、')||'无')}<br>本次查询：${html(liveTime(data.fetched_at))}</p></details>`;
+      }
+      async function loadBilling(){
+        const key=activeStationKey,month=$('billing-month').value;if(key==='all')return;
+        billingState.controller?.abort();const generation=++billingState.generation;
+        billingState.key=key;billingState.months[key]=month;billingState.data=null;billingState.previous=null;billingState.comparisonStatus="loading";billingState.comparisonError="";
+        $('billing-output').replaceChildren();$('billing-export').disabled=true;
+        if(!/^20[0-9]{2}-(0[1-9]|1[0-2])$/.test(month)){$('billing-status').textContent='请选择有效月份（2000–2099）';$('billing-status').dataset.state='error';$('billing-refresh').disabled=false;return;}
+        const controller=new AbortController();billingState.controller=controller;
+        const timeout=setTimeout(()=>controller.abort(),70000);
+        $('billing-refresh').disabled=true;$('billing-status').textContent='正在读取月度与每日统计…';$('billing-status').dataset.state='loading';
+        const previousMonth=previousBillingMonth(month);
+        const previousRequest=previousMonth<'2000-01'?Promise.resolve({error:'已到最早支持月份，暂无上月数据'}):(async()=>{
+          try{const response=await apiFetch(settingsEndpoint(key).replace(/settings$/,'bills')+'?month='+encodeURIComponent(previousMonth),{cache:'no-store',signal:controller.signal});const data=await response.json();if(!response.ok)throw new Error(typeof data.detail==='string'?data.detail:'上月统计读取失败');return {data:validateBilling(data,key,previousMonth)};}catch(error){return {error:error.name==='AbortError'?'上月统计查询超时，请重新查询':error.message};}
+        })();
+        try{
+          const response=await apiFetch(settingsEndpoint(key).replace(/settings$/,'bills')+'?month='+encodeURIComponent(month),{cache:'no-store',signal:controller.signal});
+          const data=await response.json();if(!response.ok)throw new Error(typeof data.detail==='string'?data.detail:'账单统计读取失败');
+          if(generation!==billingState.generation||activeStationKey!==key)return;
+          validateBilling(data,key,month);billingState.data=data;renderBilling(data);setupBillingAnalytics(data);
+          $('billing-status').textContent=({ready:'统计已读取',partial:'统计已读取，请核对以下提示',empty:'本月暂无统计记录',error:'月度与每日统计均读取失败，请重试'})[data.status];$('billing-status').dataset.state=data.status;
+          $('billing-export').disabled=!data.daily.length;
+          const previous=await previousRequest;if(generation!==billingState.generation||activeStationKey!==key)return;
+          billingState.previous=previous.data||null;billingState.comparisonError=previous.error||'';billingState.comparisonStatus=previous.data?'ready':'error';renderBillingComparison();
+        }catch(error){
+          if(generation!==billingState.generation||activeStationKey!==key)return;
+          $('billing-status').textContent=error.name==='AbortError'?'查询超时，请重新查询':error.message;$('billing-status').dataset.state='error';
+        }finally{clearTimeout(timeout);controller.abort();if(generation===billingState.generation)$('billing-refresh').disabled=false;}
+      }
+      function exportBilling(){
+        const d=billingState.data;if(!d||!d.daily.length)return;
+        const rows=[['电站','日期','充电量(kWh)','放电量(kWh)','充电成本(元)','放电收益(元)','统计收益(元)','更新时间(北京时间)'],...d.daily.map(r=>[d.station_code,r.date,r.day_charge,r.day_discharge,r.charge_cost,r.discharge_earnings,r.day_earnings,r.updated_at])];
+        const csv='\uFEFF'+rows.map(row=>row.map(value=>'"'+String(value??'').replace(/"/g,'""')+'"').join(',')).join('\r\n');
+        const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'})),a=document.createElement('a');a.href=url;a.download=`M4-${d.station_code}-${d.month}-每日统计.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+      }
+      function setupBillingPanel(panel){
+        panel.innerHTML='<div class="daily-panel-heading"><div><h2>账单统计</h2><p>按电站查看月度累计与每日充放电收支</p></div></div><section class="card billing-card"><div class="billing-toolbar"><label for="billing-month">统计月份 <input id="billing-month" type="month" min="2000-01" max="2099-12"></label><button type="button" class="button primary" id="billing-refresh">查询统计</button><button type="button" class="button" id="billing-export" disabled>导出日明细</button></div><p id="billing-status" class="history-note" role="status" aria-live="polite"></p><div id="billing-output"></div></section>';
+        $('billing-refresh').addEventListener('click',loadBilling);$('billing-month').addEventListener('change',loadBilling);$('billing-export').addEventListener('click',exportBilling);
+      }
+
       function setDailyTab(name,focus=false){
         if(!liveMode||!$("daily-tab-"+name)||activeStationKey==="all")return;
         activeDailyTab=name;renderDailyTabs();
@@ -1912,14 +2062,16 @@
         const all=activeStationKey==="all";
         if(all)activeDailyTab="overview";
         $("daily-navigation").hidden=all;
-        for(const name of ["overview","plan","devices","history"]){
+        for(const name of ["overview","plan","devices","history","billing"]){
           const selected=name===activeDailyTab;
           $("daily-tab-"+name).setAttribute("aria-selected",String(selected));
           $("daily-tab-"+name).tabIndex=selected?0:-1;
           $("daily-panel-"+name).hidden=all||!selected;
         }
         $("start-decision-run").hidden=all;$("refresh-solver-result").hidden=all;$("decision-run-progress").hidden=all;
+        if(billingState.key!==activeStationKey)resetBilling(activeStationKey);
         if(all)return;
+        if(activeDailyTab==="billing"&&!billingState.data&&$("billing-status").dataset.state==="empty")loadBilling();
         if(historyState.key!==activeStationKey){
           historyState.generation++;historyState.detailGeneration++;historyState.busy=false;
           historyState.key=activeStationKey;historyState.items=[];historyState.next=null;dailyHistoryKey=null;
@@ -1929,7 +2081,7 @@
         if(activeDailyTab==="history"&&dailyHistoryKey!==activeStationKey){dailyHistoryKey=activeStationKey;loadHistory();}
       }
       function setupDailyTabs(){
-        const tabs=[["overview","运行总览","station"],["plan","调度计划","energy"],["devices","设备与数据","data"],["history","运行记录","history"]];
+        const tabs=[["overview","运行总览","station"],["plan","调度计划","energy"],["devices","设备与数据","data"],["history","运行记录","history"],["billing","账单统计","data"]];
         const navigation=el("div",{id:"daily-navigation",class:"daily-nav",role:"tablist","aria-label":"调度运行导航"});
         const panels={};
         for(const [name,label,symbol] of tabs){
@@ -1963,6 +2115,7 @@
         $("live-input-title").textContent="运行数据";document.querySelector(".live-cabinet-details summary").textContent="储能柜状态";
         const cabinetHeaders=document.querySelectorAll(".live-cabinet-details thead th");cabinetHeaders[3].textContent="运行状态 / 数据时效";cabinetHeaders[6].textContent="计划参与状态";
         document.querySelector(".daily-advanced-body").prepend($("live-candidate-status"));
+        setupBillingPanel(panels.billing);
         panels.history.append(heading("计划生成记录","按时间回看每次生成结果，查看单轮计划或对比两轮安排"));
         const history=el("section",{class:"card daily-history-card"});history.append($("plan-history-drawer").querySelector(".drawer-body"));panels.history.append(history);
         const overviewLinks=el("div",{class:"daily-overview-links"});
@@ -2086,7 +2239,7 @@
       $("open-records").addEventListener("click",()=>openDrawer("records"));$("open-all-events").addEventListener("click",()=>openDrawer("records"));$("open-decision").addEventListener("click",()=>openDrawer("decision"));$("open-plan").addEventListener("click",()=>openDrawer("plan"));
       $("close-drawer").addEventListener("click",()=>$("detail-drawer").close());$("detail-drawer").addEventListener("click",event=>{if(event.target!==$("detail-drawer"))return;const rect=event.currentTarget.getBoundingClientRect();if(event.clientX<rect.left||event.clientX>rect.right)event.currentTarget.close();});
       $("open-evidence").addEventListener("click",()=>openDrawer("evidence"));
-      $("open-bill").addEventListener("click",()=>openDrawer("bill"));
+      $("open-bill").addEventListener("click",()=>liveMode?setDailyTab("billing",true):openDrawer("bill"));
       $("simulate-pv").addEventListener("click",()=>setDemoScenario(scenarioByStation[activeStationKey]==="pv-surplus"?"normal":"pv-surplus"));
       $("simulate-demand").addEventListener("click",()=>setDemoScenario(scenarioByStation[activeStationKey]==="demand-near"?"normal":"demand-near"));
       $("point-slider").value=activeStationKey==="all"?60:snapshotIndex(activeStationKey);

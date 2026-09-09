@@ -3,14 +3,11 @@ name: vifa-m4
 services:
   m4-api:
     platform: linux/amd64
-    image: ${M4_IMAGE:-vifa-m4-api:socket-20260909}
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        PYTHON_IMAGE: ${PYTHON_IMAGE:-python:3.12-slim-bookworm}
+    image: ${M4_IMAGE:-ccr.ccs.tencentyun.com/taidai-holobase-168/omnipower_vifa:m4-0.1.0}
     restart: unless-stopped
     init: true
+    ports:
+      - "127.0.0.1:${M4_BIND_PORT:-8844}:8844"
     environment:
       M4_SETTINGS_DB: /data/settings.sqlite3
       M4_DECISION_RESULTS_DIR: /data/solver-decisions
@@ -20,7 +17,6 @@ services:
       - nocobase_token
     volumes:
       - m4-data:/data
-      - ${M4_SOCKET_DIR:-/opt/vifa/m4/socket}:/run/vifa-m4
     read_only: true
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=256m,mode=1777

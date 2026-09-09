@@ -26,6 +26,7 @@ COPY entrypoint.py healthcheck.py preflight.py /opt/m4-runtime/
 COPY app/ /app/
 
 WORKDIR /app
+EXPOSE 8844
 
 # The entrypoint reads the Docker secret and prepares the volume, then permanently
 # drops to UID/GID 10001 before starting the single Uvicorn worker.

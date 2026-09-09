@@ -7,18 +7,18 @@
   <rect class="zone" x="24" y="40" width="280" height="200" rx="12"/>
   <rect class="zone" x="24" y="300" width="280" height="200" rx="12"/>
   <rect class="zone" x="344" y="40" width="752" height="460" rx="12"/>
-  <text class="note" x="40" y="68">客户浏览器</text><text class="note" x="40" y="328">现有数据服务</text><text class="note" x="364" y="68">部署服务器 · 同机共享 Socket · 复用 HTTPS 入口</text>
+  <text class="note" x="40" y="68">客户浏览器</text><text class="note" x="40" y="328">现有数据服务</text><text class="note" x="364" y="68">部署服务器 · 复用现有 Node-RED HTTPS 入口</text>
   <path class="link" d="M280 156H376"/><path class="link" d="M688 156H768"/><path class="link" d="M532 224V356"/><path class="link" d="M688 416H768"/><path class="link" d="M376 416H280"/>
   <rect x="288" y="116" width="80" height="28" fill="#f3f6fb"/><text class="note" x="292" y="136">HTTPS</text>
   <rect x="696" y="116" width="64" height="28" fill="#f8fafc"/><text class="note" x="700" y="136">/m4</text>
-  <rect x="544" y="276" width="128" height="28" fill="#f8fafc"/><text class="note" x="552" y="296">api.sock</text>
+  <rect x="544" y="276" width="128" height="28" fill="#f8fafc"/><text class="note" x="552" y="296">/m4-api/…</text>
   <rect x="696" y="376" width="64" height="28" fill="#f8fafc"/><text class="note" x="700" y="396">/data</text>
   <rect x="288" y="376" width="80" height="28" fill="#f3f6fb"/><text class="note" x="296" y="396">只读 GET</text>
   <rect class="box" x="48" y="100" width="232" height="124" rx="12"/><text class="title" x="68" y="136">NocoBase 页面</text><text class="label" x="68" y="168">iframe：/m4?token=…</text><text class="note" x="68" y="200">页面使用专用访问 Token</text>
-  <rect x="376" y="100" width="312" height="124" rx="12" fill="#edf3ff" stroke="#376ddb"/><text class="title" x="396" y="136">Node-RED</text><text class="label" x="396" y="168">Token 校验 · Unix Socket 转发</text><text class="note" x="396" y="200">页面与 API 都检查访问凭据</text>
+  <rect x="376" y="100" width="312" height="124" rx="12" fill="#edf3ff" stroke="#376ddb"/><text class="title" x="396" y="136">Node-RED</text><text class="label" x="396" y="168">Token 校验 · 同源 API 转发</text><text class="note" x="396" y="200">页面与 API 都检查访问凭据</text>
   <rect class="box" x="768" y="100" width="300" height="124" rx="12"/><text class="title" x="788" y="136">HTML 页面节点</text><text class="label" x="788" y="168">Template → HTTP Response</text><text class="note" x="788" y="200">运行总览 / 调度 / 设备 / 记录</text>
   <rect class="box" x="48" y="356" width="232" height="120" rx="12"/><text class="title" x="68" y="392">NocoBase API</text><text class="label" x="68" y="424">预测、实时、电价与规则</text><text class="note" x="68" y="456">M3 现有滚动预测结果</text>
-  <rect x="376" y="356" width="312" height="120" rx="12" fill="#edf3ff" stroke="#376ddb"/><text class="title" x="396" y="392">M4 Docker 后端</text><text class="label" x="396" y="424">FastAPI · Pyomo / HiGHS</text><text class="note" x="396" y="456">AMD64 · 单 worker · 无 TCP 端口</text>
+  <rect x="376" y="356" width="312" height="120" rx="12" fill="#edf3ff" stroke="#376ddb"/><text class="title" x="396" y="392">M4 Docker 后端</text><text class="label" x="396" y="424">FastAPI · Pyomo / HiGHS</text><text class="note" x="396" y="456">AMD64 · 单 worker · 内部 8844</text>
   <rect class="box" x="768" y="356" width="300" height="120" rx="12"/><text class="title" x="788" y="392">持久化数据卷</text><text class="label" x="788" y="424">SQLite 参数与偏好</text><text class="note" x="788" y="456">完整历史目录，含 .web-jobs</text>
   <text class="note" x="40" y="548">箭头表示访问方向；部署包不包含真实凭据和现场历史。M4 当前生成预览计划，未接设备下发。</text>
 </svg>

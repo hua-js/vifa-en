@@ -8,7 +8,7 @@ const fail = (status, detail) => {
 const {stationId, resource, runId} = msg.req.params;
 const method = msg.req.method;
 const allowed = {
-    GET: ['settings','control-sources','inputs','candidates','selection-policy','decision-result','decision-history','decision-runs'],
+    GET: ['settings','control-sources','inputs','candidates','selection-policy','decision-result','decision-history','decision-runs','bills'],
     PUT: ['settings','selection-policy'],
     POST: ['candidates','selection','decision-runs']
 };
@@ -22,22 +22,27 @@ if (runId !== undefined) {
     route = resource;
 }
 let query = '';
+if (resource === 'bills') {
+    const month = msg.req.query.month;
+    if (typeof month !== 'string' || !/^20[0-9]{2}-(0[1-9]|1[0-2])$/.test(month)) return fail(400, '账单月份格式不正确');
+    query = '?month=' + month;
+}
 if (resource === 'decision-history') {
     const limit = msg.req.query.limit === undefined ? '10' : msg.req.query.limit;
     const offset = msg.req.query.offset === undefined ? '0' : msg.req.query.offset;
     if (typeof limit !== 'string' || !/^\d{1,2}$/.test(limit) || Number(limit) < 1 || Number(limit) > 20 || typeof offset !== 'string' || !/^\d{1,6}$/.test(offset) || Number(offset) > 100000) return fail(400, '运行记录分页参数不正确');
     query = '?limit=' + limit + '&offset=' + offset;
 }
-const socketPath = env.get('M4_SOCKET_PATH') || '/run/vifa-m4/api.sock';
-if (typeof socketPath !== 'string' || socketPath.length > 100 || !/^\/[A-Za-z0-9_./-]+\.sock$/.test(socketPath) || socketPath.split('/').some(part => part === '..' || part === '.')) return fail(503, 'M4 Socket 路径配置不正确');
-msg.socketPath = socketPath;
+const backend = env.get('M4_BACKEND_URL') || 'http://127.0.0.1:8844';
+if (typeof backend !== 'string' || !/^https?:\/\/[a-zA-Z0-9.-]+:\d{1,5}$/.test(backend)) return fail(503, 'M4 后端地址配置不正确');
 msg.requestPath = '/m4-api/stations/' + stationId + '/' + route + query;
-delete msg.url;
+msg.url = backend + msg.requestPath;
+delete msg.socketPath;
 msg.method = method;
 msg.followRedirects = false;
 msg.requestTimeout = 180000;
 // Do not forward browser Token, Cookie, Origin, arbitrary query, or proxy headers.
-msg.headers = {'Host':'localhost', 'Accept':'application/json'};
+msg.headers = {'Host':'127.0.0.1:8844', 'Accept':'application/json'};
 delete msg.cookies;
 if (method === 'GET') {
     delete msg.payload;

@@ -3,13 +3,12 @@ import importlib
 from importlib.metadata import version
 import json
 import os
-import stat
 from pathlib import Path
 import sys
 import tempfile
 from zoneinfo import ZoneInfo
 
-from entrypoint import DATA_ROOT, RESULTS_ROOT, SOCKET_PATH, assert_data_access, drop_privileges
+from entrypoint import DATA_ROOT, RESULTS_ROOT, assert_data_access, drop_privileges
 
 
 def check_writable(directory):
@@ -64,10 +63,6 @@ def main():
                 if directory.exists():
                     check_writable(directory)
         print('Data volume write checks OK (UID/GID 10001).')
-        socket_info = SOCKET_PATH.lstat()
-        if not stat.S_ISSOCK(socket_info.st_mode) or stat.S_IMODE(socket_info.st_mode) != 0o660 or socket_info.st_gid != 10001:
-            raise ValueError('socket type, permissions or group invalid')
-        print('Unix Socket exists; mode 0660, group 10001; no backend TCP listener configured.')
         statuses = {station: latest_status(results_root, station)
                     for station in ('station-1', 'station-2')}
         for station, status in statuses.items():

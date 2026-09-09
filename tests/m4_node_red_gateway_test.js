@@ -21,7 +21,7 @@ const defaults = {
     M4_IFRAME_TOKEN: token,
     M4_PUBLIC_ORIGIN: origin,
     M4_FRAME_ORIGIN: frameOrigin,
-    M4_SOCKET_PATH: '/run/vifa-m4/api.sock',
+    M4_BACKEND_URL: 'http://127.0.0.1:8844',
 };
 const sources = Object.fromEntries(['authorize', 'prepare_proxy', 'finish_proxy'].map(name =>
     [name, fs.readFileSync(path.join(sourceRoot, `${name}.js`), 'utf8')]));
@@ -168,24 +168,23 @@ test('query and browser-controlled message fields cannot select a target or forw
         headers: {Authorization: `Bearer ${token}`, Cookie: 'private', Origin: origin}, cookies: {private: true}});
     const result = prepared(msg);
     assert.equal(result.requestPath, '/m4-api/stations/station-1/settings');
-    assert.equal(result.socketPath, '/run/vifa-m4/api.sock');
-    assert.equal(result.url, undefined);
+    assert.equal(result.socketPath, undefined);
+    assert.equal(result.url, 'http://127.0.0.1:8844' + result.requestPath);
     assert.equal(result.method, 'GET');
-    assert.deepEqual(jsonValue(result.headers), {Host: 'localhost', Accept: 'application/json'});
+    assert.deepEqual(jsonValue(result.headers), {Host: '127.0.0.1:8844', Accept: 'application/json'});
     assert.equal(result.cookies, undefined);
     assert.equal(result.payload, undefined);
     assert.equal(result.followRedirects, false);
 });
 
-test('socket path comes only from server configuration; TCP and unsafe paths are rejected', () => {
-    const msg = prepared(request(), {M4_SOCKET_PATH: '/opt/vifa/m4/socket/api.sock'});
-    assert.equal(msg.socketPath, '/opt/vifa/m4/socket/api.sock');
-    assert.equal(msg.requestPath, '/m4-api/stations/station-1/settings');
-    assert.equal(msg.url, undefined);
-    for (const socketPath of ['http://localhost:8844', 'api.sock', '/tmp/../api.sock',
-        '/tmp/./api.sock', '/tmp/api.sock?url=x', '/tmp/api.sock\\n', '/tmp/a b.sock',
-        '/tmp/' + 'a'.repeat(100) + '.sock', 123]) {
-        rejected('prepare_proxy', request(), 503, {M4_SOCKET_PATH: socketPath});
+test('backend URL comes only from server configuration and malformed addresses are rejected', () => {
+    const msg = prepared(request(), {M4_BACKEND_URL: 'http://m4-api:8844'});
+    assert.equal(msg.url, 'http://m4-api:8844/m4-api/stations/station-1/settings');
+    assert.equal(msg.socketPath, undefined);
+    for (const backend of ['file:///etc/passwd', 'http://user:pass@127.0.0.1:8844',
+        'http://127.0.0.1:8844/path', 'http://127.0.0.1:8844?url=x',
+        'http://127.0.0.1:8844#fragment', 'http://127.0.0.1:8844\r\nHost: attacker', 123]) {
+        rejected('prepare_proxy', request(), 503, {M4_BACKEND_URL: backend});
     }
 });
 
@@ -222,7 +221,7 @@ test('write payloads must be JSON objects and are serialized with safe headers',
         const msg = prepared(request({method, resource, payload: data}));
         assert.equal(msg.payload, JSON.stringify(data));
         assert.deepEqual(jsonValue(msg.headers), {
-            Host: 'localhost', Accept: 'application/json', 'Content-Type': 'application/json',
+            Host: '127.0.0.1:8844', Accept: 'application/json', 'Content-Type': 'application/json',
         });
         for (const payload of [undefined, null, false, 0, 'text', '{}', [], Buffer.from('{}')]) {
             rejected('prepare_proxy', request({method, resource, payload}), 400);
@@ -327,7 +326,19 @@ test('generated Flow connects every ingress through authorization and safe proxy
     assert.equal(byId['m4-page-response'].headers['Cache-Control'], 'no-store');
     assert.equal(byId['m4-api-response'].statusCode, '');
     assert.deepEqual(byId['m4-api-response'].headers, {});
-    assert.equal(byId['m4-backend-request'].type, 'function');
-    assert.equal(byId['m4-backend-request'].func, fs.readFileSync(path.join(sourceRoot, 'socket_request.js'), 'utf8'));
-    assert(!nodes.some(node => node.type === 'http request' || node.type === 'exec'));
+    assert.equal(byId['m4-backend-request'].type, 'http request');
+    assert.equal(byId['m4-backend-request'].method, 'use');
+    assert.equal(byId['m4-backend-request'].ret, 'txt');
+    assert.equal(byId['m4-backend-request'].url, '');
+    assert.equal(byId['m4-backend-request'].senderr, true);
+    assert(!nodes.some(node => node.type === 'exec'));
+});
+
+test('billing forwards only a validated month and remains GET only', () => {
+    const msg = prepared(request({resource: 'bills', query: {month: '2026-09', token, url: 'https://other.test'}}));
+    assert.equal(msg.requestPath, '/m4-api/stations/station-1/bills?month=2026-09');
+    for (const month of [undefined, '2026-13', '2026-00', '2026-9', ['2026-09'], 202609, '2026-09&url=x', '1999-12']) {
+        rejected('prepare_proxy', request({resource: 'bills', query: {month}}), 400);
+    }
+    for (const method of ['PUT', 'POST']) rejected('prepare_proxy', request({method, resource: 'bills', query: {month: '2026-09'}, payload: {}}), 404);
 });

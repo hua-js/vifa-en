@@ -39,7 +39,7 @@ function result(station='station-1',value=record){return {schema_version:'m4-dec
   }
   await assertTab('overview');
   const tabOrder=await page.locator('[role="tab"][id^="daily-tab-"]').evaluateAll(tabs=>tabs.map(tab=>tab.id.replace('daily-tab-','')));
-  assert.equal(tabOrder.length,4);assert.equal(tabOrder[0],'overview');
+  assert.equal(tabOrder.length,5);assert.equal(tabOrder[0],'overview');
   await page.locator('#daily-tab-overview').focus();
   for(const [key,expected] of [['ArrowRight',tabOrder[1]],['ArrowLeft','overview'],['End',tabOrder.at(-1)],['Home','overview']]){
    await page.keyboard.press(key);await assertTab(expected);
@@ -167,6 +167,6 @@ function result(station='station-1',value=record){return {schema_version:'m4-dec
   await page.route('**/station-1/decision-result',route=>route.fulfill({json:{...result(),schema_version:'m4-ai-results-v1',usage:'historical_preview'}}));
   await page.locator('#station-select').selectOption('s1');await page.locator('#refresh-solver-result').click();await page.waitForFunction(()=>document.querySelector('#solver-result-status').dataset.state==='error');assert.equal(await page.locator('#solver-result-body').isVisible(),false);
   assert.deepEqual(errors,[]);assert.equal(requests.some(url=>/ai-runs|ai-selection/.test(url)),false);assert.equal(requests.some(url=>new URL(url).hostname!=='127.0.0.1'),false);assert.equal(posts.length,1);
-  console.log('PASS: four customer tabs, keyboard navigation, background polling isolation, solver decision final/blocked records, 95/96 points, comparison, run lock, station navigation, policy, failure/late response, AI envelope rejection; four tabs across 8 responsive theme layouts; mock only.');
+  console.log('PASS: five customer tabs, keyboard navigation, background polling isolation, solver decision final/blocked records, 95/96 points, comparison, run lock, station navigation, policy, failure/late response, AI envelope rejection; four existing tabs across 8 responsive theme layouts; mock only.');
  }finally{if(release)release();if(browser)await browser.close();host.kill('SIGTERM');}
 })().catch(error=>{console.error(error);process.exitCode=1;});

@@ -45,7 +45,7 @@ class StartDecisionRun(BaseModel):
     request_id: str = Field(pattern=r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$')
 
 
-def create_app(settings_path: Path | None = None, *, control_reader=None, input_service=None, candidate_service=None, selection_service=None) -> FastAPI:
+def create_app(settings_path: Path | None = None, *, control_reader=None, input_service=None, candidate_service=None, selection_service=None, billing_service=None) -> FastAPI:
     path = settings_path or Path(os.environ.get('M4_SETTINGS_DB', str(ROOT / 'm4/run/settings.sqlite3')))
     store = SettingsStore(path)
     reader = control_reader
@@ -66,6 +66,9 @@ def create_app(settings_path: Path | None = None, *, control_reader=None, input_
     selections = selection_service if selection_service is not None else LiveSelectionService(
         store=store, policies=policies, candidates=candidates, fetch_inputs=input_service.fetch)
     app = FastAPI(title='M4 调度参数', docs_url=None, redoc_url=None)
+    from .billing import BillingService, MONTH_PATTERN
+    from .upstream import NocoBaseClient
+    billing = billing_service if billing_service is not None else BillingService(NocoBaseClient(token))
     from .decision_results import DecisionResultsReader
     decision_results = DecisionResultsReader(Path(os.environ.get(
         'M4_DECISION_RESULTS_DIR', str(ROOT / 'm4/run/solver-decisions'))))
@@ -85,6 +88,14 @@ def create_app(settings_path: Path | None = None, *, control_reader=None, input_
     def station_exists(station_id):
         if station_id not in ('station-1', 'station-2'):
             raise HTTPException(404, '未知电站')
+
+    @app.get('/m4-api/stations/{station_id}/bills')
+    def get_bills(station_id: str, month: Annotated[str, Query(pattern='^' + MONTH_PATTERN + '$')]) -> dict:
+        station_exists(station_id)
+        try:
+            return billing.fetch(station_id, month)
+        except Exception:
+            raise HTTPException(502, '账单统计读取失败，请稍后重试') from None
 
     @app.get('/m4-api/stations/{station_id}/settings')
     def get_settings(station_id: str) -> StationConfiguration:

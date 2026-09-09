@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import json
+import re
 from pathlib import Path
 import shutil
 import zipfile
@@ -13,8 +14,7 @@ PACKAGES = ('m4_settings', 'm4_optimizer', 'm4_orchestrator', 'm4_selection')
 HTML = ROOT / 'm4/M4优化调度控制台-线上版.html'
 BACKEND_FILES = ('Dockerfile', 'compose.yaml', '.env.example', '.dockerignore',
                  'requirements.lock.txt', 'entrypoint.py', 'healthcheck.py', 'preflight.py')
-NODE_RED_FILES = ('authorize.js', 'prepare_proxy.js', 'socket_request.js', 'finish_proxy.js',
-                  'settings.fragment.js', 'env.example')
+NODE_RED_FILES = ('authorize.js', 'prepare_proxy.js', 'finish_proxy.js', 'env.example')
 
 
 def flow(html):
@@ -34,6 +34,10 @@ def flow(html):
              x=610, y=100, wires=[]),
         dict(id='m4-api-response', type='http response', z='m4-customer-page',
              name='API / 错误响应', statusCode='', headers={}, x=990, y=320, wires=[]),
+        dict(id='m4-backend-request', type='http request', z='m4-customer-page',
+             name='M4 Docker API', method='use', ret='txt', paytoqs='ignore', url='',
+             tls='', persist=False, proxy='', insecureHTTPParser=False, authType='',
+             senderr=True, headers=[], x=720, y=240, wires=[['m4-api-finish']]),
         dict(id='m4-proxy-catch', type='catch', z='m4-customer-page', name='连接错误',
              scope=['m4-backend-request'], uncaught=False, x=720, y=400, wires=[['m4-api-finish']]),
     ]
@@ -50,8 +54,6 @@ def flow(html):
              [['m4-backend-request'], ['m4-api-response']], 520, 260)
     function('m4-api-finish', '整理 API 响应', 'finish_proxy.js',
              [['m4-api-response']], 910, 240)
-    function('m4-backend-request', 'M4 Unix Socket 请求', 'socket_request.js',
-             [['m4-api-finish']], 720, 240)
     routes = [('get', '/m4-api/stations/:stationId/:resource'),
               ('put', '/m4-api/stations/:stationId/:resource'),
               ('post', '/m4-api/stations/:stationId/:resource'),
@@ -68,8 +70,17 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True,
                         help='New release directory; existing directories are not overwritten')
+    parser.add_argument('--image', help='Published image reference to put in backend/.env.example')
+    parser.add_argument('--revision', help='Full Git revision identifying the release snapshot')
     args = parser.parse_args()
+    if args.image and not re.fullmatch(r'[a-z0-9][a-z0-9.:-]*/[a-z0-9][a-z0-9._/-]*:[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}', args.image):
+        parser.error('--image must be a registry/repository:tag reference')
+    if args.revision and not re.fullmatch(r'[0-9a-f]{40}', args.revision):
+        parser.error('--revision must be a full 40-character Git SHA')
     target = args.output.resolve()
+    archive = Path(str(target) + '.zip')
+    if archive.exists():
+        parser.error('Output ZIP already exists; choose a new output directory')
     target.mkdir(parents=True, exist_ok=False)
     (target / 'node_red').mkdir()
     (target / 'secrets').mkdir()
@@ -80,6 +91,14 @@ def main():
     (target / 'backend').mkdir()
     for filename in BACKEND_FILES:
         shutil.copyfile(DEPLOY / 'backend' / filename, target / 'backend' / filename)
+    if args.image:
+        env_file = target / 'backend/.env.example'
+        env_file.write_text(re.sub(r'^M4_IMAGE=.*$', 'M4_IMAGE=' + args.image,
+                                  env_file.read_text(), flags=re.MULTILINE), encoding='utf-8')
+    if args.image or args.revision:
+        (target / 'release.json').write_text(json.dumps({
+            'image': args.image, 'revision': args.revision, 'platform': 'linux/amd64',
+        }, indent=2) + '\n', encoding='utf-8')
     for filename in NODE_RED_FILES:
         shutil.copyfile(DEPLOY / 'node_red' / filename, target / 'node_red' / filename)
     for package in PACKAGES:
@@ -107,7 +126,6 @@ def main():
         if path.is_file():
             manifest.append(hashlib.sha256(path.read_bytes()).hexdigest() + '  ' + path.relative_to(target).as_posix())
     (target / 'SHA256SUMS').write_text('\n'.join(manifest) + '\n', encoding='utf-8')
-    archive = target.with_suffix('.zip')
     with zipfile.ZipFile(archive, 'x', zipfile.ZIP_DEFLATED) as output:
         for path in sorted(target.rglob('*')):
             if path.is_file():
