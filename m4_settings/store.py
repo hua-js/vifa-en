@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .models import StationConfiguration, StationParameters
+from .runtime_config import effective_configuration, runtime_parameters
 
 
 class SettingsConflict(ValueError):
@@ -53,18 +54,20 @@ class SettingsStore:
     def get(self, station_id: str) -> StationConfiguration:
         self.validate_station(station_id)
         with self.connection() as connection:
-            return self._get(connection, station_id)
+            return effective_configuration(self._get(connection, station_id))
 
     def save(self, station_id: str, parameters: StationParameters, *, expected_revision: int) -> StationConfiguration:
         self.validate_station(station_id)
-        parameters = StationParameters.model_validate(parameters.model_dump())
+        parameters = StationParameters.model_validate({
+            **parameters.model_dump(), **runtime_parameters(station_id),
+        })
         with self.connection() as connection, connection:
             connection.execute('BEGIN IMMEDIATE')
             previous = self._get(connection, station_id)
             if previous.revision != expected_revision:
                 raise SettingsConflict('参数已被其他窗口更新，请重新读取后再保存')
             if previous.parameters == parameters:
-                return previous
+                return effective_configuration(previous)
             revision = previous.revision + 1
             digest = hashlib.sha256(json.dumps(parameters.model_dump(), sort_keys=True, separators=(',', ':')).encode()).hexdigest()[:16]
             config = StationConfiguration(station_id=station_id, revision=revision,
@@ -73,4 +76,4 @@ class SettingsStore:
             connection.execute('INSERT INTO m4_station_settings (station_id,document) VALUES (?,?) '
                 'ON CONFLICT(station_id) DO UPDATE SET document=excluded.document',
                 (station_id, config.model_dump_json()))
-            return config
+            return effective_configuration(config)

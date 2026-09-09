@@ -1,10 +1,12 @@
 """Local parameter storage and read-only upstream control configuration."""
 import ast
+from datetime import datetime
 import os
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Annotated
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse
@@ -45,7 +47,7 @@ class StartDecisionRun(BaseModel):
     request_id: str = Field(pattern=r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$')
 
 
-def create_app(settings_path: Path | None = None, *, control_reader=None, input_service=None, candidate_service=None, selection_service=None, billing_service=None) -> FastAPI:
+def create_app(settings_path: Path | None = None, *, control_reader=None, input_service=None, candidate_service=None, selection_service=None, billing_service=None, daily_input_service=None) -> FastAPI:
     path = settings_path or Path(os.environ.get('M4_SETTINGS_DB', str(ROOT / 'm4/run/settings.sqlite3')))
     store = SettingsStore(path)
     reader = control_reader
@@ -58,6 +60,8 @@ def create_app(settings_path: Path | None = None, *, control_reader=None, input_
         from .live_inputs import LiveInputService
         from .upstream import NocoBaseClient
         input_service = LiveInputService(NocoBaseClient(token), SimpleNamespace(fetch=read_controls))
+    from .daily_inputs import DailyInputService
+    daily_inputs = daily_input_service if daily_input_service is not None else DailyInputService(input_service)
     from .candidates import CandidateError, CandidateService
     candidates = candidate_service if candidate_service is not None else CandidateService(
         store=store, fetch_inputs=input_service.fetch, read_controls=read_controls)
@@ -72,6 +76,8 @@ def create_app(settings_path: Path | None = None, *, control_reader=None, input_
     from .decision_results import DecisionResultsReader
     decision_results = DecisionResultsReader(Path(os.environ.get(
         'M4_DECISION_RESULTS_DIR', str(ROOT / 'm4/run/solver-decisions'))))
+    from .daily_plans import DailyPlanService
+    daily_plans = DailyPlanService(store, daily_inputs, decision_results.root.parent / 'daily-comparisons')
     # This factory serves a local workstation. Production must use the platform's authenticated adapter.
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=['127.0.0.1', 'localhost', '[::1]', 'testserver'])
 
@@ -143,6 +149,34 @@ def create_app(settings_path: Path | None = None, *, control_reader=None, input_
         if current.version != configuration.version or current.revision != configuration.revision:
             raise HTTPException(409, '调度参数在取数期间已更新，请刷新输入以使用新参数')
         return result
+
+    @app.get('/m4-api/stations/{station_id}/daily-inputs')
+    def get_daily_inputs(station_id: str) -> dict:
+        station_exists(station_id)
+        try:
+            configuration = store.get(station_id)
+            now = datetime.now(ZoneInfo('Asia/Shanghai'))
+            result = daily_inputs.fetch(configuration, now.date(), now=now)
+            if store.get(station_id).version != configuration.version:
+                raise HTTPException(409, '参数在全天取数期间变化，请重新读取。')
+            return result
+        except HTTPException:
+            raise
+        except Exception:
+            raise HTTPException(502, '全天输入读取失败，请重新读取。') from None
+
+    @app.get('/m4-api/stations/{station_id}/daily-plan')
+    def get_daily_plan(station_id: str) -> dict:
+        station_exists(station_id)
+        try:
+            return daily_plans.latest(station_id)
+        except Exception:
+            raise HTTPException(503, '全天计划读取或校验失败，请重新计算。') from None
+
+    @app.post('/m4-api/stations/{station_id}/daily-plan', status_code=202)
+    def start_daily_plan(station_id: str) -> dict:
+        station_exists(station_id)
+        return daily_plans.start(station_id)
 
     @app.get('/m4-api/stations/{station_id}/candidates')
     def get_candidates(station_id: str) -> dict | None:

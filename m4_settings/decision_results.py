@@ -10,6 +10,7 @@ from m4_selection.decision_chain import (EVIDENCE_NAMES, FINAL_STATUSES, SELECTO
     verify_precheck_inputs, verify_request_inputs, verify_selection)
 from .models import StationConfiguration
 from .peak_preparation import summarize_peak_preparation
+from .daily_comparison import compare_daily_plan, unavailable_comparison
 from .selection import LiveSelectionResult, StationPolicy
 
 
@@ -124,6 +125,7 @@ class DecisionResultsReader:
             selector_version=None, candidate_run_id=report.get('candidate_run_id'),
             selected=None, reason='', checked_at=None, expires_at=None, input_sha256=None,
             comparison=[], candidates=[], policy=None, plan_start_at=None, peak_preparation=None, input_summary=None,
+            daily_comparison=unavailable_comparison(station_id),
             issues=report['issues'], stages=report['stages'])
         configuration = policy = None
         if 'configuration.json' in evidence:
@@ -193,6 +195,10 @@ class DecisionResultsReader:
             chosen = next(candidate for candidate in result.candidates
                           if candidate.profile_id == live.selection.selected.profile_id)
             record['peak_preparation'] = summarize_peak_preparation(request, chosen)
+            saved_inputs = evidence['candidates.json']['inputs']
+            record['daily_comparison'] = compare_daily_plan(request, chosen,
+                baseline=saved_inputs.get('daily_baseline'),
+                controls_version=saved_inputs.get('sources', {}).get('controls', {}).get('version'))
         elif report.get('selected') is not None:
             raise ValueError('blocked decision cannot select a plan')
         view.update(status='available', record=record)

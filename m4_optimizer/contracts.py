@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_serializer, model_validator
 
 
 HORIZON_POINTS = 96
@@ -15,6 +15,7 @@ ObjectiveName = Literal[
     "pv_unused",
     "throughput",
     "valley_charge_delay",
+    "peak_reserve_shortfall",
 ]
 CandidateStatus = Literal["optimal", "feasible", "infeasible", "timeout", "error"]
 FiniteFloat = Annotated[float, Field(allow_inf_nan=False)]
@@ -72,8 +73,14 @@ class ObjectiveProfile(StrictModel):
     objective_order: list[ObjectiveLayer] = Field(min_length=1)
 
 
+class PeakReservePolicy(StrictModel):
+    version: Literal["peak-reserve-v1"] = "peak-reserve-v1"
+    terminal_soc_min_pct: Annotated[float, Field(ge=0, le=100, allow_inf_nan=False)]
+
+
 class OptimizationRequest(StrictModel):
-    pv_dispatch_policy: Literal["legacy", "load_first_economic"] = "legacy"
+    pv_dispatch_policy: Literal["legacy", "load_first_economic", "load_first_export_priority", "load_first_storage_priority"] = "legacy"
+    peak_reserve_policy: PeakReservePolicy | None = None
     request_id: str = Field(min_length=1)
     station_id: str = Field(min_length=1)
     plan_start_at: datetime
@@ -88,6 +95,13 @@ class OptimizationRequest(StrictModel):
     profiles: list[ObjectiveProfile]
     solver_time_limit_seconds: PositiveFloat
     solver_mip_rel_gap: NonNegativeFloat
+
+    @model_serializer(mode="wrap")
+    def serialize_optional_policy(self, handler):
+        output = handler(self)
+        if self.peak_reserve_policy is None:
+            output.pop("peak_reserve_policy", None)
+        return output
 
     @model_validator(mode="after")
     def validate_cross_fields(self) -> "OptimizationRequest":
@@ -130,6 +144,11 @@ class OptimizationRequest(StrictModel):
         profile_ids = [profile.profile_id for profile in self.profiles]
         if len(profile_ids) != 3 or set(profile_ids) != {"balanced", "cost", "pv"}:
             raise ValueError("profiles must contain balanced, cost and pv exactly once")
+        if self.peak_reserve_policy is not None:
+            if any(point.tariff_period is None for point in self.points):
+                raise ValueError("peak reserve policy requires known tariff periods")
+            if not any(point.tariff_period == "feng" for point in self.points):
+                raise ValueError("peak reserve policy requires at least one peak period")
         required_objectives = {
             "demand_peak",
             "demand_duration",
@@ -143,6 +162,13 @@ class OptimizationRequest(StrictModel):
             if term_sets[:2] != [{"demand_peak"}, {"demand_duration"}]:
                 raise ValueError("demand objectives must be the first two layers")
             flattened = [name for layer in profile.objective_order for name in layer.terms]
+            if self.peak_reserve_policy is not None:
+                if (term_sets[2:3] != [{"peak_reserve_shortfall"}]
+                        or flattened.count("peak_reserve_shortfall") != 1):
+                    raise ValueError("peak reserve objective must be a separate third layer")
+                flattened.remove("peak_reserve_shortfall")
+            elif "peak_reserve_shortfall" in flattened:
+                raise ValueError("peak reserve objective requires an explicit policy")
             if "valley_charge_delay" in flattened:
                 if (
                     term_sets[-1] != {"valley_charge_delay"}
@@ -164,6 +190,12 @@ class OptimizationRequest(StrictModel):
             raise ValueError("preferred SOC range must be inside absolute SOC bounds")
         if not bounds.soc_min_pct <= self.capability.initial_soc_pct <= bounds.soc_max_pct:
             raise ValueError("initial SOC must be inside absolute SOC bounds")
+        if self.peak_reserve_policy is not None and not (
+            bounds.preferred_soc_min_pct
+            <= self.peak_reserve_policy.terminal_soc_min_pct
+            <= bounds.soc_max_pct
+        ):
+            raise ValueError("peak reserve terminal SOC floor must respect preferred minimum and safety maximum")
         if not bounds.grid_export_enabled and bounds.grid_export_limit_kw != 0:
             raise ValueError("disabled grid export requires a zero export limit")
         return self

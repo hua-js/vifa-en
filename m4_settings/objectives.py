@@ -103,6 +103,23 @@ def get_profiles(station_id: str) -> list[ObjectiveProfile]:
     return _build_profiles(settings, scope)
 
 
+def get_daily_profiles(station_id: str) -> list[ObjectiveProfile]:
+    """Only the confirmed station's daily plans prioritize peak energy reserve."""
+    from .daily_policy import daily_policy_version
+    profiles = get_profiles(station_id)
+    policy_version = daily_policy_version(station_id)
+    if policy_version is None:
+        return profiles
+    settings, _ = _resolve(station_id)
+    for profile in profiles:
+        profile.profile_version += '/' + policy_version
+        profile.objective_order.insert(2, ObjectiveLayer(
+            name='peak-reserve-shortfall', terms={'peak_reserve_shortfall': 1.0},
+            absolute_tolerance=settings.absolute_tolerance,
+            relative_tolerance=settings.relative_tolerance))
+    return profiles
+
+
 def get_profile_metadata(station_id: str) -> dict:
     """Expose the tuning basis and versions without implying production approval."""
     settings, scope = _resolve(station_id)

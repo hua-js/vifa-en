@@ -31,6 +31,7 @@ class VariableIndex:
     pv_curtail_on: slice
     pv_storage_full: slice
     size: int
+    peak_reserve_shortfall: int | None = None
 
 
 @dataclass(frozen=True)
@@ -41,11 +42,13 @@ class BuiltModel:
     valley_charge_windows: tuple[tuple[int, ...], ...] = ()
 
 
-def build_model(request: OptimizationRequest) -> BuiltModel:
+def build_model(request: OptimizationRequest, *, terminal_soc_target_pct: float | None = None) -> BuiltModel:
     """Build the station rules as named Pyomo variables and constraints."""
-    load_first = request.pv_dispatch_policy == "load_first_economic"
+    load_first = request.pv_dispatch_policy != "legacy"
     horizon = request.horizon_points
-    index = _build_variable_index(load_first=load_first, horizon=horizon)
+    peak_reserve = request.peak_reserve_policy
+    index = _build_variable_index(load_first=load_first, horizon=horizon,
+                                  peak_reserve=peak_reserve is not None)
     capability, constraints = request.capability, request.constraints
     charge_max = capability.max_charge_kw if capability.available else 0.0
     discharge_max = capability.max_discharge_kw if capability.available else 0.0
@@ -55,9 +58,26 @@ def build_model(request: OptimizationRequest) -> BuiltModel:
     export_max = constraints.grid_export_limit_kw if constraints.grid_export_enabled else 0.0
     capacity = capability.energy_capacity_kwh
     initial_energy = capacity * capability.initial_soc_pct / 100.0
+    if terminal_soc_target_pct is not None and not (
+        np.isfinite(terminal_soc_target_pct)
+        and constraints.soc_min_pct <= terminal_soc_target_pct <= constraints.soc_max_pct
+    ):
+        raise ValueError('terminal SOC target must be within safety bounds')
+    terminal_energy = initial_energy if terminal_soc_target_pct is None else capacity * terminal_soc_target_pct / 100.0
     minimum_energy = capacity * constraints.soc_min_pct / 100.0
     maximum_energy = capacity * constraints.soc_max_pct / 100.0
     terminal_tolerance = capacity * constraints.terminal_soc_tolerance_pct / 100.0
+    if peak_reserve is not None:
+        if not constraints.preferred_soc_min_pct <= peak_reserve.terminal_soc_min_pct <= constraints.soc_max_pct:
+            raise ValueError('peak reserve terminal SOC floor is outside allowed bounds')
+        if terminal_soc_target_pct is not None and peak_reserve.terminal_soc_min_pct < terminal_soc_target_pct:
+            raise ValueError('peak reserve terminal SOC floor cannot be below baseline target')
+        if any(p.tariff_period not in ('gu', 'ping', 'feng') for p in request.points):
+            raise ValueError('peak reserve policy requires known tariff periods')
+        first_peak = next((t for t, point in enumerate(request.points)
+                           if point.tariff_period == 'feng'), None)
+        if first_peak is None:
+            raise ValueError('peak reserve policy requires at least one peak period')
     surplus = {t: max(p.pv_forecast_kw - p.load_forecast_kw, 0.0)
                for t, p in enumerate(request.points)}
     windows = _overnight_valley_windows(request)
@@ -73,13 +93,21 @@ def build_model(request: OptimizationRequest) -> BuiltModel:
 
     def discharge_bound(m, t):
         point = request.points[t]
-        return (0.0, min(discharge_max, max(point.load_forecast_kw - point.pv_forecast_kw, 0.0))
-                if load_first else discharge_max)
+        net_load = max(point.load_forecast_kw - point.pv_forecast_kw, 0.0)
+        maximum = min(discharge_max, net_load) if load_first or peak_reserve is not None else discharge_max
+        if peak_reserve is not None and point.tariff_period != 'feng':
+            grid_boundary = min(constraints.demand_limit_kw, import_max)
+            maximum = min(maximum, max(net_load - grid_boundary, 0.0))
+        return 0.0, maximum
 
     def energy_bound(m, t):
         if t == 0:
             return initial_energy, initial_energy
         if t == horizon:
+            if peak_reserve is not None:
+                return capacity * peak_reserve.terminal_soc_min_pct / 100.0, maximum_energy
+            if terminal_soc_target_pct is not None:
+                return terminal_energy, terminal_energy
             return max(minimum_energy, initial_energy - terminal_tolerance), min(maximum_energy, initial_energy + terminal_tolerance)
         return minimum_energy, maximum_energy
 
@@ -103,6 +131,11 @@ def build_model(request: OptimizationRequest) -> BuiltModel:
                                  bounds=lambda m, t: (0, 1 if surplus[t] > 0 else 0))
     model.pv_storage_full = pyo.Var(model.pv_policy_periods, domain=pyo.Binary,
                                    bounds=lambda m, t: (0, 1 if surplus[t] > 0 else 0))
+    if peak_reserve is not None:
+        model.peak_reserve_energy_shortfall = pyo.Var(domain=pyo.NonNegativeReals)
+        model.peak_reserve_preparation = pyo.Constraint(expr=
+            model.peak_reserve_energy_shortfall + model.energy[first_peak]
+            >= capacity * constraints.preferred_soc_max_pct / 100.0)
 
     model.power_balance = pyo.Constraint(model.periods, rule=lambda m, t:
         m.grid_import[t] + m.discharge[t] + request.points[t].pv_forecast_kw
@@ -134,6 +167,21 @@ def build_model(request: OptimizationRequest) -> BuiltModel:
         m.charge[t] >= min(surplus[t], charge_max) * (m.pv_curtail_on[t] - m.pv_storage_full[t]))
     model.pv_full_before_curtailment = pyo.Constraint(model.pv_surplus_periods, rule=lambda m, t:
         m.energy[t + 1] >= minimum_energy + (maximum_energy - minimum_energy) * m.pv_storage_full[t])
+    # Customer preference is a physical allocation rule, independent of price.
+    # In surplus periods the battery cannot discharge or import from the grid.
+    # Filling the battery and hitting the charge bound are the two ways charging
+    # can saturate; the existing storage_full binary encodes the former.
+    if request.pv_dispatch_policy in ('load_first_export_priority', 'load_first_storage_priority'):
+        export_first = request.pv_dispatch_policy == 'load_first_export_priority'
+        export_quota = {t: min(surplus[t], export_max) if export_first else 0.0
+                        for t in model.pv_surplus_periods}
+        if export_first:
+            model.pv_export_priority = pyo.Constraint(model.pv_surplus_periods,
+                rule=lambda m, t: m.grid_export[t] == export_quota[t])
+        model.pv_priority_charge = pyo.Constraint(model.pv_surplus_periods,
+            rule=lambda m, t: m.charge[t] >= min(charge_max, surplus[t]-export_quota[t])
+                * (1-m.pv_storage_full[t]))
+
     model.preferred_soc_low = pyo.Constraint(model.periods, rule=lambda m, t:
         m.soc_low_deviation[t] + 100.0 / capacity * m.energy[t + 1] >= constraints.preferred_soc_min_pct)
     model.preferred_soc_high = pyo.Constraint(model.periods, rule=lambda m, t:
@@ -153,6 +201,8 @@ def build_model(request: OptimizationRequest) -> BuiltModel:
     model.valley_charge_delay = pyo.Expression(expr=pyo.quicksum(
         elapsed * INTERVAL_HOURS * INTERVAL_HOURS * model.charge[t]
         for window in windows for elapsed, t in enumerate(window)))
+    if peak_reserve is not None:
+        model.peak_reserve_shortfall = pyo.Expression(expr=model.peak_reserve_energy_shortfall)
 
     variables = tuple(model.component_data_objects(pyo.Var))
     problem = PyomoProblem(model, variables)
@@ -208,7 +258,8 @@ def _overnight_valley_windows(
     return tuple(tuple(window) for window in windows.values())
 
 
-def _build_variable_index(*, load_first: bool = False, horizon: int = HORIZON_POINTS) -> VariableIndex:
+def _build_variable_index(*, load_first: bool = False, horizon: int = HORIZON_POINTS,
+                          peak_reserve: bool = False) -> VariableIndex:
     cursor = 0
 
     def allocate(size: int) -> slice:
@@ -233,6 +284,9 @@ def _build_variable_index(*, load_first: bool = False, horizon: int = HORIZON_PO
     soc_high_deviation = allocate(horizon)
     pv_curtail_on = allocate(horizon if load_first else 0)
     pv_storage_full = allocate(horizon if load_first else 0)
+    peak_reserve_shortfall = cursor if peak_reserve else None
+    if peak_reserve:
+        cursor += 1
     return VariableIndex(
         charge=charge,
         discharge=discharge,
@@ -250,4 +304,5 @@ def _build_variable_index(*, load_first: bool = False, horizon: int = HORIZON_PO
         pv_curtail_on=pv_curtail_on,
         pv_storage_full=pv_storage_full,
         size=cursor,
+        peak_reserve_shortfall=peak_reserve_shortfall,
     )

@@ -22,6 +22,7 @@ class ProfileSolveResult:
     message: str
     solve_seconds: float
     early_valley_optimal: bool | None = None
+    peak_reserve_optimal: bool | None = None
 
 
 def build_layer_objective(
@@ -69,6 +70,7 @@ def solve_profile(
     final_message = ""
     used_feasible_incumbent = False
     early_valley_optimal = None
+    peak_reserve_optimal = None
 
     for layer in profile.objective_order:
         remaining_seconds = time_limit_seconds - (monotonic() - started)
@@ -84,6 +86,8 @@ def solve_profile(
                         f"{len(profile.objective_order)} layers; returning last incumbent"
                     ),
                     solve_seconds=monotonic() - started,
+                    early_valley_optimal=early_valley_optimal,
+                    peak_reserve_optimal=peak_reserve_optimal,
                 )
             return ProfileSolveResult(
                 status="timeout",
@@ -91,10 +95,13 @@ def solve_profile(
                 layers=tuple(layer_results),
                 message="total time limit exhausted before solving the next layer",
                 solve_seconds=monotonic() - started,
+                early_valley_optimal=early_valley_optimal,
+                peak_reserve_optimal=peak_reserve_optimal,
             )
 
         objective = build_layer_objective(built, layer)
         early_valley = "valley_charge_delay" in layer.terms
+        peak_reserve = "peak_reserve_shortfall" in layer.terms
         if early_valley and incumbent is not None:
             locks.extend(_valley_reordering_locks(built, incumbent))
         raw = solve_milp(
@@ -102,7 +109,7 @@ def solve_profile(
             objective,
             tuple(locks),
             remaining_seconds,
-            0.0 if early_valley else mip_rel_gap,
+            0.0 if early_valley or peak_reserve else mip_rel_gap,
         )
         final_message = raw.message
         if raw.status == "timeout" and raw.x is None and incumbent is not None:
@@ -116,6 +123,8 @@ def solve_profile(
                     f"{len(layer_results)} of {len(profile.objective_order)} layers"
                 ),
                 solve_seconds=monotonic() - started,
+                early_valley_optimal=early_valley_optimal,
+                peak_reserve_optimal=peak_reserve_optimal,
             )
         if raw.status not in {"optimal", "feasible"}:
             return ProfileSolveResult(
@@ -124,6 +133,8 @@ def solve_profile(
                 layers=tuple(layer_results),
                 message=final_message,
                 solve_seconds=monotonic() - started,
+                early_valley_optimal=early_valley_optimal,
+                peak_reserve_optimal=peak_reserve_optimal,
             )
         if raw.x is None or not np.isfinite(raw.x).all():
             return ProfileSolveResult(
@@ -132,11 +143,15 @@ def solve_profile(
                 layers=tuple(layer_results),
                 message=f"{raw.message}; solver returned no finite incumbent",
                 solve_seconds=monotonic() - started,
+                early_valley_optimal=early_valley_optimal,
+                peak_reserve_optimal=peak_reserve_optimal,
             )
 
         incumbent = raw.x.copy()
         if early_valley:
             early_valley_optimal = raw.status == "optimal"
+        if peak_reserve:
+            peak_reserve_optimal = raw.status == "optimal"
         if raw.status == "feasible":
             used_feasible_incumbent = True
 
@@ -167,4 +182,5 @@ def solve_profile(
         message=final_message,
         solve_seconds=monotonic() - started,
         early_valley_optimal=early_valley_optimal,
+        peak_reserve_optimal=peak_reserve_optimal,
     )

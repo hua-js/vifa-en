@@ -143,13 +143,15 @@ def _load_rolling_forecast(client, station_id, *, now):
         'status': load['status'], 'snapshot_status': row['status'], 'model_name': load['model_name']}
 
 
-def load_forecast(client, station_id, *, plan_start_at, now):
+def load_forecast(client, station_id, *, plan_start_at, now, require_full_day=False):
     """Prefer rolling load; use existing manual forecasts only for uncovered slots."""
     if station_id not in STATIONS:
         raise ValueError('未知电站')
     if plan_start_at.utcoffset() is None or now.utcoffset() is None:
         raise ValueError('计划时间缺少时区')
     start = plan_start_at.astimezone(SHANGHAI)
+    if require_full_day and (start.hour, start.minute, start.second, start.microsecond) != (0, 0, 0, 0):
+        raise ValueError('自然日预测必须从北京时间零点开始')
     if start.minute % 15 or start.second or start.microsecond:
         raise ValueError('计划起点须对齐15分钟')
     timeline = [start+timedelta(minutes=15*i) for i in range(96)]
@@ -161,7 +163,7 @@ def load_forecast(client, station_id, *, plan_start_at, now):
     rolling_count = 96-len(required)
     runs = [batch] if rolling_count else []
     # A complete 95-slot prefix is sufficient: no manual read just to add a tail.
-    if required and not (rolling_count == 95 and required == {95}):
+    if required and (require_full_day or not (rolling_count == 95 and required == {95})):
         manual = _load_manual_forecast(client, station_id, plan_start_at=start, now=now,
                                       required_indices=required)
         for index in required:
@@ -170,7 +172,7 @@ def load_forecast(client, station_id, *, plan_start_at, now):
         runs.extend(manual['runs'])
     manual_count = sum(item is not None and item['kind'] == 'manual' for item in point_sources)
     kind = 'rolling_with_manual' if rolling_count and manual_count else 'rolling' if rolling_count else 'manual' if manual_count else 'unavailable'
-    horizon = 95 if values[-1] is None and all(value is not None for value in values[:95]) else 96
+    horizon = 95 if not require_full_day and values[-1] is None and all(value is not None for value in values[:95]) else 96
     values, point_sources = values[:horizon], point_sources[:horizon]
     missing = [ts for ts,value in zip(timeline, values) if value is None]
     warnings = []
@@ -182,7 +184,7 @@ def load_forecast(client, station_id, *, plan_start_at, now):
         warnings.append(f'负荷来源：滚动预测{rolling_count}点，已有手动预测补充{manual_count}点')
     if rolling_count and (batch['status'] != 'ok' or batch['snapshot_status'] != 'ok'):
         warnings.append(f'M3滚动负荷状态为{batch["status"]}（快照{batch["snapshot_status"]}），模型{batch["model_name"]}')
-    digest = hashlib.sha256(json.dumps({'policy':'rolling-min95-v2',
+    digest = hashlib.sha256(json.dumps({'policy':'natural-day-96-v1' if require_full_day else 'rolling-min95-v2',
         'station_id':station_id, 'start':start.isoformat(), 'runs':runs,
         'point_sources':point_sources, 'values':values}, sort_keys=True).encode()).hexdigest()[:16]
     return {'values':values, 'coverage_points':horizon-len(missing), 'runs':runs,

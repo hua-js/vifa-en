@@ -15,6 +15,9 @@ RISK_MESSAGES = {
     "EARLY_VALLEY_PREFERENCE_INCOMPLETE": (
         "候选保留可行计划，凌晨谷段早充偏好尚未确认最优。"
     ),
+    "PEAK_RESERVE_PREFERENCE_INCOMPLETE": (
+        "候选保留可行计划，首个峰段开始前的储能准备目标尚未确认最优。"
+    ),
     "PV_UNABSORBED": (
         "存在未吸收光伏余量；该值仅用于风险提示，不是光伏限发指令。"
     ),
@@ -35,10 +38,10 @@ class M4Optimizer:
             raise ValueError("model_version is required")
         self.model_version = model_version
 
-    def optimize(self, request: OptimizationRequest) -> OptimizationResult:
+    def optimize(self, request: OptimizationRequest, *, terminal_soc_target_pct: float | None = None) -> OptimizationResult:
         """Return independently validated candidates in stable display order."""
         started_at = datetime.now(timezone.utc)
-        built = build_model(request)
+        built = build_model(request, terminal_soc_target_pct=terminal_soc_target_pct)
         candidates: list[CandidateResult] = []
 
         for profile in ordered_profiles(request):
@@ -76,11 +79,14 @@ class M4Optimizer:
                     metrics = calculate_metrics(request, plan)
                     risk_codes = []
                     if metrics.pv_unabsorbed_energy_kwh > 1e-6:
-                        risk_codes.append("PV_CURTAILMENT_REQUIRED" if request.pv_dispatch_policy == "load_first_economic" else "PV_UNABSORBED")
+                        risk_codes.append("PV_CURTAILMENT_REQUIRED" if request.pv_dispatch_policy != "legacy" else "PV_UNABSORBED")
                     if (any("valley_charge_delay" in item.terms
                             for item in profile.objective_order)
                             and solved.early_valley_optimal is not True):
                         risk_codes.append("EARLY_VALLEY_PREFERENCE_INCOMPLETE")
+                    if (request.peak_reserve_policy is not None
+                            and solved.peak_reserve_optimal is not True):
+                        risk_codes.append("PEAK_RESERVE_PREFERENCE_INCOMPLETE")
                     stage = "candidate_result"
                     candidate = CandidateResult(
                         profile_id=profile.profile_id,
@@ -96,7 +102,7 @@ class M4Optimizer:
                         risk_messages=[RISK_MESSAGES[code] for code in risk_codes],
                     )
                 stage = "validate_candidate"
-                validate_candidate(request, candidate)
+                validate_candidate(request, candidate, terminal_soc_target_pct=terminal_soc_target_pct)
             except ValueError as exc:
                 error_message = (
                     f"{solved.message}; {stage} failed: "
@@ -146,6 +152,10 @@ class M4Optimizer:
         model_version = f"{self.model_version}/pyomo-v1"
         if request.horizon_points == 95:
             model_version += '/horizon-95-v1'
+        if request.peak_reserve_policy is not None:
+            model_version += '/peak-reserve-v1'
         if request.pv_dispatch_policy == "load_first_economic":
             return f"{model_version}/pv-load-first-economic-v1"
+        if request.pv_dispatch_policy in ("load_first_export_priority", "load_first_storage_priority"):
+            return f"{model_version}/pv-{request.pv_dispatch_policy}-v1"
         return model_version

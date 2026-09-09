@@ -7,6 +7,8 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from urllib.parse import urlencode, urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
+from .schedule_power import SCHEDULE_POWER_POLICY
+from .roster import STATION_CABINETS
 
 
 class ControlSourceError(ValueError):
@@ -20,6 +22,7 @@ class _NoRedirect(HTTPRedirectHandler):
 
 _STATIONS = {'station-1': 'ES01', 'station-2': 'ES02'}
 _TABLES = {
+    't_es': ('电站容量', 'id,sn,es_power_storage,updatedAt'),
     't_need': ('需量控制', 'id,f_es_sn,need_kw,reserved_kw,rated_capacity,load_rate,updatedAt'),
     're_flow': ('防逆流', 'id,fk_es_sn,re_kw,updatedAt'),
     't_model': ('每日充放电计划', 'id,es_sn,start_time,end_time,type,kw,repeat,updatedAt'),
@@ -28,7 +31,7 @@ _TIME = re.compile(r'(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d\Z')
 _PAGE_SIZE = 100
 _MAX_PAGES = 20
 _MAX_RESPONSE_BYTES = 2 * 1024 * 1024
-CONTROL_POLICY_VERSION = 'm4-control-policy-v2-reverse-inactive'
+CONTROL_POLICY_VERSION = SCHEDULE_POWER_POLICY
 
 
 def _number(row, field, label):
@@ -230,7 +233,7 @@ class ControlSourceReader:
             warnings.append(f'{label}参考源不可用：{message}；本轮不使用该参考数据')
             return empty
 
-        with ThreadPoolExecutor(max_workers=3) as pool:
+        with ThreadPoolExecutor(max_workers=4) as pool:
             pending = {table: pool.submit(self._read_table, table) for table in _TABLES}
             demand = _single(_station_rows(pending['t_need'].result(), 'f_es_sn', source_station, '需量控制'), '需量控制')
             normalized_demand = {
@@ -240,13 +243,21 @@ class ControlSourceReader:
             }
             reverse = optional_source(pending['re_flow'], 'reverse_flow', '防逆流', reverse_config, None)
             schedule = optional_source(pending['t_model'], 'schedule', '每日充放电计划', daily_schedule, [])
+            capacity_row = _single(_station_rows(pending['t_es'].result(), 'sn', source_station, '电站容量'), '电站容量')
+            capacity_kwh = _number(capacity_row, 'es_power_storage', '电站容量')
+            if capacity_kwh <= 0:
+                raise ControlSourceError('电站容量 es_power_storage 必须大于0，不能用旧手填值替代')
+            capacity = {'scope': 'station', 'source_station_id': source_station,
+                        'source_table': 't_es', 'source_field': 'es_power_storage',
+                        'energy_capacity_kwh': capacity_kwh, 'updated_at': _updated_at(capacity_row, '电站容量')}
         issues = ['防逆流控制当前未启用，限制功率仅供展示，不参与优化约束']
         if health['schedule'] == 'ready' and not schedule:
             issues.append('本站未配置每日充放电计划，不补充停机或其他动作')
         result = {
             'station_id': station_id, 'source_station_id': source_station,
             'fetched_at': datetime.now(timezone.utc).isoformat(),
-            'status': 'ready', 'power_scope': 'station',
+            'status': 'ready', 'power_scope': 'cabinet', 'storage_capacity': capacity,
+            'configured_cabinet_count': len(STATION_CABINETS[station_id][1]),
             'control_policy_version': CONTROL_POLICY_VERSION,
             'demand': normalized_demand, 'reverse_flow': reverse,
             'schedule': schedule, 'source_health': health,

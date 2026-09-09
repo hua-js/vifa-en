@@ -12,6 +12,7 @@ def validate_candidate(
     request: OptimizationRequest,
     candidate: CandidateResult,
     tolerance: float = 1e-6,
+    *, terminal_soc_target_pct: float | None = None,
 ) -> None:
     """Validate all public feasibility rules and independently recalculated metrics."""
     if tolerance < 0:
@@ -29,6 +30,15 @@ def validate_candidate(
 
     capability = request.capability
     constraints = request.constraints
+    peak_reserve = request.peak_reserve_policy
+    if peak_reserve is not None:
+        if (any(point.tariff_period not in ('gu', 'ping', 'feng') for point in request.points)
+                or not any(point.tariff_period == 'feng' for point in request.points)):
+            raise ResultValidationError('peak reserve policy requires known tariffs and a peak period')
+        if not constraints.preferred_soc_min_pct <= peak_reserve.terminal_soc_min_pct <= constraints.soc_max_pct:
+            raise ResultValidationError('peak reserve terminal SOC floor outside allowed bounds')
+        if terminal_soc_target_pct is not None and peak_reserve.terminal_soc_min_pct < terminal_soc_target_pct:
+            raise ResultValidationError('peak reserve terminal SOC floor below baseline target')
     current_energy = capability.energy_capacity_kwh * capability.initial_soc_pct / 100.0
     for index, (source, point) in enumerate(zip(request.points, candidate.plan, strict=True)):
         label = f"point {index} ({source.timestamp.isoformat()})"
@@ -41,6 +51,16 @@ def validate_candidate(
             _raise(label, "charge power limit")
         if discharge_kw - capability.max_discharge_kw > tolerance:
             _raise(label, "discharge power limit")
+        if peak_reserve is not None:
+            net_load = max(source.load_forecast_kw - source.pv_forecast_kw, 0.0)
+            maximum_discharge = min(capability.max_discharge_kw, net_load)
+            if source.tariff_period != 'feng':
+                grid_boundary = constraints.demand_limit_kw
+                if constraints.grid_import_limit_kw is not None:
+                    grid_boundary = min(grid_boundary, constraints.grid_import_limit_kw)
+                maximum_discharge = min(maximum_discharge, max(net_load-grid_boundary, 0.0))
+            if discharge_kw - maximum_discharge > tolerance:
+                _raise(label, "peak reserve discharge boundary")
         if (
             constraints.grid_import_limit_kw is not None
             and point.grid_import_kw - constraints.grid_import_limit_kw > tolerance
@@ -65,7 +85,7 @@ def validate_candidate(
         ):
             _raise(label, "PV attribution boundary")
 
-        if request.pv_dispatch_policy == "load_first_economic":
+        if request.pv_dispatch_policy != "legacy":
             surplus = max(source.pv_forecast_kw - source.load_forecast_kw, 0.0)
             if (discharge_kw - max(source.load_forecast_kw - source.pv_forecast_kw, 0.0) > tolerance
                     or point.grid_export_kw + point.pv_unabsorbed_kw - surplus > tolerance):
@@ -79,6 +99,14 @@ def validate_candidate(
                     - current_energy, 0.0,
                 ) / (capability.charge_efficiency * INTERVAL_HOURS)
                 absorbable = min(surplus, available_charge, headroom_kw)
+                if request.pv_dispatch_policy in ('load_first_export_priority', 'load_first_storage_priority'):
+                    export_max = constraints.grid_export_limit_kw if constraints.grid_export_enabled else 0.0
+                    export_first = request.pv_dispatch_policy == 'load_first_export_priority'
+                    quota = min(surplus, export_max) if export_first else 0.0
+                    expected_charge = min(surplus-quota, available_charge, headroom_kw)
+                    expected_export = quota if export_first else min(max(surplus-expected_charge, 0.0), export_max)
+                    if abs(charge_kw-expected_charge) > tolerance or abs(point.grid_export_kw-expected_export) > tolerance:
+                        _raise(label, "PV customer allocation priority")
                 if not constraints.grid_export_enabled or point.pv_unabsorbed_kw > tolerance:
                     if abs(charge_kw - absorbable) > tolerance:
                         _raise(label, "PV surplus absorption")
@@ -119,9 +147,14 @@ def validate_candidate(
         current_energy = expected_energy
 
     terminal_soc_pct = current_energy / capability.energy_capacity_kwh * 100.0
-    if abs(terminal_soc_pct - capability.initial_soc_pct) > (
-        constraints.terminal_soc_tolerance_pct + tolerance
-    ):
+    target = capability.initial_soc_pct if terminal_soc_target_pct is None else terminal_soc_target_pct
+    if terminal_soc_target_pct is not None and not constraints.soc_min_pct <= target <= constraints.soc_max_pct:
+        raise ResultValidationError('terminal SOC target outside safety bounds')
+    if peak_reserve is not None:
+        if terminal_soc_pct < peak_reserve.terminal_soc_min_pct - tolerance:
+            raise ResultValidationError("peak reserve terminal SOC minimum")
+    elif abs(terminal_soc_pct - target) > (
+            (constraints.terminal_soc_tolerance_pct if terminal_soc_target_pct is None else 0.0) + tolerance):
         raise ResultValidationError("terminal SOC boundary")
 
     recalculated = calculate_metrics(request, candidate.plan)

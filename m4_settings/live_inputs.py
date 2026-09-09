@@ -13,6 +13,7 @@ from .forecast_source import load_forecast
 from .models import LiveStationState, ResolvedControlLimits, StationConfiguration
 from .realtime import ALARM_POLICY, SOURCE_FIELDS, alarm_is_advisory, build_realtime_snapshot
 from .roster import CABINET_ISOLATION_POLICY, STATION_CABINETS
+from .schedule_power import SCHEDULE_POWER_POLICY, cabinet_power_limits, effective_station_power, station_energy_capacity
 from .timeseries import InputDataError, build_pv_reference, build_tariff_points
 from .upstream import SourceReadError
 
@@ -141,6 +142,7 @@ class LiveInputService:
                 or not isinstance(result.get('version'), str) or not result['version'].strip()
                 or not _complete([result.get('demand', {}).get('need_kw')] * HORIZON)):
             raise ValueError('控制来源不完整或不属于本站')
+        cabinet_power_limits(result)
         return result
 
     def fetch(self, configuration: StationConfiguration, *, now: datetime | None = None) -> dict:
@@ -217,8 +219,22 @@ class LiveInputService:
             issues.append(device_error)
         else:
             try:
-                snapshot = build_realtime_snapshot(configuration, device_rows, now=finished_at, plan_start_at=plan_start)
                 parameters = configuration.parameters
+                control = sources.get('controls', {})
+                snapshot_configuration = configuration
+                if parameters is not None and control.get('status') == 'ready':
+                    capacity_kwh = station_energy_capacity(configuration, control)
+                    snapshot_configuration = configuration.model_copy(update={'parameters': parameters.model_copy(
+                        update={'energy_capacity_kwh': capacity_kwh})})
+                snapshot = build_realtime_snapshot(snapshot_configuration, device_rows, now=finished_at, plan_start_at=plan_start)
+                if control.get('storage_capacity') is not None:
+                    snapshot['capacity_source_version'] = control['version']
+                    snapshot['capacity_source'] = 't_es.es_power_storage'
+                if parameters is not None and control.get('status') == 'ready' and control.get('power_scope') == 'cabinet':
+                    powers = effective_station_power(configuration, control, len(snapshot['participating_cabinet_ids']))
+                    snapshot.update(available_max_charge_kw=powers['max_charge_kw'],
+                        available_max_discharge_kw=powers['max_discharge_kw'],
+                        cabinet_power_limits=cabinet_power_limits(control), power_limits_source_version=control['version'])
                 warnings.extend(_add_display_samples(snapshot, station_rows or [], device_rows,
                     now=finished_at, max_age=parameters.max_input_age_seconds if parameters else None))
                 warnings.extend(snapshot.get('warnings', []))
@@ -248,7 +264,7 @@ class LiveInputService:
             'warnings': list(dict.fromkeys(warnings)), 'sources': sources, 'points': points}
 
 
-def _validate_participation(configuration, snapshot, *, start, checked_at, fetched_at, observed_at):
+def _validate_participation(configuration, snapshot, *, start, checked_at, fetched_at, observed_at, controls):
     """Recheck the cabinet scope before it determines optimizer capability."""
     parameters = configuration.parameters
     _, roster = STATION_CABINETS[configuration.station_id]
@@ -277,13 +293,25 @@ def _validate_participation(configuration, snapshot, *, start, checked_at, fetch
             return False
 
     ratio = len(active) / len(roster)
+    capacity_kwh = station_energy_capacity(configuration, controls)
     expected_fields = {
-        'energy_capacity_kwh': parameters.energy_capacity_kwh,
-        'capacity_per_cabinet_kwh': parameters.energy_capacity_kwh / len(roster),
-        'available_energy_capacity_kwh': parameters.energy_capacity_kwh * ratio,
+        'energy_capacity_kwh': capacity_kwh,
+        'capacity_per_cabinet_kwh': capacity_kwh / len(roster),
+        'available_energy_capacity_kwh': capacity_kwh * ratio,
         'available_max_charge_kw': parameters.max_charge_kw * ratio,
         'available_max_discharge_kw': parameters.max_discharge_kw * ratio,
     }
+    if controls.get('storage_capacity') is not None and (
+            snapshot.get('capacity_source_version') != controls['version']
+            or snapshot.get('capacity_source') != 't_es.es_power_storage'):
+        raise ValueError('电站容量与电站表来源版本不一致，请重新读取。')
+    if controls.get('power_scope') == 'cabinet':
+        powers = effective_station_power(configuration, controls, len(active))
+        expected_fields.update(available_max_charge_kw=powers['max_charge_kw'],
+                              available_max_discharge_kw=powers['max_discharge_kw'])
+        if (snapshot.get('power_limits_source_version') != controls['version']
+                or snapshot.get('cabinet_power_limits') != cabinet_power_limits(controls)):
+            raise ValueError('柜级功率与充放模式表来源版本不一致，请重新读取。')
     if any(not same_number(snapshot.get(key), value) for key, value in expected_fields.items()):
         raise ValueError('可用容量或功率与参与柜折算结果不一致')
     times = []
@@ -361,7 +389,7 @@ def request_from_inputs(configuration: StationConfiguration, bundle: dict, profi
     if (checked_at-fetched_at).total_seconds() > parameters.max_input_age_seconds:
         raise ValueError('输入读取时间已过期，请重新读取真实输入')
     participants = _validate_participation(configuration, snapshot, start=start, checked_at=checked_at,
-        fetched_at=fetched_at, observed_at=observed_at)
+        fetched_at=fetched_at, observed_at=observed_at, controls=controls)
     if not isinstance(bundle.get('points'), list) or len(bundle['points']) != horizon:
         raise ValueError(f'输入必须包含完整的 {horizon} 个计划点')
     points = [ForecastPoint(**{**point, 'timestamp': _aware(datetime.fromisoformat(point['timestamp']))})
@@ -385,8 +413,15 @@ def request_from_inputs(configuration: StationConfiguration, bundle: dict, profi
         versions['alarm_policy'] = snapshot['alarm_policy']
     digest = hashlib.sha256(json.dumps({'start': start.isoformat(), 'sources': versions,
         'live': live.source_version}, sort_keys=True).encode()).hexdigest()[:20]
+    cabinet_limits = cabinet_power_limits(controls)
     limits = ResolvedControlLimits(station_id=configuration.station_id, source_version=controls['version'],
-        demand_limit_kw=controls['demand']['need_kw'], grid_export_enabled=True,
+        station_energy_capacity_kwh=station_energy_capacity(configuration, controls) if controls.get('storage_capacity') is not None else None,
+        cabinet_max_charge_kw=cabinet_limits['max_charge_kw'] if cabinet_limits else None,
+        cabinet_max_discharge_kw=cabinet_limits['max_discharge_kw'] if cabinet_limits else None,
+        demand_limit_kw=controls['demand']['need_kw'],
+        grid_import_limit_kw=(controls['demand']['need_kw']
+            if controls.get('control_policy_version') == SCHEDULE_POWER_POLICY else None),
+        grid_export_enabled=True,
         # re_flow is inactive. The existing model permits PV export only; its
         # maximum input PV supplies a finite physical bound, not a 40 kW rule.
         grid_export_limit_kw=max((point.pv_forecast_kw for point in points), default=0.0))

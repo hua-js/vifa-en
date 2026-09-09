@@ -2,7 +2,7 @@
 from datetime import datetime
 from typing import Annotated, Literal
 
-from pydantic import Field, model_validator
+from pydantic import Field, model_validator, model_serializer
 
 from m4_optimizer.contracts import StrictModel
 from .roster import STATION_CABINETS
@@ -29,6 +29,22 @@ class StationParameters(StrictModel):
     cycle_cost_per_kwh: NonNegative
     max_input_age_seconds: Annotated[int, Field(gt=0, le=86400)]
 
+    pv_export_priority: bool | None = None
+
+    @model_serializer(mode='wrap')
+    def serialize_parameters(self, handler):
+        data = handler(self)
+        # Do not change old archived parameter payloads during reconstruction.
+        if self.pv_export_priority is None:
+            data.pop('pv_export_priority', None)
+        return data
+
+    @property
+    def pv_dispatch_policy(self):
+        if self.pv_export_priority is None:
+            return 'legacy'
+        return 'load_first_export_priority' if self.pv_export_priority else 'load_first_storage_priority'
+
     @model_validator(mode='after')
     def validate_limits(self):
         if not (self.soc_min_pct < self.soc_max_pct
@@ -47,8 +63,12 @@ class ResolvedControlLimits(StrictModel):
     station_id: StationId
     source_version: Annotated[str, Field(min_length=1, pattern=r'\S')]
     demand_limit_kw: NonNegative
+    grid_import_limit_kw: NonNegative | None = None
     grid_export_enabled: bool
     grid_export_limit_kw: NonNegative
+    cabinet_max_charge_kw: NonNegative | None = None
+    cabinet_max_discharge_kw: NonNegative | None = None
+    station_energy_capacity_kwh: Positive | None = None
 
     @model_validator(mode='after')
     def validate_export(self):
@@ -66,9 +86,19 @@ class StationConfiguration(StrictModel):
     parameters: StationParameters | None = None
 
 
+class EditableStationParameters(StationParameters):
+    pv_export_priority: bool = False
+    # Compatibility fields for old clients. The store always applies server
+    # configuration for cost/freshness and retires the manual import limit.
+    grid_import_limit_kw: NonNegative | None = None
+    cycle_cost_per_kwh: NonNegative = 0.0
+    max_input_age_seconds: Annotated[int, Field(gt=0, le=86400)] = 86400
+    terminal_soc_tolerance_pct: Percentage = 0.0
+
+
 class SaveSettings(StrictModel):
     expected_revision: Annotated[int, Field(ge=0)]
-    parameters: StationParameters
+    parameters: EditableStationParameters
 
 
 class LiveStationState(StrictModel):
