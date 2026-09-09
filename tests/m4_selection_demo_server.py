@@ -17,6 +17,7 @@ from m4_settings.candidates import CandidateService
 from m4_settings.live_inputs import LiveInputService
 from m4_settings.selection import LiveSelectionService, PolicyStore
 from m4_settings.store import SettingsStore
+from m4_settings.billing import BillingService
 
 
 def main():
@@ -36,7 +37,8 @@ def main():
         candidates=CandidateService(store=store,fetch_inputs=fetch,read_controls=control,clock=lambda:now)
         selection=LiveSelectionService(store=store,policies=policies,candidates=candidates,fetch_inputs=fetch,clock=lambda:now)
         app=create_app(path,control_reader=SimpleNamespace(fetch=control),input_service=SimpleNamespace(fetch=fetch),
-                       candidate_service=candidates,selection_service=selection)
+                       candidate_service=candidates,selection_service=selection,
+                       billing_service=BillingService(SimpleNamespace(list_rows=lambda *args, **kwargs: [])))
         sock=socket.socket();sock.bind(('127.0.0.1',0));sock.listen()
         print(f'PORT={sock.getsockname()[1]} CLOCK={int(now.timestamp()*1000)}',flush=True)
         uvicorn.run(app,fd=sock.fileno(),log_level='warning')

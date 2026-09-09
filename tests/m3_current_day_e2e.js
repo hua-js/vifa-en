@@ -24,12 +24,20 @@ const { task5Fixtures, weeklyEvidenceFixture } = require("./m3_dashboard_e2e");
     let latest = current;
     let storedOverride = null;
     let posts = 0;
+    let expired = false;
+    const authMode = process.env.M3_TEST_AUTH_MODE || "server_token";
+    const queryToken = "test-user.token-123";
     const html = fs.readFileSync(process.env.M3_TEST_HTML || path.join(__dirname, "../m3/node_red/m3_production_gateway_template.html"), "utf8");
     await page.route("http://m3.test/**", async route => {
       const url = new URL(route.request().url());
       if (url.pathname === "/ett") {
-        return route.fulfill({ contentType: "text/html", body: html.replace("{{{m3DashboardAuthModeJson}}}", JSON.stringify("server_token")).replace("{{{m3NocobaseParentOriginJson}}}", JSON.stringify("http://m3.test")) });
+        return route.fulfill({ contentType: "text/html", body: html.replace("{{{m3DashboardAuthModeJson}}}", JSON.stringify(authMode)).replace("{{{m3NocobaseParentOriginJson}}}", JSON.stringify("http://m3.test")) });
       }
+      if (authMode === "query_token") {
+        assert.equal(route.request().headers().authorization, `Bearer ${queryToken}`);
+        assert.equal(url.searchParams.has("token"), false);
+      }
+      if (expired) return route.fulfill({ status: 401, json: { status: "error", error: { code: "unauthorized" } } });
       let data;
       if (url.pathname.endsWith("/latest")) {
         if (!latest || url.searchParams.get("interval_seconds") !== String(latest.run.interval_seconds)) {
@@ -45,7 +53,8 @@ const { task5Fixtures, weeklyEvidenceFixture } = require("./m3_dashboard_e2e");
       } else return route.fulfill({ json: dashboard });
       return route.fulfill({ json: { status: "ok", data } });
     });
-    await page.goto("http://m3.test/ett");
+    await page.goto("http://m3.test/ett" + (authMode === "query_token" ? `?token=${queryToken}` : ""));
+    assert.equal(new URL(page.url()).searchParams.has("token"), false);
     await page.waitForFunction(() => document.querySelector("#result-model-meta").textContent === "3 个连续有效周 · 负载周期 7 天 · 15 分钟粒度");
     assert.match(await page.locator("#result-date-note").innerText(), /覆盖今天.*2026\/08\/31.*2026\/09\/01/);
     assert.equal(await page.locator('path[data-kind="actual"]').count(), 2);
@@ -103,6 +112,13 @@ const { task5Fixtures, weeklyEvidenceFixture } = require("./m3_dashboard_e2e");
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
         await page.screenshot({ path: `/tmp/m3-date-${width}-${theme}.png`, fullPage: true });
       }
+    }
+    if (authMode === "query_token") {
+      expired = true;
+      await page.evaluate(() => window.loadDashboard());
+      assert.equal(await page.locator("#run-button").isDisabled(), true);
+      assert.match(await page.locator("#error-state").innerText(), /登录状态已失效，请从 NocoBase 重新打开页面/);
+      assert.equal(await page.evaluate(() => JSON.stringify(sessionStorage).includes("test-user.token-123")), false);
     }
     assert.deepEqual(errors, []);
     console.log("m3_current_day_e2e_ok");

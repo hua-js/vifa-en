@@ -14,13 +14,16 @@ PACKAGES = ('m4_settings', 'm4_optimizer', 'm4_orchestrator', 'm4_selection')
 HTML = ROOT / 'm4/M4优化调度控制台-线上版.html'
 BACKEND_FILES = ('Dockerfile', 'compose.yaml', '.env.example', '.dockerignore',
                  'requirements.lock.txt', 'entrypoint.py', 'healthcheck.py', 'preflight.py')
-NODE_RED_FILES = ('authorize.js', 'prepare_proxy.js', 'finish_proxy.js', 'env.example')
+NODE_RED_FILES = ('authorize.js', 'finish_auth.js', 'prepare_proxy.js', 'finish_proxy.js', 'env.example')
 
 
 def flow(html):
     nodes = [
         dict(id='m4-customer-page', type='tab', label='M4 客户调度页面', disabled=False,
-             info='iframe URL Token 由 Node-RED 校验；同源 /m4-api 转发至 Docker。环境变量见部署手册。'),
+             info='iframe 使用 {{ ctx.token }}。由 EMS auth:check 校验登录；同源 /m4-api 转发至 Docker。域名和后端地址可在此页签环境变量中修改。',
+             env=[dict(name='M4_PUBLIC_ORIGIN', value='https://opdash.lvkpower.com', type='str'),
+                  dict(name='M4_FRAME_ORIGIN', value='https://ems.lvkpower.com', type='str'),
+                  dict(name='M4_BACKEND_URL', value='http://127.0.0.1:8844', type='str')]),
         dict(id='m4-page-in', type='http in', z='m4-customer-page', name='GET /m4',
              url='/m4', method='get', upload=False, swaggerDoc='', x=140, y=100,
              wires=[['m4-page-authorize']]),
@@ -34,6 +37,12 @@ def flow(html):
              x=610, y=100, wires=[]),
         dict(id='m4-api-response', type='http response', z='m4-customer-page',
              name='API / 错误响应', statusCode='', headers={}, x=990, y=320, wires=[]),
+        dict(id='m4-login-request', type='http request', z='m4-customer-page',
+             name='EMS NocoBase 登录校验', method='use', ret='txt', paytoqs='ignore', url='',
+             tls='', persist=False, proxy='', insecureHTTPParser=False, authType='',
+             senderr=True, headers=[], x=510, y=480, wires=[['m4-login-finish']]),
+        dict(id='m4-login-catch', type='catch', z='m4-customer-page', name='登录服务连接错误',
+             scope=['m4-login-request'], uncaught=False, x=510, y=540, wires=[['m4-login-finish']]),
         dict(id='m4-backend-request', type='http request', z='m4-customer-page',
              name='M4 Docker API', method='use', ret='txt', paytoqs='ignore', url='',
              tls='', persist=False, proxy='', insecureHTTPParser=False, authType='',
@@ -47,9 +56,11 @@ def flow(html):
                           outputs=len(wires), timeout=0, noerr=0, initialize='', finalize='',
                           libs=[], x=x, y=y, wires=wires))
     function('m4-page-authorize', '校验页面 Token', 'authorize.js',
-             [['m4-page-template'], ['m4-api-response']], 260, 100)
+             [['m4-login-request'], ['m4-api-response']], 260, 100)
     function('m4-api-authorize', '校验 API Token', 'authorize.js',
-             [['m4-api-prepare'], ['m4-api-response']], 300, 260)
+             [['m4-login-request'], ['m4-api-response']], 300, 260)
+    function('m4-login-finish', '核对登录并恢复请求', 'finish_auth.js',
+             [['m4-page-template'], ['m4-api-prepare'], ['m4-api-response']], 780, 480)
     function('m4-api-prepare', '限定接口与内部转发', 'prepare_proxy.js',
              [['m4-backend-request'], ['m4-api-response']], 520, 260)
     function('m4-api-finish', '整理 API 响应', 'finish_proxy.js',

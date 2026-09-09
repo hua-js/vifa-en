@@ -635,7 +635,8 @@
       if (!Reflect.deleteProperty(window, "__M3_NOCOBASE_PARENT_ORIGIN__")) window.__M3_NOCOBASE_PARENT_ORIGIN__ = undefined;
       const authMode = configuredAuthMode(injectedAuthMode);
       const parentOrigin = configuredOrigin(injectedParentOrigin);
-      let apiToken = null;
+      const userTokenAuth = authMode === "postmessage" || authMode === "query_token";
+      let apiToken = authMode === "query_token" ? readQueryToken() : null;
       let authNonce = null;
       let authTimeout = null;
       let refreshTimer = null;
@@ -825,7 +826,7 @@
       }
 
       function updateRunAvailability(configuration) {
-        const authenticated = authMode === "server_token" || (authMode === "postmessage" && apiToken !== null);
+        const authenticated = authMode === "server_token" || (userTokenAuth && apiToken !== null);
         const enabled = authenticated && configuration !== null && !customBusy;
         runButton.disabled = !enabled;
         if (customBusy) {
@@ -911,7 +912,16 @@
       }
 
       function configuredAuthMode(value) {
-        return value === "postmessage" || value === "server_token" ? value : null;
+        return ["postmessage", "query_token", "server_token"].includes(value) ? value : null;
+      }
+
+      function readQueryToken() {
+        const url = new URL(window.location.href);
+        const tokens = url.searchParams.getAll("token");
+        url.searchParams.delete("token");
+        window.history.replaceState(null, "", url.pathname + url.search + url.hash);
+        return tokens.length === 1 && validApiToken(tokens[0])
+          && /^[A-Za-z0-9._~+\/-]{1,4096}={0,2}$/.test(tokens[0]) ? tokens[0] : null;
       }
 
       function configuredOrigin(value) {
@@ -1704,12 +1714,12 @@
       }
 
       async function customRequest(path, options = {}) {
-        if (authMode !== "server_token" && (authMode !== "postmessage" || apiToken === null)) throw new Error("custom gateway unavailable");
+        if (authMode !== "server_token" && (!userTokenAuth || apiToken === null)) throw new Error("custom gateway unavailable");
         const controller = new AbortController();
         const timeout = window.setTimeout(() => controller.abort(), options.timeout || 30_000);
         try {
           const headers = { Accept: "application/json" };
-          if (authMode === "postmessage") headers.Authorization = `Bearer ${apiToken}`;
+          if (userTokenAuth) headers.Authorization = `Bearer ${apiToken}`;
           if (options.body !== undefined) headers["Content-Type"] = "application/json";
           const response = await fetch(path, {
             method: options.method || "GET",
@@ -1721,9 +1731,9 @@
             body: options.body === undefined ? undefined : JSON.stringify(options.body),
             signal: controller.signal,
           });
-          if (response.status === 401 && authMode === "postmessage") {
+          if (response.status === 401 && userTokenAuth) {
             requestAuthentication();
-            const error = new Error("登录状态已失效");
+            const error = new Error("登录状态已失效，请从 NocoBase 重新打开页面");
             error.name = "M3AuthError";
             throw error;
           }
@@ -1825,7 +1835,7 @@
 
       async function refreshSelectedCustomResult() {
         if (customRefreshInFlight !== null || customBusy) return customRefreshInFlight;
-        if (authMode !== "server_token" && (authMode !== "postmessage" || apiToken === null)) return null;
+        if (authMode !== "server_token" && (!userTokenAuth || apiToken === null)) return null;
         const today = shanghaiDateValue(new Date());
         if (customDisplayDay !== today) {
           customDisplayDay = today;
@@ -1863,7 +1873,7 @@
 
       async function startCustomForecast() {
         const configuration = taskConfiguration();
-        if (configuration === null || customBusy || (authMode !== "server_token" && (authMode !== "postmessage" || apiToken === null))) {
+        if (configuration === null || customBusy || (authMode !== "server_token" && (!userTokenAuth || apiToken === null))) {
           updateRunAvailability(configuration);
           return;
         }
@@ -1909,7 +1919,7 @@
       }
 
       async function loadLatestMatchingRun(stationKey, configuration, lookupToken, showLoading = true) {
-        if (configuration === null || customBusy || (authMode !== "server_token" && (authMode !== "postmessage" || apiToken === null))) return;
+        if (configuration === null || customBusy || (authMode !== "server_token" && (!userTokenAuth || apiToken === null))) return;
         if (showLoading) setCustomBusy(true, "正在加载预测任务…");
         const query = new URLSearchParams({
           interval_seconds: String(configuration.interval_seconds),
@@ -2165,7 +2175,7 @@
         if (selectedPerformance?.key !== key) selectedPerformance = null;
         performanceState = configuration === null ? "请检查历史范围" : "正在加载";
         renderSelectedPerformance();
-        if (configuration === null || (authMode !== "server_token" && (authMode !== "postmessage" || apiToken === null))) return;
+        if (configuration === null || (authMode !== "server_token" && (!userTokenAuth || apiToken === null))) return;
         try {
           const query = new URLSearchParams(Object.entries(configuration).map(([name, value]) => [name, String(value)]));
           const value = validateCustomPerformance(await customRequest(
@@ -2324,14 +2334,14 @@
       }
 
       async function loadDashboard() {
-        if (authMode === "postmessage" && apiToken === null) {
+        if (userTokenAuth && apiToken === null) {
           renderRefreshError("登录凭证不可用");
           return;
         }
         if (inFlight) return inFlight;
         const requestToken = apiToken;
         const requestHeaders = { Accept: "application/json" };
-        if (authMode === "postmessage") requestHeaders.Authorization = `Bearer ${requestToken}`;
+        if (userTokenAuth) requestHeaders.Authorization = `Bearer ${requestToken}`;
         inFlight = (async () => {
           const controller = new AbortController();
           const timeout = window.setTimeout(() => controller.abort(), 10_000);
@@ -2345,7 +2355,7 @@
               headers: requestHeaders,
               signal: controller.signal,
             });
-            if (response.status === 401 && authMode === "postmessage") {
+            if (response.status === 401 && userTokenAuth) {
               requestAuthentication();
               const authError = new Error("current-user authentication expired");
               authError.name = "M3AuthError";
@@ -2364,7 +2374,7 @@
           error && error.name === "AbortError"
             ? "请求超时"
             : error && error.name === "M3AuthError"
-              ? "登录状态已失效"
+              ? "登录状态已失效，请从 NocoBase 重新打开页面"
               : "预测数据加载失败",
         )).finally(() => { inFlight = null; });
         return inFlight;
@@ -2382,6 +2392,15 @@
       }
 
       function requestAuthentication() {
+        if (authMode === "query_token") {
+          apiToken = null;
+          updateTaskConfiguration();
+          if (refreshTimer !== null) window.clearInterval(refreshTimer);
+          refreshTimer = null;
+          stopCustomPolling();
+          renderRefreshError("登录状态已失效，请从 NocoBase 重新打开页面");
+          return;
+        }
         if (disposed || authMode !== "postmessage" || parentOrigin === null) return;
         apiToken = null;
         updateTaskConfiguration();
@@ -2434,7 +2453,7 @@
         window.removeEventListener("message", receiveAuthentication);
       }, { once: true });
       if (parentOrigin === null || authMode === null) renderError("页面配置不可用");
-      else if (authMode === "server_token") {
+      else if (authMode === "server_token" || (authMode === "query_token" && apiToken !== null)) {
         startRefreshTimer();
         void loadDashboard();
       } else requestAuthentication();

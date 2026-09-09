@@ -23,7 +23,7 @@ const defaults = {
     M4_FRAME_ORIGIN: frameOrigin,
     M4_BACKEND_URL: 'http://127.0.0.1:8844',
 };
-const sources = Object.fromEntries(['authorize', 'prepare_proxy', 'finish_proxy'].map(name =>
+const sources = Object.fromEntries(['authorize', 'finish_auth', 'prepare_proxy', 'finish_proxy'].map(name =>
     [name, fs.readFileSync(path.join(sourceRoot, `${name}.js`), 'utf8')]));
 const scripts = Object.fromEntries(Object.entries(sources).map(([name, source]) =>
     [name, new vm.Script(`(function () {\n${source}\n})()`, {filename: `${name}.js`})]));
@@ -43,11 +43,26 @@ function request({method = 'GET', station = 'station-1', resource = 'settings', 
     };
 }
 
-function authorized(msg, overrides = {}) {
+function loginRequest(msg, overrides = {}) {
     const result = run('authorize', msg, overrides);
     assert.equal(result[1], null);
     assert.equal(result[0], msg);
-    return result[0];
+    return msg;
+}
+
+function authenticatedReply(msg, status = 200, payload = JSON.stringify({data: {id: 1}})) {
+    msg.statusCode = status;
+    msg.payload = payload;
+    return run('finish_auth', msg);
+}
+
+function authorized(msg, overrides = {}) {
+    loginRequest(msg, overrides);
+    const page = msg.m4AuthState.pageRequest;
+    const result = authenticatedReply(msg);
+    assert.equal(result[2], null);
+    assert.equal(result[page ? 0 : 1], msg);
+    return msg;
 }
 
 function prepared(msg, overrides = {}) {
@@ -73,12 +88,12 @@ function jsonValue(value) {
     return JSON.parse(JSON.stringify(value));
 }
 
-test('HTML requires one exact query token and emits iframe/referrer protections', () => {
+test('HTML requires a query token validated by EMS and emits iframe protections', () => {
     const msg = authorized(request({page: true, query: {token}}));
     assert.equal(msg.headers['Content-Security-Policy'], `frame-ancestors 'self' ${frameOrigin}`);
     assert.equal(msg.headers['Referrer-Policy'], 'no-referrer');
     assert.equal(msg.headers['X-Content-Type-Options'], 'nosniff');
-    for (const provided of [undefined, '', wrongToken, token.slice(1), `${token} `,
+    for (const provided of [undefined, '', '{{ ctx.token }}', 'x'.repeat(4097), `${token} `,
         [token], [token, token], {value: token}, 123]) {
         rejected('authorize', request({page: true, query: {token: provided}}), 401);
     }
@@ -89,17 +104,15 @@ test('API authentication requires Bearer and ignores URL tokens/cookies', () => 
     authorized(request({headers: {authorization: `Bearer ${token}`}}));
     authorized(request({headers: {authorization: `Bearer ${token}`}, query: {token: wrongToken}}));
     for (const authorization of [undefined, '', `Basic ${token}`, `bearer ${token}`,
-        `Bearer ${wrongToken}`, `Bearer  ${token}`, [`Bearer ${token}`]]) {
+        `Bearer {{ ctx.token }}`, `Bearer  ${token}`, [`Bearer ${token}`]]) {
         rejected('authorize', request({headers: {authorization, cookie: `token=${token}`}, query: {token}}), 401);
     }
     const msg = authorized(request({headers: {authorization: `Bearer ${token}`}}));
     assert.equal(msg.headers['Content-Security-Policy'], undefined);
 });
 
-test('missing or malformed auth/origin environment fails closed', () => {
-    for (const expected of [undefined, '', 'short', 'x'.repeat(513), 'x'.repeat(31) + '\n', 123]) {
-        rejected('authorize', request({page: true, query: {token}}), 503, {M4_IFRAME_TOKEN: expected});
-    }
+test('no shared token is required; invalid origin configuration still fails closed', () => {
+    authorized(request({page: true, query: {token}}), {M4_IFRAME_TOKEN: undefined});
     for (const name of ['M4_PUBLIC_ORIGIN', 'M4_FRAME_ORIGIN']) {
         for (const value of [undefined, '', 'http://m4.example.test', 'https://m4.example.test/path',
             'https://user:pass@m4.example.test', 'https://m4.example.test?q=1',
@@ -107,6 +120,56 @@ test('missing or malformed auth/origin environment fails closed', () => {
             rejected('authorize', request({page: true, query: {token}}), 503, {[name]: value});
         }
     }
+});
+
+test('login check uses only fixed EMS URL and a clean GET with the supplied Bearer', () => {
+    const jwt = 'eyJ.' + 'x'.repeat(1500) + '.signature';
+    const msg = loginRequest(request({method: 'POST', resource: 'decision-runs', headers: {authorization: 'Bearer ' + jwt,
+        cookie: 'private', host: 'attacker.test', origin}, payload: {request_id: 'example'},
+        query: {url: 'https://attacker.test', token: wrongToken}}));
+    assert.equal(msg.url, frameOrigin + '/api/auth:check');
+    assert.equal(msg.method, 'GET');
+    assert.equal(msg.followRedirects, false);
+    assert.equal(msg.requestTimeout, 10000);
+    assert.equal(msg.payload, undefined);
+    assert.deepEqual(jsonValue(msg.headers), {Authorization: 'Bearer ' + jwt, Accept: 'application/json'});
+    const result = authenticatedReply(msg);
+    assert.equal(result[1], msg);
+    assert.equal(msg.method, 'POST');
+    assert.deepEqual(jsonValue(msg.payload), {request_id: 'example'});
+    assert.equal(msg.req.headers.authorization, undefined);
+    assert.equal(msg.req.query.token, undefined);
+    assert.equal(msg.m4AuthState, undefined);
+    assert.equal(msg.url, undefined);
+    const api = prepared(msg);
+    assert.equal(api.payload, '{"request_id":"example"}');
+    assert(!JSON.stringify(api.headers).includes(jwt));
+});
+
+test('expired login, redirects, outages and invalid auth replies never reach HTML or API', () => {
+    const cases = [[401, '{}', 401], [403, '{}', 401], [302, '{}', 503],
+        [500, '{}', 503], [NaN, '{}', 503], [200, 'not json', 503],
+        [200, 'x'.repeat(65537), 503], [200, '{}', 401],
+        [200, '{"data":{"id":0}}', 401], [200, '{"data":{"id":"1"}}', 401],
+        [200, '{"data":[]}', 401]];
+    for (const page of [true, false]) for (const [status, payload, expected] of cases) {
+        const msg = loginRequest(request({page, query: {token}, headers: {authorization: 'Bearer ' + token}}));
+        msg.headers = {'Set-Cookie': 'ems-private'};
+        msg.responseCookies = {session: 'secret'};
+        const result = authenticatedReply(msg, status, payload);
+        assert.equal(result[0], null); assert.equal(result[1], null);
+        assert.equal(result[2].statusCode, expected);
+        assert.equal(msg.responseCookies, undefined);
+        assert.equal(msg.m4AuthState, undefined);
+        assert.equal(msg.req.headers.authorization, undefined);
+        assert.equal(msg.headers['Set-Cookie'], undefined);
+        assert(!JSON.stringify(msg.payload).includes(token));
+    }
+    const msg = loginRequest(request({page: true, query: {token}}));
+    msg.error = {message: 'connection failed containing sensitive upstream context'};
+    const result = authenticatedReply(msg);
+    assert.equal(result[2].statusCode, 503);
+    assert(!JSON.stringify(msg).includes('sensitive upstream context'));
 });
 
 test('browser writes check iframe Origin and permit authenticated nonbrowser requests', () => {
@@ -308,8 +371,19 @@ test('generated Flow connects every ingress through authorization and safe proxy
     for (const input of inputs) {
         assert.deepEqual(input.wires, [[input.url === '/m4' ? 'm4-page-authorize' : 'm4-api-authorize']]);
     }
-    assert.deepEqual(byId['m4-page-authorize'].wires, [['m4-page-template'], ['m4-api-response']]);
-    assert.deepEqual(byId['m4-api-authorize'].wires, [['m4-api-prepare'], ['m4-api-response']]);
+    assert.deepEqual(byId['m4-page-authorize'].wires, [['m4-login-request'], ['m4-api-response']]);
+    assert.deepEqual(byId['m4-api-authorize'].wires, [['m4-login-request'], ['m4-api-response']]);
+    assert.deepEqual(byId['m4-login-request'].wires, [['m4-login-finish']]);
+    assert.deepEqual(byId['m4-login-finish'].wires, [['m4-page-template'], ['m4-api-prepare'], ['m4-api-response']]);
+    assert.equal(byId['m4-login-finish'].func, sources.finish_auth);
+    assert.equal(byId['m4-login-request'].type, 'http request');
+    assert.equal(byId['m4-login-request'].ret, 'txt');
+    assert.deepEqual(byId['m4-login-catch'].scope, ['m4-login-request']);
+    assert.deepEqual(byId['m4-login-catch'].wires, [['m4-login-finish']]);
+    const settings = Object.fromEntries(byId['m4-customer-page'].env.map(item => [item.name, item.value]));
+    assert.equal(settings.M4_FRAME_ORIGIN, 'https://ems.lvkpower.com');
+    assert.equal(settings.M4_PUBLIC_ORIGIN, 'https://opdash.lvkpower.com');
+    assert.equal(settings.M4_IFRAME_TOKEN, undefined);
     assert.deepEqual(byId['m4-api-prepare'].wires, [['m4-backend-request'], ['m4-api-response']]);
     assert.deepEqual(byId['m4-backend-request'].wires, [['m4-api-finish']]);
     assert.deepEqual(byId['m4-proxy-catch'].scope, ['m4-backend-request']);

@@ -1,57 +1,26 @@
 # M3 NocoBase 普通 iframe 配置说明
 
-当前生产模式为公开查看和公开提交预测。NocoBase 只通过 URL 嵌入 Node-RED 页面，不传递用户 Token：
+默认 Flow 使用 `M3_AUTH_MODE=query_token`，iframe URL 填写：
 
 ```text
-https://opdash.lvkpower.com/ett
+https://opdash.lvkpower.com/ett?token={{ ctx.token }}
 ```
 
-## 安全边界
+`{{ ctx.token }}` 由 NocoBase 解析为当前用户 Token，无需配置 iframe Header 或 postMessage。
+默认 `M3_AUTH_BASE_URL=https://ems.lvkpower.com`，必须与签发 Token 的 NocoBase 一致。
+导入新版 Flow 后，使用当前 `m3_production_gateway_template.html` 覆盖 `m3_prod_page_template` 节点，
+再发布 Modified Flows；无需重启 Node-RED。
 
-- `/ett`、`/energy-forecast-api` 及自定义预测路由对任何能访问 OPDash 域名的人公开；
-- 页面可以读取两个电站的预测看板数据并提交两站自定义预测任务；
-- Node-RED 只允许固定路由、固定方法、两站白名单和受限预测参数，再通过 Worker UDS 发起任务；
-- Worker 管理令牌只保存在服务端 `.worker-admin.token` 文件中，由 Node-RED Exec 读取，不会写入 Flow 或返回浏览器；
-- Dashboard 四表只读 Key 只保存在 `/etc/vifa-m3/dashboard.env`，不会进入 iframe、URL、
-  Node-RED Flow 或浏览器；
-- 不使用 Header、query Token、固定管理员 Token、JavaScript Block或 postMessage。
+## 认证与验收
 
-## 人工配置
+- 缺少、重复、空白或未解析的 Token 参数被页面入口拒绝。
+- 页面读取 Token 后清除自身 URL 参数，只在内存中保存，不写浏览器存储；直接刷新 iframe 后需从 NocoBase 重新打开。
+- 看板、自定义预测和统计请求通过 `Authorization: Bearer …` 传递当前用户 Token。
+- Node-RED 经固定 `/api/auth:check` 校验成功后才调用服务；无效或过期 Token 返回 401，不访问 Worker。
+- 当前认证确认登录用户有效，沿用两站白名单，不新增按用户划分场站权限。
+- 页面正常展示两站、默认当天预测、历史查询与自定义预测；登录失效时停用提交并提示重新打开。
+- Worker 管理令牌与 Dashboard 只读 Key 仅保留在服务端，不能作为 `ctx.token` 写入 URL。
+- 首次入口请求含用户 Token，访问日志须隐藏 token 参数；响应使用 no-store 和 no-referrer。
 
-1. 登录 `https://ems.lvkpower.com`；
-2. 打开目标页面并进入界面配置模式；
-3. 新增普通 iframe 区块；
-4. 标题填写“场站未来能耗预测”；
-5. URL 固定填写 `https://opdash.lvkpower.com/ett`；
-6. 不填写 Header 或 URL 参数；
-7. 保存并退出配置模式。
-
-## 验收
-
-- 直接访问 `https://opdash.lvkpower.com/ett` 返回页面，不再显示“登录状态无效”；
-- `/energy-forecast-api` 返回 `status: ok`；
-- 选择 7–90 天历史范围和 1–7 天预测时长后，“开始预测”可用；
-- 自定义预测请求能够创建任务并返回结果；
-- 页面区分 1#、2# 电站；
-- 每站分别显示总负荷和 SOC；
-- 默认展示覆盖北京时间今天的预测及相同目标时间的实际值；无匹配任务时显示空状态；
-- URL、页面源码、Node-RED Flow 和日志中没有四表只读 Key。
-
-## 回退
-
-停用 NocoBase iframe 区块和 M3 Node-RED Flow。不要删除 M3 四表、预测历史、env 或 Token，
-不要重启 Node-RED。
-
-
-## 入口与发布检查
-
-- NocoBase 页面：`https://ems.lvkpower.com`；原始数据和结果存储：`https://vifa.hlszh.com`。
-- 本说明是人工配置步骤，不是可直接导入 NocoBase 的 JSON 文件。
-- 启用状态下只应有一个 `/ett` 和一个 `/energy-forecast-api` 入口，避免重复路由。
-- 直接打开 iframe URL 应命中 Node-RED 页面；配置后检查两站切换、任务读取和自定义预测入口。
-- 页面不携带 Dashboard Key 或 Worker 管理令牌；公开访问范围不因嵌入 NocoBase 而缩小。
-
-## 回退
-
-停用 M3 iframe 区块；按需停用 Node-RED 中 M3 页面、看板接口、自定义预测和健康检查组。
-不删除 M3 数据集合或预测历史，不修改 M1/M2。
+`postmessage` 兼容模式保留；显式改为 `server_token` 会恢复公开访问。仅停用 iframe 区块与 M3 Flow 即可回退，
+不删除预测数据或令牌文件。详见 [部署手册](../AMD64三域Docker部署手册.md)。

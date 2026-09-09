@@ -183,3 +183,58 @@ for (const mode of [undefined, ""] ) {
 }
 
 process.stdout.write("m3_dashboard_auth_modes_ok\n");
+
+// URL tokens only bootstrap the page. APIs always require a Bearer header.
+const tokenEnv = {
+  M3_AUTH_MODE: "query_token",
+  M3_AUTH_BASE_URL: "https://ems.lvkpower.com",
+  M3_NOCOBASE_PAGE_ORIGIN: "https://ems.lvkpower.com",
+  M3_STATIONS_JSON: JSON.stringify([
+    { station_id: "ES01", station_key: "station_1", station_name: "1# 电站" },
+    { station_id: "ES02", station_key: "station_2", station_name: "2# 电站" },
+  ]),
+};
+for (const [query, expected] of [
+  [{ token: "test-user.token-123" }, 200],
+  [{}, 401], [{ token: "" }, 401], [{ token: "{{ ctx.token }}" }, 401],
+  [{ token: ["one", "two"] }, 401], [{ token: "a\r\nb" }, 401],
+  [{ token: "x".repeat(4097) }, 401], [{ token: "<script>" }, 401],
+  [{ token: "test", extra: "1" }, 400],
+]) {
+  const request = { req: { query } };
+  const result = runFunction(pagePrepare, request, tokenEnv);
+  assert.equal(request.statusCode, expected);
+  assert.equal(result[expected === 200 ? 0 : 1], request);
+  if (expected === 200) assert.equal(request.m3DashboardAuthModeJson, '"query_token"');
+}
+const customPrepare = nodeById(PRODUCTION_FLOW, "m3_prod_custom_prepare");
+for (const node of [authPrepare, customPrepare]) {
+  for (const valid of [true, false]) {
+    const request = { req: {
+      query: node === customPrepare ? { interval_seconds: "900", forecast_days: "1" } : {},
+      headers: valid ? { authorization: "Bearer test-user.token-123" } : {},
+      method: "GET", route: { path: "/energy-forecast-api/custom-runs/:station_key/latest" },
+      params: { station_key: "station_1" },
+    } };
+    const result = runFunction(node, request, tokenEnv);
+    assert.equal(result[2], null, "must never bypass authentication");
+    if (valid) {
+      assert.equal(result[0], request);
+      assert.equal(request.url, "https://ems.lvkpower.com/api/auth:check");
+      assert.equal(request.headers.Authorization, "Bearer test-user.token-123");
+    } else assert.equal(result[1].statusCode, 401);
+  }
+}
+for (const id of ["m3_prod_auth_validate", "m3_prod_custom_auth_validate"]) {
+  for (const [statusCode, payload, expected] of [
+    [401, {}, 401], [403, {}, 401], [500, {}, 503], [200, { data: null }, 401],
+  ]) {
+    const result = runFunction(nodeById(PRODUCTION_FLOW, id), {
+      statusCode, payload, req: { headers: { authorization: "Bearer test" } },
+    }, tokenEnv);
+    assert.equal(result[0], null);
+    assert.equal(result[1].statusCode, expected);
+    assert.equal(result[1].req.headers.authorization, undefined);
+  }
+}
+process.stdout.write("m3_query_token_gateway_ok\n");

@@ -120,7 +120,7 @@ class DeploymentArtifactTests(unittest.TestCase):
             "https://opdash.lvkpower.com/ett",
             "https://vifa.hlszh.com/api/t_es_data:list",
             "m3_production_gateway_flow.json",
-            "M3_AUTH_MODE=server_token",
+            "M3_AUTH_MODE=query_token",
         )
         for marker in required:
             self.assertIn(marker, runbook, marker)
@@ -254,7 +254,7 @@ class DeploymentArtifactTests(unittest.TestCase):
         self.assertEqual(
             flow_env,
             {
-                "M3_AUTH_MODE": "server_token",
+                "M3_AUTH_MODE": "query_token",
                 "M3_AUTH_BASE_URL": "https://ems.lvkpower.com",
                 "M3_NOCOBASE_PAGE_ORIGIN": "https://ems.lvkpower.com",
                 "M3_STATIONS_JSON": (
