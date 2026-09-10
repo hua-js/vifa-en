@@ -1,7 +1,7 @@
 name: vifa-pv-manual
 services:
   vifa-pv:
-    image: vifa-m3-pv:2026-09-09
+    image: vifa-m3-pv:daily-0600-20260910
     command: [pv]
     platform: linux/amd64
     build:
@@ -24,6 +24,7 @@ services:
       PV_NOCOBASE_IMPORT_API_KEY_FILE: /run/secrets/raw-source.token
       PV_NOCOBASE_QUERY_API_KEY_FILE: /run/secrets/raw-source.token
       PV_TRAINING_SOURCE: /app/pv-training
+      PV_DAILY_SCHEDULE_ENABLED: "1"
       PV_MANUAL_STATE_DIR: /run/vifa-pv/manual
     volumes:
       - type: bind

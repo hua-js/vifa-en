@@ -76,6 +76,9 @@ def prepare_ems_day(configuration, bundle):
         source_versions={**{k: sources[k]['version'] for k in ('load', 'pv', 'tariff')},
             'controls': control['version'], 'configuration': configuration.version,
             'capability': initial['version'], 'planning_basis': 'whole-station-retrospective-v1',
+            **({'pv_gap_policy': 'outside_forecast_window_zero',
+                'pv_zero_filled_points': str(sources['pv']['zero_filled_points'])}
+               if sources['pv'].get('zero_filled_points') else {}),
             'terminal_target': format(terminal, '.17g'), 'baseline_policy': EMS_BASELINE_POLICY,
             **({'daily_policy': policy_version} if policy_version else {})})
     baseline = dict(schema_version='m4-ems-daily-baseline-v1', station_id=configuration.station_id,

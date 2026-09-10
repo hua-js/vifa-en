@@ -11,7 +11,6 @@ from m4.orchestrator import M4Orchestrator
 from m4.orchestrator.contracts import StationInput
 
 from .live_inputs import request_from_inputs
-from .pv_on_demand import PVPreparationError
 from .objectives import get_profiles, get_profile_metadata
 
 
@@ -23,10 +22,9 @@ class CandidateError(Exception):
 
 
 class CandidateService:
-    def __init__(self, *, store, fetch_inputs, read_controls, optimizer=None, clock=None, prepare_inputs=None):
+    def __init__(self, *, store, fetch_inputs, read_controls, optimizer=None, clock=None):
         self.store = store
         self.fetch_inputs = fetch_inputs
-        self.prepare_inputs = prepare_inputs
         self.read_controls = read_controls
         self.clock = clock or (lambda: datetime.now(timezone.utc))
         self.orchestrator = M4Orchestrator(model_version='m4-milp-v2-early-valley',
@@ -75,10 +73,7 @@ class CandidateService:
             if configuration.version != configuration_version:
                 raise CandidateError(409, '页面参数版本已变化，请刷新参数后重新计算')
             try:
-                inputs = (self.prepare_inputs(configuration, progress) if self.prepare_inputs
-                          else self.fetch_inputs(configuration))
-            except PVPreparationError as error:
-                raise CandidateError(422, str(error)) from None
+                inputs = self.fetch_inputs(configuration)
             except Exception:
                 raise CandidateError(502, '真实输入读取失败，请重新读取后计算') from None
             self._assert_configuration(configuration)

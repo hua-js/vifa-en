@@ -3,6 +3,7 @@ import hashlib
 import json
 import re
 from datetime import timedelta
+from zoneinfo import ZoneInfo
 
 from .forecast_source import _time, _load_power
 from .timeseries import InputDataError
@@ -12,8 +13,8 @@ class ForecastRefreshRequired(InputDataError):
     """A valid new batch can recover this missing/stale/coverage condition."""
 
 
-POLICY = 'm4-pv-operational-v1'
-MAX_AGE_SECONDS = 7200
+POLICY = 'm4-pv-daily-validity-v2'
+SHANGHAI = ZoneInfo('Asia/Shanghai')
 RUNS = 'energy_pv_forecast_runs'
 POINTS = 'energy_pv_forecast_points'
 RUN_FIELDS = 'id,run_id,es_sn,run_kind,status,as_of,generated_at,forecast_start,forecast_end,interval_minutes,expected_points,model_name,model_version,weather_batch_id,content_hash'
@@ -28,10 +29,11 @@ def validate_source(source, *, start, end, now):
             raise ValueError
         if not as_of <= generated <= now or not generated < begin:
             raise ValueError
-        if not 0 <= (now-as_of).total_seconds() < MAX_AGE_SECONDS:
-            raise ForecastRefreshRequired('光伏预测已过期（有效期2小时），请手动生成新预测后刷新输入')
+        current_day = now.astimezone(SHANGHAI).date()
+        if generated.astimezone(SHANGHAI).date() not in (current_day, current_day-timedelta(days=1)):
+            raise ForecastRefreshRequired('光伏预测不是今天或昨天生成的批次，请等待 M3 更新预测后刷新输入')
         if not begin <= start < end <= finish:
-            raise ForecastRefreshRequired('光伏预测未覆盖完整计划窗口，请手动生成新预测后刷新输入')
+            raise ForecastRefreshRequired('光伏预测未覆盖完整计划窗口，请等待 M3 更新预测后刷新输入')
     except (TypeError, KeyError, ValueError) as error:
         if isinstance(error, InputDataError):
             raise
@@ -51,7 +53,7 @@ def load_pv_forecast(client, *, plan_start_at, now):
                 'generated_at': {'$lte': at.isoformat()}},
             sort='-as_of,-id', page_size=1, limit=1)
         if not rows:
-            raise ForecastRefreshRequired('尚无已完成的光伏预测，请先手动生成预测')
+            raise ForecastRefreshRequired('尚无已完成的光伏预测，请等待 M3 生成预测')
         if len(rows) != 1:
             raise ValueError
         run = rows[0]
@@ -73,7 +75,7 @@ def load_pv_forecast(client, *, plan_start_at, now):
         source = {key: run[key] for key in ('run_id', 'es_sn', 'as_of', 'generated_at',
             'forecast_start', 'forecast_end', 'model_name', 'model_version', 'weather_batch_id', 'content_hash')}
         source.update(source_kind='operational_forecast', source='天气驱动光伏功率预测',
-                      max_age_seconds=MAX_AGE_SECONDS, run_pk=run['id'])
+                      validity_policy=POLICY, allowed_generation_days=2, run_pk=run['id'])
         # Check freshness now; full requested-window coverage is checked after
         # M3 load has determined whether this round needs 95 or 96 slots.
         validate_source(source, start=begin, end=finish, now=at)

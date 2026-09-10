@@ -108,7 +108,7 @@ function renderPlan(p){
  metric('baseline-cost',money(p.baseline));metric('plan-cost',money(p.cost));metric('wear-cost',finite(p.wear)?'另计吞吐费用 '+money(p.wear):'');
  $('pv-rate').closest('article').hidden=!finite(p.pvRate);metric('pv-rate',fmt(p.pvRate*100,1)+'%');metric('pv-extra',finite(p.pvExtra)?'较 EMS 基准消纳变化 '+fmt(p.pvExtra)+' kWh':'');
  metric('battery-energy',fmt(p.charged)+' / '+fmt(p.discharged)+' kWh');metric('soc-range','SOC '+fmt(p.minSoc)+'%–'+fmt(p.maxSoc)+'% · 日终 '+fmt(p.endSoc)+'%');
- metric('chart-context',p.date+' 00:00–24:00 · 15 分钟粒度 · 北京时间 · 计划值，非实测');
+ metric('chart-context',p.date+' 00:00–24:00 · 15 分钟粒度 · 北京时间 · 计划值，非实测'+(p.request.source_versions?.pv_gap_policy==='outside_forecast_window_zero'?' · 光伏预测缺口 '+p.request.source_versions.pv_zero_filled_points+' 个时段按 0 kW 估算':''));
  $('constraints').innerHTML=[['储能容量',fmt(p.cap)+' kWh'],['最大充 / 放电功率',fmt(p.request.capability.max_charge_kw)+' / '+fmt(p.request.capability.max_discharge_kw)+' kW'],['SOC 安全范围',fmt(p.bounds.soc_min_pct)+'%–'+fmt(p.bounds.soc_max_pct)+'%'],['初始 / 日终 SOC',fmt(p.initialSoc)+'% / '+fmt(p.endSoc)+'%'],['需量目标',fmt(p.limit)+' kW'],['生成时间',timeText(p.record.finished_at)]].map(([k,v])=>'<div class="label">'+esc(k)+'<b style="color:var(--ink)">'+esc(v)+'</b></div>').join('');
  metric('basis-note','基准为同输入条件下的 EMS 原计划。削峰指标仅比较峰、尖峰时段的基准最大购电功率与计划最大购电功率，下降比例以该范围的基准最大值为分母；不等于单个时段最大降幅。两项净电费均为购电费用减售电收益；预计净节省另计两方案吞吐费用差。光伏消纳按后台指标计算。数据为预测与计划值，非实测收益；仅生成建议，未下发设备。'+(p.comparison.terminal_energy_rule==='not_less_than_baseline'?'日末电量不低于 EMS 基线。':'优化与基线日末电量一致。'));
  const phases=[['储能充电',v=>v.power<0],['光伏供能',v=>v.pv>0],['储能放电',v=>v.power>0]];
@@ -123,7 +123,7 @@ function setLoading(visible){
  $('loading-message').textContent='正在读取电站数据，请稍候…';
  if(visible)loadingTimer=setTimeout(()=>{$('loading-message').textContent='数据读取较慢，仍在加载中…';},5000);
 }
-const viewKey=(station,date)=>'m4-view-v1:'+viewCacheScope+':'+date+':'+station;
+const viewKey=(station,date)=>'m4-view-v3:'+viewCacheScope+':'+date+':'+station;
 function rememberView(station,date){
  const snapshot={station,date,at:Date.now(),plan,title:header.textContent,message:$('decision-copy').textContent};
  viewCache.set(station+':'+date,snapshot);
@@ -166,7 +166,7 @@ async function loadCurrent(){
   if(job.status==='running'){clearPlan('计划计算中',job.message||'正在读取输入并计算…');pollTimer=setTimeout(loadCurrent,5000);return;}
   if(!inputs.can_compare){clearPlan('等待完整数据',inputs.checks?.filter(c=>c.status!=='ready').map(c=>c.detail).join('；')||'当天输入尚未通过校验。');return;}
   if(job.status==='failed')clearPlan('计划未生成',job.message||'请检查数据后重新生成');
-  else if(job.status==='completed'&&job.result?.record){try{renderPlan(mapPlan(job.result.record,job.request,station,date,settings,controls));}catch(error){if(inputs.comparison?.status==='ems')renderBaseline(context);else throw error;}}
+  else if(job.status==='completed'&&job.result?.record){try{if(station==='station-2')assert(typeof inputs.sources?.pv?.version==='string'&&job.request?.source_versions?.pv===inputs.sources.pv.version,'光伏来源已更新，请重新生成计划');renderPlan(mapPlan(job.result.record,job.request,station,date,settings,controls));}catch(error){if(inputs.comparison?.status==='ems')renderBaseline(context);else throw error;}}
   else if(inputs.can_compare&&inputs.comparison?.status==='ems'){
    renderBaseline(context);
   }else clearPlan('等待完整数据',inputs.checks?.filter(c=>c.status!=='ready').map(c=>c.detail).join('；')||'暂无可用全天计划。');

@@ -11,11 +11,11 @@ function fixture(station){
  const plan=base.map((p,i)=>{const power=i<8?-50*factor:i>=72&&i<80?50*factor:0;soc-=power*.25/(1000*factor)*100;return {...p,mode:power<0?'charge':power>0?'discharge':'idle',target_power_kw:Math.abs(power),grid_import_kw:p.grid_import_kw-power,expected_soc_pct:soc};});
  const metrics=series=>({energy_cost:series.reduce((s,p,i)=>s+p.grid_import_kw*points[i].buy_price_per_kwh*.25,0),cycle_cost:series.reduce((s,p)=>s+p.target_power_kw*.25*.03,0),max_grid_import_kw:Math.max(...series.map(p=>p.grid_import_kw)),pv_self_use_rate:1,pv_self_use_kwh:points.reduce((s,p)=>s+p.pv_forecast_kw*.25,0)});
  const baseline={profile_id:'ems',plan_version:'ems/v1',plan:base,metrics:metrics(base)},chosen={profile_id:'balanced',plan_version:'plan/v1',plan,metrics:metrics(plan)};
- const request={station_id:station,plan_start_at:new Date(start).toISOString(),source_versions:{controls:'controls/v1',daily_policy:'m4-daily-peak-reserve-v1'},points,capability:{energy_capacity_kwh:1000*factor,max_charge_kw:100*factor,max_discharge_kw:100*factor,initial_soc_pct:50},constraints:{demand_limit_kw:1000*factor,soc_min_pct:20,soc_max_pct:90}};
+ const request={station_id:station,plan_start_at:new Date(start).toISOString(),source_versions:{pv:'pv/v1',...(station==='station-2'?{pv_gap_policy:'outside_forecast_window_zero',pv_zero_filled_points:'24'}:{}),controls:'controls/v1',daily_policy:'m4-daily-peak-reserve-v1'},points,capability:{energy_capacity_kwh:1000*factor,max_charge_kw:100*factor,max_discharge_kw:100*factor,initial_soc_pct:50},constraints:{demand_limit_kw:1000*factor,soc_min_pct:20,soc_max_pct:90}};
  const comparison={schema_version:'m4-daily-comparison-v1',station_id:station,status:'optimized',recommended_source:'optimized',usage:'preview_only',dispatch_status:'not_dispatched',date:day,start_at:new Date(start).toISOString(),end_at:new Date(start+86400000).toISOString(),controls_version:'controls/v1',baseline_policy_version:'ems-demand-soc-duration-v6-pv-priority',candidate_plan_version:'plan/v1',baseline_cost_yuan:baseline.metrics.energy_cost,optimized_cost_yuan:chosen.metrics.energy_cost,savings_yuan:baseline.metrics.energy_cost-chosen.metrics.energy_cost,baseline,recommended:chosen,reason:'本轮全天费用更低，计划未下发。',daily_policy_version:'m4-daily-peak-reserve-v1',terminal_energy_rule:'not_less_than_baseline'};
  const record={station_id:station,run_id:run,status:'completed',started_at:new Date(start).toISOString(),finished_at:new Date().toISOString(),plan_start_at:new Date(start).toISOString(),input_summary:{configuration_version:'config/v1'},daily_comparison:comparison,selected:{profile_id:'balanced',plan_version:'plan/v1'},candidates:[chosen]};
  const job={station_id:station,status:'completed',run_id:run,request,result:{schema_version:'m4-decision-results-v1',station_id:station,usage:'historical_preview_only',dispatch_status:'not_dispatched',record}};
- return {job,inputs:{station_id:station,schema_version:'m4-daily-inputs-v1',date:day,usage:'retrospective_comparison_only',dispatch_status:'not_dispatched',configuration_version:'config/v1',can_compare:true,checks:[],comparison:null}};
+ return {job,inputs:{station_id:station,schema_version:'m4-daily-inputs-v1',date:day,usage:'retrospective_comparison_only',dispatch_status:'not_dispatched',configuration_version:'config/v1',can_compare:true,sources:{pv:{version:'pv/v1'}},checks:[],comparison:null}};
 }
 module.exports={fixture,html,day};
 if(require.main===module)(async()=>{const browser=await chromium.launch({headless:true,channel:'chrome'});try{
@@ -29,6 +29,7 @@ if(require.main===module)(async()=>{const browser=await chromium.launch({headles
   if(endpoint==='daily-inputs'){
    if(mode==='error')return route.fulfill({status:502,json:{detail:'真实输入暂不可用'}});
    if(mode==='hold'&&station==='station-1')await new Promise(r=>held=r);
+   if(mode==='pvchanged')f.inputs.sources.pv.version='pv/v2';
    if(mode==='blocked'){f.inputs.can_compare=false;f.inputs.checks=[{status:'missing',detail:'负荷预测覆盖不足'}];}
    return route.fulfill({json:f.inputs});
   }
@@ -59,11 +60,12 @@ if(require.main===module)(async()=>{const browser=await chromium.launch({headles
  }
  assert.equal(await page.locator('#records tr').count(),2);await page.locator('#record-station').selectOption('station-1');assert.equal(await page.locator('#records tr').count(),1);assert.match(await page.locator('#records').innerText(),/84.00/);await page.locator('#record-search').fill('missing-record');assert.equal(await page.locator('#records tr').count(),0);await page.locator('#reset').click();assert.equal(await page.locator('#records tr').count(),2);await page.locator('[data-record]').first().click();assert.equal(await page.locator('#detail tbody tr').count(),96);await page.locator('#close-detail').click();
  await page.locator('#tab-decision').click();
- for(const state of ['error','blocked','short','old','identity','config']){
+ for(const state of ['error','blocked','short','old','identity','config','pvchanged']){
   mode=state;await page.locator('#station').selectOption('station-2');await page.waitForLoadState('networkidle');assert.equal(await page.locator('#chart-panel').isVisible(),false,state);assert.equal(await page.locator('#metrics').isVisible(),false,state);
   mode='ready';await page.locator('#station').selectOption('station-1');await page.waitForFunction(()=>!document.querySelector('#chart-panel').hidden&&!document.querySelector('#simulate').disabled);
  }
  mode='hold';await page.locator('#station').dispatchEvent('change');await page.waitForFunction(()=>document.querySelector('.decision .badge').textContent.includes('缓存'));await page.locator('#station').selectOption('station-2');await page.waitForFunction(()=>document.querySelector('#decision-copy').textContent.includes('电站 2'));while(!held)await new Promise(r=>setTimeout(r,20));held();await page.waitForLoadState('networkidle');assert.match(await page.locator('#decision-copy').innerText(),/电站 2/);
+ assert.match(await page.locator('#chart-context').innerText(),/光伏预测缺口 24 个时段按 0 kW 估算/);await page.screenshot({path:'/tmp/m4-pv-zero-gap.png',fullPage:true});
  mode='ready';await page.locator('#plan-date').fill('2020-01-01');await page.locator('#plan-date').dispatchEvent('change');assert.equal(await page.locator('#simulate').isDisabled(),true);assert.equal(await page.locator('#chart-panel').isVisible(),false);
  assert.deepEqual(errors,[]);assert(requests.every(r=>r==='/m4'||r.startsWith('/m4-api/')));
  console.log('PASS: screenshot-only layout, real API contracts, net savings/cycle cost, chart/slider, 96-row detail, single POST, same-origin auth, missing/invalid/expired/config guards, late-station response, 16 responsive/theme renders. Mock transport only.');

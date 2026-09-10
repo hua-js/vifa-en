@@ -1,7 +1,7 @@
 name: vifa-pv-manual
 services:
   vifa-pv:
-    image: ccr.ccs.tencentyun.com/taidai-holobase-168/omnipower_vifa@sha256:cf83bc19ac27664ce79c2745fd93c8d7bbddcb8003eeccc0ab9ccf95ccdab799
+    image: ccr.ccs.tencentyun.com/taidai-holobase-168/omnipower_vifa@sha256:7dfe3c5387201efd3cefca3aa06ae39c1862c9e4ae15574e5429b5fb77ac122d
     command: [pv]
     platform: linux/amd64
     user: "10001:10001"
@@ -19,6 +19,7 @@ services:
       PV_NOCOBASE_IMPORT_API_KEY_FILE: /run/secrets/raw-source.token
       PV_NOCOBASE_QUERY_API_KEY_FILE: /run/secrets/raw-source.token
       PV_TRAINING_SOURCE: /app/pv-training
+      PV_DAILY_SCHEDULE_ENABLED: "1"
       PV_MANUAL_STATE_DIR: /run/vifa-pv/manual
     volumes:
       - type: bind

@@ -66,11 +66,9 @@ def create_app(settings_path: Path | None = None, *, control_reader=None, input_
         input_service = LiveInputService(NocoBaseClient(token), SimpleNamespace(fetch=read_controls))
     from .daily_inputs import DailyInputService
     daily_inputs = daily_input_service if daily_input_service is not None else DailyInputService(input_service)
-    from .pv_on_demand import PreparedInputs, PVService
-    prepared_inputs = PreparedInputs(input_service.fetch, PVService(token))
     from .candidates import CandidateError, CandidateService
     candidates = candidate_service if candidate_service is not None else CandidateService(
-        store=store, fetch_inputs=input_service.fetch, read_controls=read_controls, prepare_inputs=prepared_inputs)
+        store=store, fetch_inputs=input_service.fetch, read_controls=read_controls)
     from .selection import PolicyStore, SavePolicy, SelectCandidate, StationPolicy, LiveSelectionResult, LiveSelectionService
     policies = PolicyStore(path)
     selections = selection_service if selection_service is not None else LiveSelectionService(

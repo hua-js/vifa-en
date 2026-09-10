@@ -25,9 +25,9 @@ const {fixture,html}=require('./m4_reference_live_e2e'),{chromium}=require('play
  await page.locator('#station').selectOption('station-2');await page.locator('#station').selectOption('station-1');
  while(!held.has('station-1'))await new Promise(r=>setTimeout(r,10));assert.equal(counts.get('station-1/daily-inputs'),before+1,'switching back reuses the in-flight request');
  await page.locator('#station').selectOption('station-2');held.get('station-1')();held.delete('station-1');hold=null;await ready();assert.match(await page.locator('#decision-copy').innerText(),/电站 2/);
- const stored=await page.evaluate(()=>Object.entries(sessionStorage));assert(stored.some(([k])=>k.startsWith('m4-view-v1:')));assert(stored.every(([,v])=>!v.includes('fixture-only-token')));
+ const stored=await page.evaluate(()=>Object.entries(sessionStorage));assert(stored.some(([k])=>k.startsWith('m4-view-v3:')));assert(stored.every(([,v])=>!v.includes('fixture-only-token')));
  // Expired data cannot be used as a current view on reload.
- await page.evaluate(()=>{for(const k of Object.keys(sessionStorage))if(k.startsWith('m4-view-v1:')){const v=JSON.parse(sessionStorage.getItem(k));v.at=0;sessionStorage.setItem(k,JSON.stringify(v));}});
+ await page.evaluate(()=>{for(const k of Object.keys(sessionStorage))if(k.startsWith('m4-view-v3:')){const v=JSON.parse(sessionStorage.getItem(k));v.at=0;sessionStorage.setItem(k,JSON.stringify(v));}});
  hold='station-2';await page.reload();await page.waitForFunction(()=>document.querySelector('.decision h2').textContent==='正在读取当天数据');assert.equal(await page.locator('#chart-panel').isVisible(),false);assert.equal(await page.locator('#loading-mask').isVisible(),true);await page.waitForFunction(()=>document.querySelector('#loading-message').textContent.includes('较慢'));
  await page.screenshot({path:'/tmp/m4-loading-light.png'});await page.evaluate(()=>document.documentElement.dataset.theme='dark');await page.setViewportSize({width:390,height:844});await page.screenshot({path:'/tmp/m4-loading-dark-mobile.png'});
  while(!held.has('station-2'))await new Promise(r=>setTimeout(r,10));held.get('station-2')();held.delete('station-2');hold=null;await ready();

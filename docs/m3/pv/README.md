@@ -1,6 +1,15 @@
-# 电站2光伏：生产 Node-RED 手动 Flow
+# 电站2光伏：每日预测与手动操作
 
-导入 `pv_manual_production_flow.json`，部署配套 Python 服务后，即可手动采集天气、生成一次光伏预测、查询结果。**没有定时器或启动执行；本轮未部署生产环境。**
+导入 `pv_manual_production_flow.json`，部署配套 Python 服务后，即可手动采集天气、生成一次光伏预测、查询结果。配套新版服务支持每天北京时间 06:00 自动预测；本轮仅修改代码，未部署生产环境。
+
+## 每日 06:00 自动预测
+
+- `PV_DAILY_SCHEDULE_ENABLED=1` 开启，`0` 关闭；两份 Compose 已设为开启。程序默认关闭，只有 `pv` 服务构建管理器时启用，M3 worker/dashboard 不受影响。
+- 固定 `Asia/Shanghai`，服务每15秒检查，在06:00这一分钟内提交一次 forecast，自动更新天气并生成未来24小时96点。复用现有训练与发布校验，保留手动入口。
+- 与手动任务共用互斥锁，已有任务不被替换；若整个06:00分钟均忙碌或服务离线，当天跳过，不在稍后启动时补跑。失败或中断不自动重新提交，可人工查看状态后手动生成。
+- `PV_MANUAL_STATE_DIR/daily-schedule.json` 持久保存当天提交意图及 job_id，在提交前先写意图，重启不会重复提交；不确定提交状态须人工核对。具体结果仍见 `latest.json` 和 `jobs/<job_id>/job.json`。
+- 生效需要重新构建并部署包含新代码的镜像。`compose.registry.yaml` 已固定新版远端镜像摘要；仅修改环境变量不会给旧镜像增加定时能力。
+- 06:00触发并不代表生成00:00–24:00自然日预测；沿用下一刻钟开始的滚动窗口。M4现有2小时新鲜度校验未改，全天回算仍未改接该预测，不能宣称每日一批已满足M4全天使用。
 
 ## 操作入口
 
@@ -44,6 +53,30 @@ Python 接受现有 `0640` 和原 `0600` 文件（及各自去掉写权限的模
 
 NocoBase Key 运行时需要 `energy_weather_points:list/create`、`energy_pv_forecast_runs:list/create/update`、`energy_pv_forecast_points:list/create`，不再调用 `collections:get`。运行前通过业务list请求检查字段可访问性；空表允许首次写入，写入响应、最终回读和哈希仍必须完整匹配。字段物理类型/索引/约束的管理元数据检查留在独立建表部署工具，不宣称运行时仍验证这些元数据。本版运行不查询实测表，也不创建表、修改角色或删除记录。
 
+## 每日06:00版本的镜像部署（已推送CCR）
+
+本机镜像 `vifa-m3-pv:daily-0600-20260910` 已通过24项镜像内测试。目标标签为 `ccr.ccs.tencentyun.com/taidai-holobase-168/omnipower_vifa:m3-pv-daily-0600-20260910-amd64`；已推送并回读核验远端linux/amd64镜像，摘要为 `sha256:7dfe3c5387201efd3cefca3aa06ae39c1862c9e4ae15574e5429b5fb77ac122d`。以下命令使用固定摘要。
+
+在已部署光伏服务的服务器上，保留原Compose中的挂载与凭据配置，仅通过覆盖文件更新镜像和启用定时：
+
+```bash
+cd /userdata/holo/pyfiles/vifa-pv/app
+cat > m3/pv/compose.daily.yaml <<'YAML'
+services:
+  vifa-pv:
+    image: ccr.ccs.tencentyun.com/taidai-holobase-168/omnipower_vifa@sha256:7dfe3c5387201efd3cefca3aa06ae39c1862c9e4ae15574e5429b5fb77ac122d
+    environment:
+      PV_DAILY_SCHEDULE_ENABLED: "1"
+YAML
+docker compose -f m3/pv/compose.yaml -f m3/pv/compose.daily.yaml config --quiet
+docker compose -f m3/pv/compose.yaml -f m3/pv/compose.daily.yaml pull vifa-pv
+docker compose -f m3/pv/compose.yaml -f m3/pv/compose.daily.yaml up -d --no-build --no-deps vifa-pv
+docker compose -f m3/pv/compose.yaml -f m3/pv/compose.daily.yaml ps vifa-pv
+docker compose -f m3/pv/compose.yaml -f m3/pv/compose.daily.yaml logs --tail=50 vifa-pv
+```
+
+仅更新PV服务；已过当天06:00的部署会等待次日06:00，不立即生成。M4配置不变。
+
 ## 部署顺序
 
 1. 将压缩包解压到上面的 `app` 目录，核对包内 `manifest.json`。确认服务器已有 `vifa-m3:0.1.0` AMD64 镜像；未安装时先按既有 M3 部署手册构建该基础镜像。
@@ -61,7 +94,7 @@ NocoBase Key 运行时需要 `energy_weather_points:list/create`、`energy_pv_fo
 5. Node-RED 导入包内 `m3/pv/pv_manual_production_flow.json`，新增独立“电站2 · 光伏手动预测”标签。默认用户认证地址为 `https://ems.lvkpower.com/api/auth:check`，可沿用已有 `M3_AUTH_BASE_URL`。Flow 只使用内置节点和宿主机 `/usr/bin/curl`。
 6. 部署这一个新增 Flow。先点击“查询最新已完成预测”，确认已有96点；再按需要点击天气或预测按钮，并手动查看任务状态。导入及 Deploy 本身不会创建天气/预测数据。
 
-服务支持容器自动重启，**自动重启只恢复 API，不会执行任务**。未完成任务重启后记为 interrupted，保留工件等待人工核对。
+服务支持容器自动重启，**重启不重放已有任务；启用定时且在06:00分钟内启动时，可提交当天尚未尝试的任务**。未完成任务重启后记为 interrupted，保留工件等待人工核对。
 
 本机采用 Buildx 时，选择可见本机基础镜像的 Docker 驱动，例如 `docker buildx build --builder orbstack --platform linux/amd64 -f m3/pv/Dockerfile -t vifa-m3-pv:2026-09-09 --load .`。独立 docker-container builder 无法直接读取 Docker daemon 内的本地基础镜像；使用远程基础镜像时须显式指定 `M3_BASE_IMAGE`。
 
@@ -82,7 +115,7 @@ NocoBase Key 运行时需要 `energy_weather_points:list/create`、`energy_pv_fo
 
 预测写入先 running、写足并核验96点后 completed；写失败不自动重试 POST。失败时按 job_id 查看 `run/manual/jobs/<job_id>/weather` 或 `forecast` 工件。已有 `forecast/run.json` 时先用原发布工具回读核验；如果预测窗口已经开始且批次未完成，保留旧工件并明确发起新任务，不能修改旧点冒充恢复成功。多次 NocoBase 调用不是数据库事务。
 
-本版没有历史自动补采、每小时触发、模型自动升级、实测误差自动回填、前端页面或 M4/EMS 接线。
+本版支持每日06:00触发，没有历史自动补采、每小时触发、模型自动升级、实测误差自动回填、前端页面或新增 M4/EMS 接线。
 
 ## 本地验证与生产待验
 

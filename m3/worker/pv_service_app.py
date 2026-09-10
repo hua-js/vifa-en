@@ -1,4 +1,4 @@
-"""Private Unix-socket PV service for the manually triggered production Flow."""
+"""Private Unix-socket PV service with manual and daily forecast submission."""
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
@@ -94,7 +94,13 @@ def build_manager():
             check=True, timeout=600)
         return json.loads((directory/'result.json').read_text())
 
-    return ManualJobs(root, operate)
+    enabled = os.environ.get('PV_DAILY_SCHEDULE_ENABLED', '0')
+    if enabled not in ('0', '1'):
+        raise ValueError('PV_DAILY_SCHEDULE_ENABLED must be 0 or 1')
+    manager = ManualJobs(root, operate)
+    if enabled == '1':
+        manager.start_daily_schedule()
+    return manager
 
 
 def service_token():

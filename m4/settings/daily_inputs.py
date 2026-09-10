@@ -11,7 +11,9 @@ import json
 import math
 from zoneinfo import ZoneInfo
 
-from .forecast_source import load_forecast
+from .pv_forecast_source import load_pv_forecast, validate_source as validate_pv_source
+from .timeseries import InputDataError
+from .forecast_source import load_forecast, _time
 from .live_inputs import _complete, _complete_tariff_periods
 from .roster import STATION_CABINETS
 
@@ -27,6 +29,23 @@ def _version(value):
 class DailyInputService:
     def __init__(self, live_inputs):
         self.live = live_inputs
+
+    def _pv(self, station_id, start, now):
+        if station_id == 'station-1':
+            return self.live._pv(station_id, start, start)
+        source = load_pv_forecast(self.live.client, plan_start_at=start, now=now)
+        covered_start = max(start, _time(source['forecast_start']))
+        covered_end = min(start+timedelta(days=1), _time(source['forecast_end']))
+        if covered_start >= covered_end or not source['coverage_points']:
+            raise InputDataError('M3光伏预测与当天没有重叠时段，未将全天填零')
+        validate_pv_source(source, start=covered_start, end=covered_end, now=now)
+        missing = [i for i, value in enumerate(source['values']) if value is None]
+        filled = {**source, 'values': [0.0 if v is None else v for v in source['values']],
+                  'forecast_coverage_points': source['coverage_points'], 'coverage_points': 96,
+                  'gap_policy': 'outside_forecast_window_zero', 'zero_filled_points': len(missing),
+                  'zero_filled_at': [(start+timedelta(minutes=15*i)).isoformat() for i in missing]}
+        filled['version'] = 'pv-daily-zero-'+_version(filled)
+        return filled
 
     def _initial_soc(self, station_id, start):
         source_station, roster = STATION_CABINETS[station_id]
@@ -70,12 +89,12 @@ class DailyInputService:
         jobs = {
             'load': lambda: load_forecast(self.live.client, station_id,
                 plan_start_at=start, now=now, require_full_day=True),
-            'pv': lambda: self.live._pv(station_id, start, start),
+            'pv': lambda: self._pv(station_id, start, now),
             'tariff': lambda: self.live._tariff(start),
             'controls': lambda: self.live._controls(station_id),
             'initial_soc': lambda: self._initial_soc(station_id, start),
         }
-        labels = {'load': '全天负荷预测', 'pv': '全天光伏参考',
+        labels = {'load': '全天负荷预测', 'pv': 'M3光伏预测',
                   'tariff': '全天分时电价', 'controls': 'EMS 时段配置', 'initial_soc': '零点站级 SOC'}
         sources = {}
         with ThreadPoolExecutor(max_workers=5) as pool:
@@ -89,6 +108,8 @@ class DailyInputService:
                             complete = complete and _complete_tariff_periods(result.get('period_types'), 96)
                         result = {**result, 'status': 'ready' if complete else 'incomplete'}
                     sources[key] = result
+                except InputDataError as error:
+                    sources[key] = dict(status='incomplete', issues=[str(error)])
                 except Exception:
                     sources[key] = dict(status='error', issues=[labels[key]+'读取或校验失败，请重新读取。'])
         checks = []
@@ -130,6 +151,8 @@ class DailyInputService:
             checks=checks, missing=missing,
             warnings=['预测可能包含当日零点后生成的批次，仅用于相同输入下的日费用回算；不代表零点已知计划或实测收益。',
                       '历史日期电价采用当前配置按时段展开；未接入历史电价版本。'])
+        if sources.get('pv', {}).get('zero_filled_points'):
+            result['warnings'].append(f"光伏预测窗口外{sources['pv']['zero_filled_points']}个时段按0 kW估算，并非实测零发电。")
         result.update(baseline=None, comparison=None)
         if not missing:
             from .daily_baseline import prepare_ems_day
