@@ -1,0 +1,20 @@
+# Apply with the existing M4 compose.yaml; preserve env/data.
+services:
+  m4-api:
+    image: ccr.ccs.tencentyun.com/taidai-holobase-168/omnipower_vifa@sha256:05a95a2fed2237cd743e5483132b20d0510018d5f1147d7ef7675635754d2921
+    environment:
+      M4_PV_SOCKET_PATH: /run/vifa-pv/pv.sock
+    volumes:
+      - type: bind
+        source: /userdata/holo/pyfiles/vifa-pv/run
+        target: /run/vifa-pv
+        read_only: true
+        bind:
+          create_host_path: false
+    networks:
+      - default
+      - nodered_shared
+networks:
+  nodered_shared:
+    external: true
+    name: 1panel-network

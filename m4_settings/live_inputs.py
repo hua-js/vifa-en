@@ -10,6 +10,8 @@ from m4_optimizer.contracts import ForecastPoint
 from .adapter import build_request as build_optimizer_request
 from .control_sources import ControlSourceError
 from .forecast_source import load_forecast
+from .load_accuracy import require_gate
+from .pv_forecast_source import ForecastRefreshRequired, load_pv_forecast, validate_source as validate_pv_source
 from .models import LiveStationState, ResolvedControlLimits, StationConfiguration
 from .realtime import ALARM_POLICY, SOURCE_FIELDS, alarm_is_advisory, build_realtime_snapshot
 from .roster import CABINET_ISOLATION_POLICY, STATION_CABINETS
@@ -158,15 +160,18 @@ class LiveInputService:
         with ThreadPoolExecutor(max_workers=4) as pool:
             pending = {
                 'load': pool.submit(load_forecast, self.client, station_id, plan_start_at=plan_start, now=started_at),
-                'pv': pool.submit(self._pv, station_id, plan_start, history_end),
+                'pv': (pool.submit(load_pv_forecast, self.client, plan_start_at=plan_start, now=started_at)
+                       if station_id == 'station-2' else pool.submit(self._pv, station_id, plan_start, history_end)),
                 'tariff': pool.submit(self._tariff, plan_start),
                 'controls': pool.submit(self._controls, station_id),
             }
-            labels = {'load': 'M3负荷预测', 'pv': '光伏历史参考', 'tariff': '共用电价', 'controls': '需量控制'}
+            labels = {'load': 'M3负荷预测', 'pv': '光伏功率预测', 'tariff': '共用电价', 'controls': '需量控制'}
             for key, future in pending.items():
                 result, error = _read_result(future, labels[key])
                 if error:
                     sources[key] = {'status': 'error', 'issues': [error]}
+                    if key == 'pv' and isinstance(future.exception(), ForecastRefreshRequired):
+                        sources[key]['refresh_required'] = True
                     issues.append(error)
                     continue
                 if key == 'controls':
@@ -178,13 +183,21 @@ class LiveInputService:
                         horizon = 95
                     # PV/tariff adapters still validate their full daily source.
                     # Export only the same actual window as the load forecast.
-                    if key in ('pv','tariff') and horizon == 95 and _complete(result.get('values')):
-                        result = {**result, 'values':result['values'][:horizon], 'coverage_points':horizon}
+                    if key in ('pv','tariff') and horizon == 95 and isinstance(result.get('values'), list) and len(result['values']) == 96:
+                        result = {**result, 'values': result['values'][:horizon],
+                                  'coverage_points': sum(v is not None for v in result['values'][:horizon])}
                         if key == 'tariff' and _complete_tariff_periods(result.get('period_types')):
                             result['period_types'] = result['period_types'][:horizon]
                     warnings.extend(result.get('warnings', []))
                     complete = _complete(result.get('values'), horizon)
                     source_issues = result.get('issues', [])
+                    if key == 'pv' and station_id == 'station-2':
+                        try:
+                            validate_pv_source(result, start=plan_start,
+                                end=plan_start+timedelta(minutes=15*horizon), now=started_at)
+                        except InputDataError as error:
+                            source_issues = [*source_issues, str(error)]
+                            result['refresh_required'] = isinstance(error, ForecastRefreshRequired)
                     if key == 'tariff' and not _complete_tariff_periods(result.get('period_types'), horizon):
                         complete = False
                         source_issues = [*source_issues, f'共用电价缺少完整有效的 {horizon} 点时段标签']
@@ -193,8 +206,6 @@ class LiveInputService:
                                     'coverage_points': result.get('coverage_points', horizon if complete else 0)}
                     if status != 'ready':
                         issues.extend(source_issues or [f'{labels[key]}缺少完整有效的 {horizon} 点数据'])
-        if station_id == 'station-2' and sources['pv']['status'] == 'ready':
-            warnings.append('光伏使用七个完整历史日的同时段参考基线，尚无光伏预测接口')
 
         # Historical/forecast sources can be slower. Read current observations
         # last so freshness is measured after the upstream work has completed.
@@ -210,6 +221,20 @@ class LiveInputService:
             device_rows, device_error = _read_result(devices, '储能柜实时数据')
             station_rows, station_error = _read_result(station, '站级对照采样')
         finished_at = _aware(now if now is not None else _clock_now())
+        if sources.get('load', {}).get('status') == 'ready':
+            try:
+                require_gate(sources['load'].get('accuracy_gate'), station_id, finished_at)
+            except ValueError as error:
+                sources['load'].update(status='incomplete', issues=[str(error)])
+                issues.append(str(error))
+        if station_id == 'station-2' and sources['pv']['status'] == 'ready':
+            try:
+                validate_pv_source(sources['pv'], start=plan_start,
+                    end=plan_start+timedelta(minutes=15*horizon), now=finished_at)
+            except InputDataError as error:
+                sources['pv'].update(status='incomplete', issues=[str(error)],
+                                     refresh_required=isinstance(error, ForecastRefreshRequired))
+                issues.append(str(error))
         if _ceil_quarter(finished_at) != plan_start:
             issues.append('读取期间已跨过计划时间边界，请刷新输入后重新校验')
         if station_error:
@@ -358,6 +383,7 @@ def request_from_inputs(configuration: StationConfiguration, bundle: dict, profi
     sources = bundle.get('sources', {})
     if any(sources.get(key, {}).get('status') != 'ready' for key in ('load','pv','tariff','controls','realtime')):
         raise ValueError('仍有必需来源未就绪，不能生成新调度请求')
+    require_gate(sources['load'].get('accuracy_gate'), configuration.station_id, checked_at)
     snapshot, controls = sources['realtime'], sources['controls']
     if (snapshot.get('available') is not True or snapshot.get('station_id') != configuration.station_id
             or snapshot.get('configuration_version') != configuration.version
@@ -388,6 +414,8 @@ def request_from_inputs(configuration: StationConfiguration, bundle: dict, profi
         raise ValueError('实时采样相对当前时间已过期，请重新读取真实输入')
     if (checked_at-fetched_at).total_seconds() > parameters.max_input_age_seconds:
         raise ValueError('输入读取时间已过期，请重新读取真实输入')
+    if configuration.station_id == 'station-2':
+        validate_pv_source(sources['pv'], start=start, end=end, now=checked_at)
     participants = _validate_participation(configuration, snapshot, start=start, checked_at=checked_at,
         fetched_at=fetched_at, observed_at=observed_at, controls=controls)
     if not isinstance(bundle.get('points'), list) or len(bundle['points']) != horizon:

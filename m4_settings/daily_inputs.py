@@ -103,6 +103,8 @@ class DailyInputService:
                 detail = '96 / 96 点' if ready else '；'.join(source.get('issues', [])) or '完整96点尚未就绪'
             else:
                 detail = '已读取' if ready else '；'.join(source.get('issues', [])) or '尚未读取到有效时段'
+            if key == 'load' and ready:
+                detail += ' · MAPE ' + str(source['accuracy_gate']['mape_percent']) + '%（门槛30%）'
             checks.append(dict(key=key, label=label, status='ready' if ready else 'missing', detail=detail))
         capacity = sources.get('controls', {}).get('storage_capacity', {}).get('energy_capacity_kwh')
         capacity_ready = type(capacity) in (int, float) and math.isfinite(capacity) and capacity > 0

@@ -21,6 +21,8 @@ _TABLES = {
     't_es_count_stat': '电站每月统计',
     't_peak_diy': '峰谷时段',
     't_rate': '电价',
+    'energy_pv_forecast_runs': '光伏预测批次',
+    'energy_pv_forecast_points': '光伏预测点',
     'energy_forecast_latest': 'M3滚动预测',
     'energy_forecast_manual_runs': '预测任务',
     'energy_forecast_manual_points': '预测时序',
@@ -114,6 +116,10 @@ class NocoBaseClient:
                 or any(not isinstance(row, dict) for row in payload['data'])):
             raise SourceReadError(f'{label}接口返回格式无效')
         return payload
+
+    def current_load_result(self, station_id):
+        from .m3_current_result import M3CurrentResult
+        return M3CurrentResult().read(station_id)
 
     def list_rows(self, table, *, fields: str, filters: dict | None = None,
                   sort: str | None = None, page_size: int = 100,

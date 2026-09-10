@@ -9,6 +9,7 @@ from m4_optimizer.metrics import calculate_metrics
 from .daily_comparison import comparison_input_sha256, compare_daily_plan
 from .objectives import get_daily_profiles
 from .daily_policy import daily_policy_version
+from .load_accuracy import require_gate
 from .ems_simulation import EMS_BASELINE_POLICY, simulate_ems_day
 from .schedule_power import effective_station_power, station_schedule, station_energy_capacity
 
@@ -27,6 +28,8 @@ def prepare_ems_day(configuration, bundle):
     sources = bundle['sources']
     if any(sources.get(k, {}).get('status') != 'ready' for k in ('load', 'pv', 'tariff', 'controls', 'initial_soc')):
         raise ValueError('全天预测、电价、零点 SOC 或 EMS 时段尚未就绪。')
+    require_gate(sources['load'].get('accuracy_gate'), configuration.station_id,
+                 datetime.fromisoformat(bundle['fetched_at']))
     control, initial = sources['controls'], sources['initial_soc']
     if control.get('power_scope') not in ('station', 'cabinet') or control.get('source_health', {}).get('schedule') != 'ready' or not control.get('schedule'):
         raise ValueError('尚未读取到完整的站级 EMS 原计划。')

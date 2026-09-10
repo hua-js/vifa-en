@@ -1375,9 +1375,11 @@
         $("live-source-grid").replaceChildren();
         const loadSourceNote=load.source_kind==="rolling_with_manual"?"滚动 "+load.rolling_points+" 点 · 手动补充 "+load.manual_points+" 点":load.source_kind==="rolling"?"M3 滚动预测 · "+load.rolling_points+" 点":load.source_kind==="manual"?"M3 手动预测 · "+load.manual_points+" 点":load.source_kind==="unavailable"?"M3 预测未覆盖本轮":"M3 来源待核对";
         const loadUpdated=load.rolling_generated_at?" · 滚动更新 "+liveTime(load.rolling_generated_at):"";
+        const loadGate=load.accuracy_gate||{};
         const items=[
+          ["当前负荷MAPE",loadGate.mape_percent==null?"无法评估":Number(loadGate.mape_percent).toFixed(2)+"%",loadGate.run_id?"门槛 ≤30% · 有效对比 "+loadGate.valid_count+"/"+loadGate.expected_count+" 点 · "+(loadGate.provisional?"暂估":"完整")+" · 任务 "+loadGate.run_id.slice(0,8):"需读取M3当前任务的实测对比结果",loadGate.status],
           ["负荷预测",load.coverage_points==null?"—":load.coverage_points+" / "+(data?.horizon_points||96),loadSourceNote+loadUpdated,load.status],
-          ["光伏参考",pv.values?.length===(data?.horizon_points||96)?pv.values.length+" / "+(data?.horizon_points||96):"—",key==="s1"?"本站无光伏":"近七日历史参考",pv.status],
+          ["光伏预测",pv.coverage_points==null?"—":pv.coverage_points+" / "+(data?.horizon_points||96),key==="s1"?"本站无光伏":pv.source_kind==="operational_forecast"?pv.model_name+" · 更新 "+liveTime(pv.generated_at):"天气驱动预测待就绪",pv.status],
           ["分时电价",tariff.values?.length===(data?.horizon_points||96)?tariff.values.length+" / "+(data?.horizon_points||96):"—","两站共用 · 覆盖至 24:00",tariff.status],
           ["参与储能柜",rt.cabinets?(expired?"需刷新":eligible+" / "+rt.cabinets.length+" 柜"):"—","异常柜单独排除",expired?"blocked":partial?"partial":rt.status]
         ];
@@ -1413,7 +1415,7 @@
           $("metrics").innerHTML=metricMarkup([["电网购电功率",numeric(fresh?rt.sampled_grid_power_kw:null)+" kW","最近实测采样",""],["储能电量 SOC",numeric(fresh?rt.initial_soc_pct:null)+"%","当前参与柜按容量加权",""],["下一时段负荷",numeric(load.values?.[0])+" kW",liveTime(data.plan_start_at)+" · 预测",""],["下一时段光伏",numeric(pv.values?.[0])+" kW",key==="s1"?"本站无光伏":"近七日历史参考",""]]);
           $("operating-title").textContent=status==="ready"?(partial?"部分柜参与，输入已齐备":"真实输入已齐备"):busy?"正在刷新输入":"本轮暂不生成新候选";
           $("operating-description").textContent=busy?"重新校验预测、光伏、电价及每柜状态。":reasons[0]||(partial?"参与："+(rt.participating_cabinet_ids||[]).join("、")+"；排除："+(rt.excluded_cabinet_ids||[]).join("、")+"。按剩余能力准备计划，尚未启动求解。":"输入核对完成，尚未启动优化求解。");
-          $("flow-caption").textContent=key==="s1"?"电站 1 无光伏，调度光伏输入固定为 0。":"电站 2 使用近七日交流光伏历史参考，尚无天气预测。";
+          $("flow-caption").textContent=key==="s1"?"电站 1 无光伏，调度光伏输入固定为 0。":"电站 2 使用天气驱动光伏预测；启动滚动候选时按需更新，普通刷新输入只读。";
           $("flow-breakdown").textContent="实测光伏："+numeric(fresh?rt.sampled_pv_power_kw:null)+" kW";
           $("demand-current").textContent=numeric(fresh?rt.sampled_grid_power_kw:null);
           $("decision-status").textContent=status==="ready"?(partial?"部分柜参与":"输入已齐备"):"输入待补齐";
@@ -1457,25 +1459,46 @@
         catch(error){if(generation===candidatesGeneration[key])candidatesErrors[key]=error.name==="M4AccessError"?accessDeniedMessage:"最近候选读取失败，可重新启动计算。";}
         if(liveMode)renderConfigurationView();
       }
+      const candidateJobMessages={s1:"",s2:""};
+      function canPrepareCandidates(key){
+        const input=inputsCache[key];
+        if(input?.status==="ready")return true;
+        return key==="s2"&&input?.sources?.pv?.refresh_required===true&&["load","tariff","controls","realtime"].every(k=>input.sources[k]?.status==="ready");
+      }
+      async function candidateJobRequest(key,version,signal){
+        const endpoint=candidateEndpoint(key).replace(/candidates$/,"candidate-jobs"),id=crypto.randomUUID();
+        let response=await apiFetch(endpoint,{method:"POST",cache:"no-store",signal,headers:{"Content-Type":"application/json"},body:JSON.stringify({configuration_version:version,request_id:id})});
+        let job=await response.json();
+        if(!response.ok)throw new Error(typeof job.detail==="string"?job.detail:job.detail?.message||"无法启动候选任务");
+        while(true){
+          if(job.request_id!==id||job.station_id!==(key==="s1"?"station-1":"station-2")||job.configuration_version!==version)throw new Error("候选任务身份不一致");
+          if(job.status==="completed")return job.result;
+          if(job.status!=="running")throw new Error(job.message||"候选任务失败");
+          candidateJobMessages[key]=job.message;if(activeStationKey===key)renderLiveCandidates();
+          await new Promise(resolve=>setTimeout(resolve,1500));
+          if(signal.aborted)throw new DOMException("Aborted","AbortError");
+          response=await apiFetch(endpoint+"?request_id="+encodeURIComponent(id),{cache:"no-store",signal});
+          job=await response.json();if(!response.ok)throw new Error(typeof job.detail==="string"?job.detail:"任务状态读取失败；后台任务可能仍在运行，请勿重复启动");
+        }
+      }
       async function startLiveCandidates(){
         if(!liveMode||activeStationKey==="all")return;const key=activeStationKey,config=settingsCache[key];
-        if(decisionRunBusy(key)||candidatesLoading[key]||!config?.version||!config.parameters||inputsLoading[key]||inputsErrors[key]||$("live-input-status").dataset.state!=="ready")return;
-        invalidateLiveCandidates(key,"");const generation=candidatesGeneration[key],inputGeneration=inputsGeneration[key],configurationVersion=config.version,controller=new AbortController();candidatesControllers[key]=controller;candidatesLoading[key]=true;candidatesErrors[key]="";renderConfigurationView();const timer=setTimeout(()=>controller.abort(),180000);
+        if(decisionRunBusy(key)||candidatesLoading[key]||!config?.version||!config.parameters||inputsLoading[key]||inputsErrors[key]||!canPrepareCandidates(key))return;
+        invalidateLiveCandidates(key,"");const generation=candidatesGeneration[key],inputGeneration=inputsGeneration[key],configurationVersion=config.version,controller=new AbortController();candidatesControllers[key]=controller;candidatesLoading[key]=true;candidatesErrors[key]="";renderConfigurationView();const timer=setTimeout(()=>controller.abort(),900000);
         try{
-          const response=await apiFetch(candidateEndpoint(key),{method:"POST",cache:"no-store",signal:controller.signal,headers:{"Content-Type":"application/json"},body:JSON.stringify({configuration_version:configurationVersion})});
-          const data=await response.json();if(generation!==candidatesGeneration[key]||inputGeneration!==inputsGeneration[key]||configurationVersion!==settingsCache[key]?.version)return;
-          if(!response.ok){const detail=data.detail;if(response.status===422&&detail?.inputs?.station_id===(key==="s1"?"station-1":"station-2")&&detail.inputs.configuration_version===configurationVersion)inputsCache[key]=detail.inputs;throw new Error(typeof detail==="string"?detail:detail?.message||"候选计算失败，请重新核对输入。");}
+          const data=await candidateJobRequest(key,configurationVersion,controller.signal);
+          if(generation!==candidatesGeneration[key]||inputGeneration!==inputsGeneration[key]||configurationVersion!==settingsCache[key]?.version)return;
           const validated=validateLiveCandidates(data,key);candidatesCache[key]=validated;inputsCache[key]=validated.inputs;
           if(validated.inputs.sources?.controls?.status==="ready"){controlsCache[key]=validated.inputs.sources.controls;controlsErrors[key]="";}
           $("point-slider").value=0;
-        }catch(error){if(generation===candidatesGeneration[key]){candidatesCache[key]=null;candidatesErrors[key]=["TypeError","AbortError","SyntaxError"].includes(error.name)?"候选计算连接失败或超时，请重新核对输入后重试。":error.message;}}
+        }catch(error){if(generation===candidatesGeneration[key]){candidatesCache[key]=null;candidatesErrors[key]=["TypeError","AbortError","SyntaxError"].includes(error.name)?"候选任务连接中断或等待超时，后台任务可能仍在运行；请先查看最近候选结果，勿重复启动。":error.message;}}
         finally{clearTimeout(timer);if(generation===candidatesGeneration[key]){candidatesLoading[key]=false;candidatesControllers[key]=null;if(liveMode)renderConfigurationView();}}
       }
       function renderLiveCandidates(){
         if(!liveMode||activeStationKey==="all")return;const key=activeStationKey,data=candidatesCache[key],busy=candidatesLoading[key],error=candidatesErrors[key],stale=candidateStaleReason(data,key),station=offlineStation(),candidate=offlineCandidate(),summary=station?.input_summary,button=$("start-live-candidates"),status=$("live-candidate-status");
-        button.disabled=decisionRunBusy(key)||busy||inputsLoading[key]||Boolean(inputsErrors[key])||!settingsCache[key]?.version||!settingsCache[key]?.parameters||$("live-input-status").dataset.state!=="ready";button.textContent=busy?"候选计算中…":"启动候选计算";
+        button.disabled=decisionRunBusy(key)||busy||inputsLoading[key]||Boolean(inputsErrors[key])||!settingsCache[key]?.version||!settingsCache[key]?.parameters||!canPrepareCandidates(key);button.textContent=busy?"候选计算中…":"启动候选计算";
         status.dataset.state=busy?"loading":error?"error":data?stale?"stale":candidate?"ready":"error":"empty";
-        status.textContent=busy?"正在重新读取真实输入并计算三套候选，请稍候。":error|| (data?(stale?"历史候选预览 · "+stale+"；不代表本轮可用结果。":candidate?"真实候选已生成，仅供预览。":"本轮计算完成，但没有可用候选。")+" 优化决策见上方记录，EMS 未下发。":"输入通过后可启动三套候选计算；优化决策见上方记录，EMS 未下发。");
+        status.textContent=busy?(candidateJobMessages[key]||"正在准备输入与候选计算，请稍候。"):error|| (data?(stale?"历史候选预览 · "+stale+"；不代表本轮可用结果。":candidate?"真实候选已生成，仅供预览。":"本轮计算完成，但没有可用候选。")+" 优化决策见上方记录，EMS 未下发。":"输入通过后可启动三套候选计算；优化决策见上方记录，EMS 未下发。");
         if(!data){if(busy){document.querySelector(".model-health").textContent="候选计算中";$("offline-empty").textContent="正在读取真实输入并求解三套候选。";$("decision-status").textContent="计算中";}return;}
         $("plan-title").textContent=stale?"历史候选计划":"真实候选计划";$("plan-meta").textContent=stations[key].name+" · "+horizonText(candidate?.plan.length)+" / "+(candidate?.plan.length||"—")+" 点 · "+(candidate?candidateNames[candidate.profile_id]:"无可用候选");
         $("mock-data-badge").textContent=stale?"历史候选 · 仅预览":"真实候选 · 仅预览";$("scope-status").textContent="参与柜适用 · 未下发";

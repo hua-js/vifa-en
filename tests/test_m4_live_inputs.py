@@ -18,6 +18,7 @@ START = NOW.replace(minute=15)
 
 class Client:
     def __init__(self, *, station_id='station-1', now=NOW, start=START):
+        self.now = now
         self.calls = []
         self.lock = threading.Lock()
         self.failures = set()
@@ -42,6 +43,10 @@ class Client:
         history_start = start.replace(hour=0, minute=0) - timedelta(days=7)
         self.history = [dict(es_sn='ES02', timestamp=(history_start+timedelta(minutes=i)).isoformat(),
                              ac_solar_power=float((i % 1440) // 60)) for i in range(7*1440)]
+
+    def current_load_result(self, station):
+        from test_m4_load_accuracy import row
+        return row('10', now=self.now, station=station)
 
     def list_rows(self, table, **kwargs):
         with self.lock:

@@ -11,6 +11,7 @@ from m4_orchestrator import M4Orchestrator
 from m4_orchestrator.contracts import StationInput
 
 from .live_inputs import request_from_inputs
+from .pv_on_demand import PVPreparationError
 from .objectives import get_profiles, get_profile_metadata
 
 
@@ -22,9 +23,10 @@ class CandidateError(Exception):
 
 
 class CandidateService:
-    def __init__(self, *, store, fetch_inputs, read_controls, optimizer=None, clock=None):
+    def __init__(self, *, store, fetch_inputs, read_controls, optimizer=None, clock=None, prepare_inputs=None):
         self.store = store
         self.fetch_inputs = fetch_inputs
+        self.prepare_inputs = prepare_inputs
         self.read_controls = read_controls
         self.clock = clock or (lambda: datetime.now(timezone.utc))
         self.orchestrator = M4Orchestrator(model_version='m4-milp-v2-early-valley',
@@ -58,7 +60,7 @@ class CandidateService:
         result.update(stale=bool(reason), stale_reason=reason)
         return result
 
-    def calculate(self, station_id, configuration_version):
+    def calculate(self, station_id, configuration_version, *, progress=lambda *_: None):
         lock = self._locks.get(station_id)
         if lock is None:
             raise CandidateError(404, '未知电站')
@@ -73,7 +75,10 @@ class CandidateService:
             if configuration.version != configuration_version:
                 raise CandidateError(409, '页面参数版本已变化，请刷新参数后重新计算')
             try:
-                inputs = self.fetch_inputs(configuration)
+                inputs = (self.prepare_inputs(configuration, progress) if self.prepare_inputs
+                          else self.fetch_inputs(configuration))
+            except PVPreparationError as error:
+                raise CandidateError(422, str(error)) from None
             except Exception:
                 raise CandidateError(502, '真实输入读取失败，请重新读取后计算') from None
             self._assert_configuration(configuration)
@@ -87,6 +92,7 @@ class CandidateService:
             except (ValueError, TypeError, KeyError, OverflowError):
                 raise CandidateError(422, '输入快照已失效或不完整，请刷新真实输入后计算',
                     issues=['输入时间、来源版本或参与柜校验未通过'], inputs=inputs) from None
+            progress('solving', '光伏与其他输入已就绪，正在计算候选')
             result = self.orchestrator.run([StationInput(input_ref='live-'+station_id, request=request)])
             # A preview must not be presented as a new valid result if the
             # configuration changed or its snapshot expired during solving.

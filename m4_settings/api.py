@@ -42,6 +42,10 @@ class CalculateCandidates(BaseModel):
     configuration_version: str = Field(min_length=1, max_length=200)
 
 
+class StartCandidateJob(CalculateCandidates):
+    request_id: str = Field(pattern=r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$')
+
+
 class StartDecisionRun(BaseModel):
     model_config = ConfigDict(extra='forbid', strict=True)
     request_id: str = Field(pattern=r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$')
@@ -62,9 +66,11 @@ def create_app(settings_path: Path | None = None, *, control_reader=None, input_
         input_service = LiveInputService(NocoBaseClient(token), SimpleNamespace(fetch=read_controls))
     from .daily_inputs import DailyInputService
     daily_inputs = daily_input_service if daily_input_service is not None else DailyInputService(input_service)
+    from .pv_on_demand import PreparedInputs, PVService
+    prepared_inputs = PreparedInputs(input_service.fetch, PVService(token))
     from .candidates import CandidateError, CandidateService
     candidates = candidate_service if candidate_service is not None else CandidateService(
-        store=store, fetch_inputs=input_service.fetch, read_controls=read_controls)
+        store=store, fetch_inputs=input_service.fetch, read_controls=read_controls, prepare_inputs=prepared_inputs)
     from .selection import PolicyStore, SavePolicy, SelectCandidate, StationPolicy, LiveSelectionResult, LiveSelectionService
     policies = PolicyStore(path)
     selections = selection_service if selection_service is not None else LiveSelectionService(
@@ -178,6 +184,25 @@ def create_app(settings_path: Path | None = None, *, control_reader=None, input_
         station_exists(station_id)
         return daily_plans.start(station_id)
 
+    from .candidate_jobs import CandidateJobs
+    candidate_jobs = CandidateJobs(candidates)
+
+    @app.post('/m4-api/stations/{station_id}/candidate-jobs', status_code=202)
+    def start_candidate_job(station_id: str, body: StartCandidateJob):
+        station_exists(station_id)
+        try:
+            return candidate_jobs.start(station_id, body.request_id, body.configuration_version)
+        except CandidateError as error:
+            raise HTTPException(error.status_code, error.detail) from None
+
+    @app.get('/m4-api/stations/{station_id}/candidate-jobs')
+    def get_candidate_job(station_id: str, request_id: str):
+        station_exists(station_id)
+        job = candidate_jobs.get(station_id, request_id)
+        if job is None:
+            raise HTTPException(404, '候选任务不存在或服务已重启，请重新读取输入；未自动重试')
+        return job
+
     @app.get('/m4-api/stations/{station_id}/candidates')
     def get_candidates(station_id: str) -> dict | None:
         station_exists(station_id)
@@ -236,7 +261,7 @@ def create_app(settings_path: Path | None = None, *, control_reader=None, input_
         routes = {
             ('GET', 'settings'): lambda: get_settings(station_id),
             ('GET', 'selection-policy'): lambda: get_selection_policy(station_id),
-            ('GET', 'inputs'): lambda: get_inputs(station_id),
+            ('GET', 'inputs'): lambda: prepared_inputs(store.get(station_id)),
             ('POST', 'candidates'): lambda: calculate_candidates(station_id, CalculateCandidates.model_validate(data)),
             ('POST', 'selection'): lambda: select_live_candidate(station_id, SelectCandidate.model_validate(data)),
         }

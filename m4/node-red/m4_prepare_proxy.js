@@ -8,9 +8,9 @@ const fail = (status, detail) => {
 const {stationId, resource, runId} = msg.req.params;
 const method = msg.req.method;
 const allowed = {
-    GET: ['candidate-jobs','settings','control-sources','inputs','candidates','selection-policy','decision-result','decision-history','decision-runs','bills'],
+    GET: ['candidate-jobs','settings','control-sources','inputs','daily-inputs','daily-plan','candidates','selection-policy','decision-result','decision-history','decision-runs','bills'],
     PUT: ['settings','selection-policy'],
-    POST: ['candidate-jobs','candidates','selection','decision-runs']
+    POST: ['candidate-jobs','daily-plan','candidates','selection','decision-runs']
 };
 if (!['station-1','station-2'].includes(stationId)) return fail(404, '未知电站');
 let route;

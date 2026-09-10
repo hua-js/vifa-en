@@ -81,6 +81,8 @@ class DailyPlanService:
             if not inputs['can_compare']:
                 raise ValueError('；'.join(c['detail'] for c in inputs['checks'] if c['status'] != 'ready'))
             request, baseline, _ = prepare_ems_day(configuration, inputs)
+            from .load_accuracy import require_gate
+            require_gate(inputs['sources']['load'].get('accuracy_gate'), station, datetime.now(timezone.utc))
             result = M4Optimizer(model_version='m4-daily-ems-baseline-v1').optimize(
                 request, terminal_soc_target_pct=baseline['terminal_soc_pct'])
             usable = [c for c in result.candidates if c.status in ('optimal', 'feasible')

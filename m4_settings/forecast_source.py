@@ -6,6 +6,8 @@ from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from zoneinfo import ZoneInfo
 
+from .load_accuracy import read_gate
+
 STATIONS={'station-1':'ES01','station-2':'ES02'}
 SHANGHAI=ZoneInfo('Asia/Shanghai')
 
@@ -86,7 +88,7 @@ def _load_manual_forecast(client, station_id, *, plan_start_at, now, required_in
     digest=hashlib.sha256(json.dumps({'station_id':station_id,'start':start.isoformat(),'runs':runs,'values':values},sort_keys=True).encode()).hexdigest()[:16]
     return {'values':values,'coverage_points':96-len(missing),'runs':runs,'version':f'm3-load-{digest}',
         'point_sources':[{'kind':'manual','run_id':item[4]['run_id']} if item else None for item in owners],
-        'issues':[] if not missing else [f'M3负荷预测缺少{len(missing)}点，首个缺点为{missing[0].strftime("%m-%d %H:%M")}（北京时间）'],
+        'issues':([] if not missing else [f'M3负荷预测缺少{len(missing)}点，首个缺点为{missing[0].strftime("%m-%d %H:%M")}（北京时间）']),
         'source':'M3 station_total_load','first_missing_at':missing[0].isoformat() if missing else None}
 
 
@@ -184,10 +186,11 @@ def load_forecast(client, station_id, *, plan_start_at, now, require_full_day=Fa
         warnings.append(f'负荷来源：滚动预测{rolling_count}点，已有手动预测补充{manual_count}点')
     if rolling_count and (batch['status'] != 'ok' or batch['snapshot_status'] != 'ok'):
         warnings.append(f'M3滚动负荷状态为{batch["status"]}（快照{batch["snapshot_status"]}），模型{batch["model_name"]}')
-    digest = hashlib.sha256(json.dumps({'policy':'natural-day-96-v1' if require_full_day else 'rolling-min95-v2',
+    gate = read_gate(client, station_id, now)
+    digest = hashlib.sha256(json.dumps({'accuracy_gate': gate['version'], 'policy':'natural-day-96-v1' if require_full_day else 'rolling-min95-v2',
         'station_id':station_id, 'start':start.isoformat(), 'runs':runs,
         'point_sources':point_sources, 'values':values}, sort_keys=True).encode()).hexdigest()[:16]
-    return {'values':values, 'coverage_points':horizon-len(missing), 'runs':runs,
+    return {'accuracy_gate': gate, 'values':values, 'coverage_points':horizon-len(missing), 'runs':runs,
         'horizon_points':horizon, 'requested_horizon_points':96,
         'version':f'm3-load-{digest}', 'point_sources':point_sources, 'source_kind':kind,
         'rolling_points':rolling_count, 'manual_points':manual_count,
@@ -195,6 +198,6 @@ def load_forecast(client, station_id, *, plan_start_at, now, require_full_day=Fa
         'rolling_generated_at':batch['completed_at'] if batch else None,
         'rolling_forecast_start':batch['forecast_start'] if batch else None,
         'rolling_forecast_end':batch['forecast_end'] if batch else None,
-        'issues':[] if not missing else [f'M3负荷预测缺少{len(missing)}点，首个缺点为{missing[0].strftime("%m-%d %H:%M")}（北京时间）'],
+        'issues':gate['issues'] + ([] if not missing else [f'M3负荷预测缺少{len(missing)}点，首个缺点为{missing[0].strftime("%m-%d %H:%M")}（北京时间）']),
         'warnings':warnings, 'source':'M3 station_total_load',
         'first_missing_at':missing[0].isoformat() if missing else None}
