@@ -55,7 +55,7 @@ short_sha="${commit_sha:0:12}"
 revision_ref="${crr_image}:m4-${short_sha}-amd64"
 version_ref="${crr_image}:${version}"
 local_ref="vifa-m4:${version}"
-release_dir="${RELEASE_DIR:-${repo_root}/../outputs/${version}-${short_sha}}"
+release_dir="${RELEASE_DIR:-${repo_root}/outputs/m4/releases/${version}-${short_sha}}"
 if [[ -e "$release_dir" || -e "${release_dir}.zip" ]]; then
   echo "Release directory or ZIP already exists; choose a new RELEASE_DIR." >&2; exit 73
 fi
@@ -63,8 +63,8 @@ fi
 snapshot_dir="$(mktemp -d "${TMPDIR:-/tmp}/m4-release.XXXXXXXX")"
 trap 'rm -rf -- "$snapshot_dir"' EXIT
 git -C "$repo_root" archive "$commit_sha" -- \
-  m4/deploy 'm4/M4优化调度控制台-线上版.html' \
-  m4_settings m4_optimizer m4_orchestrator m4_selection | tar -x -C "$snapshot_dir"
+  m4/deploy 'm4/web/M4优化调度控制台-线上版.html' \
+  m4/__init__.py m4/settings m4/optimizer m4/orchestrator m4/selection docs/m4/deploy | tar -x -C "$snapshot_dir"
 python3 "$snapshot_dir/m4/deploy/build_package.py" \
   --output "$release_dir" --image "$revision_ref" --revision "$commit_sha"
 

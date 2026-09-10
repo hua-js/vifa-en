@@ -47,8 +47,8 @@ repo_root="$(git -C "$script_dir" rev-parse --show-toplevel 2>/dev/null)" || {
   exit 69
 }
 
-if [[ ! -f "$repo_root/Dockerfile" ]]; then
-  echo "Dockerfile not found at repository root: $repo_root" >&2
+if [[ ! -f "$repo_root/m3/deploy/Dockerfile" ]]; then
+  echo "M3 Dockerfile not found: $repo_root/m3/deploy/Dockerfile" >&2
   exit 66
 fi
 
@@ -101,7 +101,7 @@ revision_ref="${crr_image}:${revision_tag}"
 echo "Building $local_ref from commit $commit_sha for $platform"
 docker buildx build \
   --platform "$platform" \
-  --file "$repo_root/Dockerfile" \
+  --file "$repo_root/m3/deploy/Dockerfile" \
   --label "org.opencontainers.image.revision=$commit_sha" \
   --tag "$local_ref" \
   --load \
@@ -135,6 +135,6 @@ Production update:
   cd /userdata/holo/pyfiles/vifa-m3
   docker pull $version_ref
   docker tag $version_ref vifa-m3:0.1.0
-  docker compose up -d --no-build --force-recreate vifa-m3-worker vifa-m3-dashboard
-  docker compose ps
+  docker compose -f m3/deploy/compose.yaml up -d --no-build --force-recreate vifa-m3-worker vifa-m3-dashboard
+  docker compose -f m3/deploy/compose.yaml ps
 EOF

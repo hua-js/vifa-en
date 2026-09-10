@@ -1628,9 +1628,24 @@ svg {
       }
     }
 
-    @media (max-width: 1120px) {
+    @media (max-width: 1360px) {
+      /* Keep node minimum widths without squeezing them between side labels. */
+      #three-energy-flow .lane,
+      #three-energy-flow .pv-branch,
       #three-energy-flow .pv-topology {
-        grid-template-columns: 1fr;
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      #three-energy-flow .branch-label {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        gap: .5rem;
+      }
+
+      #three-energy-flow .efficiency {
+        justify-items: start;
+        text-align: left;
       }
     }
 

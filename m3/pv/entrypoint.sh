@@ -18,5 +18,5 @@ if [ -e /run/vifa-pv/pv.sock ]; then
     rm /run/vifa-pv/pv.sock
 fi
 umask 0007
-exec python -m uvicorn m3_worker.pv_service_app:app --workers 1 \
+exec python -m uvicorn m3.worker.pv_service_app:app --workers 1 \
     --uds /run/vifa-pv/pv.sock --no-access-log

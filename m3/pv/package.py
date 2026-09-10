@@ -15,24 +15,25 @@ ROOT = Path(__file__).resolve().parents[2]
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output',type=Path,required=True)
-    parser.add_argument('--training-source',type=Path,default=ROOT/'m3/reports/pv_training_es02_20260909_refresh')
+    parser.add_argument('--training-source',type=Path,default=ROOT/'outputs/m3/training/pv_training_es02_20260909_refresh')
     args=parser.parse_args()
     if args.output.exists() or args.output.with_suffix('.tar.gz').exists():
         raise ValueError('package output already exists')
-    spec=importlib.util.spec_from_file_location('package_pv_training',ROOT/'m3/deploy/refresh-pv-training.py')
+    spec=importlib.util.spec_from_file_location('package_pv_training',ROOT/'m3/scripts/refresh-pv-training.py')
     refresh=importlib.util.module_from_spec(spec);spec.loader.exec_module(refresh)
     training=refresh.load_source(args.training_source)
-    sources=list((ROOT/'m3_worker').rglob('*.py'))
+    sources=[ROOT/'m3/__init__.py', *list((ROOT/'m3/worker').rglob('*.py'))]
     scripts=('run-pv-manual.py','fetch-open-meteo-weather.py','fetch-open-meteo-history.py',
         'import-weather-history.py','generate-pv-forecast.py','publish-pv-forecast.py','refresh-pv-training.py',
         'backtest-pv-history.py','create-pv-forecast-collections.py','create-custom-forecast-collections.py')
-    sources.extend(ROOT/'m3/deploy'/name for name in scripts)
+    sources.extend(ROOT/'m3/scripts'/name for name in scripts)
     sources.extend([ROOT/'m3/contracts/pv_forecast_schema.py',ROOT/'m3/contracts/nocobase_collections.json'])
-    sources.extend(ROOT/'m3/pv'/name for name in ('Dockerfile','entrypoint.sh','pv_manual_production_flow.json','README.md'))
+    sources.extend(ROOT/'m3/pv'/name for name in ('Dockerfile','entrypoint.sh','pv_manual_production_flow.json'))
+    sources.append(ROOT/'docs/m3/pv/README.md')
     files={str(path.relative_to(ROOT)):path.read_bytes() for path in sources}
     for name in ('manifest.json','pv_snapshot.jsonl','historical_weather_rows.json','summary.json'):
         files['pv-training/'+name]=(args.training_source/name).read_bytes()
-    files['compose.yaml']=(ROOT/'m3/pv/compose.yaml').read_bytes()
+    files['m3/pv/compose.yaml']=(ROOT/'m3/pv/compose.yaml').read_bytes()
     files['.dockerignore']=b'run\n*.token\n*.env\n**/__pycache__\n*.tar.gz\n'
     # Allow paths/env variable names; never package token files or plaintext JWTs/private keys.
     sensitive=re.compile(rb'eyJ[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}|-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----')

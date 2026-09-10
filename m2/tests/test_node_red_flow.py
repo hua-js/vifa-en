@@ -4,7 +4,7 @@ import subprocess
 import unittest
 
 
-FLOW_PATH = Path(__file__).resolve().parents[1] / "node-red-energy-efficiency-api-flow.json"
+FLOW_PATH = Path(__file__).resolve().parents[1] / "node_red" / "node-red-energy-efficiency-api-flow.json"
 NODE_RUNNER = """
 const source = process.argv[1];
 const message = JSON.parse(process.argv[2]);

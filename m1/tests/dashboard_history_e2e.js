@@ -44,7 +44,7 @@ let browser;
 const server = http.createServer((req, res) => {
   if (req.url.startsWith('/dashboard_energy_api')) {
     res.setHeader('Content-Type','application/json'); res.end(JSON.stringify(payload));
-  } else if (['/m1/dashboard_energy.html','/front/dashboard_energy.html'].includes(req.url)) {
+  } else if (req.url === '/m1/web/dashboard_energy.html') {
     res.setHeader('Content-Type','text/html; charset=utf-8');
     res.end(fs.readFileSync(path.join(__dirname,'../..', req.url)));
   } else { res.writeHead(404); res.end(); }
@@ -54,8 +54,8 @@ const server = http.createServer((req, res) => {
   server.listen(0,'127.0.0.1'); await once(server,'listening');
   browser = await chromium.launch({headless:true});
   const errors = [];
-  const entries = ['m1','front'].filter(entry => fs.existsSync(path.join(__dirname,'../..',entry,'dashboard_energy.html')));
-  assert.ok(entries.includes('m1'));
+  const entries = ['m1/web'];
+  assert.ok(fs.existsSync(path.join(__dirname, '../web/dashboard_energy.html')));
   for (const entry of entries) {
     payload = structuredClone(fixture);
     const page = await browser.newPage({viewport:{width:1440,height:1100}, timezoneId:'America/Los_Angeles'});
@@ -112,10 +112,10 @@ const server = http.createServer((req, res) => {
     assert.equal(await page.locator('.site-card').count(), 1); // History survives no current category alert.
     await page.getByRole('button',{name:'清除筛选'}).click();
     assert.equal(await page.getByText('其他客户',{exact:true}).count(), 0);
-    await page.screenshot({path:`/tmp/m1-${entry}-desktop.png`,fullPage:true});
+    await page.screenshot({path:`/tmp/m1-${entry.replaceAll('/', '-')}-desktop.png`,fullPage:true});
     await page.locator('#themeBtn').click();
     assert.equal(await page.locator('html').getAttribute('data-theme'),'dark');
-    await page.screenshot({path:`/tmp/m1-${entry}-dark.png`,fullPage:true,animations:'disabled'});
+    await page.screenshot({path:`/tmp/m1-${entry.replaceAll('/', '-')}-dark.png`,fullPage:true,animations:'disabled'});
     for (const width of [768,390,320]) {
       await page.setViewportSize({width,height:1100});
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth<=innerWidth), `overflow at ${width}`);
@@ -124,7 +124,7 @@ const server = http.createServer((req, res) => {
         const panel=el.closest('.alert-panel').getBoundingClientRect();
         return el.getBoundingClientRect().bottom <= panel.bottom;
       }), `pager clipped at ${width}`);
-      await page.screenshot({path:`/tmp/m1-${entry}-${width}.png`,fullPage:true});
+      await page.screenshot({path:`/tmp/m1-${entry.replaceAll('/', '-')}-${width}.png`,fullPage:true});
     }
     payload.data.alerts=[];
     await page.evaluate(() => fetchData());

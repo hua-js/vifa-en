@@ -8,10 +8,12 @@ from unittest.mock import patch
 from m2.station_efficiency_device_adapter import build_battery_device_points
 
 
-ENTRYPOINT_PATH = Path(__file__).resolve().parents[2] / "energy-efficiency-api.py"
+ENTRYPOINT_PATH = Path(__file__).resolve().parents[2] / "m2/energy-efficiency-api.py"
 SPEC = importlib.util.spec_from_file_location("energy_efficiency_api", ENTRYPOINT_PATH)
 energy_api = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(energy_api)
+# Keep offline tests independent of private workstation configuration.
+with patch.dict(sys.modules, {"energy_efficiency_local_config": None}):
+    SPEC.loader.exec_module(energy_api)
 
 ENVIRONMENT = {
     "VIFA_EMU_URL": "https://station.example/api/t_emu:list?filter=%7B%7D",
@@ -188,7 +190,7 @@ class EnergyEfficiencyApiTests(unittest.TestCase):
         )
         self.assertEqual(
             Path(received_config["event_outbox_path"]).parent,
-            ENTRYPOINT_PATH.parent,
+            ENTRYPOINT_PATH.parents[1] / "runtime" / "m2",
         )
         self.assertEqual(received_config["bottleneck_rule"], {
             "station_id": "ES02", "enabled": True,

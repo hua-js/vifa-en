@@ -69,7 +69,7 @@ ESS_IDLE_STATUSES = frozenset({"wait", "standby", "stop"})
 LOAD_SPIKE_MIN_KW = 1000.0
 REFRESH_INTERVAL_SECONDS = 20
 ALERT_HISTORY_LIMIT = 1000
-DEFAULT_HISTORY_DB = Path(__file__).resolve().parent / "run" / "alert_history.sqlite3"
+DEFAULT_HISTORY_DB = Path(__file__).resolve().parents[1] / "runtime" / "m1" / "alert_history.sqlite3"
 
 # Growatt 返回的无时区时间按上海本地时间解释。
 SHANGHAI = ZoneInfo("Asia/Shanghai")

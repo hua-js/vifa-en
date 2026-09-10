@@ -8,11 +8,11 @@ fi
 
 case "$1" in
   worker)
-    application="m3_worker.main:app"
+    application="m3.worker.main:app"
     socket_path="/run/vifa-m3/worker.sock"
     ;;
   dashboard)
-    application="m3_worker.persisted_dashboard_app:app"
+    application="m3.worker.persisted_dashboard_app:app"
     socket_path="/run/vifa-m3/dashboard.sock"
     ;;
   *)

@@ -10,10 +10,11 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[2]
 DEPLOY = Path(__file__).resolve().parent
-PACKAGES = ('m4_settings', 'm4_optimizer', 'm4_orchestrator', 'm4_selection')
-HTML = ROOT / 'm4/M4优化调度控制台-线上版.html'
+PACKAGES = ('m4/settings', 'm4/optimizer', 'm4/orchestrator', 'm4/selection')
+HTML = ROOT / 'm4/web/M4优化调度控制台-线上版.html'
 BACKEND_FILES = ('Dockerfile', 'compose.yaml', '.env.example', '.dockerignore',
                  'requirements.lock.txt', 'entrypoint.py', 'healthcheck.py', 'preflight.py')
+DOCS = ROOT / 'docs/m4/deploy'
 NODE_RED_FILES = ('authorize.js', 'finish_auth.js', 'prepare_proxy.js', 'finish_proxy.js', 'env.example')
 
 
@@ -88,6 +89,9 @@ def main():
         parser.error('--image must be a registry/repository:tag reference')
     if args.revision and not re.fullmatch(r'[0-9a-f]{40}', args.revision):
         parser.error('--revision must be a full 40-character Git SHA')
+    missing = [name for name in BACKEND_FILES if not (DEPLOY / 'backend' / name).is_file()]
+    if missing:
+        parser.error('M4 deployment inputs are missing under m4/deploy/backend: ' + ', '.join(missing))
     target = args.output.resolve()
     archive = Path(str(target) + '.zip')
     if archive.exists():
@@ -121,13 +125,14 @@ def main():
             destination = target / 'backend/app' / source.relative_to(ROOT)
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source, destination)
-    fallback = target / 'backend/app/m4' / HTML.name
+    (target / 'backend/app/m4/__init__.py').write_text('')
+    fallback = target / 'backend/app/m4/web' / HTML.name
     fallback.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(HTML, fallback)
-    shutil.copyfile(DEPLOY / '部署手册.md', target / '部署手册.md')
-    shutil.copyfile(DEPLOY / 'architecture.svg', target / 'architecture.svg')
-    if (DEPLOY / '验收记录.md').exists():
-        shutil.copyfile(DEPLOY / '验收记录.md', target / '验收记录.md')
+    shutil.copyfile(DOCS / '部署手册.md', target / '部署手册.md')
+    shutil.copyfile(DOCS / 'architecture.svg', target / 'architecture.svg')
+    if (DOCS / '验收记录.md').exists():
+        shutil.copyfile(DOCS / '验收记录.md', target / '验收记录.md')
     (target / 'secrets/README.txt').write_text(
         '此目录不附带真实凭据。请按部署手册在服务器创建 nocobase_token.txt。\n'
         '仅放 NocoBase 只读 API Token；不要放入 HTML、Flow、镜像或版本库。\n', encoding='utf-8')

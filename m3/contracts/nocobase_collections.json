@@ -1125,7 +1125,7 @@
     }
   ],
   "worker_role": {
-    "name": "m3_worker",
+    "name": "m3/worker",
     "credential": "dedicated_nocobase_api_key",
     "database_access": "none",
     "unlisted_actions": "deny",

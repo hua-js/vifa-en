@@ -1,26 +1,21 @@
+# Python and local tooling
 .DS_Store
 .venv/
 __pycache__/
 *.py[cod]
+.pytest_cache/
+.ruff_cache/
 .superpowers/
 .worktrees/
-/energy_efficiency_local_config.py
-/energy_efficiency_event_outbox.sqlite3*
 
-# Local credentials and deployment state
+# Local credentials, runtime state and generated artifacts
+.local/
+runtime/
+outputs/
 .env
 *.env
 *.token
-/m3/deploy/production-env/*.env
+*.sqlite3
+*.sqlite3-*
 /m3/node_red/本地机器.txt
-/m3_worker/密钥.txt
-/run/
-/m1/run/
-/m3_dist
-
-/m4/run/
-/m4/evaluations
-/m3/reports/pv_backtest_es02_20260909
-/m3/reports
-/m3/contracts
-/docs
+/m3/deploy/production-env/*.env

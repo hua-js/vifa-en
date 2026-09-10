@@ -1,0 +1,93 @@
+"""Build a natural-day baseline from the EMS schedule, demand and SOC replay."""
+from datetime import datetime, timedelta
+import hashlib
+import json
+
+from m4.optimizer.contracts import (CapabilitySnapshot, ForecastPoint, PeakReservePolicy,
+    OptimizationConstraints, OptimizationRequest)
+from m4.optimizer.metrics import calculate_metrics
+from .daily_comparison import comparison_input_sha256, compare_daily_plan
+from .objectives import get_daily_profiles
+from .daily_policy import daily_policy_version
+from .load_accuracy import require_gate
+from .ems_simulation import EMS_BASELINE_POLICY, simulate_ems_day
+from .schedule_power import effective_station_power, station_schedule, station_energy_capacity
+
+
+def prepare_ems_day(configuration, bundle):
+    """Bind the original EMS replay and the station's explicit daily planning rule.
+
+    Capability is configured whole-station capability for retrospective comparison,
+    never today's live participating subset or permission to dispatch devices.
+    """
+    parameters = configuration.parameters
+    if parameters is None or not configuration.version:
+        raise ValueError('请先保存本站效率和 SOC 参数。')
+    if bundle['station_id'] != configuration.station_id or bundle['configuration_version'] != configuration.version:
+        raise ValueError('全天输入与本站参数版本不一致。')
+    sources = bundle['sources']
+    if any(sources.get(k, {}).get('status') != 'ready' for k in ('load', 'pv', 'tariff', 'controls', 'initial_soc')):
+        raise ValueError('全天预测、电价、零点 SOC 或 EMS 时段尚未就绪。')
+    require_gate(sources['load'].get('accuracy_gate'), configuration.station_id,
+                 datetime.fromisoformat(bundle['fetched_at']))
+    control, initial = sources['controls'], sources['initial_soc']
+    if control.get('power_scope') not in ('station', 'cabinet') or control.get('source_health', {}).get('schedule') != 'ready' or not control.get('schedule'):
+        raise ValueError('尚未读取到完整的站级 EMS 原计划。')
+    start = datetime.fromisoformat(bundle['plan_start_at'])
+    if start.utcoffset() != timedelta(hours=8) or (start.hour, start.minute, start.second, start.microsecond) != (0, 0, 0, 0):
+        raise ValueError('日基线必须从北京时间零点开始。')
+    if initial.get('scope') != 'whole_station_reference' or datetime.fromisoformat(initial['observed_at']) != start:
+        raise ValueError('零点 SOC 的时刻或全站范围不一致。')
+    points = [ForecastPoint.model_validate_json(json.dumps(p)) for p in bundle['points']]
+    if len(points) != 96:
+        raise ValueError('日基线需要完整96点输入。')
+    capability = CapabilitySnapshot(available=True, initial_soc_pct=initial['initial_soc_pct'],
+        **{k: getattr(parameters, k) for k in ('charge_efficiency', 'discharge_efficiency')},
+        energy_capacity_kwh=station_energy_capacity(configuration, control),
+        **effective_station_power(configuration, control),
+        derating_reason='同日回算使用配置的全站范围与零点站级 SOC，不表示设备当前可下发能力。')
+    constraints = OptimizationConstraints(
+        **{k: getattr(parameters, k) for k in ('soc_min_pct', 'soc_max_pct',
+           'preferred_soc_min_pct', 'preferred_soc_max_pct', 'terminal_soc_tolerance_pct', 'cycle_cost_per_kwh')},
+        demand_limit_kw=control['demand']['need_kw'],
+        grid_import_limit_kw=control['demand']['need_kw'],
+        grid_export_enabled=True, grid_export_limit_kw=max(p.pv_forecast_kw for p in points))
+    schedule = station_schedule(control)
+    plan, simulation = simulate_ems_day(capability, constraints, points, schedule, pv_dispatch_policy=parameters.pv_dispatch_policy)
+    terminal = plan[-1].expected_soc_pct
+    policy_version = daily_policy_version(configuration.station_id)
+    reserve_policy = (PeakReservePolicy(terminal_soc_min_pct=max(
+        terminal, constraints.preferred_soc_min_pct)) if policy_version else None)
+    profiles = get_daily_profiles(configuration.station_id)
+    content = {'configuration': configuration.model_dump(mode='json'), 'points': bundle['points'],
+               'controls_version': control['version'], 'initial': initial, 'terminal': terminal,
+               'baseline_policy': EMS_BASELINE_POLICY}
+    if policy_version:
+        content.update(daily_policy=policy_version,
+            peak_reserve_policy=reserve_policy.model_dump(mode='json'),
+            profiles=[profile.model_dump(mode='json') for profile in profiles])
+    digest = hashlib.sha256(json.dumps(content, sort_keys=True, allow_nan=False).encode()).hexdigest()
+    request = OptimizationRequest(request_id='m4-daily-'+digest, station_id=configuration.station_id,
+        plan_start_at=start, input_observed_at=start, max_input_age_seconds=parameters.max_input_age_seconds,
+        interval_minutes=15, horizon_points=96, points=points, capability=capability, constraints=constraints,
+        profiles=profiles, pv_dispatch_policy=parameters.pv_dispatch_policy,
+        peak_reserve_policy=reserve_policy,
+        solver_time_limit_seconds=30.0, solver_mip_rel_gap=0.01,
+        source_versions={**{k: sources[k]['version'] for k in ('load', 'pv', 'tariff')},
+            'controls': control['version'], 'configuration': configuration.version,
+            'capability': initial['version'], 'planning_basis': 'whole-station-retrospective-v1',
+            'terminal_target': format(terminal, '.17g'), 'baseline_policy': EMS_BASELINE_POLICY,
+            **({'daily_policy': policy_version} if policy_version else {})})
+    baseline = dict(schema_version='m4-ems-daily-baseline-v1', station_id=configuration.station_id,
+        basis='ems_rule_simulation', schedule=schedule, source_schedule=control['schedule'], source_power_scope=control['power_scope'], simulation=simulation, input_sha256=comparison_input_sha256(request),
+        controls_version=control['version'], controller_version=EMS_BASELINE_POLICY,
+        initial_state_version=initial['version'], initial_state_at=start.isoformat(),
+        initial_soc_pct=initial['initial_soc_pct'], terminal_soc_pct=terminal,
+        plan=[p.model_dump(mode='json') for p in plan])
+    comparison = compare_daily_plan(request, None, baseline=baseline, controls_version=control['version'],
+                                    terminal_soc_target_pct=terminal)
+    if comparison['status'] == 'unavailable':
+        raise ValueError(comparison['reason'])
+    comparison['reason'] = 'EMS 全天模拟基线已计算，已计入限充、削峰及 SOC 到限待机；请重新生成优化日计划比较费用。'
+    baseline['metrics'] = calculate_metrics(request, plan).model_dump(mode='json')
+    return request, baseline, comparison

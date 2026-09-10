@@ -5,7 +5,7 @@ services:
     command: [pv]
     platform: linux/amd64
     build:
-      context: .
+      context: ../..
       dockerfile: m3/pv/Dockerfile
       args:
         M3_BASE_IMAGE: vifa-m3:0.1.0

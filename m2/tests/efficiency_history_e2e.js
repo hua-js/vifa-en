@@ -1,4 +1,4 @@
-// Both shipped HTML entries use the same history UI; all API data below is a local fixture.
+// The shipped M2 page uses only local fixtures during this history UI check.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -6,9 +6,8 @@ const { spawnSync } = require('node:child_process');
 const { chromium } = require('playwright');
 const { setTimeout: delay } = require('node:timers/promises');
 const root = path.resolve(__dirname, '../..');
-const html = fs.readFileSync(path.join(root, 'M2能源链路.html'), 'utf8');
-assert.equal(html, fs.readFileSync(path.join(root, 'm2/场站三条能效链路能流图.html'), 'utf8'));
-const fixture = spawnSync('python3', ['-c', 'import json; from m2.tests.station_efficiency_history_test_support import build_history_dashboard_response; print(json.dumps(build_history_dashboard_response()))'], {cwd: root, encoding: 'utf8'});
+const html = fs.readFileSync(path.join(root, 'm2/web/场站三条能效链路能流图.html'), 'utf8');
+const fixture = spawnSync(process.env.PYTHON || path.join(root, '.venv/bin/python'), ['-c', 'import json; from m2.tests.station_efficiency_history_test_support import build_history_dashboard_response; print(json.dumps(build_history_dashboard_response()))'], {cwd: root, encoding: 'utf8'});
 assert.equal(fixture.status, 0, fixture.stderr);
 const live = JSON.parse(fixture.stdout.replaceAll('2026-08-25', '2026-09-07').replaceAll('2026-08-24', '2026-09-06'));
 const dayAfter = date => new Date(Date.parse(date) + 86400000).toISOString().slice(0, 10);
@@ -163,12 +162,15 @@ let browser;
   await ready();
   await page.locator('#events-history').click();
   await eventReady();
-  for (const width of [1440, 768, 390, 320]) {
+  for (const width of [1440, 1361, 1360, 1280, 1120, 834, 801, 800, 768, 390, 320]) {
     await page.setViewportSize({width, height: 1080});
     await page.locator('.trend-section').scrollIntoViewIfNeeded();
     await delay(100);
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth);
     assert.equal(overflow, false, `page overflow at ${width}px`);
+    const crowdedTracks = await page.locator('.flow-track, .pv-branch, .lane').evaluateAll(elements =>
+      elements.filter(element => element.scrollWidth > element.clientWidth + 1).map(element => element.className));
+    assert.deepEqual(crowdedTracks, [], `energy nodes overflow their track at ${width}px`);
     const tickBoxes = await page.locator('[data-hour-tick]').evaluateAll(nodes => nodes.map(node => {
       const box = node.getBoundingClientRect(); return {left: box.left, right: box.right};
     }));

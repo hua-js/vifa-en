@@ -17,7 +17,7 @@ function assertClose(actual, expected, message) {
 }
 
 (async () => {
-  const htmlPath = path.resolve(__dirname, "..", "场站三条能效链路能流图.html");
+  const htmlPath = path.resolve(__dirname, "..", "web", "场站三条能效链路能流图.html");
   const html = fs.readFileSync(htmlPath);
   server = http.createServer((request, response) => {
     const pathname = decodeURIComponent(
@@ -41,9 +41,9 @@ function assertClose(actual, expected, message) {
     'print(json.dumps({"status": "ok", "data": build_history_dashboard_response()}))',
   ].join("; ");
   const fixture = spawnSync(
-    "python3",
+    process.env.PYTHON || path.resolve(__dirname, "../..", ".venv/bin/python"),
     ["-c", fixtureScript],
-    { cwd: process.cwd(), encoding: "utf8" },
+    { cwd: path.resolve(__dirname, "../.."), encoding: "utf8" },
   );
   assert.strictEqual(fixture.status, 0, fixture.stderr);
   const dashboardPayload = JSON.parse(fixture.stdout);

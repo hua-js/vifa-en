@@ -16,7 +16,4 @@ dependencies = [
 ]
 
 [tool.fastapi]
-entrypoint = "m3_worker.main:app"
-
-[tool.unittest]
-start-directory = "tests"
+entrypoint = "m3.worker.main:app"
