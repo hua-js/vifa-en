@@ -74,7 +74,7 @@ class ObjectiveProfile(StrictModel):
 
 
 class PeakReservePolicy(StrictModel):
-    version: Literal["peak-reserve-v1"] = "peak-reserve-v1"
+    version: Literal["peak-reserve-v1", "peak-reserve-v2"] = "peak-reserve-v1"
     terminal_soc_min_pct: Annotated[float, Field(ge=0, le=100, allow_inf_nan=False)]
 
 

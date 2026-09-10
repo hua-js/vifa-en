@@ -153,7 +153,7 @@ class M4Optimizer:
         if request.horizon_points == 95:
             model_version += '/horizon-95-v1'
         if request.peak_reserve_policy is not None:
-            model_version += '/peak-reserve-v1'
+            model_version += '/' + request.peak_reserve_policy.version
         if request.pv_dispatch_policy == "load_first_economic":
             return f"{model_version}/pv-load-first-economic-v1"
         if request.pv_dispatch_policy in ("load_first_export_priority", "load_first_storage_priority"):

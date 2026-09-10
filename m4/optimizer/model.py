@@ -136,6 +136,17 @@ def build_model(request: OptimizationRequest, *, terminal_soc_target_pct: float 
         model.peak_reserve_preparation = pyo.Constraint(expr=
             model.peak_reserve_energy_shortfall + model.energy[first_peak]
             >= capacity * constraints.preferred_soc_max_pct / 100.0)
+        if peak_reserve.version == 'peak-reserve-v2':
+            # Preserve the terminal reserve from the final contiguous peak block,
+            # including its starting energy state and every later state.
+            last_peak_start = max(t for t, point in enumerate(request.points)
+                                  if point.tariff_period == 'feng')
+            while last_peak_start > 0 and request.points[last_peak_start - 1].tariff_period == 'feng':
+                last_peak_start -= 1
+            model.terminal_reserve_states = pyo.RangeSet(last_peak_start, horizon)
+            model.late_peak_terminal_reserve = pyo.Constraint(
+                model.terminal_reserve_states,
+                rule=lambda m, t: m.energy[t] >= capacity * peak_reserve.terminal_soc_min_pct / 100.0)
 
     model.power_balance = pyo.Constraint(model.periods, rule=lambda m, t:
         m.grid_import[t] + m.discharge[t] + request.points[t].pv_forecast_kw

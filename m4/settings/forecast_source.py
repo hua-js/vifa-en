@@ -1,4 +1,5 @@
 """Read existing M3 load forecasts; never request new runs or repeat missing days."""
+from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import json
 import math
@@ -156,6 +157,15 @@ def load_forecast(client, station_id, *, plan_start_at, now, require_full_day=Fa
         raise ValueError('自然日预测必须从北京时间零点开始')
     if start.minute % 15 or start.second or start.microsecond:
         raise ValueError('计划起点须对齐15分钟')
+    # Accuracy evidence is independent of forecast assembly; retain the same
+    # station and observation cutoff and await it before publishing the result.
+    with ThreadPoolExecutor(max_workers=1, thread_name_prefix='m4-load-mape') as pool:
+        gate_future = pool.submit(read_gate, client, station_id, now)
+        return _assemble_forecast(client, station_id, start=start, now=now,
+                                  require_full_day=require_full_day, gate_future=gate_future)
+
+
+def _assemble_forecast(client, station_id, *, start, now, require_full_day, gate_future):
     timeline = [start+timedelta(minutes=15*i) for i in range(96)]
     rolling, batch = _load_rolling_forecast(client, station_id, now=now)
     values = [rolling.get(ts) for ts in timeline]
@@ -186,7 +196,7 @@ def load_forecast(client, station_id, *, plan_start_at, now, require_full_day=Fa
         warnings.append(f'负荷来源：滚动预测{rolling_count}点，已有手动预测补充{manual_count}点')
     if rolling_count and (batch['status'] != 'ok' or batch['snapshot_status'] != 'ok'):
         warnings.append(f'M3滚动负荷状态为{batch["status"]}（快照{batch["snapshot_status"]}），模型{batch["model_name"]}')
-    gate = read_gate(client, station_id, now)
+    gate = gate_future.result()
     digest = hashlib.sha256(json.dumps({'accuracy_gate': gate['version'], 'policy':'natural-day-96-v1' if require_full_day else 'rolling-min95-v2',
         'station_id':station_id, 'start':start.isoformat(), 'runs':runs,
         'point_sources':point_sources, 'values':values}, sort_keys=True).encode()).hexdigest()[:16]

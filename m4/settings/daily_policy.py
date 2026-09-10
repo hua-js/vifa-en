@@ -1,7 +1,7 @@
 """Versioned daily planning rules; never inferred when replaying old requests."""
 
-PEAK_RESERVE_DAILY_POLICY = 'm4-daily-peak-reserve-v1'
-PEAK_RESERVE_SELECTOR = 'daily-peak-reserve-cost-gate-v1'
+PEAK_RESERVE_DAILY_POLICY = 'm4-daily-peak-reserve-v2'
+PEAK_RESERVE_SELECTOR = 'daily-peak-reserve-cost-gate-v2'
 
 
 def daily_policy_version(station_id):
@@ -19,7 +19,7 @@ def matches_current_daily_policy(station_id, request):
     policy = request.get('peak_reserve_policy')
     if expected is None:
         return policy is None
-    if not isinstance(policy, dict) or policy.get('version') != 'peak-reserve-v1':
+    if not isinstance(policy, dict) or policy.get('version') != 'peak-reserve-v2':
         return False
     from .objectives import get_daily_profiles
     return request.get('profiles') == [

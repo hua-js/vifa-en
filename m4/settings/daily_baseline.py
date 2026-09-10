@@ -56,7 +56,7 @@ def prepare_ems_day(configuration, bundle):
     plan, simulation = simulate_ems_day(capability, constraints, points, schedule, pv_dispatch_policy=parameters.pv_dispatch_policy)
     terminal = plan[-1].expected_soc_pct
     policy_version = daily_policy_version(configuration.station_id)
-    reserve_policy = (PeakReservePolicy(terminal_soc_min_pct=max(
+    reserve_policy = (PeakReservePolicy(version='peak-reserve-v2', terminal_soc_min_pct=max(
         terminal, constraints.preferred_soc_min_pct)) if policy_version else None)
     profiles = get_daily_profiles(configuration.station_id)
     content = {'configuration': configuration.model_dump(mode='json'), 'points': bundle['points'],

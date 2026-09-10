@@ -31,6 +31,7 @@ def validate_candidate(
     capability = request.capability
     constraints = request.constraints
     peak_reserve = request.peak_reserve_policy
+    terminal_reserve_start = None
     if peak_reserve is not None:
         if (any(point.tariff_period not in ('gu', 'ping', 'feng') for point in request.points)
                 or not any(point.tariff_period == 'feng' for point in request.points)):
@@ -39,6 +40,12 @@ def validate_candidate(
             raise ResultValidationError('peak reserve terminal SOC floor outside allowed bounds')
         if terminal_soc_target_pct is not None and peak_reserve.terminal_soc_min_pct < terminal_soc_target_pct:
             raise ResultValidationError('peak reserve terminal SOC floor below baseline target')
+        if peak_reserve.version == 'peak-reserve-v2':
+            # Independently identify the beginning of the last peak block.
+            for index, source in enumerate(request.points):
+                if source.tariff_period == 'feng' and (
+                        index == 0 or request.points[index - 1].tariff_period != 'feng'):
+                    terminal_reserve_start = index
     current_energy = capability.energy_capacity_kwh * capability.initial_soc_pct / 100.0
     for index, (source, point) in enumerate(zip(request.points, candidate.plan, strict=True)):
         label = f"point {index} ({source.timestamp.isoformat()})"
@@ -138,6 +145,12 @@ def validate_candidate(
             - discharge_kw * INTERVAL_HOURS / capability.discharge_efficiency
         )
         expected_soc_pct = expected_energy / capability.energy_capacity_kwh * 100.0
+        if terminal_reserve_start is not None:
+            start_soc_pct = current_energy / capability.energy_capacity_kwh * 100.0
+            if index == terminal_reserve_start and start_soc_pct < peak_reserve.terminal_soc_min_pct - tolerance:
+                _raise(label, "late peak starting terminal reserve")
+            if index >= terminal_reserve_start and expected_soc_pct < peak_reserve.terminal_soc_min_pct - tolerance:
+                _raise(label, "late peak terminal reserve")
         if abs(point.expected_soc_pct - expected_soc_pct) > tolerance:
             _raise(label, "SOC state")
         if expected_soc_pct < constraints.soc_min_pct - tolerance:
