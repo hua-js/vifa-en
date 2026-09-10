@@ -38,6 +38,21 @@ docker compose -f compose.yaml -f m4-pv.override.yaml -f m4-m3-mape.override.yam
 
 此处未执行生产部署或读取生产 M3 Worker；实际 MAPE 值与生产连通性仍需部署后核验。
 
+## 本机通过平台网关读取（2026-09-10）
+
+没有 M3 Worker Socket 的本机开发环境可显式设置 `M4_M3_TRANSPORT=platform_gateway`。该模式只向已配置的平台 `https://opdash.lvkpower.com` 发出固定的当前任务和结果 GET，请求通过既有平台用户凭据认证，响应按 `status=ok/data` 解封装；禁止重定向、限制响应大小，不使用 Worker 管理 Token，也不触发预测。未设置时仍为原 Socket 模式，不自动回退口径。
+
+当前本机启动方式（旧 8846 服务保留）：
+
+```sh
+M4_M3_TRANSPORT=platform_gateway .venv/bin/python -m uvicorn m4.settings.api:create_app --factory --host 127.0.0.1 --port 8848
+python3 m4/scripts/preview_console.py --port 8847 --upstream-port 8848
+```
+
+平台凭据由现有本机配置读取，不放在命令参数或文档中。生产部署仍推荐已有 Socket/专用凭据配置；平台网关模式需要其当前认证配置接受对应用户凭据。
+
+已只读核对：电站 1 任务 `3414fb4a-bf5a-4566-b94f-2b064a6488b5` 前 59 个有效点为 11.2852%（显示 11.29%）；更新至 60/96 点后为 11.1339%。电站 2 当前任务 60/96 点为 7.8578%。两站 MAPE 均通过 30% 门槛。电站 1 的零点 SOC 超出当前安全范围是另一项阻断；电站 2 全天输入可比较。数据会随实际值回填变化，不固定上述数值。
+
 ## 本轮验证
 
 37项门槛、接口适配、候选与按需PV相关测试通过，Python/页面JS语法和HTML/Flow一致性检查通过。另跑25项运行输入测试，22通过、3个旧历史光伏预期测试失败，保留记录；未进行页面实际渲染检查。未重启本地8846服务，它仍运行上一版逻辑。

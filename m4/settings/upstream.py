@@ -119,7 +119,7 @@ class NocoBaseClient:
 
     def current_load_result(self, station_id):
         from .m3_current_result import M3CurrentResult
-        return M3CurrentResult().read(station_id)
+        return M3CurrentResult(gateway_token=self._token).read(station_id)
 
     def list_rows(self, table, *, fields: str, filters: dict | None = None,
                   sort: str | None = None, page_size: int = 100,
