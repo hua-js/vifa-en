@@ -548,6 +548,52 @@ body {
   color: var(--m3-blue); border-color: rgb(71 125 240 / 45%);
   background: rgb(71 125 240 / 6%); box-shadow: inset 0 0 0 1px rgb(71 125 240 / 10%);
 }
+
+/* M1: use the document-sized M3 canvas and flatter station surfaces. */
+:root[data-vifa-page="m1"] { height: auto; }
+:root[data-vifa-page="m1"] > body { height: auto; min-height: 100vh; overflow: visible; }
+:root[data-vifa-page="m1"] .header { padding: 28px 28px 20px; gap: 16px; flex-wrap: wrap; }
+:root[data-vifa-page="m1"] .header-left { min-width: 0; gap: 12px; }
+:root[data-vifa-page="m1"] .header-logo { width: 42px; height: 42px; flex-shrink: 0; border-radius: 12px; }
+:root[data-vifa-page="m1"] .header h1 { font-size: 28px; line-height: 1.2; letter-spacing: -.02em; }
+:root[data-vifa-page="m1"] .header-btn { width: 44px; height: 44px; box-shadow: none; }
+:root[data-vifa-page="m1"] .header-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+:root[data-vifa-page="m1"] .kpi-bar { padding: 0 28px 24px; }
+:root[data-vifa-page="m1"] .kpi-label { font-size: 12px; }
+:root[data-vifa-page="m1"] .kpi-value { font-size: 28px; }
+:root[data-vifa-page="m1"] .main { padding: 0 28px 28px; overflow: visible; align-items: start; }
+:root[data-vifa-page="m1"] .sites-panel { padding: 0; background: transparent; border: 0; box-shadow: none; overflow: visible; }
+:root[data-vifa-page="m1"] .site-card {
+  background: linear-gradient(180deg, var(--m3-card-overlay), var(--m3-card-overlay-end)), var(--m3-panel);
+  box-shadow: var(--m3-shadow-soft); margin-bottom: 18px;
+}
+:root[data-vifa-page="m1"] .site-card.selected { box-shadow: 0 0 0 1px var(--accent), var(--m3-shadow-soft); }
+:root[data-vifa-page="m1"] .site-header { padding: 18px; }
+:root[data-vifa-page="m1"] .site-name { font-size: 16px; }
+:root[data-vifa-page="m1"] .site-body { padding: 0 18px 18px; }
+:root[data-vifa-page="m1"] .es-header { background: var(--m3-panel-soft); font-size: 14px; }
+:root[data-vifa-page="m1"] .node-group { background: transparent; border: 0; border-radius: 0; padding: 8px 0 16px; }
+:root[data-vifa-page="m1"] .node-group + .node-group { border-top: 1px solid var(--m3-line); padding-top: 16px; }
+:root[data-vifa-page="m1"] .node-group-title { font-size: 12px; margin-bottom: 12px; }
+:root[data-vifa-page="m1"] .node-card { background: var(--m3-panel-soft); }
+:root[data-vifa-page="m1"] .alert-panel { position: sticky; top: 20px; max-height: calc(100vh - 40px); }
+@media (max-width: 900px) {
+  :root[data-vifa-page="m1"] .header { padding: 24px 20px 20px; }
+  :root[data-vifa-page="m1"] .kpi-bar { padding: 0 20px 20px; }
+  :root[data-vifa-page="m1"] .main { padding: 0 20px 20px; align-items: stretch; }
+  :root[data-vifa-page="m1"] .alert-panel { position: static; max-height: none; }
+}
+@media (max-width: 640px) {
+  :root[data-vifa-page="m1"] .header { position: static; background: transparent; padding: 20px 14px 16px; gap: 12px; }
+  :root[data-vifa-page="m1"] .header h1 { font-size: 22px; }
+  :root[data-vifa-page="m1"] .header-right { margin-left: auto; }
+  :root[data-vifa-page="m1"] .kpi-bar { padding: 0 14px 18px; }
+  :root[data-vifa-page="m1"] .kpi-value { font-size: 24px; }
+  :root[data-vifa-page="m1"] .main { padding: 0 14px 20px; }
+  :root[data-vifa-page="m1"] .site-header { padding: 14px; }
+  :root[data-vifa-page="m1"] .site-body { padding: 0 14px 14px; }
+  :root[data-vifa-page="m1"] .es-header { font-size: 13px; }
+}
 </style>
 </head>
 <body>
