@@ -1,0 +1,542 @@
+[
+  {
+    "id": "pv_manual_tab",
+    "type": "tab",
+    "label": "电站2 · 光伏手动预测",
+    "disabled": false,
+    "info": "手动采集天气、生成一次预测、查询结果。无定时器、无启动执行。需配套 pv.sock 服务，详见 README.md。"
+  },
+  {
+    "id": "pv_weather_inject",
+    "type": "inject",
+    "z": "pv_manual_tab",
+    "name": "1 · 手动采集并保存天气",
+    "x": 260,
+    "y": 140,
+    "wires": [
+      [
+        "pv_weather_prepare"
+      ]
+    ],
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "payload": "",
+    "payloadType": "str",
+    "topic": ""
+  },
+  {
+    "id": "pv_weather_prepare",
+    "type": "function",
+    "z": "pv_manual_tab",
+    "name": "固定操作 · weather",
+    "x": 600,
+    "y": 140,
+    "wires": [
+      [
+        "pv_weather_exec"
+      ]
+    ],
+    "func": "msg.payload = ''; delete msg.headers; msg._pvKind = \"weather\"; return msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": []
+  },
+  {
+    "id": "pv_weather_exec",
+    "type": "exec",
+    "z": "pv_manual_tab",
+    "name": "Socket · POST weather",
+    "x": 930,
+    "y": 140,
+    "wires": [
+      [
+        "pv_stdout"
+      ],
+      [],
+      [
+        "pv_rc"
+      ]
+    ],
+    "command": "/bin/sh -c 'set -eu; pv_service_token=\"$(/bin/cat /userdata/holo/pyfiles/vifa-pv/run/.raw-source.token)\"; [ \"${#pv_service_token}\" -ge 32 ]; printf \"Authorization: Bearer %s\\n\" \"$pv_service_token\" | /usr/bin/curl --silent --show-error --connect-timeout 2 --max-time 90 --unix-socket /userdata/holo/pyfiles/vifa-pv/run/pv.sock --header @- --header \"Accept: application/json\" --request POST --write-out \"\\n%{http_code}\" http://localhost/api/pv/ES02/weather'",
+    "addpay": false,
+    "append": "",
+    "useSpawn": "false",
+    "timer": "95",
+    "oldrc": "false",
+    "winHide": false
+  },
+  {
+    "id": "pv_forecast_inject",
+    "type": "inject",
+    "z": "pv_manual_tab",
+    "name": "2 · 手动生成一次预测（自动取新天气）",
+    "x": 260,
+    "y": 280,
+    "wires": [
+      [
+        "pv_forecast_prepare"
+      ]
+    ],
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "payload": "",
+    "payloadType": "str",
+    "topic": ""
+  },
+  {
+    "id": "pv_forecast_prepare",
+    "type": "function",
+    "z": "pv_manual_tab",
+    "name": "固定操作 · forecast",
+    "x": 600,
+    "y": 280,
+    "wires": [
+      [
+        "pv_forecast_exec"
+      ]
+    ],
+    "func": "msg.payload = ''; delete msg.headers; msg._pvKind = \"forecast\"; return msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": []
+  },
+  {
+    "id": "pv_forecast_exec",
+    "type": "exec",
+    "z": "pv_manual_tab",
+    "name": "Socket · POST runs",
+    "x": 930,
+    "y": 280,
+    "wires": [
+      [
+        "pv_stdout"
+      ],
+      [],
+      [
+        "pv_rc"
+      ]
+    ],
+    "command": "/bin/sh -c 'set -eu; pv_service_token=\"$(/bin/cat /userdata/holo/pyfiles/vifa-pv/run/.raw-source.token)\"; [ \"${#pv_service_token}\" -ge 32 ]; printf \"Authorization: Bearer %s\\n\" \"$pv_service_token\" | /usr/bin/curl --silent --show-error --connect-timeout 2 --max-time 90 --unix-socket /userdata/holo/pyfiles/vifa-pv/run/pv.sock --header @- --header \"Accept: application/json\" --request POST --write-out \"\\n%{http_code}\" http://localhost/api/pv/ES02/runs'",
+    "addpay": false,
+    "append": "",
+    "useSpawn": "false",
+    "timer": "95",
+    "oldrc": "false",
+    "winHide": false
+  },
+  {
+    "id": "pv_job_inject",
+    "type": "inject",
+    "z": "pv_manual_tab",
+    "name": "查看最近一次手动任务",
+    "x": 260,
+    "y": 420,
+    "wires": [
+      [
+        "pv_job_prepare"
+      ]
+    ],
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "payload": "",
+    "payloadType": "str",
+    "topic": ""
+  },
+  {
+    "id": "pv_job_prepare",
+    "type": "function",
+    "z": "pv_manual_tab",
+    "name": "固定操作 · job",
+    "x": 600,
+    "y": 420,
+    "wires": [
+      [
+        "pv_job_exec"
+      ]
+    ],
+    "func": "msg.payload = ''; delete msg.headers; msg._pvKind = \"job\"; return msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": []
+  },
+  {
+    "id": "pv_job_exec",
+    "type": "exec",
+    "z": "pv_manual_tab",
+    "name": "Socket · GET job",
+    "x": 930,
+    "y": 420,
+    "wires": [
+      [
+        "pv_stdout"
+      ],
+      [],
+      [
+        "pv_rc"
+      ]
+    ],
+    "command": "/bin/sh -c 'set -eu; pv_service_token=\"$(/bin/cat /userdata/holo/pyfiles/vifa-pv/run/.raw-source.token)\"; [ \"${#pv_service_token}\" -ge 32 ]; printf \"Authorization: Bearer %s\\n\" \"$pv_service_token\" | /usr/bin/curl --silent --show-error --connect-timeout 2 --max-time 90 --unix-socket /userdata/holo/pyfiles/vifa-pv/run/pv.sock --header @- --header \"Accept: application/json\" --request GET --write-out \"\\n%{http_code}\" http://localhost/api/pv/ES02/job'",
+    "addpay": false,
+    "append": "",
+    "useSpawn": "false",
+    "timer": "95",
+    "oldrc": "false",
+    "winHide": false
+  },
+  {
+    "id": "pv_latest_inject",
+    "type": "inject",
+    "z": "pv_manual_tab",
+    "name": "3 · 查询最新已完成预测",
+    "x": 260,
+    "y": 560,
+    "wires": [
+      [
+        "pv_latest_prepare"
+      ]
+    ],
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "payload": "",
+    "payloadType": "str",
+    "topic": ""
+  },
+  {
+    "id": "pv_latest_prepare",
+    "type": "function",
+    "z": "pv_manual_tab",
+    "name": "固定操作 · latest",
+    "x": 600,
+    "y": 560,
+    "wires": [
+      [
+        "pv_latest_exec"
+      ]
+    ],
+    "func": "msg.payload = ''; delete msg.headers; msg._pvKind = \"latest\"; return msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": []
+  },
+  {
+    "id": "pv_latest_exec",
+    "type": "exec",
+    "z": "pv_manual_tab",
+    "name": "Socket · GET latest",
+    "x": 930,
+    "y": 560,
+    "wires": [
+      [
+        "pv_stdout"
+      ],
+      [],
+      [
+        "pv_rc"
+      ]
+    ],
+    "command": "/bin/sh -c 'set -eu; pv_service_token=\"$(/bin/cat /userdata/holo/pyfiles/vifa-pv/run/.raw-source.token)\"; [ \"${#pv_service_token}\" -ge 32 ]; printf \"Authorization: Bearer %s\\n\" \"$pv_service_token\" | /usr/bin/curl --silent --show-error --connect-timeout 2 --max-time 90 --unix-socket /userdata/holo/pyfiles/vifa-pv/run/pv.sock --header @- --header \"Accept: application/json\" --request GET --write-out \"\\n%{http_code}\" http://localhost/api/pv/ES02/latest'",
+    "addpay": false,
+    "append": "",
+    "useSpawn": "false",
+    "timer": "95",
+    "oldrc": "false",
+    "winHide": false
+  },
+  {
+    "id": "pv_note",
+    "type": "comment",
+    "z": "pv_manual_tab",
+    "name": "不含定时触发；预测完成后再点击“查询最新已完成预测”",
+    "x": 410,
+    "y": 60,
+    "wires": [],
+    "info": "WeatherRidge，固定已核验训练快照；未来24小时，96个15分钟点。查询不会触发计算。"
+  },
+  {
+    "id": "pv_http_in",
+    "type": "http in",
+    "z": "pv_manual_tab",
+    "name": "GET /pv-forecast-api/ES02/latest",
+    "x": 290,
+    "y": 740,
+    "wires": [
+      [
+        "pv_auth_prepare"
+      ]
+    ],
+    "url": "/pv-forecast-api/ES02/latest",
+    "method": "get",
+    "upload": false,
+    "swaggerDoc": ""
+  },
+  {
+    "id": "pv_auth_prepare",
+    "type": "function",
+    "z": "pv_manual_tab",
+    "name": "校验用户 Bearer · 固定认证地址",
+    "x": 650,
+    "y": 740,
+    "wires": [
+      [
+        "pv_auth_request"
+      ],
+      [
+        "pv_response"
+      ]
+    ],
+    "func": "function reject(statusCode, code) {\n    if (msg.req && msg.req.headers) delete msg.req.headers.authorization;\n    msg.statusCode = statusCode;\n    msg.headers = {'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'};\n    msg.payload = {status:'error',data:null,code}; return [null,msg];\n}\nconst req = msg.req || {};\nif (Object.keys(req.query || {}).length || (req.headers && (req.headers['transfer-encoding'] || Number(req.headers['content-length'] || 0) > 0))) return reject(400,'invalid_request');\nconst auth = req.headers && req.headers.authorization;\nif (typeof auth !== 'string' || !/^Bearer [\\x21-\\x7e]{1,4096}$/.test(auth)) return reject(401,'unauthorized');\nconst base = env.get('M3_AUTH_BASE_URL') || 'https://ems.lvkpower.com';\nif (typeof base !== 'string' || !/^https:\\/\\/[A-Za-z0-9.-]+(?::[1-9][0-9]{0,4})?$/.test(base)) return reject(503,'auth_unavailable');\nmsg.url = base + '/api/auth:check';\nmsg.headers = {Authorization:auth,Accept:'application/json'};\nmsg.payload = ''; msg._pvKind = 'latest';\nreturn [msg,null];",
+    "outputs": 2,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": []
+  },
+  {
+    "id": "pv_auth_request",
+    "type": "http request",
+    "z": "pv_manual_tab",
+    "name": "验证 EMS 当前用户",
+    "x": 960,
+    "y": 740,
+    "wires": [
+      [
+        "pv_auth_validate"
+      ]
+    ],
+    "method": "GET",
+    "ret": "obj",
+    "paytoqs": "ignore",
+    "url": "",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "insecureHTTPParser": false,
+    "authType": "",
+    "senderr": true,
+    "headers": [],
+    "followRedirects": false,
+    "requestTimeout": "10000"
+  },
+  {
+    "id": "pv_auth_validate",
+    "type": "function",
+    "z": "pv_manual_tab",
+    "name": "认证完成后清除用户令牌",
+    "x": 1260,
+    "y": 740,
+    "wires": [
+      [
+        "pv_latest_exec"
+      ],
+      [
+        "pv_response"
+      ]
+    ],
+    "func": "const status = Number(msg.statusCode);\nconst user = msg.payload && msg.payload.data;\nlet size = Infinity;\ntry { size = Buffer.byteLength(JSON.stringify(msg.payload)); } catch (_) {}\nif (msg.req && msg.req.headers) { delete msg.req.headers.authorization; delete msg.req.headers.cookie; }\ndelete msg.headers; delete msg.url; delete msg.responseUrl; delete msg.cookies;\nif (status !== 200 || size > 65536 || !user || !Number.isInteger(user.id) || user.id < 1) {\n    msg.statusCode = status === 401 || status === 403 ? 401 : 503;\n    msg.headers = {'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'};\n    msg.payload = {status:'error',data:null,code:msg.statusCode===401?'unauthorized':'auth_unavailable'};\n    return [null,msg];\n}\ndelete msg.statusCode; msg.payload = '';\nreturn [msg,null];",
+    "outputs": 2,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": []
+  },
+  {
+    "id": "pv_stdout",
+    "type": "function",
+    "z": "pv_manual_tab",
+    "name": "响应体 · 按请求分组",
+    "x": 1240,
+    "y": 280,
+    "wires": [
+      [
+        "pv_join"
+      ]
+    ],
+    "func": "const text = typeof msg.payload === 'string' ? msg.payload : '';\nmsg.parts = {id:msg._msgid,type:'object',key:'stdout',index:0,count:2};\nmsg.payload = Buffer.byteLength(text) <= 1048576 ? text : '';\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": []
+  },
+  {
+    "id": "pv_rc",
+    "type": "function",
+    "z": "pv_manual_tab",
+    "name": "退出码 · 按请求分组",
+    "x": 1240,
+    "y": 400,
+    "wires": [
+      [
+        "pv_join"
+      ]
+    ],
+    "func": "const value = msg.payload;\nmsg.parts = {id:msg._msgid,type:'object',key:'rc',index:1,count:2};\nmsg.payload = Number.isInteger(value) ? {code:value} :\n    {code:value && value.code,signaled:Boolean(value && value.signal)};\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": []
+  },
+  {
+    "id": "pv_join",
+    "type": "join",
+    "z": "pv_manual_tab",
+    "name": "同一请求的响应与退出码",
+    "x": 1520,
+    "y": 340,
+    "wires": [
+      [
+        "pv_map"
+      ]
+    ],
+    "mode": "auto",
+    "build": "object",
+    "property": "payload",
+    "propertyType": "msg",
+    "key": "topic",
+    "joiner": "\\n",
+    "joinerType": "str",
+    "useparts": true,
+    "accumulate": false,
+    "timeout": "100",
+    "count": "2"
+  },
+  {
+    "id": "pv_map",
+    "type": "function",
+    "z": "pv_manual_tab",
+    "name": "核验 HTTP 状态与业务响应",
+    "x": 1830,
+    "y": 340,
+    "wires": [
+      [
+        "pv_response"
+      ],
+      [
+        "pv_debug"
+      ]
+    ],
+    "func": "function error(statusCode,code) {\n    msg.statusCode=statusCode; msg.payload={status:'error',data:null,code}; return finish();\n}\nfunction finish() {\n    delete msg.parts;\n    msg.headers={'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'};\n    if (msg.res) return [msg,null];\n    return [null,{payload:msg.payload,statusCode:msg.statusCode}];\n}\nconst parts=msg.payload || {};\nif (!parts.rc || parts.rc.code!==0 || parts.rc.signaled) return error(parts.rc && parts.rc.code===28?504:502,'pv_service_unavailable');\nif (typeof parts.stdout!=='string') return error(502,'invalid_service_response');\nconst cut=parts.stdout.lastIndexOf('\\n');\nconst status=Number(parts.stdout.slice(cut+1));\nif (cut<1 || !Number.isInteger(status) || status<200 || status>599) return error(502,'invalid_service_response');\nlet value;\ntry { value=JSON.parse(parts.stdout.slice(0,cut)); } catch (_) { return error(502,'invalid_service_response'); }\nif (!value || typeof value!=='object' || Array.isArray(value)) return error(502,'invalid_service_response');\nif (status>=400) {\n    if (status===409 && value.status==='busy') { msg.statusCode=409; msg.payload=value; return finish(); }\n    return error(status===401?503:status,'pv_service_unavailable');\n}\nif (msg._pvKind==='latest') {\n    if (status!==200 || !((value.status==='empty' && value.data===null) ||\n        (value.status==='ok' && value.data && value.data.es_sn==='ES02' && Array.isArray(value.data.points) && value.data.points.length===96))) return error(502,'invalid_forecast_response');\n} else if (msg._pvKind==='job') {\n    if (status!==200 || !['ok','empty'].includes(value.status)) return error(502,'invalid_job_response');\n} else if (status!==202 || value.status!=='accepted' || !value.data || !value.data.job_id) return error(502,'invalid_job_response');\nmsg.statusCode=status; msg.payload=value; return finish();",
+    "outputs": 2,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": []
+  },
+  {
+    "id": "pv_response",
+    "type": "http response",
+    "z": "pv_manual_tab",
+    "name": "返回只读预测",
+    "x": 2120,
+    "y": 600,
+    "wires": [],
+    "statusCode": "",
+    "headers": {}
+  },
+  {
+    "id": "pv_debug",
+    "type": "debug",
+    "z": "pv_manual_tab",
+    "name": "手动操作结果（仅 payload）",
+    "x": 2130,
+    "y": 340,
+    "wires": [],
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "payload",
+    "targetType": "msg",
+    "statusVal": "",
+    "statusType": "auto"
+  },
+  {
+    "id": "pv_catch",
+    "type": "catch",
+    "z": "pv_manual_tab",
+    "name": "捕获此 Flow 异常",
+    "x": 1550,
+    "y": 900,
+    "wires": [
+      [
+        "pv_error"
+      ]
+    ],
+    "scope": [
+      "pv_weather_prepare",
+      "pv_weather_exec",
+      "pv_forecast_prepare",
+      "pv_forecast_exec",
+      "pv_job_prepare",
+      "pv_job_exec",
+      "pv_latest_prepare",
+      "pv_latest_exec",
+      "pv_auth_prepare",
+      "pv_auth_request",
+      "pv_auth_validate",
+      "pv_stdout",
+      "pv_rc",
+      "pv_map"
+    ],
+    "uncaught": false
+  },
+  {
+    "id": "pv_error",
+    "type": "function",
+    "z": "pv_manual_tab",
+    "name": "清除异常细节并返回固定错误",
+    "x": 1840,
+    "y": 900,
+    "wires": [
+      [
+        "pv_response"
+      ],
+      [
+        "pv_debug"
+      ]
+    ],
+    "func": "if (msg.req && msg.req.headers) delete msg.req.headers.authorization;\ndelete msg.error; delete msg.headers; delete msg.url;\nmsg.statusCode=502; msg.headers={'Content-Type':'application/json','Cache-Control':'no-store'};\nmsg.payload={status:'error',data:null,code:'pv_gateway_unavailable'};\nreturn msg.res ? [msg,null] : [null,{payload:msg.payload}];",
+    "outputs": 2,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": []
+  }
+]

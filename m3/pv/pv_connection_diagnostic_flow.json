@@ -1,0 +1,121 @@
+[
+  {
+    "id": "pv_diagnostic_tab",
+    "type": "tab",
+    "label": "光伏连接诊断",
+    "disabled": false,
+    "info": "手动只读诊断现有光伏查询。点击一次，查看三个Debug输出；无定时、不写数据库、不输出Token。"
+  },
+  {
+    "id": "pv_diagnostic_note",
+    "type": "comment",
+    "z": "pv_diagnostic_tab",
+    "name": "点击下方按钮，右侧调试面板会显示响应、错误和退出码",
+    "info": "不替换原Flow，不新增HTTP路由。所有Debug仅显示msg.payload。",
+    "x": 410,
+    "y": 80,
+    "wires": []
+  },
+  {
+    "id": "pv_diagnostic_inject",
+    "type": "inject",
+    "z": "pv_diagnostic_tab",
+    "name": "点击诊断光伏连接",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "payload": "",
+    "payloadType": "str",
+    "topic": "",
+    "x": 190,
+    "y": 220,
+    "wires": [
+      [
+        "pv_diagnostic_exec"
+      ]
+    ]
+  },
+  {
+    "id": "pv_diagnostic_exec",
+    "type": "exec",
+    "z": "pv_diagnostic_tab",
+    "name": "读取最新预测 · 诊断",
+    "x": 470,
+    "y": 220,
+    "wires": [
+      [
+        "pv_diagnostic_stdout"
+      ],
+      [
+        "pv_diagnostic_stderr"
+      ],
+      [
+        "pv_diagnostic_rc"
+      ]
+    ],
+    "command": "/bin/sh -c 'set -eu; pv_service_token=\"$(/bin/cat /userdata/holo/pyfiles/vifa-pv/run/.raw-source.token)\"; [ \"${#pv_service_token}\" -ge 32 ]; printf \"Authorization: Bearer %s\\n\" \"$pv_service_token\" | /usr/bin/curl --silent --show-error --connect-timeout 2 --max-time 90 --unix-socket /userdata/holo/pyfiles/vifa-pv/run/pv.sock --header @- --header \"Accept: application/json\" --request GET --write-out \"\\n%{http_code}\" http://localhost/api/pv/ES02/latest'",
+    "addpay": false,
+    "append": "",
+    "useSpawn": "false",
+    "timer": "95",
+    "oldrc": "false",
+    "winHide": false
+  },
+  {
+    "id": "pv_diagnostic_stdout",
+    "type": "debug",
+    "z": "pv_diagnostic_tab",
+    "name": "1 · 服务响应与HTTP状态码",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "payload",
+    "targetType": "msg",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 820,
+    "y": 160,
+    "wires": []
+  },
+  {
+    "id": "pv_diagnostic_stderr",
+    "type": "debug",
+    "z": "pv_diagnostic_tab",
+    "name": "2 · 错误信息（可能为空）",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "payload",
+    "targetType": "msg",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 820,
+    "y": 220,
+    "wires": []
+  },
+  {
+    "id": "pv_diagnostic_rc",
+    "type": "debug",
+    "z": "pv_diagnostic_tab",
+    "name": "3 · 命令退出码",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "payload",
+    "targetType": "msg",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 820,
+    "y": 280,
+    "wires": []
+  }
+]

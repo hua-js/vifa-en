@@ -1,0 +1,38 @@
+name: vifa-pv-manual
+services:
+  vifa-pv:
+    image: ccr.ccs.tencentyun.com/taidai-holobase-168/omnipower_vifa@sha256:cf83bc19ac27664ce79c2745fd93c8d7bbddcb8003eeccc0ab9ccf95ccdab799
+    command: [pv]
+    platform: linux/amd64
+    user: "10001:10001"
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 11m
+    read_only: true
+    mem_limit: 1536m
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=256m
+    environment:
+      PV_SERVICE_TOKEN_FILE: /run/secrets/raw-source.token
+      PV_NOCOBASE_IMPORT_API_KEY_FILE: /run/secrets/raw-source.token
+      PV_NOCOBASE_QUERY_API_KEY_FILE: /run/secrets/raw-source.token
+      PV_TRAINING_SOURCE: /app/pv-training
+      PV_MANUAL_STATE_DIR: /run/vifa-pv/manual
+    volumes:
+      - type: bind
+        source: /userdata/holo/pyfiles/vifa-pv/run
+        target: /run/vifa-pv
+        bind: {create_host_path: false}
+      - type: bind
+        source: /etc/vifa-m3/raw-source.token
+        target: /run/secrets/raw-source.token
+        read_only: true
+        bind: {create_host_path: false}
+    healthcheck:
+      test: [CMD, /usr/bin/curl, --fail, --silent, --max-time, "5", --unix-socket, /run/vifa-pv/pv.sock, http://localhost/health]
+      interval: 30s
+      timeout: 6s
+      retries: 3
+      start_period: 30s

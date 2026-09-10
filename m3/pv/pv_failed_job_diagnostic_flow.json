@@ -1,0 +1,121 @@
+[
+  {
+    "id": "pv_failed_job_tab",
+    "type": "tab",
+    "label": "光伏失败任务诊断",
+    "disabled": false,
+    "info": "只读指定失败任务的文件列表和入库核验报告。不执行预测、不重试、不读取Token。"
+  },
+  {
+    "id": "pv_failed_job_note",
+    "type": "comment",
+    "z": "pv_failed_job_tab",
+    "name": "点击读取失败任务原因，将右侧报告发回",
+    "info": "固定任务：bc014b70-711a-4f69-9d8c-1769bd8a5280",
+    "x": 410,
+    "y": 80,
+    "wires": []
+  },
+  {
+    "id": "pv_failed_job_inject",
+    "type": "inject",
+    "z": "pv_failed_job_tab",
+    "name": "读取失败任务原因",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "payload": "",
+    "payloadType": "str",
+    "topic": "",
+    "x": 190,
+    "y": 220,
+    "wires": [
+      [
+        "pv_failed_job_exec"
+      ]
+    ]
+  },
+  {
+    "id": "pv_failed_job_exec",
+    "type": "exec",
+    "z": "pv_failed_job_tab",
+    "name": "读取任务核验报告",
+    "x": 470,
+    "y": 220,
+    "wires": [
+      [
+        "pv_failed_job_stdout"
+      ],
+      [
+        "pv_failed_job_stderr"
+      ],
+      [
+        "pv_failed_job_rc"
+      ]
+    ],
+    "command": "/bin/sh -c 'base=/userdata/holo/pyfiles/vifa-pv/run/manual/jobs/bc014b70-711a-4f69-9d8c-1769bd8a5280; printf \"%s\\n\" \"任务目录文件：\"; find \"$base\" -maxdepth 2 -type f -print; for item in weather/import_verification.json forecast/publication_verification.json; do printf \"\\n%s\\n\" \"$item\"; if [ -f \"$base/$item\" ]; then cat \"$base/$item\"; else printf \"%s\\n\" \"报告尚未生成\"; fi; done'",
+    "addpay": false,
+    "append": "",
+    "useSpawn": "false",
+    "timer": "95",
+    "oldrc": "false",
+    "winHide": false
+  },
+  {
+    "id": "pv_failed_job_stdout",
+    "type": "debug",
+    "z": "pv_failed_job_tab",
+    "name": "1 · 任务文件和错误报告",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "payload",
+    "targetType": "msg",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 820,
+    "y": 160,
+    "wires": []
+  },
+  {
+    "id": "pv_failed_job_stderr",
+    "type": "debug",
+    "z": "pv_failed_job_tab",
+    "name": "2 · 错误信息（可能为空）",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "payload",
+    "targetType": "msg",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 820,
+    "y": 220,
+    "wires": []
+  },
+  {
+    "id": "pv_failed_job_rc",
+    "type": "debug",
+    "z": "pv_failed_job_tab",
+    "name": "3 · 命令退出码",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "payload",
+    "targetType": "msg",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 820,
+    "y": 280,
+    "wires": []
+  }
+]

@@ -1,0 +1,5 @@
+services:
+  vifa-m3-worker:
+    image: ccr.ccs.tencentyun.com/taidai-holobase-168/omnipower_vifa@sha256:cf83bc19ac27664ce79c2745fd93c8d7bbddcb8003eeccc0ab9ccf95ccdab799
+  vifa-m3-dashboard:
+    image: ccr.ccs.tencentyun.com/taidai-holobase-168/omnipower_vifa@sha256:cf83bc19ac27664ce79c2745fd93c8d7bbddcb8003eeccc0ab9ccf95ccdab799
