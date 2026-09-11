@@ -1,0 +1,14 @@
+# Apply after the existing PV and M3 MAPE overrides.
+# Release: m4-cabinet-allocation-20260910-amd64
+services:
+  m4-api:
+    image: ccr.ccs.tencentyun.com/taidai-holobase-168/omnipower_vifa@sha256:4cf6cc06eecc80fa7fef80a56403dff5832f943c58397b9f1a8d0b02e083c2a5
+    platform: linux/amd64
+    networks:
+      default: {}
+      nodered_shared:
+        aliases: [m4-api]
+networks:
+  nodered_shared:
+    external: true
+    name: 1panel-network

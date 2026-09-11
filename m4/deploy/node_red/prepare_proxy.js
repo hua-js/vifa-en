@@ -8,9 +8,9 @@ const fail = (status, detail) => {
 const {stationId, resource, runId} = msg.req.params;
 const method = msg.req.method;
 const allowed = {
-    GET: ['candidate-jobs','settings','control-sources','inputs','candidates','selection-policy','decision-result','decision-history','decision-runs','bills'],
+    GET: ['allocations','allocation-result','candidate-jobs','settings','control-sources','inputs','daily-inputs','daily-plan','candidates','selection-policy','decision-result','decision-history','decision-runs','bills'],
     PUT: ['settings','selection-policy'],
-    POST: ['candidate-jobs','candidates','selection','decision-runs']
+    POST: ['allocations','candidate-jobs','daily-plan','candidates','selection','decision-runs']
 };
 if (!['station-1','station-2'].includes(stationId)) return fail(404, '未知电站');
 let route;
@@ -33,11 +33,20 @@ if (resource === 'bills') {
     if (typeof month !== 'string' || !/^20[0-9]{2}-(0[1-9]|1[0-2])$/.test(month)) return fail(400, '账单月份格式不正确');
     query = '?month=' + month;
 }
-if (resource === 'decision-history') {
+if (method === 'GET' && (resource === 'decision-history' || resource === 'allocations')) {
     const limit = msg.req.query.limit === undefined ? '10' : msg.req.query.limit;
     const offset = msg.req.query.offset === undefined ? '0' : msg.req.query.offset;
     if (typeof limit !== 'string' || !/^\d{1,2}$/.test(limit) || Number(limit) < 1 || Number(limit) > 20 || typeof offset !== 'string' || !/^\d{1,6}$/.test(offset) || Number(offset) > 100000) return fail(400, '运行记录分页参数不正确');
     query = '?limit=' + limit + '&offset=' + offset;
+}
+const uuid = value => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value);
+if (resource === 'allocations' && method === 'GET' && msg.req.query.run_id !== undefined) {
+    if (!uuid(msg.req.query.run_id)) return fail(400, '站级计划编号无效');
+    query += '&run_id=' + msg.req.query.run_id;
+}
+if (resource === 'allocation-result') {
+    if (!uuid(msg.req.query.allocation_id)) return fail(400, '分配记录编号无效');
+    query = '?allocation_id=' + msg.req.query.allocation_id;
 }
 const backend = env.get('M4_BACKEND_URL') || 'http://127.0.0.1:8844';
 if (typeof backend !== 'string' || !/^https?:\/\/[a-zA-Z0-9.-]+:\d{1,5}$/.test(backend)) return fail(503, 'M4 后端地址配置不正确');

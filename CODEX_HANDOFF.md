@@ -1,3 +1,37 @@
+## 2026-09-11 M3 电站1临时MAPE只读排查
+
+- 只读线上当前任务91723d7d-309d-4bcc-9c4d-32bedf448f62，9月11日00:00–09:30共39/96点，按页面公式复算负荷MAPE49.4297%，同点WAPE7.7987%、MAE9.6258kW。
+- 00:00–07:45的32点MAPE59.3312%、MAE6.3005kW，占APE总和98.4875%；08:00–09:30的7点MAPE4.1653%。01:30实测8.8191kW、预测19.6497kW，APE122.8073%。低负荷相对误差及早晨样本构成解释曲线贴近但MAPE高；未改公式、阈值、预测模型或生产状态。
+- 原始只读证据outputs/m3/evaluations/2026-09-11-station1-mape/current-result.json。源码核对前端有效非零点等权MAPE、后端按序列/时间戳叠加实际值；本轮仅数据复算，无测试/部署/SSH/下发。
+
+## 2026-09-10 电站1等待分配只读排查
+
+- daily-plan为completed、正式采用ems，run_id=0ca3b03d-37cc-4d42-815f-9149d3d6b3d5；allocations列表200且items为空、无后续页，说明本站尚无已保存分配。inputs为ready，配置及控制版本匹配，EMU11/12均准入，SOC约2.0%/1.9%。
+- 使用只读取得的新输入在本地调用实际plan_input及allocate_cabinets，EMS分支成功，两柜可参与；试算时为23:30–24:00，剩余两时段原计划均待机，目标/分配均0kW。只读排查和内存试算，无保存、生产POST、求解、设备下发或代码修改。页面等待分配来自没有保存快照；需用户在线上点击“生成并保存分配”。
+
+## 2026-09-10 线上决策日志持续加载修复
+
+- 用户反馈线上停留“正在读取决策记录…”。根因是initializeCurrent在token摘要处await，底部refreshReferenceSources却立即按默认station-1启动；摘要完成后恢复sessionStorage的station-2，日志响应因站点不符被丢弃，加载文案不结束。无token的8847此前不会经过该异步等待。
+- HTML改为initializeCurrent完成后更新站点按钮并启动侧栏读取，保持loadCurrent与日志并行、原跨站响应保护和认证不变。只改前端启动顺序，不改后端/分配算法。新增m4/tests/m4_recent_logs_startup_test.cjs，先复现默认电站早读失败，修复后认证/本地两项通过，脚本语法和diff检查通过。
+- 本轮只读线上两站decision-history及daily-plan均200，约0.53–0.72秒；station-1部分旧历史无法校验，station-2历史列表空但daily-plan已完成，这与加载卡住不是同一问题。未触发保存、求解或设备下发。
+- 实际浏览器用本地测试token触发相同摘要分支（真实凭据仅留只读代理端），选择电站2后刷新，按钮恢复电站2且20:38:11调度日志正常显示；没有点击求解或保存。
+- 上线仅替换Node-RED当前HTML Template并部署，无需重建镜像；已推镜像内HTML仍是修复前版本，用户应以仓库最新HTML为准。
+
+## 2026-09-10 柜级分配后端留档已实现并发布镜像（未部署）
+
+- 用户确认执行：将浏览器分配迁至m4/settings/cabinet_allocation.py，HTML只展示。EMS用原配置站级功率，优化用recommended.plan；从保存时新柜SOC推演当天剩余时段，约束及缺口口径沿用此前确认，不修改站级优化或设备控制。
+- 新allocation_records.py绑定当前有效plan_run_id和配置/控制版本，计算前后复核。UUID幂等、文件锁、原子写、输入/整体哈希及独立重放；存入现有/data/cabinet-allocations，重启可读。API新增POST allocations、GET allocations及allocation-result，浏览器不提供SOC/结果。当前仅历史预览，not_dispatched。
+- 页面新增“生成并保存分配”“刷新分配”“分配记录”，展示快照SOC、时间、逐柜功率及缺口；调度记录可查对应计划分配。sessionStorage保留未确认请求UUID，断线重试不重复保存。刷新只GET，旧后端404提示升级。Node-RED两份prepare_proxy与Flow函数同步；8847只读代理放行新增GET，仍禁止POST。
+- 29项相关Python测试、19项Node-RED网关测试通过；amd64镜像内断网只读重复29项通过，59个源码哈希一致。完整scripts/check.py m4运行482项，14失败23错误；以HEAD修改前API在内存替换后复跑失败模块94项，同37项逐项重现（旧控制来源、PV/MAPE夹具、配置适配、发布脚本），未声称全量通过。新增两项随后专项验证。日志outputs/m4/evaluations/2026-09-10-allocation-validation/。
+- 隔离本地FastAPI使用保存的电站2输入和合成新采样时间，实际浏览器验证显式保存、刷新同一记录、历史时段切换及滚动后关闭；请求日志仅一次POST。明暗桌面、深色390手机及768平板显示检查，表格可横向滚动，关闭按钮固定。验证档案outputs/m4/evaluations/2026-09-10-allocation-ui/，不是生产记录。
+- 已推送CCR标签m4-cabinet-allocation-20260910-amd64，回读摘要sha256:4cf6cc06eecc80fa7fef80a56403dff5832f943c58397b9f1a8d0b02e083c2a5，linux/amd64。覆盖文件m4/deploy/m4-cabinet-allocation.override.yaml固定摘要与1panel-network别名；原PV/MAPE覆盖和/data挂载保留。源码清单outputs/m4/releases/cabinet-allocation-20260910/。
+- 上线需更新镜像、Node-RED“限定接口与内部转发”函数（m4/node_red/m4_prepare_proxy.js）和现有HTML模板。命令在docs/m4/deploy/部署手册.md末节。临时测试服务已关闭，8847只读预览已重启并返回200。没有SSH、生产写入、线上求解、设备下发或本轮Git提交。此前前端纯函数及JS测试已由Python实现/测试取代，不恢复重复算法。
+
+## 2026-09-10 电站2升级后无当前优化计划的提示
+
+- 用户质疑电站2为何显示EMS。只读接口确认daily-plan.status=empty，message说明本站日优化策略已更新、旧计划不再作为当前方案、需重新生成峰段保电计划；daily-inputs就绪。说明线上v2已生效，尚无可用新优化结果，不能误称求解器选择了EMS。
+- 前端fallback保留原因到pendingOptimizationReason，标题“暂览 EMS 原计划”、状态“优化计划待生成”，真实求解选择EMS仍显示“沿用 EMS 原计划”；缓存v7。真实empty输入映射和脚本语法检查通过，8847页面已显示旧计划失效原因。未线上求解、未下发，本次修改未提交/部署。证据outputs/m4/evaluations/2026-09-10-station2-selection/。
+
 ## 2026-09-10 本轮M4提交检查
 
 - 用户要求提交代码。检查中复现前端mapPlan对合法peak-reserve-v2优化结果仍以v1限定拒绝，导致回退EMS；修复重复校验中的旧版本硬编码，保留前置v1/v2对应关系、来源和日末电量校验，缓存升级v6。保存的v2优化快照和station1 EMS快照映射验证均通过。该修复晚于镜像发布，线上需同步最新HTML。

@@ -416,3 +416,14 @@ test('billing forwards only a validated month and remains GET only', () => {
     }
     for (const method of ['PUT', 'POST']) rejected('prepare_proxy', request({method, resource: 'bills', query: {month: '2026-09'}, payload: {}}), 404);
 });
+
+test('cabinet allocation routes forward only validated query identifiers', () => {
+    let [forward, error] = run('prepare_proxy', request({resource:'allocations',query:{run_id:runId,limit:'2',offset:'0'}}));
+    assert.equal(error,null);assert.equal(forward.requestPath,`/m4-api/stations/station-1/allocations?limit=2&offset=0&run_id=${runId}`);
+    [forward,error]=run('prepare_proxy',request({resource:'allocation-result',query:{allocation_id:runId}}));
+    assert.equal(error,null);assert.ok(forward.requestPath.endsWith(`allocation_id=${runId}`));
+    [forward,error]=run('prepare_proxy',request({method:'POST',resource:'allocations',payload:{request_id:runId,plan_run_id:runId}}));
+    assert.equal(error,null);assert.equal(forward.method,'POST');
+    [forward,error]=run('prepare_proxy',request({resource:'allocation-result',query:{allocation_id:'../../secret'}}));
+    assert.equal(forward,null);assert.equal(error.statusCode,400);
+});

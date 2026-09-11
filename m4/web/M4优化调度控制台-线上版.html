@@ -37,14 +37,18 @@ button:disabled{cursor:not-allowed;opacity:.5}.decision-side[hidden]{display:non
 .segment-copy>span,.segment-copy>strong{display:block;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 @container(max-width:80px){.segment-copy{visibility:hidden}}
 #timeline-selection{margin:9px 0 0;min-height:20px}
+
+.allocation-toolbar{display:flex;align-items:end;gap:10px;flex-wrap:wrap;margin-bottom:12px}.allocation-toolbar label{display:grid;gap:5px;color:var(--muted);font-size:12px}.allocation-toolbar select{min-width:180px}.allocation-toolbar .btn{margin-left:auto}#allocation-summary{margin-bottom:12px;padding:10px 12px;border-radius:9px;background:var(--panel-soft)}#allocation-summary.warn{color:var(--orange)}#allocation-note{margin-top:12px}.allocation-excluded{color:var(--orange)}
+
+#allocation-dialog{padding:0;overflow:hidden}#allocation-dialog[open]{display:flex;flex-direction:column}#allocation-dialog>.section-head{margin:0;padding:18px;align-items:center;border-bottom:1px solid var(--line)}.allocation-dialog-body{overflow:auto;padding:18px;min-height:0}#allocation-record-detail{margin-top:18px;border-top:1px solid var(--line);padding-top:18px}#allocation-record-meta{overflow-wrap:anywhere;margin-bottom:12px}#allocation-record-summary{margin:12px 0}.allocation-list-row{display:flex;align-items:center;justify-content:space-between;gap:10px;border-bottom:1px solid var(--line);padding:10px 0}#allocation-list{margin:10px 0}.allocation-toolbar .btn{margin-left:0}
 </style>
 </head>
 <body><div id="loading-mask" class="loading-mask" role="status" aria-live="polite"><div class="loading-card"><span class="loading-spinner" aria-hidden="true"></span><strong>加载中</strong><p id="loading-message">正在读取电站数据，请稍候…</p></div></div><main class="shell reference-shell"><header class="reference-top"><div class="brand"><div class="mark">M4</div><div><strong>能源优化调度</strong><p class="small muted">威法场站 / 策略控制台</p></div></div><div class="top-actions"><input id="plan-date" type="date" ><span class="badge">计划预览 · 未下发设备</span><button class="btn primary" id="simulate" disabled>生成优化计划 <span aria-hidden="true">↗</span></button><button class="btn iconbtn" id="theme" aria-label="切换到深色模式" title="切换明暗模式"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 15.5A8.5 8.5 0 0 1 8.5 4 8.5 8.5 0 1 0 20 15.5Z"/></svg></button></div></header><section class="reference-hero"><div><p class="muted">基于 M3 预测、EMS 配置与分时电价，展示当天 24 小时储能调度计划。</p></div><div class="station-toggle"><button data-station-id="station-1">电站 1</button><button data-station-id="station-2">电站 2</button></div><div hidden><select id="station"><option value="station-1">电站 1</option><option value="station-2">电站 2</option></select></div></section>
 <section id="panel-decision"><div class="reference-grid"><section class="panel reference-overview"><article class="panel decision"><div><span class="badge good">正在读取计划</span><h2>正在读取当天数据</h2><p id="decision-copy" role="status" aria-live="polite"></p><div class="row" id="plan-tags" hidden style="margin-top:17px"><span class="badge">全天 96 个时段</span><span class="badge">光储协同</span><span class="badge">电价策略</span></div></div></article><div class="overview-item"><span class="label" id="ref-price-label">当前电价</span><strong id="ref-price">—</strong><p class="note" id="ref-price-next"></p></div><div class="overview-item"><span class="label" id="ref-saving-label">今日预计净节省</span><strong id="ref-saving">—</strong><p class="note">相对同输入 EMS 基线</p></div><div class="overview-item"><span class="label">下一调度动作</span><strong id="ref-next">—</strong><p class="note" id="ref-next-action"></p></div><div class="overview-item"><span class="label" id="ref-cut-label">预计削减峰值</span><strong id="ref-cut">—</strong><p class="note" id="ref-limit"></p></div></section>
 <section class="panel forecast-reference" id="chart-panel" hidden><div class="section-head"><div><h2>预测与调度</h2><p id="chart-context"></p></div><div class="legend"><span><i class="swatch" style="--swatch:var(--purple)"></i>负载预测(kW)</span><span><i class="swatch" style="--swatch:var(--orange)"></i>光伏预测(kW)</span><span><i class="swatch" style="--swatch:var(--green)"></i><span id="storage-power-label">储能计划(kW)</span></span><span><i class="swatch dashed" style="--swatch:var(--red)"></i>当前时刻</span></div></div><div class="chart-wrap"><svg id="chart" class="chart" preserveAspectRatio="none" viewBox="0 0 1140 480" role="img" aria-label="当天负载预测、光伏预测与储能计划功率图"></svg></div><div class="time-select"><label for="time">查看时段</label><input id="time" type="range" min="0" max="95" value="72" step="1"><output id="time-label" for="time">18:00</output></div><div class="inspector" id="inspector" aria-live="polite"></div><p class="period-explanation" id="period-reason"></p></section>
 <section class="panel timeline-reference"><div class="section-head"><div><h2>24 小时策略</h2><p class="small muted">电价时段与计划动作</p></div><button class="text-btn" id="show-parameters">查看策略参数 →</button></div><div class="track-label">电价 · 元/kWh</div><div id="price-timeline" class="price-timeline"></div><div class="track-label" id="storage-track-label">储能计划</div><div id="action-timeline" class="action-timeline" aria-label="全天充放电安排"></div><p id="timeline-selection" class="note" aria-live="polite"></p><div class="timeline-hours"><span>00:00</span><span>04:00</span><span>08:00</span><span>12:00</span><span>16:00</span><span>20:00</span><span>24:00</span></div></section>
-<section class="panel cabinet-reference"><div class="section-head"><div><h2>储能柜调度计划</h2><p class="small muted" id="cabinet-subtitle"></p></div><span class="badge" id="cabinet-status">正在读取</span></div><div class="table-wrap"><table><thead><tr><th>储能柜</th><th>当前 SOC</th><th>当前功率</th><th>计划动作</th><th>目标功率</th><th>目标 SOC</th><th>设备状态</th></tr></thead><tbody id="cabinet-body"></tbody></table></div><p class="note">柜级计划尚未分配；当前功率接口未提供。站级计划不直接等分到各柜。</p></section>
-<section class="panel log-reference"><div class="section-head"><div><h2>策略执行日志</h2><p class="small muted">已保存决策 · 执行回读未接入</p></div><button class="text-btn" id="all-logs">全部日志 →</button></div><div id="recent-logs">正在读取记录…</div></section></div></section><section id="panel-records" role="tabpanel" aria-labelledby="tab-records" hidden><button class="btn" id="back-console" hidden>返回调度控制台</button><div class="section-head"><div><h2>每一次决策，都能回到当时的依据</h2><p>后台保存的调度记录 · 计划结果不等同于设备执行结果</p></div></div><div class="records-summary" id="record-summary"></div><article class="panel record-panel"><div class="filters"><label>电站<select id="record-station"><option value="all">全部电站</option><option value="station-1">电站 1</option><option value="station-2">电站 2</option></select></label><label>计划日期<input type="date" id="record-date"></label><label>状态<select id="record-status"><option value="all">全部状态</option><option value="ready">已生成</option><option value="blocked">未生成</option></select></label><label class="search">记录编号<input id="record-search" type="search" placeholder="搜索记录编号"></label><button class="btn" id="reset">清除筛选</button></div><div class="table-wrap"><table><thead><tr><th>记录 / 生成时间</th><th>电站 / 计划日期</th><th>策略结果</th><th class="number">预计净节省</th><th class="number">峰价时段峰值降低</th><th>执行状态</th><th>详情</th></tr></thead><tbody id="records"></tbody></table></div><p class="empty" id="empty" hidden>没有匹配记录，请调整筛选条件。</p><p class="note" style="margin-top:16px">记录来自后台历史接口及最新全天计划；未接入 EMS 执行回读。</p></article></section><footer><span id="reference-updated">正在读取计划</span><span>预测与计划值 · 未下发设备</span></footer></main><dialog id="parameters-dialog"><div class="section-head"><h2>策略参数</h2><button class="btn" id="close-parameters">关闭</button></div><div class="constraints" id="constraints"></div><p class="note" id="basis-note"></p></dialog><dialog id="detail" aria-labelledby="detail-title"><div class="section-head"><div><div class="eyebrow" id="detail-id"></div><h2 id="detail-title">调度记录详情</h2></div><button class="btn" id="close-detail">关闭</button></div><div id="detail-content"></div></dialog><div class="toast" id="toast" role="status" hidden></div><div hidden id="legacy-render-targets">
+<section class="panel cabinet-reference"><div class="section-head"><div><h2>储能柜分配预览</h2><p class="small muted" id="cabinet-subtitle"></p></div><span class="badge" id="cabinet-status">正在读取</span></div><div class="allocation-toolbar"><label for="cabinet-time">预览时段<select id="cabinet-time" disabled><option>等待计划与柜状态</option></select></label><button class="btn primary" id="save-allocation" disabled>生成并保存分配</button><button class="btn" id="refresh-cabinets">刷新分配</button><button class="text-btn" id="allocation-history">分配记录 →</button></div><p id="allocation-summary" class="note" role="status">等待计划与柜状态</p><div class="table-wrap"><table><thead><tr><th>储能柜</th><th>快照 SOC</th><th>当前功率</th><th>分配动作</th><th>分配功率(kW)</th><th>期末预计 SOC</th><th>设备状态</th></tr></thead><tbody id="cabinet-body"></tbody></table></div><p class="note" id="allocation-note">按当前柜级 SOC 推演当天剩余时段；仅预览，未下发。当前功率接口未提供。</p></section>
+<section class="panel log-reference"><div class="section-head"><div><h2>策略执行日志</h2><p class="small muted">已保存决策 · 执行回读未接入</p></div><button class="text-btn" id="all-logs">全部日志 →</button></div><div id="recent-logs">正在读取记录…</div></section></div></section><section id="panel-records" role="tabpanel" aria-labelledby="tab-records" hidden><button class="btn" id="back-console" hidden>返回调度控制台</button><div class="section-head"><div><h2>每一次决策，都能回到当时的依据</h2><p>后台保存的调度记录 · 计划结果不等同于设备执行结果</p></div></div><div class="records-summary" id="record-summary"></div><article class="panel record-panel"><div class="filters"><label>电站<select id="record-station"><option value="all">全部电站</option><option value="station-1">电站 1</option><option value="station-2">电站 2</option></select></label><label>计划日期<input type="date" id="record-date"></label><label>状态<select id="record-status"><option value="all">全部状态</option><option value="ready">已生成</option><option value="blocked">未生成</option></select></label><label class="search">记录编号<input id="record-search" type="search" placeholder="搜索记录编号"></label><button class="btn" id="reset">清除筛选</button></div><div class="table-wrap"><table><thead><tr><th>记录 / 生成时间</th><th>电站 / 计划日期</th><th>策略结果</th><th class="number">预计净节省</th><th class="number">峰价时段峰值降低</th><th>执行状态</th><th>详情</th></tr></thead><tbody id="records"></tbody></table></div><p class="empty" id="empty" hidden>没有匹配记录，请调整筛选条件。</p><p class="note" style="margin-top:16px">记录来自后台历史接口及最新全天计划；未接入 EMS 执行回读。</p></article></section><footer><span id="reference-updated">正在读取计划</span><span>预测与计划值 · 未下发设备</span></footer></main><dialog id="allocation-dialog" aria-labelledby="allocation-title"><div class="section-head"><h2 id="allocation-title">柜级分配记录</h2><button class="btn" id="close-allocation">关闭</button></div><div class="allocation-dialog-body"><p id="allocation-history-label" class="note"></p><div id="allocation-list"></div><button class="btn" id="allocation-more" hidden>加载更多</button><section id="allocation-record-detail" hidden><p id="allocation-record-meta" class="note"></p><label for="allocation-record-time">记录时段</label><select id="allocation-record-time"></select><p id="allocation-record-summary" class="note"></p><div class="table-wrap"><table><thead><tr><th>储能柜</th><th>动作</th><th>分配功率(kW)</th><th>起始 SOC</th><th>期末 SOC</th><th>说明</th></tr></thead><tbody id="allocation-record-rows"></tbody></table></div></section></div></dialog><dialog id="parameters-dialog"><div class="section-head"><h2>策略参数</h2><button class="btn" id="close-parameters">关闭</button></div><div class="constraints" id="constraints"></div><p class="note" id="basis-note"></p></dialog><dialog id="detail" aria-labelledby="detail-title"><div class="section-head"><div><div class="eyebrow" id="detail-id"></div><h2 id="detail-title">调度记录详情</h2></div><button class="btn" id="close-detail">关闭</button></div><div id="detail-content"></div></dialog><div class="toast" id="toast" role="status" hidden></div><div hidden id="legacy-render-targets">
 <header class="top"><div class="brand"><div class="mark"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m13 2-8 12h6l-1 8 9-13h-7Z"/></svg></div><div><h1>M4 / 优化调度</h1></div></div><div class="top-actions"><span class="badge" id="header-station">电站 1</span><span class="badge">计划值 · 未下发设备</span></div></header>
 <nav class="tabs" role="tablist" aria-label="调度工作区"><button id="tab-decision" class="tab" role="tab" aria-selected="true" aria-controls="panel-decision">今日调度</button><button id="tab-records" class="tab" role="tab" aria-selected="false" aria-controls="panel-records" tabindex="-1">运行记录</button></nav>
 <section id="legacy-decision" role="tabpanel" aria-labelledby="tab-decision">
@@ -56,7 +60,8 @@ button:disabled{cursor:not-allowed;opacity:.5}.decision-side[hidden]{display:non
 </section>
 
 <footer><span>VIFA · 光储协同调度</span><span>真实接口 / 预测与计划值 / 未下发设备</span></footer>
-</div><script>
+</div>
+<script>
 'use strict';
 const $=id=>document.getElementById(id), finite=v=>typeof v==='number'&&Number.isFinite(v), fmt=(v,n=0)=>finite(v)?v.toLocaleString('zh-CN',{maximumFractionDigits:n,minimumFractionDigits:n}):'—', money=v=>finite(v)?'¥ '+fmt(v,2):'—';
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -75,7 +80,7 @@ async function api(station,route,options={}){
  if(data.station_id!==station)throw Error('接口返回的电站不匹配，已停止展示。');return data;
 }
 const header=document.querySelector('.decision h2'),badge=document.querySelector('.decision .badge');
-function clearPlan(title,message){plan=null;clearReferenceOverview();$('price-timeline').replaceChildren();$('action-timeline').replaceChildren();$('timeline-selection').textContent='';header.textContent=title;badge.textContent='计划预览 · 未下发';$('decision-copy').textContent=message;for(const id of ['decision-side','metrics','chart-panel','plan-tags','period-hero','plan-layout'])$(id).hidden=true;$('chart').replaceChildren();}
+function clearPlan(title,message){plan=null;allocationPreview=null;renderCabinetAllocation();clearReferenceOverview();$('price-timeline').replaceChildren();$('action-timeline').replaceChildren();$('timeline-selection').textContent='';header.textContent=title;badge.textContent='计划预览 · 未下发';$('decision-copy').textContent=message;for(const id of ['decision-side','metrics','chart-panel','plan-tags','period-hero','plan-layout'])$(id).hidden=true;$('chart').replaceChildren();}
 function assert(condition,message){if(!condition)throw Error(message);}
 function validSeries(points,start){return Array.isArray(points)&&points.length===96&&points.every((p,i)=>Date.parse(p.timestamp)===start+i*900000&&['mode','target_power_kw','grid_import_kw','expected_soc_pct'].every(k=>k==='mode'?['charge','discharge','idle'].includes(p[k]):finite(p[k])&&p[k]>=0)&&p.expected_soc_pct<=100);}
 function peakWindowStats(inputs,baseline,recommended){
@@ -145,8 +150,8 @@ function mapPlan(record,request,station,date,settings,controls,emsBaseline){
 }
 function renderPlan(p){
  plan=p;for(const id of ['decision-side','metrics','chart-panel','plan-tags','period-hero','plan-layout'])$(id).hidden=false;
- header.textContent=p.comparison.status==='optimized'?'采用全天优化方案':'沿用 EMS 原计划';badge.textContent='已校验方案 · 未下发设备';
- $('decision-copy').textContent=stationName(p.station)+' · '+p.date+'。'+(p.emsOriginal?'展示 EMS 原始时段与配置功率；购电及费用按负荷预测、需量与 SOC 约束模拟。':p.comparison.reason)+(p.station==='station-2'&&p.request.peak_reserve_policy?.version==='peak-reserve-v1'?' 当前为旧规则，晚峰日末电量保留尚未生效；需更新后端并重新生成。':'');
+ header.textContent=p.pendingOptimizationReason?'暂览 EMS 原计划':p.comparison.status==='optimized'?'采用全天优化方案':'沿用 EMS 原计划';badge.textContent=p.pendingOptimizationReason?'优化计划待生成 · 未下发设备':'已校验方案 · 未下发设备';
+ $('decision-copy').textContent=stationName(p.station)+' · '+p.date+'。'+(p.pendingOptimizationReason?p.pendingOptimizationReason+' ':'')+(p.emsOriginal?'展示 EMS 原始时段与配置功率；购电及费用按负荷预测、需量与 SOC 约束模拟。':p.comparison.reason)+(p.station==='station-2'&&p.request.peak_reserve_policy?.version==='peak-reserve-v1'?' 当前为旧规则，晚峰日末电量保留尚未生效；需更新后端并重新生成。':'');
  const metric=(id,value)=>{$(id).textContent=value;};
  $('saving').parentElement.hidden=!finite(p.saving);$('saving').previousElementSibling.textContent=p.saving>=0?'预计净节省':'预计净费用增加';$('saving').classList.toggle('positive',p.saving>=0);metric('saving',money(Math.abs(p.saving)));metric('saving-rate',p.baseline+p.baseWear>0?'较 EMS 基准变化 '+fmt(p.saving/(p.baseline+p.baseWear)*100,1)+'% · 已计两方案吞吐费用':'已计两方案吞吐费用');
  $('peak-cut').parentElement.hidden=!finite(p.cut);$('peak-cut').previousElementSibling.textContent=p.cut>=0?'峰价时段最大购电功率降低':'峰价时段最大购电功率增加';metric('peak-cut',fmt(Math.abs(p.cut))+' kW');metric('peak-note','峰 / 尖峰 · '+fmt(p.peakBase,1)+' → '+fmt(p.peakPlan,1)+' kW · '+(p.peakBase>0?(p.cut>=0?'下降 ':'上升 ')+fmt(Math.abs(p.cut)/p.peakBase*100,1)+'%':'基准为 0，比例不适用'));
@@ -154,7 +159,7 @@ function renderPlan(p){
  $('pv-rate').closest('article').hidden=!finite(p.pvRate);metric('pv-rate',fmt(p.pvRate*100,1)+'%');metric('pv-extra',finite(p.pvExtra)?'较 EMS 基准消纳变化 '+fmt(p.pvExtra)+' kWh':'');
  metric('battery-energy',fmt(p.charged)+' / '+fmt(p.discharged)+' kWh');metric('soc-range','SOC '+fmt(p.minSoc)+'%–'+fmt(p.maxSoc)+'% · 日终 '+fmt(p.endSoc)+'%');
  metric('chart-context',p.date+' 00:00–24:00 · 15 分钟粒度');
- metric('storage-power-label',p.emsOriginal?'EMS 配置功率(kW)':'储能计划(kW)');metric('storage-track-label',p.emsOriginal?'EMS 原始时段配置':'储能计划');
+ rebuildCabinetAllocation();metric('storage-power-label',p.emsOriginal?'EMS 配置功率(kW)':'储能计划(kW)');metric('storage-track-label',p.emsOriginal?'EMS 原始时段配置':'储能计划');
  $('constraints').innerHTML=[['储能容量',fmt(p.cap)+' kWh'],['最大充 / 放电功率',fmt(p.request.capability.max_charge_kw)+' / '+fmt(p.request.capability.max_discharge_kw)+' kW'],['SOC 安全范围',fmt(p.bounds.soc_min_pct)+'%–'+fmt(p.bounds.soc_max_pct)+'%'],['初始 / 日终 SOC',fmt(p.initialSoc)+'% / '+fmt(p.endSoc)+'%'],['需量目标',fmt(p.limit)+' kW'],['生成时间',timeText(p.record.finished_at)]].map(([k,v])=>'<div class="label">'+esc(k)+'<b style="color:var(--ink)">'+esc(v)+'</b></div>').join('');
  metric('basis-note','基准为同输入条件下的 EMS 原计划。削峰指标仅比较峰、尖峰时段的基准最大购电功率与计划最大购电功率，下降比例以该范围的基准最大值为分母；不等于单个时段最大降幅。两项净电费均为购电费用减售电收益；预计净节省另计两方案吞吐费用差。光伏消纳按后台指标计算。数据为预测与计划值，非实测收益；仅生成建议，未下发设备。'+(p.comparison.terminal_energy_rule==='not_less_than_baseline'?'日末电量不低于 EMS 基线。':'优化与基线日末电量一致。'));
  $('price-timeline').innerHTML=p.tariffs.map(t=>`<div class="price-segment" style="flex:${t.end-t.start};background:color-mix(in srgb,${t.color} 12%,var(--panel));color:${t.color}">${esc(t.name)} ${t.price.toFixed(2)}</div>`).join('');renderChart();renderInspector();
@@ -167,7 +172,7 @@ function setLoading(visible){
  $('loading-message').textContent='正在读取电站数据，请稍候…';
  if(visible)loadingTimer=setTimeout(()=>{$('loading-message').textContent='数据读取较慢，仍在加载中…';},5000);
 }
-const viewKey=(station,date)=>'m4-view-v6:'+viewCacheScope+':'+date+':'+station;
+const viewKey=(station,date)=>'m4-view-v8:'+viewCacheScope+':'+date+':'+station;
 function rememberView(station,date){
  const snapshot={station,date,at:Date.now(),plan,title:header.textContent,message:$('decision-copy').textContent};
  viewCache.set(station+':'+date,snapshot);
@@ -210,15 +215,15 @@ async function loadCurrent(){
   if(job.status==='running'){clearPlan('计划计算中',job.message||'正在读取输入并计算…');pollTimer=setTimeout(loadCurrent,5000);return;}
   if(!inputs.can_compare){clearPlan('等待完整数据',inputs.checks?.filter(c=>c.status!=='ready').map(c=>c.detail).join('；')||'当天输入尚未通过校验。');return;}
   if(job.status==='failed')clearPlan('计划未生成',job.message||'请检查数据后重新生成');
-  else if(job.status==='completed'&&job.result?.record){try{if(station==='station-2')assert(typeof inputs.sources?.pv?.version==='string'&&job.request?.source_versions?.pv===inputs.sources.pv.version,'光伏来源已更新，请重新生成计划');renderPlan(mapPlan(job.result.record,job.request,station,date,settings,controls,job.baseline));}catch(error){if(inputs.comparison?.status==='ems')renderBaseline(context);else throw error;}}
+  else if(job.status==='completed'&&job.result?.record){try{if(station==='station-2')assert(typeof inputs.sources?.pv?.version==='string'&&job.request?.source_versions?.pv===inputs.sources.pv.version,'光伏来源已更新，请重新生成计划');renderPlan(mapPlan(job.result.record,job.request,station,date,settings,controls,job.baseline));}catch(error){if(inputs.comparison?.status==='ems')renderBaseline(context,error.message);else throw error;}}
   else if(inputs.can_compare&&inputs.comparison?.status==='ems'){
-   renderBaseline(context);
+   renderBaseline(context,job.message);
   }else clearPlan('等待完整数据',inputs.checks?.filter(c=>c.status!=='ready').map(c=>c.detail).join('；')||'暂无可用全天计划。');
   $('simulate').disabled=starting||!inputs.can_compare;
  }catch(error){cacheable=false;if(id===generation){forgetView(station,date);clearPlan('数据暂不可用',error.message);$('simulate').disabled=starting||!context?.inputs.can_compare;}}
  finally{if(id===generation)setLoading(false);if(id===generation&&cacheable)rememberView(station,date);if(id===generation&&$('simulate').textContent.includes('提交'))$('simulate').textContent='生成优化计划 ↗';}
 }
-function renderBaseline({station,date,inputs,settings,controls}){const record={station_id:station,run_id:inputs.request?.request_id,finished_at:inputs.fetched_at,input_summary:{configuration_version:inputs.configuration_version},daily_comparison:inputs.comparison};renderPlan(mapPlan(record,inputs.request,station,date,settings,controls,inputs.baseline));}
+function renderBaseline({station,date,inputs,settings,controls},reason){const record={station_id:station,run_id:inputs.request?.request_id,finished_at:inputs.fetched_at,input_summary:{configuration_version:inputs.configuration_version},daily_comparison:inputs.comparison};const preview=mapPlan(record,inputs.request,station,date,settings,controls,inputs.baseline);preview.pendingOptimizationReason=reason||'尚无可用的当天优化计划，请点击「生成优化计划」。';renderPlan(preview);}
 async function startPlan(){
  if(starting||!context?.inputs.can_compare||context.date!==today())return;
  const station=context.station;forgetView(station,context.date);starting=true;$('simulate').disabled=true;$('simulate').textContent='正在提交…';
@@ -259,6 +264,7 @@ async function showDetail(key){
   const chosen=r.daily_comparison?.recommended||r.candidates?.find(c=>c.profile_id===r.selected?.profile_id&&c.plan_version===r.selected?.plan_version),points=chosen?.plan;
   const valid=Array.isArray(points)&&points.every(p=>finite(p.target_power_kw)&&finite(p.expected_soc_pct)&&finite(p.grid_import_kw)&&Number.isFinite(Date.parse(p.timestamp)));
   $('detail-content').innerHTML='<span class="badge">计划快照 · 未下发</span><div class="detail-reason">'+esc(r.reason||r.issues?.join('；')||'本轮没有可用计划')+'</div>'+(valid&&points.length?'<h3>'+points.length+' 时段计划明细</h3><div class="table-wrap"><table><thead><tr><th>时段 · 北京时间</th><th>动作</th><th>储能 kW</th><th>购电 kW</th><th>SOC</th></tr></thead><tbody>'+points.map(p=>'<tr><td>'+esc(timeText(p.timestamp))+'</td><td>'+esc({charge:'充电',discharge:'放电',idle:'待机'}[p.mode]||'未知')+'</td><td>'+fmt((p.mode==='charge'?-1:1)*p.target_power_kw,1)+'</td><td>'+fmt(p.grid_import_kw,1)+'</td><td>'+fmt(p.expected_soc_pct,1)+'%</td></tr>').join('')+'</tbody></table></div>':'');
+ const allocationLink=document.createElement('button');allocationLink.className='btn';allocationLink.textContent='查看本计划柜级分配记录';allocationLink.onclick=()=>showAllocationHistory(row.station,row.id);$('detail-content').prepend(allocationLink);
  }catch(error){if(id===detailGeneration)$('detail-content').textContent=error.message;}
 }
 function selectTab(name){$('back-console').hidden=name!=='records';activeTab=name;for(const n of ['decision','records']){$('tab-'+n).setAttribute('aria-selected',String(n===name));$('tab-'+n).tabIndex=n===name?0:-1;$('panel-'+n).hidden=n!==name;}if(name==='records')loadRecords();}
@@ -275,7 +281,7 @@ function path(points,key,y){return points.map((p,i)=>`${i?'L':'M'}${(60+(i+.5)*1
 function renderChart(){const p=plan,extent=Math.max(1,...p.points.flatMap(v=>[v.load,v.pv,Math.abs(v.power)])),step=Math.ceil(extent/3/100)*100,limit=Math.ceil(extent/step)*step,y=v=>252-v/limit*174;let s='<title>预测与调度</title><desc>当天负载、光伏及储能计划，充电为负、放电为正。</desc>';for(let v=-limit;v<=limit;v+=step)s+=`<line class="gridline" x1="60" x2="1080" y1="${y(v)}" y2="${y(v)}"/><text x="49" y="${y(v)+4}" text-anchor="end">${fmt(v)}</text>`;for(const [key,color] of [['load','var(--purple)'],['pv','var(--orange)'],['power','var(--green)']])s+=`<path d="${path(p.points,key,y)}" fill="none" stroke="${color}" stroke-width="2.5"/>`;for(const h of [0,4,8,12,16,20,24])s+=`<text x="${60+h/24*1020}" y="464" text-anchor="${h===24?'end':'middle'}">${clock(h*4)}</text>`;s+=`<line id="chart-cursor" class="cursor" x1="60" x2="60" y1="60" y2="430"/><g id="current-chart-marker"></g>`;$('chart').innerHTML=s;}
 
 function renderCurrentStrategy(){
- if(!plan)return;renderReferenceOverview();
+ if(!plan)return;renderReferenceOverview();renderCabinetAllocation();
  const p=plan,now=new Date(Date.now()+28800000),isToday=p.date===now.toISOString().slice(0,10);
  const index=isToday?now.getUTCHours()*4+Math.floor(now.getUTCMinutes()/15):selected,v=p.points[index];
  document.querySelector('#period-hero .period-state>.label').textContent=isToday?'当前策略 · 当前时段计划（北京时间）':'所选日期策略 · 所选时段计划';
@@ -310,9 +316,108 @@ function renderInspector(){renderDailyLayout();const p=plan.points[selected];$('
 
 function clearReferenceOverview(){for(const id of ['ref-price','ref-saving','ref-next','ref-cut'])$(id).textContent='—';for(const id of ['ref-price-next','ref-next-action','ref-limit'])$(id).textContent='';}
 function renderReferenceOverview(){const p=plan,now=new Date(Date.now()+28800000),isToday=p.date===now.toISOString().slice(0,10),index=isToday?now.getUTCHours()*4+Math.floor(now.getUTCMinutes()/15):selected,v=p.points[index];$('ref-price-label').textContent=(isToday?'当前':'所选时段')+'电价 · '+v.tariff;$('ref-price').textContent='¥ '+fmt(v.price,2);const priceNext=p.points.slice(index+1).find(q=>q.price!==v.price);$('ref-price-next').textContent=priceNext?priceNext.time+' 进入'+priceNext.tariff+'段':'元/kWh · 当日后续不变';$('ref-saving').textContent=finite(p.saving)?money(Math.abs(p.saving)):'—';$('ref-saving-label').textContent=p.saving<0?'今日预计净费用增加':'今日预计净节省';const next=p.points.slice(index+1).find(q=>Math.sign(q.power)!==Math.sign(v.power));$('ref-next').textContent=next?next.time:'无后续变化';$('ref-next-action').textContent=next?next.action+' '+fmt(Math.abs(next.power))+' kW':v.action+'至日末';$('ref-cut-label').textContent=p.cut<0?'预计峰值增加':'预计削减峰值';$('ref-cut').textContent=p.peakBase>0?fmt(Math.abs(p.cut)/p.peakBase*100,1)+'%':'—';$('ref-limit').textContent='峰价时段比较 · 需量目标 '+fmt(p.limit)+' kW';const marker=$('current-chart-marker');if(marker){const x=60+(index+.5)*1020/96;marker.innerHTML=isToday?`<line x1="${x}" x2="${x}" y1="44" y2="430" stroke="var(--red)" stroke-dasharray="5 5"/><text x="${Math.min(x+6,995)}" y="30" style="fill:var(--red)">当前时段 ${v.time}</text>`:'';}$('reference-updated').textContent='计划生成：'+timeText(p.record.finished_at)+' · '+p.date+' · 15 分钟粒度';}
-let cabinetRequest=0,logRequest=0;
-function cabinetRows(station,items=[],message='未读取'){const names=station==='station-1'?['emu11','emu12']:['emu21','emu22','emu23','emu24','emu25','emu26'];$('cabinet-subtitle').textContent=stationName(station)+' · '+names.length+' 台储能柜';$('cabinet-body').innerHTML=names.map(name=>{const c=items.find(q=>q.emu_sn===name);return '<tr><td><strong>'+name.toUpperCase()+'</strong><span class="observed">'+(c?esc(timeText(c.observed_at)):esc(message))+'</span></td><td>'+fmt(c?.soc_pct,1)+(finite(c?.soc_pct)?'%':'')+'</td><td>—</td><td>待柜级分配</td><td>未分配</td><td>未分配</td><td>'+esc(c?({wait:'待机',standby:'待机',charge:'充电',discharge:'放电'}[c.status]||'未知'):'未读取')+(c?.issues?.length?'<span class="observed">'+esc(c.issues.join('；'))+'</span>':'')+'</td></tr>';}).join('');}
-async function loadCabinetStatus(){const id=++cabinetRequest,station=$('station').value;cabinetRows(station,[],'正在读取');$('cabinet-status').textContent='正在读取';try{const data=await api(station,'inputs');if(id!==cabinetRequest||station!==$('station').value)return;const snapshot=data.sources?.realtime?.snapshot||data.sources?.realtime,items=snapshot?.cabinets;if(!Array.isArray(items))throw Error('柜级状态暂不可用');cabinetRows(station,items);$('cabinet-status').textContent=items.filter(c=>c.available).length+' / '+items.length+' 通过输入准入';}catch(e){if(id!==cabinetRequest)return;cabinetRows(station,[],e.message);$('cabinet-status').textContent='状态读取失败';}}
+let cabinetRequest=0,logRequest=0,cabinetSnapshot=null,allocationPreview=null,allocationError='',allocationRecord=null,allocationBusy=false,allocationPending=null,allocationReadKey=null;
+function cabinetRows(station,items=[],message='未读取',allocationRows=[]){
+ const names=station==='station-1'?['emu11','emu12']:['emu21','emu22','emu23','emu24','emu25','emu26'];
+ $('cabinet-subtitle').textContent=stationName(station)+' · '+names.length+' 台储能柜 · 分配预览';
+ $('cabinet-body').innerHTML=names.map(name=>{const c=items.find(q=>q.emu_sn===name),a=allocationRows.find(q=>q.id===name),excluded=a&&!a.eligible;
+ const action=a?({charge:'充电',discharge:'放电',idle:'待机',excluded:'已排除'}[a.mode]):'等待分配';
+ return '<tr><td><strong>'+name.toUpperCase()+'</strong><span class="observed">'+(c?esc(timeText(c.observed_at)):esc(message))+'</span></td><td>'+fmt(c?.soc_pct,2)+(finite(c?.soc_pct)?'%':'')+'</td><td>—</td><td class="'+(excluded?'allocation-excluded':'')+'">'+action+'</td><td>'+((a&&a.eligible)?fmt(Math.abs(a.powerKw),2):'—')+'</td><td>'+((a&&a.eligible)?fmt(a.endSocPct,2)+'%':'—')+'</td><td>'+esc(c?({wait:'待机',standby:'待机',charge:'充电',discharge:'放电'}[c.status]||'未知'):'未读取')+((excluded?a.reasons:c?.issues)?.length?'<span class="observed">'+esc((excluded?a.reasons:c.issues).join('；'))+'</span>':'')+'</td></tr>';
+ }).join('');
+}
+function renderCabinetAllocation(){
+ const station=$('station').value,snapshot=cabinetSnapshot?.station_id===station?cabinetSnapshot:null;
+ $('save-allocation').disabled=allocationBusy||!allocationPlanReady();
+ if(!plan||!allocationPreview||allocationPreview.stationId!==station){
+  $('cabinet-time').disabled=true;$('cabinet-time').innerHTML='<option>等待计划与柜状态</option>';
+  $('allocation-summary').classList.remove('warn');$('allocation-summary').textContent=allocationError||(allocationPlanReady()?'本计划尚无分配记录，请点击「生成并保存分配」。':'请先生成可用的站级计划。');
+  $('cabinet-status').textContent=allocationError?'暂不可分配':'等待分配';$('allocation-note').textContent='保存时由后端读取柜状态并计算；刷新只查询记录，未下发设备。';
+  cabinetRows(station,snapshot?.cabinets||[],snapshot?'':'尚无保存快照');return;
+ }
+ const slot=allocationPreview.slots.find(p=>String(p.index)===$('cabinet-time').value)||allocationPreview.slots[0];
+ const count=slot.rows.filter(r=>r.eligible).length,action=slot.targetKw<0?'充电':slot.targetKw>0?'放电':'待机',shortfall=slot.shortfallKw>1e-6;
+ $('cabinet-status').textContent=count+' / '+slot.rows.length+' 参与 · 已保存';
+ $('allocation-summary').classList.toggle('warn',shortfall||slot.reserveShortfallKwh>1e-6);
+ $('allocation-summary').textContent='站级'+action+'目标 '+fmt(Math.abs(slot.targetKw),2)+' kW · 已分配 '+fmt(Math.abs(slot.allocatedKw),2)+' kW · 未满足 '+fmt(slot.shortfallKw,2)+' kW'+(shortfall?'（受电量、功率或需量约束限制）':'')+(slot.reserveShortfallKwh>1e-6?' · 日末保留电量缺口 '+fmt(slot.reserveShortfallKwh,2)+' kWh':'');
+ $('allocation-note').textContent='保存时间：'+timeText(allocationRecord.created_at)+' · 按当时柜级 SOC 推演，本时段 '+fmt(slot.durationHours*60,1)+' 分钟；历史快照，未下发。';
+ cabinetRows(station,snapshot.cabinets,'',slot.rows);
+}
+const allocationUUID=value=>typeof value==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value);
+function allocationPlanReady(){return !!plan&&!plan.pendingOptimizationReason&&allocationUUID(plan.record.run_id)&&plan.date===today();}
+function validateAllocation(record,station,runId=null){
+ assert(record?.schema_version==='m4-cabinet-allocation-v1'&&record.station_id===station&&record.dispatch_status==='not_dispatched'&&record.usage==='historical_preview_only'&&allocationUUID(record.allocation_id)&&(!runId||record.plan_run_id===runId),'分配记录身份无法校验');
+ assert(record.result?.stationId===station&&Array.isArray(record.result.slots)&&record.result.slots.length&&Array.isArray(record.inputs?.snapshot?.cabinets),'分配记录不完整');
+}
+function applyAllocation(record){
+ validateAllocation(record,plan.station,plan.record.run_id);allocationRecord=record;cabinetSnapshot=record.inputs.snapshot;allocationPreview=record.result;allocationError='';
+ $('cabinet-time').innerHTML=allocationPreview.slots.map(s=>'<option value="'+s.index+'">'+clock(s.index)+'–'+clock(s.index+1)+'</option>').join('');
+ const current=Math.floor((Date.now()-Date.parse(plan.date+'T00:00:00+08:00'))/900000);if(allocationPreview.slots.some(s=>s.index===current))$('cabinet-time').value=String(current);
+ $('cabinet-time').disabled=false;renderCabinetAllocation();
+}
+function rebuildCabinetAllocation(){
+ if(allocationRecord&&plan&&allocationRecord.station_id===plan.station&&allocationRecord.plan_run_id===plan.record.run_id){applyAllocation(allocationRecord);return;}
+ allocationRecord=null;cabinetSnapshot=null;allocationPreview=null;renderCabinetAllocation();
+ const key=allocationPlanReady()?plan.station+':'+plan.record.run_id:null;
+ if(key&&allocationReadKey!==key){allocationReadKey=key;loadCabinetStatus();}
+}
+async function loadCabinetStatus(){
+ const id=++cabinetRequest,station=$('station').value,runId=allocationPlanReady()?plan.record.run_id:null;
+ allocationRecord=null;cabinetSnapshot=null;allocationPreview=null;allocationError='';$('refresh-cabinets').disabled=false;renderCabinetAllocation();if(!runId)return;
+ $('refresh-cabinets').disabled=true;
+ try{const list=await api(station,'allocations?run_id='+runId+'&limit=1&offset=0');
+  assert(list.schema_version==='m4-allocation-history-v1'&&Array.isArray(list.items),'分配列表无法校验');
+  if(!list.items.length)return;
+  const record=await api(station,'allocation-result?allocation_id='+encodeURIComponent(list.items[0].allocation_id));
+  if(id!==cabinetRequest||station!==$('station').value||plan?.record.run_id!==runId)return;
+  applyAllocation(record);
+ }catch(e){if(id!==cabinetRequest)return;allocationError='分配记录读取失败（后端需支持分配留档接口）：'+e.message;}
+ finally{if(id===cabinetRequest){$('refresh-cabinets').disabled=false;renderCabinetAllocation();}}
+}
+async function saveAllocation(){
+ if(allocationBusy||!allocationPlanReady())return;
+ const station=plan.station,runId=plan.record.run_id;
+ const pendingKey='m4-allocation-pending:'+viewCacheScope+':'+station+':'+runId;
+ if(!allocationPending||allocationPending.station!==station||allocationPending.runId!==runId){let saved;try{saved=sessionStorage.getItem(pendingKey);}catch{}allocationPending={station,runId,requestId:allocationUUID(saved)?saved:crypto.randomUUID()};try{sessionStorage.setItem(pendingKey,allocationPending.requestId);}catch{}}
+ const request=allocationPending;allocationBusy=true;renderCabinetAllocation();$('save-allocation').textContent='正在生成并保存…';
+ try{const record=await api(station,'allocations',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({request_id:request.requestId,plan_run_id:runId})});
+  validateAllocation(record,station,runId);allocationPending=null;try{sessionStorage.removeItem(pendingKey);}catch{}
+  if(station===$('station').value&&plan?.record.run_id===runId){++cabinetRequest;applyAllocation(record);}
+  notify('分配已保存，未下发设备。');
+ }catch(e){notify('保存未确认：'+e.message+'。重试将复用同一请求编号。');}
+ finally{allocationBusy=false;$('refresh-cabinets').disabled=false;$('save-allocation').textContent='生成并保存分配';renderCabinetAllocation();}
+}
+let allocationHistoryState=null,allocationHistoryGeneration=0,allocationHistoryRecord=null,allocationDetailGeneration=0;
+async function showAllocationHistory(station,runId=null){
+ allocationHistoryState={station,runId,offset:0};allocationHistoryGeneration++;allocationDetailGeneration++;allocationHistoryRecord=null;
+ $('allocation-record-detail').hidden=true;$('allocation-list').replaceChildren();$('allocation-more').hidden=true;
+ $('allocation-history-label').textContent=stationName(station)+(runId?' · 对应站级计划 '+runId:' · 全部分配记录');
+ if(!$('allocation-dialog').open)$('allocation-dialog').showModal();await loadAllocationHistoryPage();
+}
+async function loadAllocationHistoryPage(){
+ const id=allocationHistoryGeneration,state=allocationHistoryState;if(!state)return;$('allocation-more').disabled=true;
+ try{const data=await api(state.station,'allocations?limit=10&offset='+state.offset+(state.runId?'&run_id='+state.runId:''));
+  if(id!==allocationHistoryGeneration)return;assert(Array.isArray(data.items),'分配列表无法读取');
+  if(!data.items.length&&state.offset===0)$('allocation-list').textContent='暂无保存的柜级分配。';
+  for(const r of data.items){const row=document.createElement('div');row.className='allocation-list-row';row.innerHTML='<div><strong>'+esc(r.status==='unreadable'?'记录无法校验':timeText(r.created_at))+'</strong><p class="note">'+esc(r.status==='unreadable'?r.allocation_id:(r.source==='ems'?'EMS 原计划':'求解器方案')+' · 最大功率缺口 '+fmt(r.max_shortfall_kw,2)+' kW')+'</p></div>'+(r.status==='saved'?'<button class="text-btn">查看分配</button>':'');if(r.status==='saved')row.querySelector('button').onclick=()=>openAllocationRecord(state.station,r.allocation_id);$('allocation-list').append(row);}
+  state.offset=data.next_offset;$('allocation-more').hidden=data.next_offset===null;
+ }catch(e){if(id===allocationHistoryGeneration)$('allocation-list').textContent='分配记录读取失败：'+e.message;}
+ finally{if(id===allocationHistoryGeneration)$('allocation-more').disabled=false;}
+}
+async function openAllocationRecord(station,recordId){
+ const id=++allocationDetailGeneration;
+ try{const record=await api(station,'allocation-result?allocation_id='+recordId);if(id!==allocationDetailGeneration)return;validateAllocation(record,station);allocationHistoryRecord=record;
+  $('allocation-record-meta').textContent='保存于 '+timeText(record.created_at)+' · 站级计划 '+record.plan_run_id+' · '+record.algorithm_version+' · 未下发设备';
+  $('allocation-record-time').innerHTML=record.result.slots.map(s=>'<option value="'+s.index+'">'+record.inputs.date+' '+clock(s.index)+'–'+clock(s.index+1)+'</option>').join('');$('allocation-record-detail').hidden=false;renderAllocationHistorySlot();
+ }catch(e){if(id===allocationDetailGeneration)notify(e.message);}
+}
+function renderAllocationHistorySlot(){const r=allocationHistoryRecord;if(!r)return;const s=r.result.slots.find(p=>String(p.index)===$('allocation-record-time').value);if(!s)return;
+ $('allocation-record-summary').textContent='站级目标 '+fmt(Math.abs(s.targetKw),2)+' kW · 已分配 '+fmt(Math.abs(s.allocatedKw),2)+' kW · 未满足 '+fmt(s.shortfallKw,2)+' kW'+(s.reserveShortfallKwh>1e-6?' · 日末保留电量缺口 '+fmt(s.reserveShortfallKwh,2)+' kWh':'');
+ $('allocation-record-rows').innerHTML=s.rows.map(c=>'<tr><td>'+esc(c.id.toUpperCase())+'</td><td>'+esc({charge:'充电',discharge:'放电',idle:'待机',excluded:'已排除'}[c.mode])+'</td><td>'+fmt(Math.abs(c.powerKw),2)+'</td><td>'+fmt(c.startSocPct,2)+(finite(c.startSocPct)?'%':'')+'</td><td>'+fmt(c.endSocPct,2)+(finite(c.endSocPct)?'%':'')+'</td><td>'+esc(c.reasons.join('；')||'参与分配')+'</td></tr>').join('');
+}
+$('cabinet-time').onchange=renderCabinetAllocation;$('refresh-cabinets').onclick=loadCabinetStatus;$('save-allocation').onclick=saveAllocation;
+$('allocation-history').onclick=()=>showAllocationHistory($('station').value);$('allocation-more').onclick=loadAllocationHistoryPage;
+$('allocation-record-time').onchange=renderAllocationHistorySlot;
+$('close-allocation').onclick=()=>{$('allocation-dialog').close();allocationHistoryGeneration++;allocationDetailGeneration++;};
 async function loadRecentLogs(){const id=++logRequest,station=$('station').value;$('recent-logs').textContent='正在读取决策记录…';try{
  const [data,bundle]=await Promise.all([api(station,'decision-history?limit=4&offset=0'),readCurrent(station,today())]);if(id!==logRequest||station!==$('station').value)return;const items=data.items;if(!Array.isArray(items))throw Error('记录格式暂不可用');validateJob(bundle[1],station);const latest=bundle[1]?.result?.record,valid=items.filter(r=>r.status!=='unreadable');if(latest&&!valid.some(r=>r.run_id===latest.run_id))valid.unshift(latest);
  $('recent-logs').innerHTML=valid.slice(0,4).map(r=>'<article class="recent-log"><time>'+esc(timeText(r.finished_at||r.started_at))+'</time><strong>'+esc(r.status==='completed'?'调度方案已生成':'调度记录')+'</strong><p>'+esc(r.daily_comparison?.reason||r.reason||r.run_id||'查看全部日志了解详细计划')+'</p><span class="badge">求解器决策 · 未下发设备</span></article>').join('')+(items.some(r=>r.status==='unreadable')?'<p class="note">部分历史记录读取或校验失败，未展示其计划与执行结果。</p>':'');if(!$('recent-logs').textContent)$('recent-logs').textContent='暂无决策记录';
@@ -321,7 +426,8 @@ async function loadRecentLogs(){const id=++logRequest,station=$('station').value
 function refreshReferenceSources(){loadCabinetStatus();loadRecentLogs();}
 document.querySelectorAll('[data-station-id]').forEach(b=>b.onclick=()=>{if($('station').value===b.dataset.stationId)return;$('station').value=b.dataset.stationId;document.querySelectorAll('[data-station-id]').forEach(t=>t.setAttribute('aria-pressed',String(t===b)));loadCurrent();refreshReferenceSources();});
 $('show-parameters').onclick=()=>{if(!plan)return notify('请等待可用计划加载');$('parameters-dialog').showModal();};$('close-parameters').onclick=()=>$('parameters-dialog').close();$('all-logs').onclick=()=>selectTab('records');$('back-console').onclick=()=>selectTab('decision');
-initializeCurrent();document.querySelectorAll('[data-station-id]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.stationId===$('station').value)));refreshReferenceSources();
+// Restore the authenticated station before starting dependent sidebar reads.
+initializeCurrent().then(()=>{document.querySelectorAll('[data-station-id]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.stationId===$('station').value)));refreshReferenceSources();});
 
 </script>
 </body>

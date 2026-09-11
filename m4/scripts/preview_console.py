@@ -14,7 +14,7 @@ class NoRedirect(HTTPRedirectHandler):
 
 UPSTREAM = build_opener(NoRedirect)
 PAGE = Path(__file__).resolve().parents[1] / 'web/M4优化调度控制台-线上版.html'
-API_PATH = re.compile(r'/m4-api/stations/station-[12]/(?:settings|control-sources|inputs|daily-inputs|daily-plan|decision-history|decision-results/[a-f0-9-]{36})')
+API_PATH = re.compile(r'/m4-api/stations/station-[12]/(?:allocations|allocation-result|settings|control-sources|inputs|daily-inputs|daily-plan|decision-history|decision-results/[a-f0-9-]{36})')
 
 
 def main():
