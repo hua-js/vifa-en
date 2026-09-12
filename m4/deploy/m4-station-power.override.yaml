@@ -1,7 +1,7 @@
 # Apply LAST alongside the existing base, PV and M3 MAPE compose files.
 services:
   m4-api:
-    image: ccr.ccs.tencentyun.com/taidai-holobase-168/omnipower_vifa:m4-station-power-20260912-182440-amd64
+    image: ${M4_IMAGE:?Set M4_IMAGE to the release image}
     platform: linux/amd64
     networks:
       default: {}
