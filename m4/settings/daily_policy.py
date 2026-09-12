@@ -1,7 +1,7 @@
 """Versioned daily planning rules; never inferred when replaying old requests."""
 
-PEAK_RESERVE_DAILY_POLICY = 'm4-daily-peak-reserve-v2'
-PEAK_RESERVE_SELECTOR = 'daily-peak-reserve-cost-gate-v2'
+PEAK_RESERVE_DAILY_POLICY = 'm4-daily-peak-reserve-v3'
+PEAK_RESERVE_SELECTOR = 'daily-peak-reserve-cost-gate-v3'
 
 
 def daily_policy_version(station_id):
@@ -16,12 +16,18 @@ def matches_current_daily_policy(station_id, request):
     versions = request.get('source_versions')
     if not isinstance(versions, dict) or versions.get('daily_policy') != expected:
         return False
-    policy = request.get('peak_reserve_policy')
-    if expected is None:
-        return policy is None
-    if not isinstance(policy, dict) or policy.get('version') != 'peak-reserve-v2':
+    # Bounded debug plans remain readable as history, but are no longer current.
+    if request.get('ems_schedule_modes') is not None or 'ems_schedule_policy' in versions:
         return False
     from .objectives import get_daily_profiles
+    policy = request.get('peak_reserve_policy')
+    if expected is None:
+        return (policy is None and versions.get('physical_grid_policy') == 'station-1-550-v1'
+                and request.get('constraints', {}).get('grid_import_limit_kw') == 550.0
+                and versions.get('economic_policy') == 'station-1-cost-first-v1'
+                and request.get('profiles') == [p.model_dump(mode='json') for p in get_daily_profiles(station_id)])
+    if not isinstance(policy, dict) or policy.get('version') != 'peak-reserve-v3':
+        return False
     return request.get('profiles') == [
         profile.model_dump(mode='json') for profile in get_daily_profiles(station_id)
     ]

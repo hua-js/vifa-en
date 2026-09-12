@@ -25,6 +25,12 @@ def reserve_request(version='peak-reserve-v2', peaks=((40, 48), (56, 76))):
         point.update(load_forecast_kw=100, pv_forecast_kw=0,
                      tariff_period='feng' if peak else 'gu' if i < 28 else 'ping',
                      buy_price_per_kwh=1.1 if peak else .27 if i < 28 else .66)
+    if version != 'peak-reserve-v3':
+        for profile in payload['profiles']:
+            layers=profile['objective_order']
+            reserve=next(layer for layer in layers if layer['name']=='peak-reserve-shortfall')
+            layers.remove(reserve)
+            layers.insert(2,reserve)
     return OptimizationRequest.model_validate(payload)
 
 
@@ -72,8 +78,12 @@ class LatePeakReserveTests(unittest.TestCase):
                          {'version': 'peak-reserve-v1', 'terminal_soc_min_pct': 2.0})
 
     def test_new_daily_policy_rejects_old_saved_request(self):
-        self.assertEqual(PEAK_RESERVE_DAILY_POLICY, 'm4-daily-peak-reserve-v2')
-        self.assertTrue(matches_current_daily_policy('station-2', self.new.model_dump(mode='json')))
+        self.assertEqual(PEAK_RESERVE_DAILY_POLICY, 'm4-daily-peak-reserve-v3')
+        current=reserve_request('peak-reserve-v3').model_dump(mode='json')
+        self.assertTrue(matches_current_daily_policy('station-2', current))
+        bounded={**current,'ems_schedule_modes':['idle']*96}
+        self.assertFalse(matches_current_daily_policy('station-2', bounded))
+        self.assertFalse(matches_current_daily_policy('station-2', self.new.model_dump(mode='json')))
         self.assertFalse(matches_current_daily_policy('station-2', self.old.model_dump(mode='json')))
 
     def test_last_peak_starting_at_zero_cannot_hide_insufficient_initial_reserve(self):

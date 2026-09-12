@@ -14,7 +14,7 @@ class NoRedirect(HTTPRedirectHandler):
 
 UPSTREAM = build_opener(NoRedirect)
 PAGE = Path(__file__).resolve().parents[1] / 'web/M4优化调度控制台-线上版.html'
-API_PATH = re.compile(r'/m4-api/stations/station-[12]/(?:allocations|allocation-result|settings|control-sources|inputs|daily-inputs|daily-plan|decision-history|decision-results/[a-f0-9-]{36})')
+API_PATH = re.compile(r'/m4-api/stations/station-[12]/(?:settings|control-sources|inputs|daily-inputs|daily-plan|decision-history|decision-results/[a-f0-9-]{36})')
 
 
 def main():
@@ -23,7 +23,11 @@ def main():
     parser.add_argument('--upstream-port', type=int, default=8848)
     parser.add_argument('--online', action='store_true',
                         help='Read production M4 APIs using local server-side credentials')
+    parser.add_argument('--local-debug', action='store_true',
+                        help='Mark the page as a local MAPE-bypass preview')
     args = parser.parse_args()
+    if args.online and args.local_debug:
+        parser.error('--local-debug requires a local backend, not --online')
     upstream_origin = 'https://opdash.lvkpower.com' if args.online else f'http://127.0.0.1:{args.upstream_port}'
     online_token = None
     if args.online:
@@ -47,7 +51,10 @@ def main():
 
         def do_GET(self):
             if urlsplit(self.path).path in ('/', '/m4'):
-                return self.respond(200, PAGE.read_bytes(), 'text/html; charset=utf-8')
+                page = PAGE.read_text()
+                if args.local_debug:
+                    page = page.replace('<body>', '<body><div style="padding:12px 20px;background:#fff1cc;color:#563b00;text-align:center;font:14px/1.5 sans-serif">本地调试 · 已跳过 MAPE 超限判断 · 线上只读数据 / 本地计算 · 未下发设备</div>', 1)
+                return self.respond(200, page.encode(), 'text/html; charset=utf-8')
             self.proxy()
 
         def do_POST(self):

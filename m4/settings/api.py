@@ -1,5 +1,6 @@
 """Local parameter storage and read-only upstream control configuration."""
 import ast
+from contextlib import asynccontextmanager
 from datetime import datetime
 import os
 from pathlib import Path
@@ -46,18 +47,12 @@ class StartCandidateJob(CalculateCandidates):
     request_id: str = Field(pattern=r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$')
 
 
-class SaveAllocation(BaseModel):
-    model_config = ConfigDict(extra='forbid', strict=True)
-    request_id: str = Field(pattern=r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$')
-    plan_run_id: str = Field(pattern=r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$')
-
-
 class StartDecisionRun(BaseModel):
     model_config = ConfigDict(extra='forbid', strict=True)
     request_id: str = Field(pattern=r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$')
 
 
-def create_app(settings_path: Path | None = None, *, control_reader=None, input_service=None, candidate_service=None, selection_service=None, billing_service=None, daily_input_service=None, allocation_service=None) -> FastAPI:
+def create_app(settings_path: Path | None = None, *, control_reader=None, input_service=None, candidate_service=None, selection_service=None, billing_service=None, daily_input_service=None) -> FastAPI:
     path = settings_path or Path(os.environ.get('M4_SETTINGS_DB', str(ROOT / 'runtime/m4/settings.sqlite3')))
     store = SettingsStore(path)
     reader = control_reader
@@ -79,7 +74,15 @@ def create_app(settings_path: Path | None = None, *, control_reader=None, input_
     policies = PolicyStore(path)
     selections = selection_service if selection_service is not None else LiveSelectionService(
         store=store, policies=policies, candidates=candidates, fetch_inputs=input_service.fetch)
-    app = FastAPI(title='M4 调度参数', docs_url=None, redoc_url=None)
+    @asynccontextmanager
+    async def lifespan(app):
+        automatic.start()
+        try:
+            yield
+        finally:
+            automatic.stop()
+
+    app = FastAPI(title='M4 调度参数', docs_url=None, redoc_url=None, lifespan=lifespan)
     from .billing import BillingService, MONTH_PATTERN
     from .upstream import NocoBaseClient
     billing = billing_service if billing_service is not None else BillingService(NocoBaseClient(token))
@@ -88,9 +91,10 @@ def create_app(settings_path: Path | None = None, *, control_reader=None, input_
         'M4_DECISION_RESULTS_DIR', str(ROOT / 'outputs/m4/solver-decisions'))))
     from .daily_plans import DailyPlanService
     daily_plans = DailyPlanService(store, daily_inputs, decision_results.root.parent / 'daily-comparisons')
-    from .allocation_records import AllocationRecords, AllocationError
-    allocations = allocation_service if allocation_service is not None else AllocationRecords(
-        decision_results.root.parent / 'cabinet-allocations', daily_plans.latest, store.get, input_service.fetch)
+    from .auto_plans import AutomaticPlans
+    automatic = AutomaticPlans(daily_plans, daily_plans.root,
+        enabled=os.environ.get('M4_AUTO_PLAN_ENABLED', '1').lower() not in ('0', 'false', 'off'))
+    app.state.automatic_plans = automatic
     # This factory serves a local workstation. Production must use the platform's authenticated adapter.
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=['127.0.0.1', 'localhost', '[::1]', 'testserver'])
 
@@ -107,32 +111,6 @@ def create_app(settings_path: Path | None = None, *, control_reader=None, input_
     def station_exists(station_id):
         if station_id not in ('station-1', 'station-2'):
             raise HTTPException(404, '未知电站')
-
-    def allocation_call(operation):
-        try:
-            return operation()
-        except AllocationError as error:
-            raise HTTPException(error.status_code, error.detail) from None
-        except Exception:
-            raise HTTPException(503, '柜级分配读取或保存失败，请查询记录后重试') from None
-
-    @app.post('/m4-api/stations/{station_id}/allocations', status_code=201)
-    def save_allocation(station_id: str, body: SaveAllocation) -> dict:
-        station_exists(station_id)
-        return allocation_call(lambda: allocations.create(station_id, body.request_id, body.plan_run_id))
-
-    @app.get('/m4-api/stations/{station_id}/allocations')
-    def list_allocations(station_id: str, run_id: UUID4 | None = None,
-            limit: Annotated[int, Query(ge=1, le=20)] = 10,
-            offset: Annotated[int, Query(ge=0, le=100000)] = 0) -> dict:
-        station_exists(station_id)
-        return allocation_call(lambda: allocations.history(station_id,
-            run_id=str(run_id) if run_id else None, limit=limit, offset=offset))
-
-    @app.get('/m4-api/stations/{station_id}/allocation-result')
-    def get_allocation(station_id: str, allocation_id: UUID4) -> dict:
-        station_exists(station_id)
-        return allocation_call(lambda: allocations.get(station_id, str(allocation_id)))
 
     @app.get('/m4-api/stations/{station_id}/bills')
     def get_bills(station_id: str, month: Annotated[str, Query(pattern='^' + MONTH_PATTERN + '$')]) -> dict:
@@ -208,7 +186,7 @@ def create_app(settings_path: Path | None = None, *, control_reader=None, input_
     def get_daily_plan(station_id: str) -> dict:
         station_exists(station_id)
         try:
-            return daily_plans.latest(station_id)
+            return {**daily_plans.latest(station_id), 'automation': automatic.metadata()}
         except Exception:
             raise HTTPException(503, '全天计划读取或校验失败，请重新计算。') from None
 

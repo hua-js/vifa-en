@@ -30,9 +30,9 @@ def runtime_parameters(station_id):
     values = RuntimeSettings.model_validate({
         **GLOBAL_RUNTIME_DEFAULTS, **STATION_RUNTIME_OVERRIDES.get(station_id, {}),
     })
-    # Retired manual grid limit must not constrain a newly built request.
-    # The actual hard limit is resolved from t_need.need_kw with each input.
-    return {**values.model_dump(), 'grid_import_limit_kw': None}
+    # Confirmed station-1 physical import ceiling; t_need remains a soft target.
+    # Station 2 retains its existing policy until its physical limit is confirmed.
+    return {**values.model_dump(), 'grid_import_limit_kw': 550.0 if station_id == 'station-1' else None}
 
 
 def effective_configuration(configuration):

@@ -447,8 +447,8 @@ def request_from_inputs(configuration: StationConfiguration, bundle: dict, profi
         cabinet_max_charge_kw=cabinet_limits['max_charge_kw'] if cabinet_limits else None,
         cabinet_max_discharge_kw=cabinet_limits['max_discharge_kw'] if cabinet_limits else None,
         demand_limit_kw=controls['demand']['need_kw'],
-        grid_import_limit_kw=(controls['demand']['need_kw']
-            if controls.get('control_policy_version') == SCHEDULE_POWER_POLICY else None),
+        grid_import_limit_kw=(parameters.grid_import_limit_kw if parameters.grid_import_limit_kw is not None else
+            controls['demand']['need_kw'] if controls.get('control_policy_version') == SCHEDULE_POWER_POLICY else None),
         grid_export_enabled=True,
         # re_flow is inactive. The existing model permits PV export only; its
         # maximum input PV supplies a finite physical bound, not a 40 kW rule.

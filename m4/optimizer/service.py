@@ -150,6 +150,8 @@ class M4Optimizer:
 
     def _effective_model_version(self, request: OptimizationRequest) -> str:
         model_version = f"{self.model_version}/pyomo-v1"
+        if request.ems_schedule_modes is not None:
+            model_version += "/ems-original-directions-v1"
         if request.horizon_points == 95:
             model_version += '/horizon-95-v1'
         if request.peak_reserve_policy is not None:

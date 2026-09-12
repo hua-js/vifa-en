@@ -59,6 +59,10 @@ def _baseline_plan(request, baseline, controls_version):
             or not math.isfinite(baseline['initial_soc_pct'])
             or abs(baseline['initial_soc_pct'] - request.capability.initial_soc_pct) > 1e-9):
         raise ValueError('baseline provenance mismatch')
+    if request.ems_schedule_modes is not None:
+        from .schedule_power import schedule_modes
+        if request.ems_schedule_modes != schedule_modes(baseline['schedule']):
+            raise ValueError('EMS schedule boundary provenance mismatch')
     plan = [PlanPoint.model_validate_json(json.dumps(point, allow_nan=False))
             for point in baseline['plan']]
     replay, simulation = simulate_ems_day(request.capability, request.constraints, request.points, baseline['schedule'], pv_dispatch_policy=request.pv_dispatch_policy)
@@ -74,6 +78,7 @@ def _baseline_plan(request, baseline, controls_version):
     # EMS is replayed under its original controller, not the optimizer's new
     # non-peak discharge restriction or terminal reserve. Keep its PV policy.
     validation_request.peak_reserve_policy = None
+    validation_request.ems_schedule_modes = None
     metrics = calculate_metrics(validation_request, plan)
     checked = CandidateResult(profile_id='balanced', profile_version='ems-baseline-v1',
         plan_version='ems/'+baseline['controller_version']+'/'+baseline['input_sha256'], status='feasible',
@@ -145,8 +150,17 @@ def compare_daily_plan(request, candidate, *, baseline=None, controls_version=No
     except (ValueError, TypeError, AttributeError, OverflowError):
         output['reason'] = '优化日计划未通过独立校验，沿用 EMS 原计划。'
         return output
-    if metrics.peak_demand_exceed_kw > POWER_TOLERANCE_KW:
+    soft_demand = (request.station_id == 'station-1'
+        and request.source_versions.get('physical_grid_policy') == 'station-1-550-v1'
+        and request.constraints.grid_import_limit_kw == 550.0)
+    if metrics.peak_demand_exceed_kw > POWER_TOLERANCE_KW and not soft_demand:
         output['reason'] = '优化日计划未满足需量目标，沿用 EMS 原计划。'
+        return output
+    cost_first = soft_demand and request.source_versions.get('economic_policy') == 'station-1-cost-first-v1'
+    if soft_demand and not cost_first and (metrics.peak_demand_exceed_kw > ems.metrics.peak_demand_exceed_kw + POWER_TOLERANCE_KW
+            or (abs(metrics.peak_demand_exceed_kw - ems.metrics.peak_demand_exceed_kw) <= POWER_TOLERANCE_KW
+                and metrics.demand_exceed_energy_kwh > ems.metrics.demand_exceed_energy_kwh + ENERGY_TOLERANCE_KWH)):
+        output['reason'] = '候选方案未改善需量控制目标，沿用 EMS 原计划。'
         return output
     terminal_difference = (metrics.terminal_soc_pct - ems.metrics.terminal_soc_pct) * request.capability.energy_capacity_kwh / 100
     if reserve_policy is not None:
@@ -166,4 +180,7 @@ def compare_daily_plan(request, candidate, *, baseline=None, controls_version=No
             recommended=dict(profile_id=candidate.profile_id, plan_version=candidate.plan_version,
                 plan=[point.model_dump(mode='json') for point in candidate.plan],
                 metrics=metrics.model_dump(mode='json')))
+    if output['status'] == 'optimized' and soft_demand and metrics.peak_demand_exceed_kw > POWER_TOLERANCE_KW:
+        output['reason'] = (f'优化方案严格满足{request.constraints.grid_import_limit_kw:g} kW物理购电上限，{('费用优先，需量目标仅作同成本择优参考' if cost_first else '优先减少需量目标超限')}；'
+            f'仍有约{metrics.peak_demand_exceed_kw:.2f} kW目标偏差，全天预计费用低于 EMS。')
     return output

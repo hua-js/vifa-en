@@ -40,7 +40,7 @@ def validate_candidate(
             raise ResultValidationError('peak reserve terminal SOC floor outside allowed bounds')
         if terminal_soc_target_pct is not None and peak_reserve.terminal_soc_min_pct < terminal_soc_target_pct:
             raise ResultValidationError('peak reserve terminal SOC floor below baseline target')
-        if peak_reserve.version == 'peak-reserve-v2':
+        if peak_reserve.version in ('peak-reserve-v2', 'peak-reserve-v3'):
             # Independently identify the beginning of the last peak block.
             for index, source in enumerate(request.points):
                 if source.tariff_period == 'feng' and (
@@ -52,6 +52,9 @@ def validate_candidate(
         if point.timestamp != source.timestamp:
             _raise(label, "timestamp")
         charge_kw, discharge_kw = _mode_power(point.mode, point.target_power_kw, label, tolerance)
+        if (request.ems_schedule_modes is not None and point.mode != "idle"
+                and point.mode != request.ems_schedule_modes[index]):
+            _raise(label, "EMS schedule direction")
         if not capability.available and (charge_kw > tolerance or discharge_kw > tolerance):
             _raise(label, "device availability")
         if charge_kw - capability.max_charge_kw > tolerance:
@@ -61,7 +64,7 @@ def validate_candidate(
         if peak_reserve is not None:
             net_load = max(source.load_forecast_kw - source.pv_forecast_kw, 0.0)
             maximum_discharge = min(capability.max_discharge_kw, net_load)
-            if source.tariff_period != 'feng':
+            if peak_reserve.version != 'peak-reserve-v3' and source.tariff_period != 'feng':
                 grid_boundary = constraints.demand_limit_kw
                 if constraints.grid_import_limit_kw is not None:
                     grid_boundary = min(grid_boundary, constraints.grid_import_limit_kw)
@@ -100,7 +103,8 @@ def validate_candidate(
             if surplus > 0.0:
                 if point.grid_import_kw > tolerance:
                     _raise(label, "PV surplus grid import")
-                available_charge = capability.max_charge_kw if capability.available else 0.0
+                available_charge = capability.max_charge_kw if (capability.available and
+                    (request.ems_schedule_modes is None or request.ems_schedule_modes[index] == "charge")) else 0.0
                 headroom_kw = max(
                     capability.energy_capacity_kwh * constraints.soc_max_pct / 100.0
                     - current_energy, 0.0,

@@ -104,16 +104,29 @@ def get_profiles(station_id: str) -> list[ObjectiveProfile]:
 
 
 def get_daily_profiles(station_id: str) -> list[ObjectiveProfile]:
-    """Only the confirmed station's daily plans prioritize peak energy reserve."""
+    """Versioned daily overrides: station 1 cost first; station 2 peak reserve."""
     from .daily_policy import daily_policy_version
     profiles = get_profiles(station_id)
+    if station_id == 'station-1':
+        settings, _ = _resolve(station_id)
+        for profile in profiles:
+            profile.profile_version += '/station-1-cost-first-v1'
+            profile.objective_order = [ObjectiveLayer(
+                name=term.replace('_', '-'), terms={term: 1.0},
+                absolute_tolerance=settings.absolute_tolerance,
+                relative_tolerance=settings.relative_tolerance)
+                for term in ('energy_cost', 'demand_peak', 'demand_duration',
+                             'pv_unused', 'soc_preferred_deviation', 'throughput', 'valley_charge_delay')]
+        return profiles
     policy_version = daily_policy_version(station_id)
     if policy_version is None:
         return profiles
     settings, _ = _resolve(station_id)
     for profile in profiles:
         profile.profile_version += '/' + policy_version
-        profile.objective_order.insert(2, ObjectiveLayer(
+        # Economic objectives precede reserve preparation; reserve is a tie-break.
+        position = next(i for i, layer in enumerate(profile.objective_order) if layer.name == 'throughput')
+        profile.objective_order.insert(position, ObjectiveLayer(
             name='peak-reserve-shortfall', terms={'peak_reserve_shortfall': 1.0},
             absolute_tolerance=settings.absolute_tolerance,
             relative_tolerance=settings.relative_tolerance))

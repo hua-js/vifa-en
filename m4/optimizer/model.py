@@ -88,14 +88,19 @@ def build_model(request: OptimizationRequest, *, terminal_soc_target_pct: float 
     model.pv_policy_periods = pyo.Set(initialize=range(horizon) if load_first else (), ordered=True)
     model.pv_surplus_periods = pyo.Set(initialize=[t for t in model.periods if load_first and surplus[t] > 0], ordered=True)
 
+    def allowed_charge(t):
+        return charge_max if request.ems_schedule_modes is None or request.ems_schedule_modes[t] == "charge" else 0.0
+
     def charge_bound(m, t):
-        return (0.0, min(charge_max, surplus[t]) if load_first and surplus[t] > 0 else charge_max)
+        return (0.0, min(allowed_charge(t), surplus[t]) if load_first and surplus[t] > 0 else allowed_charge(t))
 
     def discharge_bound(m, t):
+        if request.ems_schedule_modes is not None and request.ems_schedule_modes[t] != "discharge":
+            return 0.0, 0.0
         point = request.points[t]
         net_load = max(point.load_forecast_kw - point.pv_forecast_kw, 0.0)
         maximum = min(discharge_max, net_load) if load_first or peak_reserve is not None else discharge_max
-        if peak_reserve is not None and point.tariff_period != 'feng':
+        if peak_reserve is not None and peak_reserve.version != 'peak-reserve-v3' and point.tariff_period != 'feng':
             grid_boundary = min(constraints.demand_limit_kw, import_max)
             maximum = min(maximum, max(net_load - grid_boundary, 0.0))
         return 0.0, maximum
@@ -136,7 +141,7 @@ def build_model(request: OptimizationRequest, *, terminal_soc_target_pct: float 
         model.peak_reserve_preparation = pyo.Constraint(expr=
             model.peak_reserve_energy_shortfall + model.energy[first_peak]
             >= capacity * constraints.preferred_soc_max_pct / 100.0)
-        if peak_reserve.version == 'peak-reserve-v2':
+        if peak_reserve.version in ('peak-reserve-v2', 'peak-reserve-v3'):
             # Preserve the terminal reserve from the final contiguous peak block,
             # including its starting energy state and every later state.
             last_peak_start = max(t for t, point in enumerate(request.points)
@@ -175,7 +180,7 @@ def build_model(request: OptimizationRequest, *, terminal_soc_target_pct: float 
     model.pv_export_before_curtailment = pyo.Constraint(model.pv_surplus_periods, rule=lambda m, t:
         m.grid_export[t] >= min(surplus[t], export_max) * m.pv_curtail_on[t])
     model.pv_charge_before_curtailment = pyo.Constraint(model.pv_surplus_periods, rule=lambda m, t:
-        m.charge[t] >= min(surplus[t], charge_max) * (m.pv_curtail_on[t] - m.pv_storage_full[t]))
+        m.charge[t] >= min(surplus[t], allowed_charge(t)) * (m.pv_curtail_on[t] - m.pv_storage_full[t]))
     model.pv_full_before_curtailment = pyo.Constraint(model.pv_surplus_periods, rule=lambda m, t:
         m.energy[t + 1] >= minimum_energy + (maximum_energy - minimum_energy) * m.pv_storage_full[t])
     # Customer preference is a physical allocation rule, independent of price.
@@ -190,7 +195,7 @@ def build_model(request: OptimizationRequest, *, terminal_soc_target_pct: float 
             model.pv_export_priority = pyo.Constraint(model.pv_surplus_periods,
                 rule=lambda m, t: m.grid_export[t] == export_quota[t])
         model.pv_priority_charge = pyo.Constraint(model.pv_surplus_periods,
-            rule=lambda m, t: m.charge[t] >= min(charge_max, surplus[t]-export_quota[t])
+            rule=lambda m, t: m.charge[t] >= min(allowed_charge(t), surplus[t]-export_quota[t])
                 * (1-m.pv_storage_full[t]))
 
     model.preferred_soc_low = pyo.Constraint(model.periods, rule=lambda m, t:

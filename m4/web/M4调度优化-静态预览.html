@@ -1,0 +1,74 @@
+<!doctype html><html lang="zh-CN" data-vifa-page="m4" data-theme="light"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>M4 · 调度优化方案预览</title><style>/* Theme tokens copied from m3/node_red/m3_production_gateway_template.html. */
+:root[data-vifa-page] {
+  --m3-blue: #74a7ff;
+  --m3-cyan: #5ee7f6;
+  --m3-green: #69e6a6;
+  --m3-green-soft: rgb(105 230 166 / 9%);
+  --m3-orange: #f7d26a;
+  --m3-orange-soft: rgb(247 210 106 / 10%);
+  --m3-red: #ff7f91;
+  --m3-red-soft: rgb(255 127 145 / 10%);
+  --m3-paper: #0b1020;
+  --m3-panel: #11182a;
+  --m3-panel-soft: #151f34;
+  --m3-panel-raised: #18243b;
+  --m3-ink: #eaf0ff;
+  --m3-muted: #8fa0bf;
+  --m3-tertiary: #6f7c95;
+  --m3-line: rgb(255 255 255 / 8%);
+  --m3-line-hover: rgb(255 255 255 / 14%);
+  --m3-shadow-soft: 0 16px 36px rgb(0 0 0 / 25%);
+  --m3-card-overlay: rgb(255 255 255 / 2.6%);
+  --m3-card-overlay-end: rgb(255 255 255 / 1.2%);
+  --m3-glow-blue: rgb(72 112 255 / 14%);
+  --m3-glow-green: rgb(30 220 196 / 9%);
+}
+:root[data-vifa-page][data-theme="light"] {
+  --m3-blue: #477df0;
+  --m3-cyan: #0e96b4;
+  --m3-green: #16855a;
+  --m3-green-soft: rgb(33 167 111 / 10%);
+  --m3-orange: #a36d00;
+  --m3-orange-soft: rgb(163 109 0 / 10%);
+  --m3-red: #cf4055;
+  --m3-red-soft: rgb(224 82 101 / 10%);
+  --m3-paper: #f4f7fb;
+  --m3-panel: #ffffff;
+  --m3-panel-soft: #f8fafc;
+  --m3-panel-raised: #eef3fb;
+  --m3-ink: #172033;
+  --m3-muted: #6f7d93;
+  --m3-tertiary: #7b879a;
+  --m3-line: rgb(15 23 42 / 9%);
+  --m3-line-hover: rgb(15 23 42 / 16%);
+  --m3-shadow-soft: 0 14px 34px rgb(36 48 74 / 10%);
+  --m3-card-overlay: rgb(255 255 255 / 35%);
+  --m3-card-overlay-end: rgb(255 255 255 / 10%);
+  --m3-glow-blue: rgb(72 112 255 / 9%);
+  --m3-glow-green: rgb(30 180 155 / 7%);
+}
+
+:root[data-vifa-page][data-theme="light"] { color-scheme: light; }
+:root[data-vifa-page][data-theme="dark"] { color-scheme: dark; }
+:root[data-vifa-page] { background: var(--m3-paper) !important; }
+:root[data-vifa-page] > body {
+  background:
+    radial-gradient(circle at 12% 0%, var(--m3-glow-blue), transparent 30%),
+    radial-gradient(circle at 86% 10%, var(--m3-glow-green), transparent 25%),
+    var(--m3-paper) !important;
+}
+
+*{box-sizing:border-box}body{margin:0;color:var(--m3-ink);font:14px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;font-variant-numeric:tabular-nums;min-height:100vh}main{max-width:1280px;margin:auto;padding:28px}header,.row,.section-head{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}header{margin-bottom:28px}.brand{display:flex;gap:12px;align-items:center}.mark{background:var(--m3-ink);color:var(--m3-panel);padding:10px;border-radius:12px;font-weight:750}h1{font-size:24px;margin:0}h2{font-size:18px;margin:0}p{margin:6px 0}.muted,small{color:var(--muted)}:root{--muted:#56657b;--accent:#146947;--blue:#285eba;--soft:#e8f4ed;--stand:#e7ebf1;--stand-ink:#4a586d}[data-theme=dark]{--muted:#a2b0c9;--accent:#84e5b1;--blue:#9cbdff;--soft:#19382f;--stand:#2b364c;--stand-ink:#cad5e8}button{font:inherit;color:inherit;background:var(--m3-panel);border:1px solid var(--m3-line-hover);padding:9px 15px;min-height:42px;border-radius:9px;cursor:pointer}button:hover{background:var(--m3-panel-raised)}button:active{transform:translateY(1px)}button:focus-visible,summary:focus-visible{outline:2px solid var(--m3-blue);outline-offset:3px}button[aria-pressed=true]{background:var(--m3-ink);color:var(--m3-panel);border-color:var(--m3-ink)}.controls{display:flex;gap:8px;flex-wrap:wrap}.panel{background:linear-gradient(180deg,var(--m3-card-overlay),var(--m3-card-overlay-end)),var(--m3-panel);border:1px solid var(--m3-line);border-radius:16px;padding:24px;margin-bottom:20px;box-shadow:var(--m3-shadow-soft)}.hero{display:grid;grid-template-columns:1.45fr 1fr;gap:30px;border-top:3px solid var(--m3-green)}.eyebrow{font-size:12px;letter-spacing:.08em;font-weight:650;color:var(--accent)}.hero h2{font-size:28px;margin:12px 0}.pill{display:inline-flex;padding:3px 9px;border-radius:6px;background:var(--soft);color:var(--accent);font-size:12px;font-weight:600}.gain{border-left:1px solid var(--m3-line);padding-left:30px}.amount{font-size:42px;letter-spacing:-1px;font-weight:700;color:var(--accent);line-height:1.5}.amount small{font-size:18px;color:inherit}.costs{display:flex;gap:24px;flex-wrap:wrap}.costs strong{display:block;font-size:17px}.section-head{margin-bottom:20px}.legend{display:flex;gap:16px;color:var(--muted);font-size:12px}.legend span:before{content:"";display:inline-block;width:8px;height:8px;background:var(--stand-ink);margin-right:6px;border-radius:2px}.legend .c:before{background:var(--accent)}.legend .d:before{background:var(--blue)}.timeline-scroll{overflow-x:auto;padding-bottom:10px}.timeline{min-width:730px}.axis,.track-row{display:grid;grid-template-columns:110px 1fr;align-items:center;gap:16px}.ticks{display:flex;justify-content:space-between;color:var(--muted);font-size:12px;margin-bottom:10px}.track-row{margin-bottom:14px}.track{display:grid;grid-template-columns:repeat(24,1fr);gap:3px;height:46px}.seg{font-size:12px;display:flex;align-items:center;justify-content:center;background:var(--stand);color:var(--stand-ink);border-radius:5px;white-space:nowrap}.charge{background:var(--soft);color:var(--accent)}.discharge{background:color-mix(in srgb,var(--blue) 13%,var(--m3-panel));color:var(--blue)}.changed{border:2px solid var(--accent);font-weight:700}.callout{display:flex;gap:12px;align-items:center;background:var(--m3-panel-soft);border:1px solid var(--m3-line);padding:14px 16px;border-radius:10px;flex-wrap:wrap}.arrow{color:var(--muted);padding:0 8px}.bottom{display:grid;grid-template-columns:1fr 1fr;gap:20px}.bottom .panel{margin:0}.comparison{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:20px}.mini{background:var(--m3-panel-soft);border-radius:10px;padding:16px}.mini strong{display:block;margin:8px 0;font-size:20px}.mini.better{background:var(--soft)}.mini.better strong{color:var(--accent)}.detail{margin-top:18px;padding-top:16px;border-top:1px solid var(--m3-line)}summary{cursor:pointer;min-height:40px;color:var(--blue);display:flex;align-items:center}table{width:100%;border-collapse:collapse;font-size:13px}td,th{text-align:left;padding:10px 8px;border-bottom:1px solid var(--m3-line)}.table-scroll{overflow:auto}footer{margin-top:22px;color:var(--muted);font-size:12px;display:flex;gap:12px;justify-content:space-between;flex-wrap:wrap}.notice{font-size:12px;color:var(--muted)}.number{font-weight:700;color:var(--accent)}@media(max-width:850px){.hero{grid-template-columns:1fr}.gain{border-left:0;border-top:1px solid var(--m3-line);padding:18px 0 0}.bottom{grid-template-columns:1fr}main{padding:20px}}@media(max-width:480px){main{padding:14px}.panel{padding:18px}.hero h2{font-size:23px}h1{font-size:22px}.comparison{grid-template-columns:1fr}.amount{font-size:36px}.controls{width:100%}.section-head{gap:10px}.costs{gap:16px}}
+</style><body><main><header><div class="brand"><div class="mark">M4</div><div><h1>调度优化</h1><p class="muted">让储能电量用在更合适的时段</p></div></div><div class="controls"><button data-station="1" aria-pressed="true">电站 1</button><button data-station="2" aria-pressed="false">电站 2</button><button id="theme" aria-label="切换到深色模式">深色模式</button></div></header>
+<div class="row" style="margin-bottom:14px"><span><strong id="station-title">电站 1</strong> <span class="muted"> / 2026-09-12 · 全天调度计划</span></span><span class="notice">静态演示 · 示例数据 · 未下发设备</span></div>
+<section class="panel hero"><div><div class="eyebrow">求解器推荐方案 <span class="pill">优于原 EMS 计划</span></div><h2>早间保留电量，晚间继续放电</h2><p>将 <strong>08:00–10:00</strong> 从放电调整为待机，<br>保留电量用于 <strong>19:00–21:00</strong> 的原有放电时段。</p><p class="muted" style="margin-top:18px">本次仅调整 <span class="number">1 个时段 · 2 小时</span>，其余时段保持不变。</p></div><div class="gain"><span class="muted">相对原 EMS 计划 · 预计净节省</span><div class="amount"><small>¥</small> <span id="saving">96.00</span></div><div class="costs"><div><small>原方案预计净成本</small><strong id="base">¥1,280.00</strong></div><div><small>优化后预计净成本</small><strong id="optimized">¥1,184.00</strong></div></div><p class="notice" style="margin-top:14px">同输入条件下的方案对比 · 金额为演示值</p></div></section>
+<section class="panel"><div class="section-head"><div><h2>调度计划对比</h2><p class="muted">只看安排变化，快速识别求解器调整的位置</p></div><div class="legend"><span class="c">充电</span><span class="d">放电</span><span>待机</span></div></div><div class="timeline-scroll"><div class="timeline"><div class="axis"><span></span><div class="ticks"><span>00:00</span><span>04:00</span><span>08:00</span><span>12:00</span><span>16:00</span><span>20:00</span><span>24:00</span></div></div><div class="track-row"><strong>原 EMS 计划</strong><div class="track" id="original"></div></div><div class="track-row"><strong>优化后计划</strong><div class="track" id="recommended"></div></div></div></div><div class="callout"><span class="pill">本次调整</span><strong>08:00–10:00</strong><span>放电 <span class="arrow">→</span> <strong>待机 · 0 kW</strong></span><span class="muted">保留电量，支持晚间放电</span></div><p class="notice" style="margin-top:12px">时间轴表示计划安排；实际能否放电取决于可用电量及 EMS 本地约束。完整时段使用示例配置。</p></section>
+<div class="bottom"><section class="panel"><h2>这次调整带来了什么</h2><p class="muted">19:00–21:00 · 预计电量可用性对比</p><div class="comparison"><div class="mini"><small>原 EMS 方案</small><strong>可放电量已耗尽</strong><span class="muted">虽有放电安排，已无电可放</span></div><div class="mini better"><small>优化后方案</small><strong>有电可继续放电</strong><span>使用早间保留的电量</span></div></div><p class="notice" style="margin-top:14px">效果为场景演示，非设备实测；晚间放电属于原有时段。</p></section><section class="panel"><h2>计划如何执行</h2><p class="muted">时段由 M4 确定，功率由 EMS 执行</p><div class="detail"><div class="row"><span>充电 / 放电时段</span><strong>沿用 EMS 配置功率</strong></div><div class="row" style="margin-top:12px"><span>调整为待机的时段</span><strong>0 kW</strong></div><div class="row" style="margin-top:12px"><span>当前执行状态</span><span class="muted">计划预览 · 未下发</span></div></div><p class="notice" style="margin-top:14px">EMS 负责柜间分配及本地保护。实际执行功率尚未接入回读。</p></section></div>
+<section class="panel" style="margin-top:20px"><details><summary>查看全天时段明细 <span class="arrow">＋</span></summary><div class="table-scroll"><table><thead><tr><th>时段</th><th>原 EMS 计划</th><th>优化后计划</th><th>功率执行</th><th>变化</th></tr></thead><tbody id="periods"></tbody></table></div></details></section><footer><span>M4 能源优化调度 / 静态设计预览</span><span>时区：Asia/Shanghai · 所有数值为示例，不代表线上求解结果</span></footer></main>
+<script>
+const periods=[[0,7,'充电'],[7,8,'待机'],[8,10,'放电'],[10,12,'待机'],[12,14,'充电'],[14,17,'待机'],[17,21,'放电'],[21,24,'待机']];const clock=h=>String(h).padStart(2,'0')+':00';const cls=a=>a==='充电'?'charge':a==='放电'?'discharge':'';
+for(const id of ['original','recommended'])document.getElementById(id).innerHTML=periods.map(([start,end,mode])=>{const changed=id==='recommended'&&start===8;const label=changed?'待机':mode;return `<div class="seg ${cls(label)} ${changed?'changed':''}" style="grid-column:${start+1}/span ${end-start}" title="${clock(start)}–${clock(end)} ${label}">${end-start>1?label:'—'}</div>`}).join('');
+document.getElementById('periods').innerHTML=periods.map(([s,e,a])=>`<tr><td>${clock(s)}–${clock(e)}</td><td>${a}</td><td>${s===8?'待机':a}</td><td>${s===8||a==='待机'?'0 kW':'沿用 EMS 配置'}</td><td>${s===8?'<span class="pill">已优化</span>':'不变'}</td></tr>`).join('');
+document.querySelectorAll('[data-station]').forEach(b=>b.onclick=()=>{document.querySelectorAll('[data-station]').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));const second=b.dataset.station==='2';document.getElementById('station-title').textContent='电站 '+b.dataset.station;document.getElementById('saving').textContent=second?'72.00':'96.00';document.getElementById('base').textContent=second?'¥960.00':'¥1,280.00';document.getElementById('optimized').textContent=second?'¥888.00':'¥1,184.00'});
+document.getElementById('theme').onclick=()=>{const dark=document.documentElement.dataset.theme!=='dark';document.documentElement.dataset.theme=dark?'dark':'light';const b=document.getElementById('theme');b.textContent=dark?'浅色模式':'深色模式';b.setAttribute('aria-label',dark?'切换到浅色模式':'切换到深色模式')};
+</script></body></html>

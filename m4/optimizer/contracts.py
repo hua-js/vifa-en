@@ -74,11 +74,12 @@ class ObjectiveProfile(StrictModel):
 
 
 class PeakReservePolicy(StrictModel):
-    version: Literal["peak-reserve-v1", "peak-reserve-v2"] = "peak-reserve-v1"
+    version: Literal["peak-reserve-v1", "peak-reserve-v2", "peak-reserve-v3"] = "peak-reserve-v1"
     terminal_soc_min_pct: Annotated[float, Field(ge=0, le=100, allow_inf_nan=False)]
 
 
 class OptimizationRequest(StrictModel):
+    ems_schedule_modes: list[Literal["charge", "discharge", "idle"]] | None = None
     pv_dispatch_policy: Literal["legacy", "load_first_economic", "load_first_export_priority", "load_first_storage_priority"] = "legacy"
     peak_reserve_policy: PeakReservePolicy | None = None
     request_id: str = Field(min_length=1)
@@ -99,12 +100,16 @@ class OptimizationRequest(StrictModel):
     @model_serializer(mode="wrap")
     def serialize_optional_policy(self, handler):
         output = handler(self)
+        if self.ems_schedule_modes is None:
+            output.pop("ems_schedule_modes", None)
         if self.peak_reserve_policy is None:
             output.pop("peak_reserve_policy", None)
         return output
 
     @model_validator(mode="after")
     def validate_cross_fields(self) -> "OptimizationRequest":
+        if self.ems_schedule_modes is not None and len(self.ems_schedule_modes) != self.horizon_points:
+            raise ValueError("EMS schedule must cover every request point")
         if len(self.points) != self.horizon_points:
             raise ValueError(f"request must contain exactly {self.horizon_points} points")
         timestamp_values = [
@@ -157,13 +162,30 @@ class OptimizationRequest(StrictModel):
             "pv_unused",
             "throughput",
         }
+        cost_first = self.source_versions.get('economic_policy') == 'station-1-cost-first-v1'
+        if cost_first and (self.station_id != 'station-1'
+                or self.constraints.grid_import_limit_kw != 550.0
+                or self.source_versions.get('physical_grid_policy') != 'station-1-550-v1'
+                or self.peak_reserve_policy is not None):
+            raise ValueError('cost-first policy requires station-1 physical ceiling 550')
         for profile in self.profiles:
             term_sets = [set(layer.terms) for layer in profile.objective_order]
-            if term_sets[:2] != [{"demand_peak"}, {"demand_duration"}]:
+            if cost_first:
+                if term_sets[:3] != [{"energy_cost"}, {"demand_peak"}, {"demand_duration"}]:
+                    raise ValueError('cost-first policy requires cost before demand tie-breaks')
+            elif term_sets[:2] != [{"demand_peak"}, {"demand_duration"}]:
                 raise ValueError("demand objectives must be the first two layers")
             flattened = [name for layer in profile.objective_order for name in layer.terms]
             if self.peak_reserve_policy is not None:
-                if (term_sets[2:3] != [{"peak_reserve_shortfall"}]
+                if self.peak_reserve_policy.version == "peak-reserve-v3":
+                    if (flattened.count("peak_reserve_shortfall") != 1
+                            or {"peak_reserve_shortfall"} not in term_sets):
+                        raise ValueError("economic reserve requires one separate reserve layer")
+                    reserve_index = term_sets.index({"peak_reserve_shortfall"})
+                    cost_index = next((i for i, terms in enumerate(term_sets) if "energy_cost" in terms), len(term_sets))
+                    if reserve_index <= cost_index:
+                        raise ValueError("economic cost must precede reserve preparation")
+                elif (term_sets[2:3] != [{"peak_reserve_shortfall"}]
                         or flattened.count("peak_reserve_shortfall") != 1):
                     raise ValueError("peak reserve objective must be a separate third layer")
                 flattened.remove("peak_reserve_shortfall")

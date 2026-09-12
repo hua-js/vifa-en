@@ -50,18 +50,19 @@ def prepare_ems_day(configuration, bundle):
         **{k: getattr(parameters, k) for k in ('soc_min_pct', 'soc_max_pct',
            'preferred_soc_min_pct', 'preferred_soc_max_pct', 'terminal_soc_tolerance_pct', 'cycle_cost_per_kwh')},
         demand_limit_kw=control['demand']['need_kw'],
-        grid_import_limit_kw=control['demand']['need_kw'],
+        grid_import_limit_kw=(parameters.grid_import_limit_kw if parameters.grid_import_limit_kw is not None else control['demand']['need_kw']),
         grid_export_enabled=True, grid_export_limit_kw=max(p.pv_forecast_kw for p in points))
     schedule = station_schedule(control)
     plan, simulation = simulate_ems_day(capability, constraints, points, schedule, pv_dispatch_policy=parameters.pv_dispatch_policy)
     terminal = plan[-1].expected_soc_pct
     policy_version = daily_policy_version(configuration.station_id)
-    reserve_policy = (PeakReservePolicy(version='peak-reserve-v2', terminal_soc_min_pct=max(
+    reserve_policy = (PeakReservePolicy(version='peak-reserve-v3', terminal_soc_min_pct=max(
         terminal, constraints.preferred_soc_min_pct)) if policy_version else None)
     profiles = get_daily_profiles(configuration.station_id)
     content = {'configuration': configuration.model_dump(mode='json'), 'points': bundle['points'],
                'controls_version': control['version'], 'initial': initial, 'terminal': terminal,
-               'baseline_policy': EMS_BASELINE_POLICY}
+               'baseline_policy': EMS_BASELINE_POLICY,
+               'profiles': [profile.model_dump(mode='json') for profile in profiles]}
     if policy_version:
         content.update(daily_policy=policy_version,
             peak_reserve_policy=reserve_policy.model_dump(mode='json'),
@@ -79,6 +80,7 @@ def prepare_ems_day(configuration, bundle):
             **({'pv_gap_policy': 'outside_forecast_window_zero',
                 'pv_zero_filled_points': str(sources['pv']['zero_filled_points'])}
                if sources['pv'].get('zero_filled_points') else {}),
+            **({'physical_grid_policy': 'station-1-550-v1', 'economic_policy': 'station-1-cost-first-v1'} if configuration.station_id == 'station-1' else {}),
             'terminal_target': format(terminal, '.17g'), 'baseline_policy': EMS_BASELINE_POLICY,
             **({'daily_policy': policy_version} if policy_version else {})})
     baseline = dict(schema_version='m4-ems-daily-baseline-v1', station_id=configuration.station_id,

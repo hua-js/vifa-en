@@ -14,7 +14,8 @@ from zoneinfo import ZoneInfo
 from .pv_forecast_source import load_pv_forecast, validate_source as validate_pv_source
 from .timeseries import InputDataError
 from .forecast_source import load_forecast, _time
-from .live_inputs import _complete, _complete_tariff_periods
+from .live_inputs import _complete, _complete_tariff_periods, _display_number, _display_time
+from .runtime_config import runtime_parameters
 from .roster import STATION_CABINETS
 
 
@@ -80,6 +81,48 @@ class DailyInputService:
                 'timestamp': start.isoformat(), 'soc': value, 'scope': output['scope']}))
         return output
 
+    def _current_soc(self, station_id, now):
+        """Optional display sample, excluded from solver inputs and readiness gates."""
+        source_station, _ = STATION_CABINETS[station_id]
+        rows = self.live.client.list_rows('t_es_data', fields='timestamp,es_sn,emus_soc',
+            filters={'es_sn': {'$eq': source_station}}, sort='-timestamp', page_size=1, limit=1)
+        output = dict(status='incomplete', station_id=station_id, soc_pct=None,
+                      observed_at=None, scope='whole_station_latest', issues=[])
+        if not rows or rows[0].get('es_sn') != source_station:
+            return output
+        row = rows[0]
+        observed = _display_time(row.get('timestamp'), now=now,
+            max_age=runtime_parameters(station_id)['max_input_age_seconds'])
+        value = _display_number(row.get('emus_soc'), percentage=True)
+        if observed is not None and value is not None:
+            output.update(status='ready', soc_pct=value, observed_at=observed.isoformat())
+        return output
+
+    def _current_power(self, station_id, now=None):
+        """Read station AC power from its complete cabinet roster; display only."""
+        source_station, roster = STATION_CABINETS[station_id]
+        rows = self.live.client.list_rows('t_emu',
+            fields='f_es_sn,emu_sn,latest_power,last_time_iso',
+            filters={'$and': [{'f_es_sn': {'$eq': source_station}},
+                {'emu_sn': {'$in': list(roster)}}]}, sort='emu_sn', page_size=100)
+        output = dict(status='incomplete', station_id=station_id, power_kw=None,
+                      observed_at=None, observed_until=None, scope='whole_station_latest')
+        if len(rows) != len(roster) or {r.get('emu_sn') for r in rows} != set(roster):
+            return output
+        now = now or datetime.now(SHANGHAI)
+        values, times = [], []
+        for row in rows:
+            at = _display_time(row.get('last_time_iso'), now=now,
+                max_age=runtime_parameters(station_id)['max_input_age_seconds'])
+            value = _display_number(row.get('latest_power'))
+            if row.get('f_es_sn') != source_station or at is None or value is None:
+                return output
+            values.append(value)
+            times.append(at)
+        output.update(status='ready', power_kw=sum(values),
+                      observed_at=min(times).isoformat(), observed_until=max(times).isoformat())
+        return output
+
     def fetch(self, configuration, day: date, *, now=None):
         now = (now or datetime.now(SHANGHAI)).astimezone(SHANGHAI)
         if not now.date()-timedelta(days=31) <= day <= now.date():
@@ -93,11 +136,13 @@ class DailyInputService:
             'tariff': lambda: self.live._tariff(start),
             'controls': lambda: self.live._controls(station_id),
             'initial_soc': lambda: self._initial_soc(station_id, start),
+            'current_soc': lambda: self._current_soc(station_id, now),
+            'current_power': lambda: self._current_power(station_id),
         }
         labels = {'load': '全天负荷预测', 'pv': 'M3光伏预测',
                   'tariff': '全天分时电价', 'controls': 'EMS 时段配置', 'initial_soc': '零点站级 SOC'}
         sources = {}
-        with ThreadPoolExecutor(max_workers=5) as pool:
+        with ThreadPoolExecutor(max_workers=7) as pool:
             pending = {key: pool.submit(job) for key, job in jobs.items()}
             for key, future in pending.items():
                 try:
@@ -111,7 +156,7 @@ class DailyInputService:
                 except InputDataError as error:
                     sources[key] = dict(status='incomplete', issues=[str(error)])
                 except Exception:
-                    sources[key] = dict(status='error', issues=[labels[key]+'读取或校验失败，请重新读取。'])
+                    sources[key] = dict(status='error', issues=[labels.get(key, '当前实测数据')+'读取或校验失败，请重新读取。'])
         checks = []
         for key, label in labels.items():
             source = sources[key]
@@ -162,7 +207,7 @@ class DailyInputService:
                               request=request.model_dump(mode='json'))
                 result['warnings'].append('EMS 基线按配置时段、需量阈值和 SOC 边界模拟有效运行时长；到限区间按有效时长折算平均功率，未使用现场执行回读。')
                 if request.peak_reserve_policy is not None:
-                    result['warnings'].append('本站新优化采用峰段保电：非峰段仅按需量必要放电，优先准备首峰电量，未用电量可保留到日末。当前仅完成 EMS 基线准备，不代表已生成或采用保电方案。')
+                    result['warnings'].append('本站新优化按全天经济性安排充放电，允许非峰段经济性放电，保留需量、SOC及日末电量约束。当前仅完成 EMS 基线准备，不代表已生成或采用优化方案。')
                 if baseline['simulation']['summary']['demand_shortfall_points']:
                     result['warnings'].append('当前预测下，基线存在电量或功率不足导致的需量缺口；这不是现场实测超限，新优化仍必须满足需量约束。')
                 checks.append(dict(key='ems_baseline', label='EMS 全天模拟基线', status='ready',

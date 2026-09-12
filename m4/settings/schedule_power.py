@@ -59,3 +59,24 @@ def station_schedule(control):
         raise ValueError('充放模式表的功率作用范围未知。')
     multiplier = count if control['power_scope'] == 'cabinet' else 1
     return [{**p, 'power_kw': p['power_kw']*multiplier} for p in control['schedule']]
+
+
+def schedule_modes(schedule):
+    """Expand original configured directions, never the SOC-limited EMS replay."""
+    from .ems_simulation import _slot
+    modes = ['idle'] * 96
+    occupied = set()
+    for item in schedule:
+        start, end = _slot(item['start_time']), _slot(item['end_time'])
+        if (start == 96 or start == end or item.get('repeat') != 'daily'
+                or item.get('mode') not in ('charge', 'discharge')):
+            raise ValueError('Invalid EMS schedule direction')
+        indices = range(start, end) if end > start else [*range(start, 96), *range(end)]
+        for i in indices:
+            if i in occupied:
+                raise ValueError('Overlapping EMS schedule')
+            occupied.add(i)
+            modes[i] = item['mode']
+    if not occupied:
+        raise ValueError('Missing EMS schedule')
+    return modes
