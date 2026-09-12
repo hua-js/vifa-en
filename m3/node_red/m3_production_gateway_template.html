@@ -355,6 +355,7 @@
     .prediction-summary-value { margin-top: 8px; font-size: 24px; font-weight: 770; }
     .prediction-summary-value.good { color: var(--green); }
     .prediction-summary-note { margin-top: 7px; color: var(--subtle-text); font-size: 11px; line-height: 1.45; }
+    .current-day-mape-note { font-size: 12px; white-space: pre-line; }
     .mape-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; margin-bottom: 15px; }
     .mape-summary { display: flex; flex-wrap: wrap; gap: 22px; }
     .mape-summary-item { min-width: 82px; text-align: right; }
@@ -649,6 +650,9 @@
       let customRefreshInFlight = null;
       let latestLookupToken = 0;
       let displayedConfigurationRunKey = null;
+      let historyStartEstablished = false;
+      let historyDatesEdited = false;
+      let historyFollowsYesterday = true;
       let performanceLookupToken = 0;
       let selectedPerformance = null;
       let performanceState = "等待加载";
@@ -718,7 +722,11 @@
       }
 
       function changeHistoryConfiguration() {
+        historyDatesEdited = true;
+        historyStartEstablished = true;
+        historyFollowsYesterday = historyEnd.value === addCalendarDays(shanghaiDateValue(new Date()), -1);
         updateTaskConfiguration();
+        rememberHistoryStart();
         void refreshSelectedPerformance();
       }
 
@@ -765,10 +773,34 @@
       function initializeTaskDates(referenceTime, reset = false) {
         if (!reset && historyEnd.value) return;
         const end = addCalendarDays(shanghaiDateValue(referenceTime), -1);
-        historyStart.value = addCalendarDays(end, -27);
+        let savedStart = null;
+        try { savedStart = localStorage.getItem(`vifa-m3-history-start-v1:${stationPicker.value}`); } catch (_) {}
+        const validSaved = typeof savedStart === "string" && /^\d{4}-\d{2}-\d{2}$/.test(savedStart)
+          && addCalendarDays(savedStart, 0) === savedStart && savedStart <= addCalendarDays(end, -6);
+        historyStartEstablished = validSaved;
+        historyDatesEdited = false;
+        historyFollowsYesterday = true;
+        historyStart.value = validSaved ? (savedStart < addCalendarDays(end, -89) ? addCalendarDays(end, -89) : savedStart) : addCalendarDays(end, -27);
         historyEnd.value = end;
         historyStart.max = historyEnd.value;
         historyEnd.max = historyEnd.value;
+        updateTaskConfiguration();
+      }
+
+      function rememberHistoryStart() {
+        if (!historyFollowsYesterday || !historyStartEstablished || taskConfiguration() === null) return;
+        try { localStorage.setItem(`vifa-m3-history-start-v1:${stationPicker.value}`, historyStart.value); } catch (_) {}
+      }
+
+      function rollTaskDates() {
+        const yesterday = addCalendarDays(shanghaiDateValue(new Date()), -1);
+        if (historyFollowsYesterday && historyEnd.value !== yesterday) {
+          historyEnd.value = yesterday;
+          const earliest = addCalendarDays(yesterday, -89);
+          if (historyStart.value < earliest) historyStart.value = earliest;
+          historyStartEstablished = true;
+          rememberHistoryStart();
+        }
         updateTaskConfiguration();
       }
 
@@ -1413,6 +1445,7 @@
       }
 
       function renderAcceptance(section, acceptance) {
+        text(root.querySelector('[data-summary="load_mape"] .prediction-summary-label'), "当前预测负载 MAPE");
         const summary = root.querySelector(".acceptance-summary");
         const socSummary = root.querySelector(".soc-run-summary");
         const body = root.querySelector(".station-acceptance tbody");
@@ -2073,7 +2106,7 @@
         return { status, fallbackReason };
       }
 
-      function renderCurrentPredictionMape(run, series, valueSelector, noteSelector) {
+      function currentPredictionMape(series) {
         const actualPoints = (series?.points ?? []).filter((point) =>
           point.actual_quality === "valid"
           && finite(point.actual_value)
@@ -2086,13 +2119,46 @@
             (sum, point) => sum + Math.abs(point.forecast_value - point.actual_value) / Math.abs(point.actual_value) * 100,
             0,
           ) / scorablePoints.length;
-        const actualState = actualPoints.length === 0
+        const isLoad = series?.unique_id === "station_total_load";
+        const hourFormat = new Intl.DateTimeFormat("en-GB", {
+          timeZone: "Asia/Shanghai", hour: "2-digit", hourCycle: "h23",
+        });
+        let weightedError = 0;
+        let totalWeight = 0;
+        let scoredCount = 0;
+        let toleratedCount = 0;
+        for (const point of scorablePoints) {
+          const absoluteError = Math.abs(point.forecast_value - point.actual_value);
+          const hour = Number(hourFormat.format(new Date(point.target_time)));
+          const isNightLoad = isLoad && (hour < 7 || hour >= 21);
+          const weight = isNightLoad ? 0.25 : 1;
+          totalWeight += weight;
+          if (isNightLoad && absoluteError < 10) {
+            toleratedCount += 1;
+            continue;
+          }
+          weightedError += weight * absoluteError / Math.abs(point.actual_value) * 100;
+          scoredCount += 1;
+        }
+        return { actualCount: actualPoints.length, standard: currentMape,
+          displayed: totalWeight === 0 ? null : weightedError / totalWeight, isLoad, scoredCount, toleratedCount };
+      }
+
+      function renderCurrentPredictionMape(run, series, valueSelector, noteSelector) {
+        const score = currentPredictionMape(series);
+        const actualState = score.actualCount === 0
           ? "等待回填"
-          : actualPoints.length === run.expected_points_per_series
+          : score.actualCount === run.expected_points_per_series
             ? "完整结果"
             : "临时结果";
-        text(root.querySelector(valueSelector), percentMetric(currentMape));
-        text(root.querySelector(noteSelector), `${actualPoints.length} / ${run.expected_points_per_series} 个实际点 · ${actualState}`);
+        text(root.querySelector(valueSelector), percentMetric(score.displayed));
+        const stateNote = `${score.actualCount} / ${run.expected_points_per_series} 个实际点 · ${actualState}`;
+        if (score.isLoad) {
+          text(root.querySelector('[data-summary="load_mape"] .prediction-summary-label'), "负载加权 MAPE（夜间容差）");
+        }
+        text(root.querySelector(noteSelector), score.isLoad
+          ? `${stateNote}\n标准 MAPE ${percentMetric(score.standard)}\n夜间误差小于 10 kW 记 0（${score.toleratedCount} 点），保留分母\n北京时间 00–07、21–24 点权重 25%\n其余时段原始误差、100% 权重`
+          : stateNote);
       }
 
       function renderCustomEvidence(run) {
@@ -2226,12 +2292,22 @@
         const key = `${stationKey}:${run.run_id}`;
         if (displayedConfigurationRunKey === key) return;
         displayedConfigurationRunKey = key;
-        historyStart.value = shanghaiDateValue(run.history_start);
-        // The API end is exclusive; the date input includes the selected day.
-        historyEnd.value = addCalendarDays(shanghaiDateValue(run.history_end), -1);
+        if (!historyStartEstablished && !historyDatesEdited) {
+          historyStart.value = shanghaiDateValue(run.history_start);
+          // Only seed the form once; later results must not rewind rolling dates.
+          historyFollowsYesterday = runCoversToday(run);
+          historyEnd.value = historyFollowsYesterday
+            ? addCalendarDays(shanghaiDateValue(new Date()), -1)
+            : addCalendarDays(shanghaiDateValue(run.history_end), -1);
+          historyStartEstablished = true;
+          if (historyFollowsYesterday && historyStart.value < addCalendarDays(historyEnd.value, -89)) {
+            historyStart.value = addCalendarDays(historyEnd.value, -89);
+          }
+        }
         forecastDays.value = String(run.forecast_days);
         granularity.value = String(run.interval_seconds);
         updateTaskConfiguration();
+        rememberHistoryStart();
         void refreshSelectedPerformance();
       }
 
@@ -2382,13 +2458,15 @@
 
       function startRefreshTimer() {
         if (refreshTimer !== null) return;
-        refreshTimer = window.setInterval(() => {
-          if (document.visibilityState === "visible") {
-            void loadDashboard();
-            void refreshSelectedCustomResult();
-            void refreshSelectedPerformance();
-          }
-        }, 60_000);
+        refreshTimer = window.setInterval(refreshVisiblePage, 60_000);
+      }
+
+      function refreshVisiblePage() {
+        if (disposed || document.visibilityState !== "visible") return;
+        rollTaskDates();
+        void loadDashboard();
+        void refreshSelectedCustomResult();
+        void refreshSelectedPerformance();
       }
 
       function requestAuthentication() {
@@ -2437,6 +2515,7 @@
       window.renderError = renderError;
       window.loadDashboard = loadDashboard;
       window.addEventListener("message", receiveAuthentication);
+      document.addEventListener("visibilitychange", refreshVisiblePage);
       window.addEventListener("pagehide", () => {
         disposed = true;
         apiToken = null;
@@ -2451,6 +2530,7 @@
         [historyStart, historyEnd].forEach((control) => control.removeEventListener("change", changeHistoryConfiguration));
         [forecastDays, granularity].forEach((control) => control.removeEventListener("change", changeOutputConfiguration));
         window.removeEventListener("message", receiveAuthentication);
+        document.removeEventListener("visibilitychange", refreshVisiblePage);
       }, { once: true });
       if (parentOrigin === null || authMode === null) renderError("页面配置不可用");
       else if (authMode === "server_token" || (authMode === "query_token" && apiToken !== null)) {

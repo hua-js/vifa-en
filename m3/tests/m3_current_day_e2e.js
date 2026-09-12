@@ -58,6 +58,7 @@ const { task5Fixtures, weeklyEvidenceFixture } = require("./m3_dashboard_e2e");
     await page.waitForFunction(() => document.querySelector("#result-model-meta").textContent === "3 个连续有效周 · 负载周期 7 天 · 15 分钟粒度");
     assert.match(await page.locator("#result-date-note").innerText(), /覆盖今天.*2026\/08\/31.*2026\/09\/01/);
     assert.equal(await page.locator('path[data-kind="actual"]').count(), 2);
+    const fixedHistoryStart = await page.locator("#history-start").inputValue();
 
     // An invalid input must never submit an incomplete historical day.
     await page.locator("#history-end").fill("2026-08-31");
@@ -101,16 +102,46 @@ const { task5Fixtures, weeklyEvidenceFixture } = require("./m3_dashboard_e2e");
     assert.equal(await page.locator('path[data-kind="forecast"]').count(), 0);
 
     // Explicit historical requests remain available and are visibly labelled.
+    assert.equal(await page.locator("#history-end").inputValue(), "2026-09-01", "History end must advance to yesterday even without a new daily run");
+    assert.equal(await page.locator("#history-start").inputValue(), fixedHistoryStart);
+    assert.equal(await page.locator("#history-hint").innerText(), "共 31 天");
     await page.locator("#run-button").click();
     await page.waitForFunction(() => document.querySelector("#result-model-meta").textContent === "3 个连续有效周 · 负载周期 7 天 · 15 分钟粒度");
     assert.match(await page.locator("#result-date-note").innerText(), /历史预测/);
     assert.equal(posts, 1);
-    for (const width of [1440, 768, 390, 320]) {
+    assert.equal(await page.locator("#history-end").inputValue(), "2026-09-01", "An old result must not rewind the rolling form");
+
+    // Explicit historical edits survive midnight and tab wakeup without submitting.
+    await page.locator("#history-end").fill("2026-08-28");
+    await page.locator("#history-end").dispatchEvent("change");
+    await page.clock.setSystemTime(new Date("2026-09-03T00:01:00+08:00"));
+    await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+    await page.getByText("今天暂无匹配预测结果", { exact: true }).waitFor();
+    assert.equal(await page.locator("#history-end").inputValue(), "2026-08-28");
+    assert.equal(posts, 1);
+
+    // Returning to yesterday opts back into rolling. Reload retains each station's start.
+    await page.locator("#history-end").fill("2026-09-02");
+    await page.locator("#history-end").dispatchEvent("change");
+    await page.clock.setSystemTime(new Date("2026-12-01T00:01:00+08:00"));
+    await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+    assert.equal(await page.locator("#history-end").inputValue(), "2026-11-30");
+    assert.equal(await page.locator("#history-start").inputValue(), "2026-09-02");
+    assert.equal(await page.locator("#history-hint").innerText(), "共 90 天");
+    await page.reload();
+    // Query-token pages require a fresh token on re-entry.
+    if (authMode === "query_token") await page.goto(`http://m3.test/ett?token=${queryToken}`);
+    await page.getByText("今天暂无匹配预测结果", { exact: true }).waitFor();
+    assert.equal(await page.locator("#history-start").inputValue(), "2026-09-02");
+    assert.equal(await page.locator("#history-end").inputValue(), "2026-11-30");
+    assert.equal(posts, 1);
+    for (const width of [1440, 834, 390, 320]) {
       await page.setViewportSize({ width, height: 1000 });
       for (const theme of ["light", "dark"]) {
         await page.evaluate(theme => document.documentElement.dataset.theme = theme, theme);
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
         await page.screenshot({ path: `/tmp/m3-date-${width}-${theme}.png`, fullPage: true });
+        await page.locator('[aria-labelledby="task-zone-title"]').screenshot({ path: `/tmp/m3-date-controls-${width}-${theme}.png` });
       }
     }
     if (authMode === "query_token") {
