@@ -2156,9 +2156,7 @@
         if (score.isLoad) {
           text(root.querySelector('[data-summary="load_mape"] .prediction-summary-label'), "负载加权 MAPE（夜间容差）");
         }
-        text(root.querySelector(noteSelector), score.isLoad
-          ? `${stateNote}\n标准 MAPE ${percentMetric(score.standard)}\n夜间误差小于 10 kW 记 0（${score.toleratedCount} 点），保留分母\n北京时间 00–07、21–24 点权重 25%\n其余时段原始误差、100% 权重`
-          : stateNote);
+        text(root.querySelector(noteSelector), stateNote);
       }
 
       function renderCustomEvidence(run) {

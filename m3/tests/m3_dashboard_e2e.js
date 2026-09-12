@@ -1203,7 +1203,7 @@ if (require.main === module) (async () => {
   assert.strictEqual(await page.locator(".readiness-hint").isHidden(), true);
   assert.strictEqual(await inlineBarPercent(page, ".readiness-track span"), 75);
   assert.strictEqual(await page.locator(".current-day-mape-value").innerText(), "0.00%");
-  assert.strictEqual(await page.locator(".current-day-mape-note").innerText(), "96 / 96 个实际点 · 完整结果\n标准 MAPE 0.00%\n夜间误差小于 10 kW 记 0（40 点），保留分母\n北京时间 00–07、21–24 点权重 25%\n其余时段原始误差、100% 权重");
+  assert.strictEqual(await page.locator(".current-day-mape-note").innerText(), "96 / 96 个实际点 · 完整结果");
   assert.strictEqual(await page.locator(".summary-peak-load").innerText(), "509.5 kW");
   assert.match(await page.locator(".summary-peak-load-note").innerText(), /2026\/09\/01 12:00/);
   assert.strictEqual(await page.locator(".summary-min-load").innerText(), "500.0 kW");
