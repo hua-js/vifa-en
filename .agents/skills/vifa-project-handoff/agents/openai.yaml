@@ -1,0 +1,4 @@
+interface:
+  display_name: "VIFA 项目续接与文档维护"
+  short_description: "核对VIFA当前状态、精简项目约定与交接文档，并保留可追溯证据"
+  default_prompt: "使用 $vifa-project-handoff 核对当前VIFA项目状态，并更新精简后的约定、交接和相关文档。"

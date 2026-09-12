@@ -45,4 +45,4 @@ M3 FastAPI 入口为 `m3.worker.main:app`。M4 应用工厂为 `m4.settings.api:
 
 修改共用主题后同步两个实际页面，不恢复旧副本。历史发布快照保存其原始内容；`outputs/m4/solver-decisions/` 包含页面历史查询所需证据，不能视为随时可删的缓存。
 
-当前完整测试存在迁移前已有的失败，具体结果见迁移记录；M4 旧完整打包入口所需 `m4/deploy/backend/` 尚缺，不能直接用它发布镜像。
+当前验证状态与待办见 [CODEX_HANDOFF.md](CODEX_HANDOFF.md)。M4的 `m4/deploy/backend/` 已恢复，发布入口为 `m4/deploy/build-and-push.sh`；尚有测试失败，不能据此认定已通过发布验收。发布范围、前置条件及命令见 [生产发布与接口缺口](docs/m4/deploy/生产发布与接口缺口.md)。日常开发不默认运行上述测试命令，执行时机以 [AGENTS.md](AGENTS.md) 为准。
