@@ -241,8 +241,31 @@ async function initializeCurrent(){
  try{const station=sessionStorage.getItem('m4-selected-station');if(['station-1','station-2'].includes(station))$('station').value=station;}catch{}
  loadCurrent();
 }
+function schedulePlanStatusPoll(station,date,id,delay=5000){
+ clearTimeout(pollTimer);
+ const isCurrent=()=>id===generation&&station===$('station').value&&date===$('plan-date').value&&date===today();
+ pollTimer=setTimeout(async()=>{
+  if(!isCurrent())return;
+  if(document.hidden){schedulePlanStatusPoll(station,date,id);return;}
+  try{
+   const job=await api(station,'daily-plan');
+   if(!isCurrent())return;
+   validateJob(job,station);latestJobs.set(station,job);
+   if(job.status==='running'){
+    badge.textContent=plan?'新计划计算中 · 保留上次计划':'计划计算中 · 未下发';
+    schedulePlanStatusPoll(station,date,id);return;
+   }
+   // Refresh inputs and the rendered plan once the computation has finished.
+   await loadCurrent();
+  }catch(error){
+   if(!isCurrent())return;
+   badge.textContent=plan?'状态读取失败 · 保留上次计划':'状态读取失败 · 正在重试';
+   schedulePlanStatusPoll(station,date,id,15000);
+  }
+ },delay);
+}
 async function loadCurrent(){
- const id=++generation,station=$('station').value,date=$('plan-date').value;let cacheable=false;clearTimeout(pollTimer);context=null;$('simulate').disabled=true;try{sessionStorage.setItem('m4-selected-station',station);}catch{}const restored=restoreView(station,date);setLoading(!restored);if(!restored)clearPlan('正在读取当天数据','正在核对电价、预测与计划来源…');
+ const id=++generation,station=$('station').value,date=$('plan-date').value;let cacheable=false;clearTimeout(pollTimer);context=null;$('simulate').disabled=true;try{sessionStorage.setItem('m4-selected-station',station);}catch{}const retained=plan?.station===station&&plan.date===date&&date===today();const restored=retained||restoreView(station,date);setLoading(!restored);if(!restored)clearPlan('正在读取当天数据','正在核对电价、预测与计划来源…');
  if(date!==today()){setLoading(false);clearPlan('请选择当天查看策略','当前接口仅提供当天计划；历史日期请在「调度记录」中筛选。');return;}
  try{
   const [inputs,job,settings,controls]=await readCurrent(station,date);
@@ -252,7 +275,7 @@ async function loadCurrent(){
   $('auto-plan-status').title=autoPlanEnabled?'后台自动运行，页面关闭后仍继续；下一周期 '+timeText(job.automation.next_check_at):'当前后端未启用自动生成';
   assert(inputs.schema_version==='m4-daily-inputs-v1'&&inputs.date===date&&inputs.usage==='retrospective_comparison_only'&&inputs.dispatch_status==='not_dispatched'&&inputs.configuration_version===settings.version,'全天输入日期或配置不匹配');
   context={station,date,inputs,settings,controls};latestJobs.set(station,job);cacheable=true;
-  if(job.status==='running'){clearPlan('计划计算中',job.message||'正在读取输入并计算…');pollTimer=setTimeout(loadCurrent,5000);return;}
+  if(job.status==='running'){if(plan?.station===station&&plan.date===date){badge.textContent='新计划计算中 · 保留上次计划';}else{clearPlan('计划计算中',job.message||'正在读取输入并计算…');}schedulePlanStatusPoll(station,date,id);return;}
   if(!inputs.can_compare){clearPlan('等待完整数据',inputs.checks?.filter(c=>c.status!=='ready').map(c=>c.detail).join('；')||'当天输入尚未通过校验。');return;}
   if(job.status==='failed')clearPlan('计划未生成',job.message||'请检查数据后重新生成');
   else if(job.status==='completed'&&job.result?.record){try{if(station==='station-2')assert(typeof inputs.sources?.pv?.version==='string'&&job.request?.source_versions?.pv===inputs.sources.pv.version,'光伏来源已更新，请重新生成计划');renderPlan(mapPlan(job.result.record,job.request,station,date,settings,controls,job.baseline));}catch(error){if(inputs.comparison?.status==='ems')renderBaseline(context,error.message);else throw error;}}
@@ -314,7 +337,7 @@ $('station').onchange=loadCurrent;$('plan-date').value=today();$('plan-date').on
 for(const id of ['record-station','record-date','record-status','record-search'])$(id).addEventListener('input',()=>renderRecords());$('reset').onclick=()=>{$('record-station').value='all';$('record-date').value='';$('record-status').value='all';$('record-search').value='';renderRecords();};$('records').onclick=e=>{const b=e.target.closest('[data-record]');if(b)showDetail(b.dataset.record);};$('close-detail').onclick=()=>{detailGeneration++;$('detail').close();};$('detail').addEventListener('close',()=>detailGeneration++);
 function applyTheme(t){document.documentElement.dataset.theme=t;$('theme').setAttribute('aria-label',t==='light'?'切换到深色模式':'切换到浅色模式');try{localStorage.setItem('dashboard-theme',t);}catch{}}let saved='light';try{saved=localStorage.getItem('dashboard-theme')||'light';}catch{}applyTheme(saved==='dark'?'dark':'light');$('theme').onclick=()=>applyTheme(document.documentElement.dataset.theme==='light'?'dark':'light');
 setInterval(()=>{if(context&&context.date!==today()){generation++;context=null;$('simulate').disabled=true;clearPlan('计划已跨日','请选择当天并重新读取计划。');}},30000);
-document.addEventListener('visibilitychange',()=>{if(!document.hidden)loadCurrent();});
+document.addEventListener('visibilitychange',()=>{if(document.hidden)return;const station=$('station').value,date=$('plan-date').value;if(date===today()&&context?.station===station&&context.date===date&&latestJobs.get(station)?.status==='running'){schedulePlanStatusPoll(station,date,generation,0);}else loadCurrent();});
 
 function path(points,key,y){return points.map((p,i)=>`${i?'L':'M'}${(60+(i+.5)*1020/96).toFixed(2)},${y(p[key]).toFixed(2)}`).join(' ');}
 function renderChart(){const p=plan,extent=Math.max(1,...p.points.flatMap(v=>[v.load,v.pv,Math.abs(v.power)])),step=Math.ceil(extent/3/100)*100,limit=Math.ceil(extent/step)*step,y=v=>252-v/limit*174;let s='<title>预测与调度</title><desc>当天负载、光伏及储能计划，充电为负、放电为正。</desc>';for(let v=-limit;v<=limit;v+=step)s+=`<line class="gridline" x1="60" x2="1080" y1="${y(v)}" y2="${y(v)}"/>`;for(const [key,color] of [['load','var(--purple)'],['pv','var(--orange)'],['power','var(--green)']])s+=`<path d="${path(p.points,key,y)}" fill="none" stroke="${color}" stroke-width="2.5"/>`;s+=`<line id="chart-cursor" class="cursor" x1="60" x2="60" y1="60" y2="430"/><g id="current-chart-marker"></g>`;$('chart').innerHTML=s;}

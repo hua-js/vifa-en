@@ -15,6 +15,7 @@ ObjectiveName = Literal[
     "pv_unused",
     "throughput",
     "valley_charge_delay",
+    "power_variation",
     "peak_reserve_shortfall",
 ]
 CandidateStatus = Literal["optimal", "feasible", "infeasible", "timeout", "error"]
@@ -191,6 +192,21 @@ class OptimizationRequest(StrictModel):
                 flattened.remove("peak_reserve_shortfall")
             elif "peak_reserve_shortfall" in flattened:
                 raise ValueError("peak reserve objective requires an explicit policy")
+            if "power_variation" in flattened:
+                continuity_scope = cost_first or (
+                    self.station_id == 'station-2' and self.peak_reserve_policy is not None
+                    and self.peak_reserve_policy.version == 'peak-reserve-v3')
+                continuity_before_soc = (cost_first and
+                    profile.profile_version.endswith('/station-1-continuity-v2'))
+                expected_tail = ([{'power_variation'}, {'soc_preferred_deviation'},
+                                  {'valley_charge_delay'}] if continuity_before_soc else
+                                 [{'power_variation'}, {'valley_charge_delay'}])
+                if (not continuity_scope
+                        or flattened.count('power_variation') != 1
+                        or term_sets[-len(expected_tail):] != expected_tail
+                        or 'throughput' not in flattened[:flattened.index('power_variation')]):
+                    raise ValueError('continuity requires a supported daily policy and a late separate layer')
+                flattened.remove('power_variation')
             if "valley_charge_delay" in flattened:
                 if (
                     term_sets[-1] != {"valley_charge_delay"}

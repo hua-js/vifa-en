@@ -32,6 +32,7 @@ class VariableIndex:
     pv_storage_full: slice
     size: int
     peak_reserve_shortfall: int | None = None
+    power_variation: slice | None = None
 
 
 @dataclass(frozen=True)
@@ -47,8 +48,10 @@ def build_model(request: OptimizationRequest, *, terminal_soc_target_pct: float 
     load_first = request.pv_dispatch_policy != "legacy"
     horizon = request.horizon_points
     peak_reserve = request.peak_reserve_policy
+    continuity = any("power_variation" in layer.terms for profile in request.profiles
+                     for layer in profile.objective_order)
     index = _build_variable_index(load_first=load_first, horizon=horizon,
-                                  peak_reserve=peak_reserve is not None)
+                                  peak_reserve=peak_reserve is not None, continuity=continuity)
     capability, constraints = request.capability, request.constraints
     charge_max = capability.max_charge_kw if capability.available else 0.0
     discharge_max = capability.max_discharge_kw if capability.available else 0.0
@@ -220,6 +223,21 @@ def build_model(request: OptimizationRequest, *, terminal_soc_target_pct: float 
     if peak_reserve is not None:
         model.peak_reserve_shortfall = pyo.Expression(expr=model.peak_reserve_energy_shortfall)
 
+    if continuity:
+        model.power_edges = pyo.RangeSet(0, horizon)
+        model.power_change = pyo.Var(model.power_edges, domain=pyo.NonNegativeReals)
+
+        def power_delta(m, t):
+            current = m.discharge[t] - m.charge[t] if t < horizon else 0.0
+            previous = m.discharge[t-1] - m.charge[t-1] if t > 0 else 0.0
+            return current - previous
+
+        model.power_change_positive = pyo.Constraint(model.power_edges,
+            rule=lambda m, t: m.power_change[t] >= power_delta(m, t))
+        model.power_change_negative = pyo.Constraint(model.power_edges,
+            rule=lambda m, t: m.power_change[t] >= -power_delta(m, t))
+        model.power_variation = pyo.Expression(expr=pyo.quicksum(model.power_change.values()))
+
     variables = tuple(model.component_data_objects(pyo.Var))
     problem = PyomoProblem(model, variables)
     # Vectors are an export of the native expressions for existing layer locks,
@@ -275,7 +293,7 @@ def _overnight_valley_windows(
 
 
 def _build_variable_index(*, load_first: bool = False, horizon: int = HORIZON_POINTS,
-                          peak_reserve: bool = False) -> VariableIndex:
+                          peak_reserve: bool = False, continuity: bool = False) -> VariableIndex:
     cursor = 0
 
     def allocate(size: int) -> slice:
@@ -303,6 +321,7 @@ def _build_variable_index(*, load_first: bool = False, horizon: int = HORIZON_PO
     peak_reserve_shortfall = cursor if peak_reserve else None
     if peak_reserve:
         cursor += 1
+    power_variation = allocate(horizon + 1) if continuity else None
     return VariableIndex(
         charge=charge,
         discharge=discharge,
@@ -321,4 +340,5 @@ def _build_variable_index(*, load_first: bool = False, horizon: int = HORIZON_PO
         pv_storage_full=pv_storage_full,
         size=cursor,
         peak_reserve_shortfall=peak_reserve_shortfall,
+        power_variation=power_variation,
     )

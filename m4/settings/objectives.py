@@ -110,24 +110,30 @@ def get_daily_profiles(station_id: str) -> list[ObjectiveProfile]:
     if station_id == 'station-1':
         settings, _ = _resolve(station_id)
         for profile in profiles:
-            profile.profile_version += '/station-1-cost-first-v1'
+            profile.profile_version += '/station-1-cost-first-v1/station-1-continuity-v2'
             profile.objective_order = [ObjectiveLayer(
                 name=term.replace('_', '-'), terms={term: 1.0},
                 absolute_tolerance=settings.absolute_tolerance,
                 relative_tolerance=settings.relative_tolerance)
                 for term in ('energy_cost', 'demand_peak', 'demand_duration',
-                             'pv_unused', 'soc_preferred_deviation', 'throughput', 'valley_charge_delay')]
+                             'pv_unused', 'throughput', 'power_variation',
+                             'soc_preferred_deviation', 'valley_charge_delay')]
         return profiles
     policy_version = daily_policy_version(station_id)
     if policy_version is None:
         return profiles
     settings, _ = _resolve(station_id)
     for profile in profiles:
-        profile.profile_version += '/' + policy_version
+        profile.profile_version += '/' + policy_version + '/station-2-continuity-v1'
         # Economic objectives precede reserve preparation; reserve is a tie-break.
         position = next(i for i, layer in enumerate(profile.objective_order) if layer.name == 'throughput')
         profile.objective_order.insert(position, ObjectiveLayer(
             name='peak-reserve-shortfall', terms={'peak_reserve_shortfall': 1.0},
+            absolute_tolerance=settings.absolute_tolerance,
+            relative_tolerance=settings.relative_tolerance))
+        # Preserve all previous priorities, then prefer smoother contiguous power.
+        profile.objective_order.insert(len(profile.objective_order)-1, ObjectiveLayer(
+            name='power-variation', terms={'power_variation': 1.0},
             absolute_tolerance=settings.absolute_tolerance,
             relative_tolerance=settings.relative_tolerance))
     return profiles
