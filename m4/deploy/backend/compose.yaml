@@ -3,7 +3,7 @@ name: vifa-m4
 services:
   m4-api:
     platform: linux/amd64
-    image: ${M4_IMAGE:-ccr.ccs.tencentyun.com/taidai-holobase-168/omnipower_vifa:m4-0.1.0}
+    image: ${M4_IMAGE:-ccr.ccs.tencentyun.com/taidai-holobase-168/vifa-m4:0.1.0}
     restart: unless-stopped
     init: true
     ports:

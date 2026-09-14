@@ -2,6 +2,7 @@
 from datetime import timedelta
 import math
 import re
+from zoneinfo import ZoneInfo
 
 from m4.optimizer.contracts import PlanPoint
 
@@ -20,7 +21,7 @@ def _slot(value):
     return h*4 + m//15
 
 
-def simulate_ems_day(capability, constraints, points, schedule, *, pv_dispatch_policy="legacy"):
+def simulate_ems_day(capability, constraints, points, schedule, *, pv_dispatch_policy="legacy", remaining_day=False):
     """Apply demand first, then equipment/SOC limits, integrating active time.
 
     Forecast load and prices are constant within each quarter hour. Once SOC
@@ -30,7 +31,7 @@ def simulate_ems_day(capability, constraints, points, schedule, *, pv_dispatch_p
     customer_pv = pv_dispatch_policy in ('load_first_export_priority', 'load_first_storage_priority')
     if pv_dispatch_policy not in ('legacy', 'load_first_economic', 'load_first_export_priority', 'load_first_storage_priority'):
         raise ValueError('未知光伏余电策略。')
-    if len(points) != 96 or not schedule:
+    if (not points or len(points) > 96 or (not remaining_day and len(points) != 96)) or not schedule:
         raise ValueError('EMS 模拟需要完整96点输入及原时段配置。')
     slots = [None]*96
     for item in schedule:
@@ -56,7 +57,8 @@ def simulate_ems_day(capability, constraints, points, schedule, *, pv_dispatch_p
         if constraints.grid_import_limit_kw is not None else constraints.demand_limit_kw)
     plan, intervals, events = [], [], []
     for index, point in enumerate(points):
-        item = slots[index]
+        at = point.timestamp.astimezone(ZoneInfo('Asia/Shanghai'))
+        item = slots[at.hour*4 + at.minute//15 if remaining_day else index]
         requested_mode, requested_kw = (item['mode'], item['power_kw']) if item else ('idle', 0.0)
         net_load = point.load_forecast_kw-point.pv_forecast_kw
         peak_discharge = max(net_load-grid_limit, 0.0)

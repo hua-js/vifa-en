@@ -88,4 +88,4 @@ class AutomaticPlans:
                 'next_check_at': datetime.fromtimestamp(
                     (int(time.time() // self.interval_seconds) + 1) * self.interval_seconds,
                     timezone.utc).isoformat() if self.enabled else None,
-                'usage': 'whole_day_comparison_only', 'dispatch_status': 'not_dispatched'}
+                'usage': 'daily_admission_and_remaining_day_advice', 'dispatch_status': 'not_dispatched'}

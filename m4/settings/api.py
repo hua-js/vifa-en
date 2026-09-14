@@ -92,7 +92,10 @@ def create_app(settings_path: Path | None = None, *, control_reader=None, input_
     from .daily_plans import DailyPlanService
     daily_plans = DailyPlanService(store, daily_inputs, decision_results.root.parent / 'daily-comparisons')
     from .auto_plans import AutomaticPlans
-    automatic = AutomaticPlans(daily_plans, daily_plans.root,
+    from .rolling_plans import RollingPlanService, PlanningCoordinator
+    rolling_plans = RollingPlanService(daily_plans)
+    coordinator = PlanningCoordinator(daily_plans, rolling_plans)
+    automatic = AutomaticPlans(coordinator, daily_plans.root,
         enabled=os.environ.get('M4_AUTO_PLAN_ENABLED', '1').lower() not in ('0', 'false', 'off'))
     app.state.automatic_plans = automatic
     # This factory serves a local workstation. Production must use the platform's authenticated adapter.
@@ -186,7 +189,13 @@ def create_app(settings_path: Path | None = None, *, control_reader=None, input_
     def get_daily_plan(station_id: str) -> dict:
         station_exists(station_id)
         try:
-            return {**daily_plans.latest(station_id), 'automation': automatic.metadata()}
+            daily = daily_plans.latest(station_id)
+            try:
+                rolling = rolling_plans.latest(station_id)
+            except Exception:
+                rolling = dict(station_id=station_id, status='failed', result=None,
+                    message='滚动建议读取失败，等待更新。')
+            return {**daily, 'automation': automatic.metadata(), 'rolling': rolling}
         except Exception:
             raise HTTPException(503, '全天计划读取或校验失败，请重新计算。') from None
 

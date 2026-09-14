@@ -89,7 +89,7 @@ class OptimizationRequest(StrictModel):
     input_observed_at: datetime
     max_input_age_seconds: int = Field(gt=0, strict=True)
     interval_minutes: Literal[15]
-    horizon_points: Annotated[int, Field(ge=95, le=96, strict=True)]
+    horizon_points: Annotated[int, Field(ge=1, le=96, strict=True)]
     source_versions: dict[str, str]
     points: list[ForecastPoint]
     capability: CapabilitySnapshot
@@ -109,6 +109,16 @@ class OptimizationRequest(StrictModel):
 
     @model_validator(mode="after")
     def validate_cross_fields(self) -> "OptimizationRequest":
+        if self.source_versions.get('planning_basis') == 'remaining-day-v1':
+            start = self.plan_start_at
+            end = start + timedelta(minutes=15*self.horizon_points)
+            if (start.utcoffset() != timedelta(hours=8) or start.minute % 15
+                    or start.second or start.microsecond
+                    or (end.hour, end.minute, end.second, end.microsecond) != (0, 0, 0, 0)
+                    or end.date() != start.date() + timedelta(days=1)):
+                raise ValueError('rolling window must end at the next Beijing midnight')
+        elif self.horizon_points not in (95, 96):
+            raise ValueError('non-rolling requests require 95 or 96 points')
         if self.ems_schedule_modes is not None and len(self.ems_schedule_modes) != self.horizon_points:
             raise ValueError("EMS schedule must cover every request point")
         if len(self.points) != self.horizon_points:
