@@ -10,6 +10,7 @@ from .daily_comparison import comparison_input_sha256, compare_daily_plan
 from .objectives import get_daily_profiles
 from .daily_policy import daily_policy_version
 from .load_accuracy import require_gate
+from .forecast_source import validate_forecast_values
 from .ems_simulation import EMS_BASELINE_POLICY, simulate_ems_day
 from .schedule_power import effective_station_power, station_schedule, station_energy_capacity
 
@@ -41,6 +42,7 @@ def prepare_ems_day(configuration, bundle):
     points = [ForecastPoint.model_validate_json(json.dumps(p)) for p in bundle['points']]
     if len(points) != 96:
         raise ValueError('日基线需要完整96点输入。')
+    validate_forecast_values(sources['load'], points)
     capability = CapabilitySnapshot(available=True, initial_soc_pct=initial['initial_soc_pct'],
         **{k: getattr(parameters, k) for k in ('charge_efficiency', 'discharge_efficiency')},
         energy_capacity_kwh=station_energy_capacity(configuration, control),
@@ -75,6 +77,7 @@ def prepare_ems_day(configuration, bundle):
         peak_reserve_policy=reserve_policy,
         solver_time_limit_seconds=30.0, solver_mip_rel_gap=0.01,
         source_versions={**{k: sources[k]['version'] for k in ('load', 'pv', 'tariff')},
+            'load_policy': sources['load']['policy'], 'load_run_id': sources['load']['run_id'],
             'controls': control['version'], 'configuration': configuration.version,
             'capability': initial['version'], 'planning_basis': 'whole-station-retrospective-v1',
             **({'pv_gap_policy': 'outside_forecast_window_zero',

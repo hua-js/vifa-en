@@ -11,6 +11,7 @@ from m4.optimizer.service import M4Optimizer
 from .daily_baseline import prepare_ems_day
 from .daily_comparison import compare_daily_plan
 from .ems_simulation import EMS_BASELINE_POLICY
+from .forecast_source import LOAD_POLICY
 from .daily_policy import matches_current_daily_policy, PEAK_RESERVE_SELECTOR
 
 
@@ -40,6 +41,9 @@ class DailyPlanService:
             raw = json.loads(path.read_text())
         if raw['station_id'] != station or raw.get('status') != 'completed':
             raise ValueError('invalid saved daily result')
+        if raw.get('request', {}).get('source_versions', {}).get('load_policy') != LOAD_POLICY:
+            return dict(station_id=station, status='empty', result=None,
+                message='负荷预测来源已更新，请重新生成计划。')
         if raw.get('baseline', {}).get('controller_version') != EMS_BASELINE_POLICY:
             return dict(station_id=station, status='empty', result=None,
                 message='EMS 基线规则已更新，旧费用比较失效；请按当前光伏余电设置重新生成。')

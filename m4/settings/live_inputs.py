@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 from m4.optimizer.contracts import ForecastPoint
 from .adapter import build_request as build_optimizer_request
 from .control_sources import ControlSourceError
-from .forecast_source import load_forecast
+from .forecast_source import load_forecast, validate_forecast_values
 from .load_accuracy import require_gate
 from .pv_forecast_source import ForecastRefreshRequired, load_pv_forecast, validate_source as validate_pv_source
 from .models import LiveStationState, ResolvedControlLimits, StationConfiguration
@@ -430,6 +430,8 @@ def request_from_inputs(configuration: StationConfiguration, bundle: dict, profi
         raise ValueError(f'输入必须包含完整的 {horizon} 个计划点')
     points = [ForecastPoint(**{**point, 'timestamp': _aware(datetime.fromisoformat(point['timestamp']))})
               for point in bundle['points']]
+    if require_accuracy_gate:
+        validate_forecast_values(sources['load'], points)
     for index, point in enumerate(points):
         if (point.timestamp != start+timedelta(minutes=15*index)
                 or point.load_forecast_kw != sources['load']['values'][index]

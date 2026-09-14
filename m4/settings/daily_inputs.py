@@ -157,6 +157,12 @@ class DailyInputService:
                     sources[key] = dict(status='incomplete', issues=[str(error)])
                 except Exception:
                     sources[key] = dict(status='error', issues=[labels.get(key, '当前实测数据')+'读取或校验失败，请重新读取。'])
+        load = sources.get('load', {})
+        actual_values = load.get('actual_values', [None] * 96)
+        sources['actual_load'] = dict(station_id=station_id,
+            source='M3 station_total_load', run_id=load.get('run_id'),
+            values=actual_values, read_at=load.get('actual_read_at'),
+            status='ready' if any(v is not None for v in actual_values) else 'unavailable')
         checks = []
         for key, label in labels.items():
             source = sources[key]
