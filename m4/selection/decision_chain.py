@@ -82,12 +82,25 @@ def candidate_snapshot(envelope, station_id, *, require_result=True):
     return request, result
 
 
+def _saved_gate_present(inputs):
+    """Whether saved inputs carry load-MAPE gate evidence.
+
+    The gate is a run-time precondition for producing a plan, not a property a
+    saved plan has to keep satisfying. Evidence recorded before the gate existed
+    cannot be reconstructed, so those records are verified without re-gating.
+    """
+    sources = inputs.get('sources') if isinstance(inputs, dict) else None
+    load = sources.get('load') if isinstance(sources, dict) else None
+    return isinstance(load, dict) and load.get('accuracy_gate') is not None
+
+
 def verify_request_inputs(envelope, configuration, request):
     """Rebuild historical request inputs with their original validation clock."""
     from m4.settings.live_inputs import request_from_inputs
     from m4.settings.selection import _decision_content
     generated_at = timestamp(envelope['generated_at'])
-    original = request_from_inputs(configuration, envelope['inputs'], request.profiles, now=generated_at)
+    original = request_from_inputs(configuration, envelope['inputs'], request.profiles,
+        now=generated_at, require_accuracy_gate=_saved_gate_present(envelope['inputs']))
     expires_at = min(request.plan_start_at,
                      request.input_observed_at + timedelta(seconds=request.max_input_age_seconds))
     if (_decision_content(original) != _decision_content(request)
@@ -98,7 +111,8 @@ def verify_request_inputs(envelope, configuration, request):
 def verify_precheck_inputs(inputs, configuration, profiles):
     """Validate the initial read on its own clock, before the solver resample."""
     from m4.settings.live_inputs import request_from_inputs
-    request_from_inputs(configuration, inputs, profiles, now=timestamp(inputs['fetched_at']))
+    request_from_inputs(configuration, inputs, profiles, now=timestamp(inputs['fetched_at']),
+        require_accuracy_gate=_saved_gate_present(inputs))
 
 
 def verify_selection(envelope, live, policy, configuration):

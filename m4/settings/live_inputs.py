@@ -368,8 +368,14 @@ def _validate_participation(configuration, snapshot, *, start, checked_at, fetch
     return participants
 
 
-def request_from_inputs(configuration: StationConfiguration, bundle: dict, profiles, *, now: datetime | None = None):
-    """Construct a validated request only from a fully available current bundle."""
+def request_from_inputs(configuration: StationConfiguration, bundle: dict, profiles, *,
+                        now: datetime | None = None, require_accuracy_gate: bool = True):
+    """Construct a validated request only from a fully available current bundle.
+
+    ``require_accuracy_gate`` is relaxed only when re-validating saved evidence
+    that predates the load-MAPE gate, which cannot be reconstructed afterwards.
+    The gate is always enforced whenever the bundle itself carries gate evidence.
+    """
     configuration = StationConfiguration.model_validate(configuration.model_dump())
     checked_at = _aware(now if now is not None else _clock_now())
     parameters = configuration.parameters
@@ -383,7 +389,9 @@ def request_from_inputs(configuration: StationConfiguration, bundle: dict, profi
     sources = bundle.get('sources', {})
     if any(sources.get(key, {}).get('status') != 'ready' for key in ('load','pv','tariff','controls','realtime')):
         raise ValueError('仍有必需来源未就绪，不能生成新调度请求')
-    require_gate(sources['load'].get('accuracy_gate'), configuration.station_id, checked_at)
+    saved_gate = sources['load'].get('accuracy_gate')
+    if require_accuracy_gate or saved_gate is not None:
+        require_gate(saved_gate, configuration.station_id, checked_at)
     snapshot, controls = sources['realtime'], sources['controls']
     if (snapshot.get('available') is not True or snapshot.get('station_id') != configuration.station_id
             or snapshot.get('configuration_version') != configuration.version
