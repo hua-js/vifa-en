@@ -170,6 +170,7 @@ function mapPlan(record,request,station,date,settings,controls,emsBaseline){
  }
  assert(Math.abs(bm.energy_cost-c.baseline_cost_yuan)<1e-5,'基线费用无法校验');
  if(c.status==='optimized'){
+  assert(c.revenue_gate_version==='daily-net-savings-100-v1'&&finite(m.cycle_cost)&&finite(bm.cycle_cost)&&bm.energy_cost+bm.cycle_cost-m.energy_cost-m.cycle_cost>=100,'预计净节省未达到100元，请重新生成计划');
   assert(c.recommended_source==='optimized'&&chosen.profile_id===record.selected?.profile_id&&chosen.plan_version===record.selected?.plan_version&&c.candidate_plan_version===chosen.plan_version,'推荐方案版本不匹配');
   assert(finite(c.savings_yuan)&&c.savings_yuan>0&&Math.abs(m.energy_cost-c.optimized_cost_yuan)<1e-5&&Math.abs(bm.energy_cost-m.energy_cost-c.savings_yuan)<1e-5,'费用比较无法校验');
   const softDemand=station==='station-1'&&request.source_versions?.physical_grid_policy==='station-1-550-v1'&&bounds.grid_import_limit_kw===550;
@@ -210,7 +211,7 @@ function setLoading(visible){
  $('loading-message').textContent='正在读取电站数据，请稍候…';
  if(visible)loadingTimer=setTimeout(()=>{$('loading-message').textContent='数据读取较慢，仍在加载中…';},5000);
 }
-const viewKey=(station,date)=>'m4-view-v9:'+viewCacheScope+':'+date+':'+station;
+const viewKey=(station,date)=>'m4-view-v10:'+viewCacheScope+':'+date+':'+station;
 function rememberView(station,date){
  const snapshot={station,date,at:Date.now(),plan,title:header.textContent,message:$('decision-copy').textContent};
  viewCache.set(station+':'+date,snapshot);

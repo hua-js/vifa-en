@@ -15,6 +15,8 @@ SHANGHAI = ZoneInfo('Asia/Shanghai')
 POWER_TOLERANCE_KW = 1e-5
 ENERGY_TOLERANCE_KWH = 1e-5
 COST_TOLERANCE_YUAN = 1e-6
+MIN_NET_SAVINGS_YUAN = 100.0
+REVENUE_GATE_VERSION = 'daily-net-savings-100-v1'
 
 
 def comparison_input_sha256(request):
@@ -31,7 +33,9 @@ def unavailable_comparison(station_id, reason='尚未完成本次全天费用比
         start_at=None, end_at=None, candidate_plan_version=None,
         controls_version=None, baseline_policy_version=None,
         input_sha256=None, baseline_cost_yuan=None, optimized_cost_yuan=None,
-        savings_yuan=None, baseline=None, recommended=None)
+        savings_yuan=None, net_savings_yuan=None,
+        revenue_gate_version=REVENUE_GATE_VERSION,
+        minimum_net_savings_yuan=MIN_NET_SAVINGS_YUAN, baseline=None, recommended=None)
 
 
 def _aware(value):
@@ -172,7 +176,13 @@ def compare_daily_plan(request, candidate, *, baseline=None, controls_version=No
             if reserve_policy is not None else '两套日计划的期末电量不一致，费用不可直接比较；沿用 EMS 原计划。')
         return output
     savings = ems.metrics.energy_cost - metrics.energy_cost
-    output.update(optimized_cost_yuan=metrics.energy_cost, savings_yuan=savings)
+    net_savings = (ems.metrics.energy_cost + ems.metrics.cycle_cost
+                   - metrics.energy_cost - metrics.cycle_cost)
+    output.update(optimized_cost_yuan=metrics.energy_cost, savings_yuan=savings,
+                  net_savings_yuan=net_savings)
+    if not math.isfinite(net_savings) or net_savings < MIN_NET_SAVINGS_YUAN:
+        output['reason'] = '全天预计净节省未达到100元，沿用 EMS 原计划。'
+        return output
     if savings > COST_TOLERANCE_YUAN:
         output.update(status='optimized', recommended_source='optimized',
             reason=('峰段保电方案满足需量与安全约束，日末电量不低于 EMS，全天预计购电费用更低；未用电量保留到日末。'

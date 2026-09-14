@@ -9,7 +9,7 @@ from uuid import uuid4
 from m4.optimizer.contracts import OptimizationRequest, CandidateResult
 from m4.optimizer.service import M4Optimizer
 from .daily_baseline import prepare_ems_day
-from .daily_comparison import compare_daily_plan
+from .daily_comparison import compare_daily_plan, REVENUE_GATE_VERSION
 from .ems_simulation import EMS_BASELINE_POLICY
 from .forecast_source import LOAD_POLICY
 from .daily_policy import matches_current_daily_policy, PEAK_RESERVE_SELECTOR
@@ -41,6 +41,10 @@ class DailyPlanService:
             raw = json.loads(path.read_text())
         if raw['station_id'] != station or raw.get('status') != 'completed':
             raise ValueError('invalid saved daily result')
+        comparison = raw.get('result', {}).get('record', {}).get('daily_comparison', {})
+        if comparison.get('revenue_gate_version') != REVENUE_GATE_VERSION:
+            return dict(station_id=station, status='empty', result=None,
+                message='收益门槛已更新为100元，请重新生成计划。')
         if raw.get('request', {}).get('source_versions', {}).get('load_policy') != LOAD_POLICY:
             return dict(station_id=station, status='empty', result=None,
                 message='负荷预测来源已更新，请重新生成计划。')
