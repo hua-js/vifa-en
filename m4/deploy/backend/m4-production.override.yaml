@@ -1,0 +1,31 @@
+# M4 生产部署覆盖文件：唯一一份，替代原 pv / m3-mape / station-power 等覆盖文件。
+# 应用方式：docker compose -f compose.yaml -f m4-production.override.yaml up -d --no-build m4-api
+# 镜像只由 .env 的 M4_IMAGE 决定；本文件不写死标签或摘要，避免多份文件互相覆盖。
+services:
+  m4-api:
+    image: ${M4_IMAGE:?Set M4_IMAGE to the release image}
+    platform: linux/amd64
+    environment:
+      M4_M3_SOCKET_PATH: /run/vifa-m3/worker.sock
+      M4_M3_ADMIN_TOKEN_FILE: /run/secrets/m3_admin_token
+    volumes:
+      - type: bind
+        source: ${M4_M3_RUN_DIR:-/userdata/holo/pyfiles/vifa-m3/run}
+        target: /run/vifa-m3
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${M4_M3_ADMIN_TOKEN_HOST_FILE:-/userdata/holo/pyfiles/m4/secrets/m3-admin.token}
+        target: /run/secrets/m3_admin_token
+        read_only: true
+        bind:
+          create_host_path: false
+    networks:
+      default: {}
+      nodered_shared:
+        aliases: [m4-api]
+networks:
+  nodered_shared:
+    external: true
+    name: 1panel-network

@@ -12,8 +12,9 @@ ROOT = Path(__file__).resolve().parents[2]
 DEPLOY = Path(__file__).resolve().parent
 PACKAGES = ('m4/settings', 'm4/optimizer', 'm4/orchestrator', 'm4/selection')
 HTML = ROOT / 'm4/web/M4优化调度控制台-线上版.html'
-BACKEND_FILES = ('Dockerfile', 'compose.yaml', '.env.example', '.dockerignore',
-                 'requirements.lock.txt', 'entrypoint.py', 'healthcheck.py', 'preflight.py')
+BACKEND_FILES = ('Dockerfile', 'compose.yaml', 'm4-production.override.yaml', '.env.example',
+                 '.dockerignore', 'requirements.lock.txt', 'entrypoint.py', 'healthcheck.py',
+                 'preflight.py')
 DOCS = ROOT / 'docs/m4/deploy'
 NODE_RED_FILES = ('authorize.js', 'finish_auth.js', 'prepare_proxy.js', 'finish_proxy.js', 'env.example')
 

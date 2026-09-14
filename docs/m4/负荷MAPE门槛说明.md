@@ -19,7 +19,7 @@ M3 结果接口在查询时只读叠加最新实测，所以数据库预测点 a
 
 已发布 M4 镜像 `ccr.ccs.tencentyun.com/taidai-holobase-168/omnipower_vifa:m4-current-mape-b474eb527596-amd64`，远端摘要 `sha256:f3d23f4ad0bea17d1e97d1cecd202c77764328863d64bc00c1d9d080dde402b9`，平台 linux/amd64。HTML 独立替换，本次镜像更新未复制 HTML。
 
-新增覆盖文件 `deploy/m4-m3-mape.override.yaml`，与原 Compose/PV 覆盖文件共同使用，保留原网络与 PV 挂载。该文件已固定新版镜像摘要，必须放在原 PV 覆盖文件之后，不需修改 .env。M3 Worker 使用专用管理 Token，不能假定与 NocoBase/PV Token 相同。
+生产覆盖文件已合并为单份 `m4/deploy/backend/m4-production.override.yaml`，随发布包下发到 `backend/`。它一次提供 `default` 与外部 `1panel-network`（别名 `m4-api`）网络、M3 run 目录与专用管理 Token 的只读挂载，并把镜像声明为 `image: ${M4_IMAGE:?…}`——镜像只由 `backend/.env` 的 `M4_IMAGE` 决定，未设置时 compose 直接报错退出。旧的 `m4-pv`、`m4-m3-mape`、`m4-station-power` 覆盖文件已移除，内容全部并入本文件；服务器上须把它们移出启动列表。M3 Worker 使用专用管理 Token，不能假定与 NocoBase/PV Token 相同。
 
 服务器由用户准备只读凭据副本（默认 M4 运行 UID/GID 10001）：
 
@@ -30,10 +30,10 @@ install -m 0400 -o 10001 -g 10001 /userdata/holo/pyfiles/vifa-m3/run/.worker-adm
 
 M4 挂载 M3 run 目录至 `/run/vifa-m3`，以及凭据至 `/run/secrets/m3_admin_token`，均只读。Worker Token 轮换后需同步副本并重建容器。M3 socket 必须允许 M4 的运行用户连接。本机开发可用 `M4_M3_SOCKET_PATH`、`M4_M3_ADMIN_TOKEN_FILE` 指定本机真实资源；未配置时会阻断，不伪造 MAPE。
 
-将新版覆盖文件放到现有 backend 目录、准备凭据后使用：
+将新版覆盖文件放到现有 backend 目录、在 `.env` 设好 `M4_IMAGE`、准备凭据后使用：
 
 ```sh
-docker compose -f compose.yaml -f m4-pv.override.yaml -f m4-m3-mape.override.yaml up -d --no-build --pull always m4-api
+docker compose -f compose.yaml -f m4-production.override.yaml up -d --no-build --pull always m4-api
 ```
 
 此处未执行生产部署或读取生产 M3 Worker；实际 MAPE 值与生产连通性仍需部署后核验。
