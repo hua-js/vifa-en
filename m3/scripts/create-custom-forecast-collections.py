@@ -74,6 +74,7 @@ FIELD_TITLES = {
     "actual_recorded_at": "实际值记录时间",
     "absolute_percentage_error": "绝对百分比误差",
     "evaluation_key": "评估键",
+    "current_score": "当前负载评分",
     "window_start": "评估窗口开始",
     "window_end": "评估窗口结束",
     "expected_count": "预期点数",

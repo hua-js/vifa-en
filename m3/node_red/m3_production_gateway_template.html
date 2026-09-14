@@ -1706,7 +1706,15 @@
         assert(["succeeded", "evaluated"].includes(run.status), "custom result is not terminal");
         assert(Array.isArray(value.series) && value.series.length === 2, "custom result series count invalid");
         value.series.forEach((series, seriesIndex) => {
-          exactObject(series, ["unique_id", "unit", "model_name", "points"], "custom result series");
+          exactObjectWithOptional(series, ["unique_id", "unit", "model_name", "points", "current_score"], ["current_score"], "custom result series");
+          if (series.current_score != null) {
+            const score = series.current_score;
+            exactObject(score, ["policy", "run_id", "unique_id", "mape_percent", "actual_count", "valid_count", "calculated_at"], "current load score");
+            assert(series.unique_id === "station_total_load" && score.unique_id === series.unique_id && score.run_id === run.run_id, "current load score identity invalid");
+            assert(score.policy === "load-night-weighted-mape-v1" && instantTimestamp(score.calculated_at), "current load score policy invalid");
+            assert(integer(score.actual_count, 0, run.expected_points_per_series) && integer(score.valid_count, 0, score.actual_count), "current load score count invalid");
+            assert(score.mape_percent === null || finite(score.mape_percent) && score.mape_percent >= 0, "current load score value invalid");
+          }
           assert(series.unique_id === SERIES_IDS[seriesIndex] && series.unit === SERIES_UNITS[series.unique_id] && safeText(series.model_name), "custom result series identity invalid");
           assert(Array.isArray(series.points) && series.points.length === run.expected_points_per_series, "custom result point count invalid");
           series.points.forEach((point, pointIndex) => {
@@ -2113,39 +2121,26 @@
           && finite(point.forecast_value)
         );
         const scorablePoints = actualPoints.filter((point) => point.actual_value !== 0);
-        const currentMape = scorablePoints.length === 0
+        const isLoad = series?.unique_id === "station_total_load";
+        const currentMape = isLoad || scorablePoints.length === 0
           ? null
           : scorablePoints.reduce(
             (sum, point) => sum + Math.abs(point.forecast_value - point.actual_value) / Math.abs(point.actual_value) * 100,
             0,
           ) / scorablePoints.length;
-        const isLoad = series?.unique_id === "station_total_load";
-        const hourFormat = new Intl.DateTimeFormat("en-GB", {
-          timeZone: "Asia/Shanghai", hour: "2-digit", hourCycle: "h23",
-        });
-        let weightedError = 0;
-        let totalWeight = 0;
-        let scoredCount = 0;
-        let toleratedCount = 0;
-        for (const point of scorablePoints) {
-          const absoluteError = Math.abs(point.forecast_value - point.actual_value);
-          const hour = Number(hourFormat.format(new Date(point.target_time)));
-          const isNightLoad = isLoad && (hour < 7 || hour >= 21);
-          const weight = isNightLoad ? 0.25 : 1;
-          totalWeight += weight;
-          if (isNightLoad && absoluteError < 10) {
-            toleratedCount += 1;
-            continue;
-          }
-          weightedError += weight * absoluteError / Math.abs(point.actual_value) * 100;
-          scoredCount += 1;
-        }
-        return { actualCount: actualPoints.length, standard: currentMape,
-          displayed: totalWeight === 0 ? null : weightedError / totalWeight, isLoad, scoredCount, toleratedCount };
+        const score = series?.current_score;
+        const available = score?.policy === "load-night-weighted-mape-v1"
+          && score.unique_id === "station_total_load"
+          && score.actual_count === actualPoints.length
+          && score.valid_count === scorablePoints.length
+          && finite(score.mape_percent) && score.mape_percent >= 0;
+        return { actualCount: actualPoints.length,
+          displayed: isLoad ? (available ? score.mape_percent : null) : currentMape, isLoad };
       }
 
       function renderCurrentPredictionMape(run, series, valueSelector, noteSelector) {
         const score = currentPredictionMape(series);
+        if (score.isLoad && series?.current_score?.run_id !== run.run_id) score.displayed = null;
         const actualState = score.actualCount === 0
           ? "等待回填"
           : score.actualCount === run.expected_points_per_series

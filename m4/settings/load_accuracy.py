@@ -1,4 +1,4 @@
-"""Use the same current-task load MAPE formula as the M3 page."""
+"""Validate M3 evidence and apply the gate to its authoritative load score."""
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from zoneinfo import ZoneInfo
@@ -6,7 +6,8 @@ import hashlib
 import json
 
 STATIONS = {'station-1': 'ES01', 'station-2': 'ES02'}
-POLICY = 'm4-current-task-load-mape-v2'
+POLICY = 'm4-current-task-load-mape-v3'
+SCORE_POLICY = 'load-night-weighted-mape-v1'
 MAX_MAPE = Decimal('30')
 SHANGHAI = ZoneInfo('Asia/Shanghai')
 # Match the M3 page's default output: 15 minutes, one day, current load policy.
@@ -49,7 +50,8 @@ def assess(evidence, station_id, now):
         count = run['expected_points_per_series']
         if type(count) is not int or count != 86400*FORECAST_DAYS//INTERVAL_SECONDS or len(points) != count:
             raise ValueError
-        steps, times, errors = set(), set(), []
+        steps, times = set(), set()
+        valid_count = 0
         actual_count = zero_count = 0
         for point in points:
             step = point['horizon_step']
@@ -59,7 +61,7 @@ def assess(evidence, station_id, now):
                     or at != start+timedelta(seconds=INTERVAL_SECONDS*(step-1))):
                 raise ValueError
             steps.add(step);times.add(at)
-            # Current M3 MAPE excludes invalid/nonfinite pairs and zero actuals.
+            # Validate evidence counts; the score itself is calculated only by M3.
             if point.get('actual_quality') != 'valid':
                 continue
             try:
@@ -72,21 +74,38 @@ def assess(evidence, station_id, now):
             if actual == 0:
                 zero_count += 1
             else:
-                errors.append(abs(forecast-actual)/abs(actual)*100)
+                valid_count += 1
         result.update(run_id=run['run_id'], window_start=start.isoformat(), window_end=end.isoformat(),
-            valid_count=len(errors), actual_count=actual_count, zero_actual_count=zero_count, expected_count=count,
+            valid_count=valid_count, actual_count=actual_count, zero_actual_count=zero_count, expected_count=count,
             provisional=actual_count<count)
-        if not errors:
+        if not valid_count:
             message = 'M3当前负荷预测尚无有效非零实测对比点，无法计算MAPE，未允许求解'
             raise ValueError
-        number = sum(errors)/len(errors)
+        score = evidence.get('current_score')
+        message = 'M3当前负荷评分不可用，请更新M3服务并刷新输入，未允许求解'
+        if (not isinstance(score, dict) or score.get('policy') != SCORE_POLICY
+                or score.get('run_id') != run['run_id']
+                or score.get('unique_id') != 'station_total_load'
+                or type(score.get('actual_count')) is not int
+                or type(score.get('valid_count')) is not int
+                or score['actual_count'] != actual_count or score['valid_count'] != valid_count
+                or not _time(run['completed_at']) <= _time(score['calculated_at']) <= now + timedelta(minutes=1)):
+            raise ValueError
+        number = _number(score.get('mape_percent'))
+        if number < 0:
+            raise ValueError
         result.update(mape_percent=str(number), status='ready' if number <= MAX_MAPE else 'blocked')
         if number > MAX_MAPE:
             result['issues'] = [f'M3当前负荷预测MAPE {number:.4f}% 大于{MAX_MAPE}%，未允许求解']
     except (ValueError, TypeError, KeyError, AttributeError, InvalidOperation, OverflowError):
         result['issues'] = [message]
+    # Request time is metadata, not a change to the forecast/actual input version.
+    version_evidence = evidence
+    if isinstance(evidence, dict) and isinstance(evidence.get('current_score'), dict):
+        version_evidence = {**evidence, 'current_score': {
+            key: value for key, value in evidence['current_score'].items() if key != 'calculated_at'}}
     result['version'] = 'load-accuracy-'+hashlib.sha256(json.dumps({
-        'policy': POLICY, 'threshold': str(MAX_MAPE), 'evidence': evidence,
+        'policy': POLICY, 'threshold': str(MAX_MAPE), 'evidence': version_evidence,
         'status': result['status']}, sort_keys=True, default=str).encode()).hexdigest()[:16]
     return result
 

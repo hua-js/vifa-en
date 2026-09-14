@@ -85,11 +85,22 @@ class CustomResultPointResponse(ApiModel):
     absolute_percentage_error: float | None
 
 
+class CurrentLoadScoreResponse(ApiModel):
+    policy: Literal["load-night-weighted-mape-v1"]
+    run_id: str
+    unique_id: Literal["station_total_load"]
+    mape_percent: float | None
+    actual_count: int
+    valid_count: int
+    calculated_at: datetime
+
+
 class CustomResultSeriesResponse(ApiModel):
     unique_id: SeriesId
     unit: Literal["kW", "%"]
     model_name: str
     points: list[CustomResultPointResponse]
+    current_score: CurrentLoadScoreResponse | None = None
 
 
 class CustomRunResultResponse(ApiModel):

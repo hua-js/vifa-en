@@ -72,4 +72,4 @@ class M3CurrentResult:
         loads = [s for s in result['series'] if s.get('unique_id') == 'station_total_load']
         if len(loads) != 1 or loads[0].get('unit') != 'kW':
             raise ValueError('M3 load series mismatch')
-        return {'run': current, 'points': [dict(p, unique_id='station_total_load', run_id=current['run_id']) for p in loads[0]['points']]}
+        return {'run': current, 'current_score': loads[0].get('current_score'), 'points': [dict(p, unique_id='station_total_load', run_id=current['run_id']) for p in loads[0]['points']]}

@@ -11,6 +11,7 @@ import numpy as np
 from m3.worker.contracts import SERIES_IDS
 from m3.worker.custom_forecast_contracts import ALLOWED_INTERVAL_SECONDS
 from m3.worker.domain.custom_load_profiles import LOAD_SELECTION_POLICY
+from m3.worker.domain.current_prediction_score import current_load_score
 from m3.worker.errors import M3Error
 from m3.worker.services.custom_forecast_repository import (
     CustomForecastRepository,
@@ -55,6 +56,11 @@ class CustomForecastEvaluationService:
         self._repository = repository
         self._source = source
         self._now = now
+
+    def current_score(
+        self, run: StoredCustomRun, points: list[dict[str, Any]]
+    ) -> dict[str, object]:
+        return current_load_score(points, run_id=run.run_id, calculated_at=self._now())
 
     @staticmethod
     def _aligned_end(run: StoredCustomRun, now: datetime) -> datetime:
@@ -219,6 +225,9 @@ class CustomForecastEvaluationService:
             "expected_count": expected,
             "valid_count": len(valid),
             "zero_actual_count": len(zero_actual),
+            "current_score": current_load_score(
+                rows, run_id=run.run_id, calculated_at=calculated_at
+            ) if unique_id == "station_total_load" else None,
             "mape_percent": mape,
             "mae": float(np.mean(errors)) if errors else None,
             "smape_percent": float(np.mean(smape_parts)) if smape_parts else None,

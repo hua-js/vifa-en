@@ -7,7 +7,7 @@ def row(value='30', now=NOW, station='ES02'):
  start=now.astimezone(SHANGHAI).replace(hour=0,minute=0,second=0,microsecond=0)
  run=dict(id=808,station_id=station,run_id='current',status='succeeded',forecast_start=start.isoformat(),forecast_end=(start+timedelta(days=1)).isoformat(),completed_at=(start-timedelta(minutes=1)).isoformat(),interval_seconds=900,forecast_days=1,expected_points_per_series=96,model_manifest={'selection_policy':'weekly_load_v2'})
  points=[dict(run_id='current',unique_id='station_total_load',target_time=(start+timedelta(minutes=15*i)).isoformat(),horizon_step=i+1,forecast_value=100+float(value),actual_value=100 if i==0 else None,actual_quality='valid' if i==0 else None) for i in range(96)]
- return {'run':run,'points':points}
+ return {'run':run,'points':points,'current_score':dict(policy='load-night-weighted-mape-v1',run_id=run['run_id'],unique_id='station_total_load',mape_percent=float(value),actual_count=1,valid_count=1,calculated_at=now.isoformat())}
 class AccuracyTests(unittest.TestCase):
  def test_exact_threshold_allowed(self):self.assertEqual(assess(row(),'station-2',NOW)['status'],'ready')
  def test_above_threshold_blocked(self):self.assertEqual(assess(row('30.000001'),'station-2',NOW)['status'],'blocked')
@@ -17,6 +17,7 @@ class AccuracyTests(unittest.TestCase):
   r=row('10');r['points'][1].update(actual_quality='valid',actual_value=0)
   r['points'][2].update(actual_quality='valid',actual_value='NaN')
   r['points'][3].update(actual_quality='invalid',actual_value=1000)
+  r['current_score']['actual_count']=2
   g=assess(r,'station-2',NOW);self.assertEqual(g['status'],'ready');self.assertEqual(g['mape_percent'],'10.0');self.assertEqual(g['zero_actual_count'],1)
  def test_empty_pairs_block(self):
   r=row();r['points'][0]['actual_value']=None;self.assertEqual(assess(r,'station-2',NOW)['status'],'unavailable')
@@ -25,9 +26,22 @@ class AccuracyTests(unittest.TestCase):
  def test_wrong_station_or_series_block(self):
   r=row();r['run']['station_id']='ES01';self.assertEqual(assess(r,'station-2',NOW)['status'],'unavailable')
   r=row();r['points'][0]['unique_id']='storage_soc';self.assertEqual(assess(r,'station-2',NOW)['status'],'unavailable')
- def test_current_map_is_mean_of_individual_percent_errors(self):
-  r=row('10');r['points'][1].update(actual_quality='valid',actual_value=200,forecast_value=300)
-  self.assertEqual(assess(r,'station-2',NOW)['mape_percent'],'30.0')
+ def test_gate_uses_backend_score_not_standard_mape(self):
+  r=row('10');r['points'][0]['forecast_value']=900
+  self.assertEqual(assess(r,'station-2',NOW)['mape_percent'],'10.0')
+ def test_missing_or_mismatched_backend_score_blocks(self):
+  for key,value in [('policy','old'),('run_id','other'),('actual_count',2),('valid_count',True),('mape_percent',-1),('mape_percent','NaN')]:
+   r=row('10');r['current_score'][key]=value
+   self.assertEqual(assess(r,'station-2',NOW)['status'],'unavailable')
+  r=row();del r['current_score']
+  self.assertEqual(assess(r,'station-2',NOW)['status'],'unavailable')
+ def test_read_timestamp_does_not_change_source_version(self):
+  r=row();before=assess(r,'station-2',NOW)['version']
+  r['current_score']['calculated_at']=(NOW+timedelta(seconds=2)).isoformat()
+  self.assertEqual(assess(r,'station-2',NOW)['version'],before)
+ def test_score_calculated_during_read_is_allowed(self):
+  r=row();r['current_score']['calculated_at']=(NOW+timedelta(seconds=2)).isoformat()
+  self.assertEqual(assess(r,'station-2',NOW)['status'],'ready')
 
 
 class SolverEntryTests(unittest.TestCase):
@@ -62,7 +76,8 @@ class CurrentResultTests(unittest.TestCase):
   from m4.settings.m3_current_result import M3CurrentResult
   from unittest.mock import Mock
   evidence=row('10');run=evidence['run'];run['run_id']='f98ae7a6-c749-4ddf-b1c0-e90488136a20'
-  result={'run':run,'series':[{'unique_id':'station_total_load','unit':'kW','points':evidence['points']}]}
+  evidence['current_score']['run_id']=run['run_id']
+  result={'run':run,'series':[{'unique_id':'station_total_load','unit':'kW','points':evidence['points'],'current_score':evidence['current_score']}]}
   client=M3CurrentResult();client.get=Mock(side_effect=[dict(run),result])
   return client,result
  def test_worker_result_overlay_used_and_soc_ignored(self):

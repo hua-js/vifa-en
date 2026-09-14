@@ -373,6 +373,10 @@ def custom_forecast_result(
                     unique_id=unique_id,
                     unit="kW" if unique_id == "station_total_load" else "%",
                     model_name=next(iter(model_names)) if model_names else "none",
+                    current_score=(
+                        request.app.state.resources.custom_evaluations.current_score(run, rows)
+                        if unique_id == "station_total_load" and rows else None
+                    ),
                     points=[
                         CustomResultPointResponse(
                             target_time=row["target_time"],

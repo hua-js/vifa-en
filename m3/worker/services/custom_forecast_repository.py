@@ -79,6 +79,7 @@ EVALUATION_FIELDS = [
     "station_id",
     "run_id",
     "evaluation_key",
+    "current_score",
     "interval_seconds",
     "forecast_days",
     "model_policy",

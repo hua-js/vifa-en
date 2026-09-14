@@ -157,6 +157,7 @@ COLLECTION_FIELDS = {
         "station_id": ("text", False),
         "run_id": ("text", False),
         "evaluation_key": ("text", False),
+        "current_score": ("jsonb", True),
         "interval_seconds": ("integer", False),
         "forecast_days": ("smallint", False),
         "model_policy": ("text", False),

@@ -97,6 +97,18 @@ class InMemoryEvaluationRepository:
 
 
 class CustomForecastEvaluationServiceTests(unittest.TestCase):
+    def test_saved_score_matches_live_score_without_replacing_standard_metrics(self):
+        run = make_run("score-run", {"selection_policy": "weekly_load_v2"})
+        points = [dict(target_time=(run.config.forecast_start + timedelta(minutes=15*i)).isoformat(),
+                       forecast_value=109, actual_value=100, actual_quality="valid",
+                       baseline_forecast_value=110) for i in range(96)]
+        service = CustomForecastEvaluationService(None, None, lambda: NOW)
+        saved = service._series_evaluation(run, "station_total_load", points, NOW)
+        self.assertEqual(saved["current_score"], service.current_score(run, points))
+        self.assertEqual(saved["mape_percent"], 9)
+        self.assertLess(saved["current_score"]["mape_percent"], 9)
+        self.assertIsNone(service._series_evaluation(run, "storage_soc", points, NOW)["current_score"])
+
     def test_performance_returns_seven_daily_buckets_ending_at_latest_evaluation(self):
         """Dropping daily bucketing would leave all seven frontend cards empty."""
         runs = [
