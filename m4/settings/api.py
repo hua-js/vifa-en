@@ -1,4 +1,5 @@
 """Local parameter storage and read-only upstream control configuration."""
+from shared.project import get_project
 import ast
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -26,6 +27,8 @@ def upstream_token() -> str:
     configured = os.environ.get('M4_NOCOBASE_TOKEN')
     if configured is not None:
         return configured.strip()
+    if get_project().id != 'vifa':
+        return ''
     try:
         tree = ast.parse((ROOT / '.local/energy_efficiency_local_config.py').read_text())
         for item in tree.body:
@@ -112,8 +115,12 @@ def create_app(settings_path: Path | None = None, *, control_reader=None, input_
         return response
 
     def station_exists(station_id):
-        if station_id not in ('station-1', 'station-2'):
+        if station_id not in tuple(s.id for s in get_project().stations):
             raise HTTPException(404, '未知电站')
+
+    @app.get('/m4-api/project')
+    def project_metadata() -> dict:
+        return get_project().public_metadata()
 
     @app.get('/m4-api/stations/{station_id}/bills')
     def get_bills(station_id: str, month: Annotated[str, Query(pattern='^' + MONTH_PATTERN + '$')]) -> dict:

@@ -20,7 +20,8 @@ from m4.settings.selection import LiveSelectionResult, StationPolicy
 
 ROOT = Path(__file__).resolve().parents[2]
 SELECTOR_VERSION = 'pyomo-highs-selection-v2'
-STATIONS = ('station-1', 'station-2')
+from shared.project import get_project
+STATIONS = tuple(s.id for s in get_project().stations)
 EVIDENCE_NAMES = ('configuration.json', 'inputs.json', 'candidates.json', 'selection.json')
 FINAL_STATUSES = {'completed', 'blocked_configuration', 'blocked_inputs',
                   'blocked_model_solver', 'blocked_selection'}
@@ -154,7 +155,7 @@ class LocalApi:
         return parse_json(response.content)
 
 
-def run_chain(api, output, *, station_id='station-1', run_id=None, progress=None):
+def run_chain(api, output, *, station_id=STATIONS[0], run_id=None, progress=None):
     """Persist a solver-only preview; the selection endpoint owns live rechecks."""
     run_id = run_id or str(uuid4())
     validate_identity(station_id, run_id)
@@ -164,6 +165,7 @@ def run_chain(api, output, *, station_id='station-1', run_id=None, progress=None
         raise ValueError('output already contains a run; use a new directory')
     base = f'/m4-api/stations/{station_id}/'
     report = dict(schema_version='m4-decision-run-v1', run_id=run_id, station_id=station_id,
+        project_id=get_project().id, project_configuration=get_project().fingerprint,
         usage='preview_only', dispatch_status='not_dispatched',
         started_at=datetime.now(timezone.utc).isoformat(), status='started',
         selected=None, reason='', issues=[], stages=[], evidence_sha256={})
@@ -251,7 +253,7 @@ def run_chain(api, output, *, station_id='station-1', run_id=None, progress=None
 def main(argv=None):
     parser = argparse.ArgumentParser(description='M4 求解器决策预览，不下发设备指令')
     parser.add_argument('--api-base', default='http://127.0.0.1:8844')
-    parser.add_argument('--station', choices=STATIONS, default='station-1')
+    parser.add_argument('--station', choices=STATIONS, default=STATIONS[0])
     parser.add_argument('--output', type=Path, help='本轮独立输出目录')
     args = parser.parse_args(argv)
     run_id = str(uuid4())

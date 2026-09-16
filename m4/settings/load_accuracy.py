@@ -1,11 +1,12 @@
 """Validate M3 evidence and apply the gate to its authoritative load score."""
+from shared.project import get_project
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from zoneinfo import ZoneInfo
 import hashlib
 import json
 
-STATIONS = {'station-1': 'ES01', 'station-2': 'ES02'}
+STATIONS = {s.id: s.source_code for s in get_project().stations}
 POLICY = 'm4-current-task-load-mape-v3'
 SCORE_POLICY = 'load-night-weighted-mape-v1'
 MAX_MAPE = Decimal('30')

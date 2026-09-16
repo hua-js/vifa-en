@@ -4,6 +4,7 @@ PV is a seven-day historical reference, not a weather forecast. A valid quarter
 has at least 12 observed minutes; no two consecutive minutes may be missing,
 including across quarter/day boundaries. Missing observations are never zeroed.
 """
+from shared.project import get_project
 from collections.abc import Mapping, Sequence
 from datetime import datetime, timedelta
 import hashlib
@@ -151,13 +152,13 @@ def build_pv_reference(
 ) -> dict:
     """Build future rolling slots from the preceding seven complete local days.
 
-    Public station IDs match the local API. Source history uses ES02. The
+    Public station IDs and source codes come from the project inventory. The
     history interval is [history_start, history_end). An explicit history end
     lets a next-day plan use only days complete when fetching began; otherwise
     it defaults to midnight on the plan's local date.
     """
     local_start = _plan_start(plan_start_at)
-    if station_id not in ('station-1', 'station-2'):
+    if station_id not in tuple(s.id for s in get_project().stations):
         raise InputDataError('未知电站，无法确定光伏拓扑')
     if history_end_at is None:
         history_end = local_start.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -168,7 +169,7 @@ def build_pv_reference(
         if (history_end.hour or history_end.minute or history_end.second
                 or history_end.microsecond or history_end > local_start):
             raise InputDataError('光伏历史结束时间必须是上海零点且不晚于计划起点')
-    if station_id == 'station-1':
+    if not get_project().station(station_id).has_pv:
         return {
             'values': [0.0] * 96,
             'version': _version('pv-reference', {'station': station_id, 'method': 'station_without_pv'}),
@@ -181,7 +182,7 @@ def build_pv_reference(
         source_station = row.get('es_sn')
         if not isinstance(source_station, str) or not source_station:
             raise InputDataError('光伏历史缺少明确电站归属')
-        if source_station != 'ES02':
+        if source_station != get_project().station(station_id).source_code:
             continue
         at = _timestamp(row.get('timestamp'))
         if not history_start <= at < history_end:

@@ -1,4 +1,5 @@
 """Build a natural-day baseline from the EMS schedule, demand and SOC replay."""
+from shared.project import get_project
 from datetime import datetime, timedelta
 import hashlib
 import json
@@ -8,7 +9,7 @@ from m4.optimizer.contracts import (CapabilitySnapshot, ForecastPoint, PeakReser
 from m4.optimizer.metrics import calculate_metrics
 from .daily_comparison import comparison_input_sha256, compare_daily_plan
 from .objectives import get_daily_profiles
-from .daily_policy import daily_policy_version
+from .daily_policy import daily_policy_version, physical_grid_policy
 from .load_accuracy import require_gate
 from .forecast_source import validate_forecast_values
 from .daily_pv_policy import POLICY as DAILY_PV_POLICY
@@ -30,7 +31,7 @@ def prepare_ems_day(configuration, bundle):
     sources = bundle['sources']
     if any(sources.get(k, {}).get('status') != 'ready' for k in ('load', 'pv', 'tariff', 'controls', 'initial_soc')):
         raise ValueError('全天预测、电价、零点 SOC 或 EMS 时段尚未就绪。')
-    if configuration.station_id == 'station-2' and sources['pv'].get('gap_policy') != DAILY_PV_POLICY:
+    if get_project().station(configuration.station_id).has_pv and sources['pv'].get('gap_policy') != DAILY_PV_POLICY:
         raise ValueError('光伏预测完整性规则已更新，请重新读取输入。')
     require_gate(sources['load'].get('accuracy_gate'), configuration.station_id,
                  datetime.fromisoformat(bundle['fetched_at']))
@@ -82,11 +83,12 @@ def prepare_ems_day(configuration, bundle):
         source_versions={**{k: sources[k]['version'] for k in ('load', 'pv', 'tariff')},
             'load_policy': sources['load']['policy'], 'load_run_id': sources['load']['run_id'],
             'controls': control['version'], 'configuration': configuration.version,
+            'project_configuration': get_project().fingerprint,
             'capability': initial['version'], 'planning_basis': 'whole-station-retrospective-v1',
             **({'pv_gap_policy': DAILY_PV_POLICY,
                 'pv_zero_filled_points': str(sources['pv'].get('zero_filled_points', 0))}
-               if configuration.station_id == 'station-2' else {}),
-            **({'physical_grid_policy': 'station-1-550-v1', 'economic_policy': 'station-1-cost-first-v1'} if configuration.station_id == 'station-1' else {}),
+               if get_project().station(configuration.station_id).has_pv else {}),
+            **({'physical_grid_policy': physical_grid_policy(configuration.station_id), 'economic_policy': 'station-1-cost-first-v1'} if get_project().station(configuration.station_id).policy == 'cost_first' else {}),
             'terminal_target': format(terminal, '.17g'), 'baseline_policy': EMS_BASELINE_POLICY,
             **({'daily_policy': policy_version} if policy_version else {})})
     baseline = dict(schema_version='m4-ems-daily-baseline-v1', station_id=configuration.station_id,

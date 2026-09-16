@@ -1,4 +1,5 @@
 """Service-owned scheduling values; never editable through the dashboard."""
+from shared.project import get_project
 import hashlib
 import json
 from typing import Annotated
@@ -30,9 +31,8 @@ def runtime_parameters(station_id):
     values = RuntimeSettings.model_validate({
         **GLOBAL_RUNTIME_DEFAULTS, **STATION_RUNTIME_OVERRIDES.get(station_id, {}),
     })
-    # Confirmed station-1 physical import ceiling; t_need remains a soft target.
-    # Station 2 retains its existing policy until its physical limit is confirmed.
-    return {**values.model_dump(), 'grid_import_limit_kw': 550.0 if station_id == 'station-1' else None}
+    # Physical import ceilings are project constraints, not dashboard inputs.
+    return {**values.model_dump(), 'grid_import_limit_kw': get_project().station(station_id).grid_import_limit_kw}
 
 
 def effective_configuration(configuration):
@@ -45,6 +45,7 @@ def effective_configuration(configuration):
     })
     digest = hashlib.sha256(json.dumps({
         'policy': RUNTIME_POLICY, 'station_id': configuration.station_id,
+        'project_configuration': get_project().fingerprint,
         'parameters': values,
     }, sort_keys=True, allow_nan=False).encode()).hexdigest()[:16]
     return configuration.model_copy(update={

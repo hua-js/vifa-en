@@ -9,6 +9,7 @@ class GatewayTests(unittest.TestCase):
     def test_explicit_gateway_uses_fixed_readonly_route_and_unwraps_data(self):
         response = Mock(status=200)
         response.read.return_value = json.dumps({'status': 'ok', 'data': {'run_id': 'test'}}).encode()
+        response.geturl.return_value = 'https://opdash.lvkpower.com/energy-forecast-api/custom-runs/station_2/latest?interval_seconds=900&forecast_days=1'
         response.__enter__ = Mock(return_value=response)
         response.__exit__ = Mock(return_value=False)
         opener = Mock()
@@ -35,6 +36,7 @@ class GatewayTests(unittest.TestCase):
     def test_platform_error_is_not_accepted_as_result(self):
         response = Mock(status=200)
         response.read.return_value = b'{"status":"error","data":{}}'
+        response.geturl.return_value = 'https://opdash.lvkpower.com/energy-forecast-api/custom-runs/f98ae7a6-c749-4ddf-b1c0-e90488136a20/result'
         response.__enter__ = Mock(return_value=response)
         response.__exit__ = Mock(return_value=False)
         opener = Mock()

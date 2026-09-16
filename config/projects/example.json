@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "project_id": "example",
+  "site_id": "example-site",
+  "timezone": "Asia/Shanghai",
+  "sources": {
+    "m1_base_url": "http://example-platform/api",
+    "m1_energy_base_url": "https://energy.example.invalid/api",
+    "m1_growatt_url": "https://solar.example.invalid/api/t_growall:list",
+    "m4_base_url": "https://energy.example.invalid/api",
+    "m3_gateway_base_url": "https://forecast.example.invalid/energy-forecast-api/custom-runs"
+  },
+  "m1": {
+    "pv_efficiency_min_pct": 85.0,
+    "ess_self_loss_max_pct": 2.0,
+    "load_spike_min_kw": 1000.0,
+    "refresh_interval_seconds": 20
+  },
+  "stations": [
+    {
+      "id": "north",
+      "source_code": "NORTH",
+      "name": "north",
+      "cabinet_sns": [
+        "bat-n1"
+      ],
+      "has_pv": false,
+      "pv_meter_sn": null,
+      "inverter_sns": [],
+      "policy": "cost_first",
+      "grid_import_limit_kw": 300,
+      "alarm_advisory_cabinets": []
+    },
+    {
+      "id": "solar-yard",
+      "source_code": "PV03",
+      "name": "solar-yard",
+      "cabinet_sns": [
+        "bat-p1",
+        "bat-p2",
+        "bat-p3"
+      ],
+      "has_pv": true,
+      "pv_meter_sn": "meter-pv",
+      "inverter_sns": [
+        "inv-p1",
+        "inv-p2"
+      ],
+      "policy": "peak_reserve",
+      "grid_import_limit_kw": null,
+      "alarm_advisory_cabinets": []
+    },
+    {
+      "id": "warehouse",
+      "source_code": "WH09",
+      "name": "warehouse",
+      "cabinet_sns": [
+        "bat-w1",
+        "bat-w2",
+        "bat-w3",
+        "bat-w4"
+      ],
+      "has_pv": false,
+      "pv_meter_sn": null,
+      "inverter_sns": [],
+      "policy": "cost_first",
+      "grid_import_limit_kw": 800,
+      "alarm_advisory_cabinets": []
+    }
+  ]
+}

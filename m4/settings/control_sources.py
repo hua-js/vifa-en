@@ -1,4 +1,5 @@
 """Read station controls under the confirmed policy; never issue device commands."""
+from shared.project import get_project, source_origin, validate_source_url
 import hashlib
 import json
 import math
@@ -20,7 +21,7 @@ class _NoRedirect(HTTPRedirectHandler):
         return None
 
 
-_STATIONS = {'station-1': 'ES01', 'station-2': 'ES02'}
+_STATIONS = {s.id: s.source_code for s in get_project().stations}
 _TABLES = {
     't_es': ('电站容量', 'id,sn,es_power_storage,updatedAt'),
     't_need': ('需量控制', 'id,f_es_sn,need_kw,reserved_kw,rated_capacity,load_rate,updatedAt'),
@@ -125,18 +126,18 @@ def _business_values(value):
 
 
 class ControlSourceReader:
-    def __init__(self, token: str, base_url='https://vifa.hlszh.com/api/'):
+    def __init__(self, token: str, base_url=None):
+        base_url = base_url or get_project().sources['m4_base_url']
         if (not isinstance(token, str) or not token.strip()
                 or '\r' in token or '\n' in token):
             raise ControlSourceError('尚未配置有效的数据源访问凭据')
         try:
-            parts = urlsplit(base_url)
-            if (parts.scheme != 'https' or not parts.hostname or parts.username is not None
-                    or parts.password is not None or parts.query or parts.fragment):
+            validate_source_url(base_url)
+            self._origin = source_origin(base_url)
+            if self._origin != source_origin(get_project().sources['m4_base_url']):
                 raise ValueError
-            self._origin = (parts.scheme, parts.hostname, parts.port or 443)
         except (TypeError, ValueError, AttributeError):
-            raise ControlSourceError('数据源地址必须是无凭据、查询参数或片段的 HTTPS 地址') from None
+            raise ControlSourceError('数据源地址必须使用项目受信任来源且不含凭据、查询参数或片段') from None
         self._base_url = base_url.rstrip('/') + '/'
         self._token = token.strip()
         self._opener = build_opener(_NoRedirect())
@@ -148,14 +149,14 @@ class ControlSourceReader:
         })
         try:
             parts = urlsplit(url)
-            if (parts.scheme, parts.hostname, parts.port or 443) != self._origin:
+            if (parts.scheme, parts.hostname, parts.port or (443 if parts.scheme == 'https' else 80)) != self._origin:
                 raise ValueError
             request = Request(url, headers={
                 'Authorization': f'Bearer {self._token}', 'Accept': 'application/json',
             }, method='GET')
             with self._opener.open(request, timeout=8) as response:
                 final = urlsplit(response.geturl())
-                if ((final.scheme, final.hostname, final.port or 443) != self._origin
+                if ((final.scheme, final.hostname, final.port or (443 if final.scheme == 'https' else 80)) != self._origin
                         or getattr(response, 'status', 200) != 200):
                     raise ValueError
                 body = response.read(_MAX_RESPONSE_BYTES + 1)

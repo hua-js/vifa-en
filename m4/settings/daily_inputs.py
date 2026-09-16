@@ -4,6 +4,7 @@ These are retrospective comparison inputs, not a dispatch-capability snapshot.
 The station-level midnight SOC is a whole-station reference and is never used
 as the initial SOC of a partially participating cabinet set.
 """
+from shared.project import get_project
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, time, timedelta
 import hashlib
@@ -33,14 +34,14 @@ class DailyInputService:
         self.live = live_inputs
 
     def _pv(self, station_id, start, now):
-        if station_id == 'station-1':
+        if not get_project().station(station_id).has_pv:
             return self.live._pv(station_id, start, start)
-        source = load_pv_forecast(self.live.client, plan_start_at=start, now=now)
+        source = load_pv_forecast(self.live.client, plan_start_at=start, now=now, station_id=station_id)
         covered_start = max(start, _time(source['forecast_start']))
         covered_end = min(start+timedelta(days=1), _time(source['forecast_end']))
         if covered_start >= covered_end or not source['coverage_points']:
             raise InputDataError('M3光伏预测与当天没有重叠时段，未将全天填零')
-        validate_pv_source(source, start=covered_start, end=covered_end, now=now)
+        validate_pv_source(source, start=covered_start, end=covered_end, now=now, station_id=station_id)
         values, missing = fill_night_gaps(source['values'], start)
         filled = {**source, 'values': values,
                   'forecast_coverage_points': source['coverage_points'], 'coverage_points': 96,

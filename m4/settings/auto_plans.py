@@ -1,4 +1,5 @@
 """Automatic local plan generation; no device dispatch or browser dependency."""
+from shared.project import get_project
 from datetime import datetime, timezone
 import fcntl
 import json
@@ -23,7 +24,8 @@ class AutomaticPlans:
             return
         now = time.time() if now is None else now
         window = int(now // self.interval_seconds)
-        self.root.mkdir(parents=True, exist_ok=True)
+        from .project_storage import bind_root
+        bind_root(self.root)
         with (self.root / '.automatic.lock').open('a') as lock:
             try:
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -37,7 +39,7 @@ class AutomaticPlans:
             except (ValueError, OSError):
                 LOG.exception('Cannot read automatic plan state; skipping this check')
                 return
-            for station in ('station-1', 'station-2'):
+            for station in tuple(s.id for s in get_project().stations):
                 if state.get(station) == window or station in self.service.running:
                     continue
                 # Persist the claim under the cross-process lock before dispatch.
@@ -61,7 +63,8 @@ class AutomaticPlans:
         # Hold leadership across windows, including long-running jobs.
         while not self.stopped.is_set():
             try:
-                self.root.mkdir(parents=True, exist_ok=True)
+                from .project_storage import bind_root
+                bind_root(self.root)
                 with (self.root / '.automatic-leader.lock').open('a') as leader:
                     try:
                         fcntl.flock(leader, fcntl.LOCK_EX | fcntl.LOCK_NB)

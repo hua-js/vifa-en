@@ -6,6 +6,7 @@ production tuning and not copied from the offline Mock profiles. A station may
 partially override these numeric settings with its own version. Neither that
 configuration nor these functions can change safety limits or objective order.
 """
+from shared.project import get_project
 import hashlib
 import json
 from typing import Annotated
@@ -104,10 +105,10 @@ def get_profiles(station_id: str) -> list[ObjectiveProfile]:
 
 
 def get_daily_profiles(station_id: str) -> list[ObjectiveProfile]:
-    """Versioned daily overrides: station 1 cost first; station 2 peak reserve."""
+    """Select explicit project policy while preserving historical version labels."""
     from .daily_policy import daily_policy_version
     profiles = get_profiles(station_id)
-    if station_id == 'station-1':
+    if get_project().station(station_id).policy == 'cost_first':
         settings, _ = _resolve(station_id)
         for profile in profiles:
             profile.profile_version += '/station-1-cost-first-v1/station-1-continuity-v2'

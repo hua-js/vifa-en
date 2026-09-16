@@ -109,7 +109,8 @@ class CurrentResultTests(unittest.TestCase):
   with tempfile.TemporaryDirectory() as directory:
    path=Path(directory)/'token';path.write_text('test-only-m3-admin-token')
    with patch.dict('os.environ',{'M4_M3_ADMIN_TOKEN_FILE':str(path),'M4_M3_SOCKET_PATH':'/tmp/test-worker.sock'}),patch('m4.settings.m3_current_result.SocketConnection',return_value=connection) as factory:
-    self.assertEqual(M3CurrentResult().get('/v1/test'),{'ok':True})
+    route='/v1/stations/ES02/custom-forecast-runs/latest?interval_seconds=900&forecast_days=1'
+    self.assertEqual(M3CurrentResult().get(route),{'ok':True})
     factory.assert_called_once_with('/tmp/test-worker.sock')
-    connection.request.assert_called_once_with('GET','/v1/test',headers={'Authorization':'Bearer test-only-m3-admin-token','Accept':'application/json'})
+    connection.request.assert_called_once_with('GET',route,headers={'Authorization':'Bearer test-only-m3-admin-token','Accept':'application/json'})
     connection.close.assert_called_once()

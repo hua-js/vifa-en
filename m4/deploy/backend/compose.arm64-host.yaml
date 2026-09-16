@@ -1,0 +1,19 @@
+# Target-specific overlay: use with compose.yaml, not the Docker-network production overlay.
+services:
+  m4-api:
+    platform: linux/arm64
+    image: vifa-m4:product-arm64-reviewed
+    network_mode: host
+    ports: !reset []
+    environment:
+      M4_BIND_HOST: 127.0.0.1
+      M4_AUTO_PLAN_ENABLED: "0"
+    tmpfs:
+      - /dev/mqueue:rw,nosuid,nodev,noexec
+    volumes:
+      - type: bind
+        source: ./entrypoint.py
+        target: /opt/m4-runtime/entrypoint.py
+        read_only: true
+        bind:
+          create_host_path: false

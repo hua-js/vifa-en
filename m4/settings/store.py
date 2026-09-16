@@ -1,4 +1,5 @@
 """Local SQLite persistence with transactional, per-station revision checks."""
+from shared.project import get_project
 import hashlib
 import json
 import sqlite3
@@ -20,7 +21,7 @@ class SettingsStore:
 
     @staticmethod
     def validate_station(station_id: str):
-        if station_id not in ('station-1', 'station-2'):
+        if station_id not in tuple(s.id for s in get_project().stations):
             raise ValueError('未知电站')
 
     @contextmanager
@@ -28,6 +29,8 @@ class SettingsStore:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         connection = sqlite3.connect(self.path, timeout=10)
         try:
+            from .project_storage import bind_database
+            bind_database(connection)
             connection.execute('''CREATE TABLE IF NOT EXISTS m4_station_settings (
                 station_id TEXT PRIMARY KEY, document TEXT NOT NULL)''')
             connection.commit()

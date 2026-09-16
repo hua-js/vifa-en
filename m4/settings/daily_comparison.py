@@ -1,4 +1,5 @@
 """Whole-day comparison against the user-confirmed EMS plan; never redispatch."""
+from shared.project import get_project
 from datetime import datetime, timedelta
 from hashlib import sha256
 import json
@@ -154,9 +155,11 @@ def compare_daily_plan(request, candidate, *, baseline=None, controls_version=No
     except (ValueError, TypeError, AttributeError, OverflowError):
         output['reason'] = '优化日计划未通过独立校验，沿用 EMS 原计划。'
         return output
-    soft_demand = (request.station_id == 'station-1'
-        and request.source_versions.get('physical_grid_policy') == 'station-1-550-v1'
-        and request.constraints.grid_import_limit_kw == 550.0)
+    soft_demand = (get_project().station(request.station_id).policy == 'cost_first'
+        and ((request.source_versions.get('physical_grid_policy') == 'station-1-550-v1'
+              and request.constraints.grid_import_limit_kw == 550.0)
+             or (request.source_versions.get('physical_grid_policy') == 'configured-grid-import-v1'
+                 and request.constraints.grid_import_limit_kw is not None)))
     if metrics.peak_demand_exceed_kw > POWER_TOLERANCE_KW and not soft_demand:
         output['reason'] = '优化日计划未满足需量目标，沿用 EMS 原计划。'
         return output

@@ -8,11 +8,23 @@ const fail = (status, detail) => {
 };
 const publicOrigin = env.get('M4_PUBLIC_ORIGIN');
 const frameOrigin = env.get('M4_FRAME_ORIGIN');
-const validOrigin = value => typeof value === 'string' && /^https:\/\/[a-zA-Z0-9.-]+(?::\d{1,5})?$/.test(value);
+const validOrigin = value => {
+    if (typeof value !== 'string') return false;
+    if (/^https:\/\/[a-zA-Z0-9.-]+(?::\d{1,5})?$/.test(value)) return true;
+    if (env.get('M4_ALLOW_HTTP_ORIGIN') !== '1') return false;
+    const match = /^http:\/\/(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(?::([1-9]\d{0,4}))?$/.exec(value);
+    if (!match || (match[5] && Number(match[5]) > 65535)) return false;
+    const octets = match.slice(1, 5).map(Number);
+    if (octets.some((n, i) => n > 255 || String(n) !== match[i + 1])) return false;
+    return octets[0] === 10 || octets[0] === 127 ||
+        (octets[0] === 192 && octets[1] === 168) ||
+        (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31);
+};
 if (!validOrigin(publicOrigin) || !validOrigin(frameOrigin)) {
     return fail(503, 'M4 访问配置尚未完成，请联系管理员');
 }
-const pageRequest = !msg.req.params.stationId;
+const projectRequest = msg.req.route?.path === '/m4-api/project';
+const pageRequest = !msg.req.params.stationId && !projectRequest;
 const auth = msg.req.headers.authorization;
 const provided = pageRequest ? msg.req.query.token : (typeof auth === 'string' && auth.startsWith('Bearer ') ? auth.slice(7) : '');
 if (typeof provided !== 'string' || !/^[A-Za-z0-9._~-]{1,4096}$/.test(provided)) return fail(401, '登录凭据缺失或格式不正确，请从平台重新打开页面');

@@ -76,7 +76,7 @@ def main():
     os.environ['M4_NOCOBASE_TOKEN'] = token
     os.execv(sys.executable, [
         sys.executable, '-m', 'uvicorn', 'm4.settings.api:create_app',
-        '--factory', '--host', '0.0.0.0', '--port', '8844', '--workers', '1',
+        '--factory', '--host', os.environ.get('M4_BIND_HOST', '0.0.0.0'), '--port', '8844', '--workers', '1',
         '--no-proxy-headers',
     ])
 

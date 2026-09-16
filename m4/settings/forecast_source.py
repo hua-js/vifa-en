@@ -1,4 +1,5 @@
 """Read existing M3 load forecasts; never request new runs or repeat missing days."""
+from shared.project import get_project
 import hashlib
 import json
 import math
@@ -8,7 +9,7 @@ from zoneinfo import ZoneInfo
 
 from .load_accuracy import read_gate
 
-STATIONS={'station-1':'ES01','station-2':'ES02'}
+STATIONS={s.id: s.source_code for s in get_project().stations}
 SHANGHAI=ZoneInfo('Asia/Shanghai')
 
 

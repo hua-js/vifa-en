@@ -4,6 +4,7 @@ The configured station capacity is shared by the fixed storage cabinet roster.
 Unavailable observations never change that roster or increase the remaining
 cabinet capacities; dispatch SOC is normalized over the participating subset. A displayable SOC is not, by itself, permission to schedule.
 """
+from shared.project import get_project
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -23,7 +24,7 @@ ALARM_POLICY = 'emu11-alert-advisory-v1'
 
 def alarm_is_advisory(station_id, emu_sn, policy):
     """User-authorized exception for emu11; never applies to other cabinets."""
-    return policy == ALARM_POLICY and station_id == 'station-1' and emu_sn == 'emu11'
+    return policy == ALARM_POLICY and emu_sn in get_project().station(station_id).alarm_advisory_cabinets
 
 
 def _soc(value):

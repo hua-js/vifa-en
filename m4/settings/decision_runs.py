@@ -22,6 +22,8 @@ class DecisionRunManager:
 
     def _directory(self, station_id):
         validate_identity(station_id)
+        from .project_storage import bind_root
+        bind_root(self.root)
         return self.root / station_id / '.web-jobs'
 
     def _write(self, job):

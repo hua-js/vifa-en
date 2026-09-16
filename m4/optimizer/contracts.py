@@ -174,12 +174,16 @@ class OptimizationRequest(StrictModel):
             "pv_unused",
             "throughput",
         }
+        from shared.project import get_project
+        station = next((s for s in get_project().stations if s.id == self.station_id), None)
         cost_first = self.source_versions.get('economic_policy') == 'station-1-cost-first-v1'
-        if cost_first and (self.station_id != 'station-1'
-                or self.constraints.grid_import_limit_kw != 550.0
-                or self.source_versions.get('physical_grid_policy') != 'station-1-550-v1'
+        if cost_first and (station is None or station.policy != 'cost_first'
+                or self.constraints.grid_import_limit_kw is None
+                or self.source_versions.get('physical_grid_policy') not in ('station-1-550-v1', 'configured-grid-import-v1')
+                or (self.source_versions.get('physical_grid_policy') == 'station-1-550-v1'
+                    and self.constraints.grid_import_limit_kw != 550.0)
                 or self.peak_reserve_policy is not None):
-            raise ValueError('cost-first policy requires station-1 physical ceiling 550')
+            raise ValueError('cost-first policy requires a configured physical ceiling')
         for profile in self.profiles:
             term_sets = [set(layer.terms) for layer in profile.objective_order]
             if cost_first:
@@ -204,7 +208,7 @@ class OptimizationRequest(StrictModel):
             elif "peak_reserve_shortfall" in flattened:
                 raise ValueError("peak reserve objective requires an explicit policy")
             if "discharge_starts" in flattened:
-                if (self.station_id != 'station-2' or self.peak_reserve_policy is None
+                if (station is None or station.policy != 'peak_reserve' or self.peak_reserve_policy is None
                         or self.peak_reserve_policy.version != 'peak-reserve-v3'
                         or flattened.count('discharge_starts') != 1
                         or term_sets[-3:] != [{'discharge_starts'}, {'power_variation'}, {'valley_charge_delay'}]
@@ -213,7 +217,7 @@ class OptimizationRequest(StrictModel):
                 flattened.remove('discharge_starts')
             if "power_variation" in flattened:
                 continuity_scope = cost_first or (
-                    self.station_id == 'station-2' and self.peak_reserve_policy is not None
+                    station is not None and station.policy == 'peak_reserve' and self.peak_reserve_policy is not None
                     and self.peak_reserve_policy.version == 'peak-reserve-v3')
                 continuity_before_soc = (cost_first and
                     profile.profile_version.endswith('/station-1-continuity-v2'))

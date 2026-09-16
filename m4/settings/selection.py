@@ -78,6 +78,8 @@ class PolicyStore:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         connection = sqlite3.connect(self.path, timeout=10)
         try:
+            from .project_storage import bind_database
+            bind_database(connection)
             connection.execute('CREATE TABLE IF NOT EXISTS m4_selection_policies (station_id TEXT PRIMARY KEY, document TEXT NOT NULL)')
             connection.commit()
             yield connection

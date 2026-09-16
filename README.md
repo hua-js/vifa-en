@@ -36,6 +36,8 @@ M3 FastAPI 入口为 `m3.worker.main:app`。M4 应用工厂为 `m4.settings.api:
 
 ## 页面与文档
 
+- [M1/M4 产品化配置与交付](docs/产品化配置与交付.md)：统一项目配置、站点注册、配套Flow/HTML与版本化发布；不包含MES/EMS指令下发。先使用 `scripts/check_project.py --project <项目JSON>` 离线检查配置。
+
 - [VIFA 界面设计规范](docs/DESIGN.md) · [共用主题维护](shared/styles/README.md)
 - [M1 页面](m1/web/dashboard_energy.html) · [M1 时间与历史告警](docs/m1/时间与历史告警说明.md)
 - [M2 页面](m2/web/场站三条能效链路能流图.html) · [M2 历史查询](docs/m2/历史查询说明.md)

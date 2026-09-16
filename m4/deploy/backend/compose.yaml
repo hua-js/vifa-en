@@ -1,8 +1,8 @@
-name: vifa-m4
+name: ${M4_INSTANCE_NAME:-vifa-m4}
 
 services:
   m4-api:
-    platform: linux/amd64
+    platform: ${M4_PLATFORM:-linux/amd64}
     image: ${M4_IMAGE:-ccr.ccs.tencentyun.com/taidai-holobase-168/vifa-m4:0.1.0}
     restart: unless-stopped
     init: true
@@ -13,10 +13,18 @@ services:
       M4_DECISION_RESULTS_DIR: /data/solver-decisions
       M4_NOCOBASE_TOKEN_FILE: /run/secrets/nocobase_token
       TZ: Asia/Shanghai
+      VIFA_PROJECT_CONFIG: /etc/vifa/project.json
+      M4_AUTO_PLAN_ENABLED: ${M4_AUTO_PLAN_ENABLED:-0}
     secrets:
       - nocobase_token
     volumes:
       - m4-data:/data
+      - type: bind
+        source: ${VIFA_PROJECT_CONFIG_HOST:-../config/project.json}
+        target: /etc/vifa/project.json
+        read_only: true
+        bind:
+          create_host_path: false
     read_only: true
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=256m,mode=1777

@@ -45,6 +45,9 @@ def main():
         drop_privileges()
         # Direct invocation by docker compose exec does not otherwise include /app.
         sys.path.insert(0, '/app')
+        from shared.project import get_project
+        project = get_project()
+        stations = tuple(station.id for station in project.stations)
         for module in ('fastapi', 'httpx', 'highspy', 'numpy', 'pydantic', 'pyomo',
                        'scipy', 'uvicorn', 'm4.settings.api', 'm4.optimizer',
                        'm4.orchestrator', 'm4.selection'):
@@ -58,13 +61,13 @@ def main():
         results_root = Path(os.environ.get('M4_DECISION_RESULTS_DIR', str(RESULTS_ROOT)))
         for directory in (DATA_ROOT, results_root):
             check_writable(directory)
-        for station in ('station-1', 'station-2'):
+        for station in stations:
             for directory in (results_root / station, results_root / station / '.web-jobs'):
                 if directory.exists():
                     check_writable(directory)
         print('Data volume write checks OK (UID/GID 10001).')
         statuses = {station: latest_status(results_root, station)
-                    for station in ('station-1', 'station-2')}
+                    for station in stations}
         for station, status in statuses.items():
             print(f'{station}: latest job status={status}')
         if 'running' in statuses.values():

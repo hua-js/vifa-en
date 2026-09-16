@@ -1,4 +1,5 @@
 """Bounded, read-only NocoBase access to M4's known upstream data tables."""
+from shared.project import get_project, source_origin
 import json
 import re
 from time import monotonic
@@ -12,8 +13,8 @@ class SourceReadError(ValueError):
     """An upstream source is unavailable, incomplete or invalid."""
 
 
-_BASE_URL = 'https://vifa.hlszh.com/api/'
-_ORIGIN = ('https', 'vifa.hlszh.com', 443)
+_BASE_URL = get_project().sources['m4_base_url'].rstrip('/') + '/'
+_ORIGIN = source_origin(get_project().sources['m4_base_url'])
 _TABLES = {
     't_emu': '储能设备实时数据',
     't_es_data': '电站历史与实时数据',
@@ -94,7 +95,7 @@ class NocoBaseClient:
         url = _BASE_URL + table + ':list?' + urlencode(query)
         try:
             parts = urlsplit(url)
-            if (parts.scheme, parts.hostname, parts.port or 443) != _ORIGIN:
+            if (parts.scheme, parts.hostname, parts.port or (443 if parts.scheme == 'https' else 80)) != _ORIGIN:
                 raise ValueError
             request = Request(url, headers={
                 'Authorization': f'Bearer {self._token.strip()}',
@@ -102,7 +103,7 @@ class NocoBaseClient:
             }, method='GET')
             with self._opener.open(request, timeout=timeout) as response:
                 final = urlsplit(response.geturl())
-                if ((final.scheme, final.hostname, final.port or 443) != _ORIGIN
+                if ((final.scheme, final.hostname, final.port or (443 if final.scheme == 'https' else 80)) != _ORIGIN
                         or getattr(response, 'status', 200) != 200):
                     raise ValueError
                 body = response.read(_MAX_RESPONSE_BYTES + 1)

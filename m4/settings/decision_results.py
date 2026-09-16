@@ -29,6 +29,8 @@ class DecisionResultsReader:
 
     def _paths(self, station_id):
         validate_identity(station_id)
+        from .project_storage import bind_root
+        bind_root(self.root)
         directory = self.root / station_id
         if directory.is_symlink():
             raise ValueError('symlink evidence directory is not supported')
@@ -90,6 +92,9 @@ class DecisionResultsReader:
     def _read(self, station_id, path):
         view = self._view(station_id)
         report = read_json(path)
+        from shared.project import get_project
+        if report.get('project_id', 'vifa') != get_project().id:
+            raise ValueError('历史记录属于其他项目')
         validate_identity(report['station_id'], report['run_id'])
         if (report['station_id'] != station_id
                 or report['schema_version'] != 'm4-decision-run-v1'

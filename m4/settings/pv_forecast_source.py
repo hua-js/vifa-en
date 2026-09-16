@@ -1,4 +1,5 @@
 """Read one completed PV batch for rolling M4 inputs; never trigger generation."""
+from shared.project import get_project
 import hashlib
 import json
 import re
@@ -20,12 +21,24 @@ POINTS = 'energy_pv_forecast_points'
 RUN_FIELDS = 'id,run_id,es_sn,run_kind,status,as_of,generated_at,forecast_start,forecast_end,interval_minutes,expected_points,model_name,model_version,weather_batch_id,content_hash'
 
 
-def validate_source(source, *, start, end, now):
+def _pv_station(station_id=None):
+    if station_id is None:
+        stations = [s for s in get_project().stations if s.has_pv]
+        if len(stations) != 1:
+            raise InputDataError('必须明确指定光伏电站')
+        return stations[0]
+    station = get_project().station(station_id)
+    if not station.has_pv:
+        raise InputDataError('本站未配置光伏')
+    return station
+
+
+def validate_source(source, *, start, end, now, station_id=None):
     """Also used immediately before creating an optimizer request."""
     try:
         as_of, generated, begin, finish = (_time(source.get(k)) for k in
             ('as_of', 'generated_at', 'forecast_start', 'forecast_end'))
-        if source.get('source_kind') != 'operational_forecast' or source.get('es_sn') != 'ES02':
+        if source.get('source_kind') != 'operational_forecast' or source.get('es_sn') != _pv_station(station_id).source_code:
             raise ValueError
         if not as_of <= generated <= now or not generated < begin:
             raise ValueError
@@ -40,15 +53,16 @@ def validate_source(source, *, start, end, now):
         raise InputDataError('光伏预测来源或时间信息无效') from None
 
 
-def load_pv_forecast(client, *, plan_start_at, now):
+def load_pv_forecast(client, *, plan_start_at, now, station_id=None):
     """Return 96 aligned slots; uncovered slots stay None for horizon selection."""
+    station = _pv_station(station_id)
     try:
         start = _time(plan_start_at.isoformat())
         at = _time(now.isoformat())
         if start.minute % 15 or start.second or start.microsecond:
             raise ValueError
         rows = client.list_rows(RUNS, fields=RUN_FIELDS,
-            filters={'es_sn': {'$eq': 'ES02'}, 'run_kind': {'$eq': 'operational'},
+            filters={'es_sn': {'$eq': station.source_code}, 'run_kind': {'$eq': 'operational'},
                 'status': {'$eq': 'completed'}, 'as_of': {'$lte': at.isoformat()},
                 'generated_at': {'$lte': at.isoformat()}},
             sort='-as_of,-id', page_size=1, limit=1)
@@ -57,7 +71,7 @@ def load_pv_forecast(client, *, plan_start_at, now):
         if len(rows) != 1:
             raise ValueError
         run = rows[0]
-        if (run.get('es_sn') != 'ES02' or run.get('run_kind') != 'operational'
+        if (run.get('es_sn') != station.source_code or run.get('run_kind') != 'operational'
                 or run.get('status') != 'completed' or type(run.get('id')) is not int or run['id'] <= 0
                 or type(run.get('interval_minutes')) is not int or run['interval_minutes'] != 15
                 or type(run.get('expected_points')) is not int or run['expected_points'] != 96):
@@ -78,7 +92,7 @@ def load_pv_forecast(client, *, plan_start_at, now):
                       validity_policy=POLICY, allowed_generation_days=2, run_pk=run['id'])
         # Check freshness now; full requested-window coverage is checked after
         # M3 load has determined whether this round needs 95 or 96 slots.
-        validate_source(source, start=begin, end=finish, now=at)
+        validate_source(source, start=begin, end=finish, now=at, station_id=station.id)
         points = client.list_rows(POINTS, fields='run_pk,target_time,horizon_step,forecast_kw',
             filters={'run_pk': {'$eq': run['id']}}, sort='horizon_step', page_size=100, max_pages=2)
         if len(points) != 96:

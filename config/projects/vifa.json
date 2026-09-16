@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "project_id": "vifa",
+  "site_id": "363738052231168",
+  "timezone": "Asia/Shanghai",
+  "sources": {
+    "m1_base_url": "http://holobase/api",
+    "m1_energy_base_url": "https://vifa.hlszh.com/api",
+    "m1_growatt_url": "http://e606pro.hlszh.com:3510/api/t_growall:list",
+    "m4_base_url": "https://vifa.hlszh.com/api",
+    "m3_gateway_base_url": "https://opdash.lvkpower.com/energy-forecast-api/custom-runs"
+  },
+  "m1": {
+    "pv_efficiency_min_pct": 85.0,
+    "ess_self_loss_max_pct": 2.0,
+    "load_spike_min_kw": 1000.0,
+    "refresh_interval_seconds": 20
+  },
+  "stations": [
+    {
+      "id": "station-1",
+      "source_code": "ES01",
+      "name": "电站1",
+      "cabinet_sns": [
+        "emu11",
+        "emu12"
+      ],
+      "has_pv": false,
+      "pv_meter_sn": null,
+      "inverter_sns": [],
+      "policy": "cost_first",
+      "grid_import_limit_kw": 550.0,
+      "alarm_advisory_cabinets": [
+        "emu11"
+      ]
+    },
+    {
+      "id": "station-2",
+      "source_code": "ES02",
+      "name": "电站2",
+      "cabinet_sns": [
+        "emu21",
+        "emu22",
+        "emu23",
+        "emu24",
+        "emu25",
+        "emu26"
+      ],
+      "has_pv": true,
+      "pv_meter_sn": "emu27",
+      "inverter_sns": [
+        "emu1",
+        "emu2",
+        "emu3",
+        "emu4",
+        "emu5",
+        "emu21",
+        "emu22",
+        "emu23",
+        "emu24"
+      ],
+      "policy": "peak_reserve",
+      "grid_import_limit_kw": null,
+      "alarm_advisory_cabinets": []
+    }
+  ]
+}

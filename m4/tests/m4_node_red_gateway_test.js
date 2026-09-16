@@ -204,8 +204,8 @@ test('all expected GET, PUT and POST station routes reach the fixed backend', ()
     }
 });
 
-test('unknown stations, methods and paths are rejected before proxying', () => {
-    for (const station of ['', 'station-3', '../station-1', 'station-1/../../admin',
+test('unsafe stations, methods and paths are rejected before proxying', () => {
+    for (const station of ['', '../station-1', 'station-1/../../admin',
         'https://attacker.example.test', ['station-1'], undefined]) {
         const msg = request();
         msg.req.params.stationId = station;
@@ -364,7 +364,7 @@ test('generated Flow connects every ingress through authorization and safe proxy
     }
     const inputs = nodes.filter(node => node.type === 'http in');
     assert.deepEqual(inputs.map(node => `${node.method} ${node.url}`).sort(), [
-        'get /m4', 'get /m4-api/stations/:stationId/:resource',
+        'get /m4', 'get /m4-api/project', 'get /m4-api/stations/:stationId/:resource',
         'get /m4-api/stations/:stationId/decision-results/:runId',
         'post /m4-api/stations/:stationId/:resource', 'put /m4-api/stations/:stationId/:resource',
     ].sort());
@@ -381,6 +381,7 @@ test('generated Flow connects every ingress through authorization and safe proxy
     assert.deepEqual(byId['m4-login-catch'].scope, ['m4-login-request']);
     assert.deepEqual(byId['m4-login-catch'].wires, [['m4-login-finish']]);
     const settings = Object.fromEntries(byId['m4-customer-page'].env.map(item => [item.name, item.value]));
+    assert.equal(settings.M4_BACKEND_URL, 'http://m4-api:8844');
     assert.equal(settings.M4_FRAME_ORIGIN, 'https://ems.lvkpower.com');
     assert.equal(settings.M4_PUBLIC_ORIGIN, 'https://opdash.lvkpower.com');
     assert.equal(settings.M4_IFRAME_TOKEN, undefined);

@@ -1,4 +1,5 @@
 """Read and validate real scheduling inputs without running or dispatching plans."""
+from shared.project import get_project
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 import hashlib
@@ -88,7 +89,7 @@ def _display_time(value, *, now, max_age):
 def _add_display_samples(snapshot, station_rows, device_rows, *, now, max_age):
     snapshot.update(observed_station_soc_pct=None, observed_station_at=None,
                     sampled_grid_power_kw=None, sampled_load_power_kw=None,
-                    sampled_pv_power_kw=0.0 if snapshot['station_id'] == 'station-1' else None,
+                    sampled_pv_power_kw=0.0 if not get_project().station(snapshot['station_id']).has_pv else None,
                     sampled_pv_at=None)
     warnings = []
     selected = [row for row in station_rows if row.get('es_sn') == snapshot['source_station_id']]
@@ -103,8 +104,8 @@ def _add_display_samples(snapshot, station_rows, device_rows, *, now, max_age):
         )
     else:
         warnings.append('站级对照采样缺失、过期或尚未配置有效期，未显示为当前实测值')
-    if snapshot['station_id'] == 'station-2':
-        meters = [row for row in device_rows if row.get('f_es_sn') == 'ES02' and row.get('emu_sn') == 'emu27']
+    if get_project().station(snapshot['station_id']).has_pv:
+        meters = [row for row in device_rows if row.get('f_es_sn') == get_project().station(snapshot['station_id']).source_code and row.get('emu_sn') == get_project().station(snapshot['station_id']).pv_meter_sn]
         meter = meters[0] if len(meters) == 1 else {}
         at = _display_time(meter.get('last_time_iso'), now=now, max_age=max_age)
         power = _display_number(meter.get('latest_solar_power')) if at else None
@@ -130,9 +131,9 @@ class LiveInputService:
 
     def _pv(self, station_id, plan_start, history_end):
         history = []
-        if station_id == 'station-2':
+        if get_project().station(station_id).has_pv:
             history = self.client.list_rows('t_es_data', fields='timestamp,es_sn,ac_solar_power',
-                filters={'$and': [{'es_sn': {'$eq': 'ES02'}},
+                filters={'$and': [{'es_sn': {'$eq': get_project().station(station_id).source_code}},
                     {'timestamp': {'$gte': (history_end-timedelta(days=7)).isoformat()}},
                     {'timestamp': {'$lt': history_end.isoformat()}}]},
                 sort='timestamp', page_size=2000, max_pages=100)
@@ -160,8 +161,8 @@ class LiveInputService:
         with ThreadPoolExecutor(max_workers=4) as pool:
             pending = {
                 'load': pool.submit(load_forecast, self.client, station_id, plan_start_at=plan_start, now=started_at),
-                'pv': (pool.submit(load_pv_forecast, self.client, plan_start_at=plan_start, now=started_at)
-                       if station_id == 'station-2' else pool.submit(self._pv, station_id, plan_start, history_end)),
+                'pv': (pool.submit(load_pv_forecast, self.client, plan_start_at=plan_start, now=started_at, station_id=station_id)
+                       if get_project().station(station_id).has_pv else pool.submit(self._pv, station_id, plan_start, history_end)),
                 'tariff': pool.submit(self._tariff, plan_start),
                 'controls': pool.submit(self._controls, station_id),
             }
@@ -191,9 +192,9 @@ class LiveInputService:
                     warnings.extend(result.get('warnings', []))
                     complete = _complete(result.get('values'), horizon)
                     source_issues = result.get('issues', [])
-                    if key == 'pv' and station_id == 'station-2':
+                    if key == 'pv' and get_project().station(station_id).has_pv:
                         try:
-                            validate_pv_source(result, start=plan_start,
+                            validate_pv_source(result, station_id=station_id, start=plan_start,
                                 end=plan_start+timedelta(minutes=15*horizon), now=started_at)
                         except InputDataError as error:
                             source_issues = [*source_issues, str(error)]
@@ -213,7 +214,7 @@ class LiveInputService:
             devices = pool.submit(self.client.list_rows, 't_emu',
                 fields=','.join((*SOURCE_FIELDS, 'latest_solar_power', 'latest_grid_power', 'load_power')),
                 filters={'$and': [{'f_es_sn': {'$eq': source_station}},
-                    {'emu_sn': {'$in': list(roster) + (['emu27'] if station_id == 'station-2' else [])}}]},
+                    {'emu_sn': {'$in': list(roster) + ([get_project().station(station_id).pv_meter_sn] if get_project().station(station_id).has_pv else [])}}]},
                 sort='emu_sn', page_size=100)
             station = pool.submit(self.client.list_rows, 't_es_data',
                 fields='timestamp,es_sn,emus_soc,grid_power,load_power,ac_solar_power',
@@ -227,9 +228,9 @@ class LiveInputService:
             except ValueError as error:
                 sources['load'].update(status='incomplete', issues=[str(error)])
                 issues.append(str(error))
-        if station_id == 'station-2' and sources['pv']['status'] == 'ready':
+        if get_project().station(station_id).has_pv and sources['pv']['status'] == 'ready':
             try:
-                validate_pv_source(sources['pv'], start=plan_start,
+                validate_pv_source(sources['pv'], station_id=station_id, start=plan_start,
                     end=plan_start+timedelta(minutes=15*horizon), now=finished_at)
             except InputDataError as error:
                 sources['pv'].update(status='incomplete', issues=[str(error)],
@@ -422,8 +423,8 @@ def request_from_inputs(configuration: StationConfiguration, bundle: dict, profi
         raise ValueError('实时采样相对当前时间已过期，请重新读取真实输入')
     if (checked_at-fetched_at).total_seconds() > parameters.max_input_age_seconds:
         raise ValueError('输入读取时间已过期，请重新读取真实输入')
-    if configuration.station_id == 'station-2':
-        validate_pv_source(sources['pv'], start=start, end=end, now=checked_at)
+    if get_project().station(configuration.station_id).has_pv:
+        validate_pv_source(sources['pv'], station_id=configuration.station_id, start=start, end=end, now=checked_at)
     participants = _validate_participation(configuration, snapshot, start=start, checked_at=checked_at,
         fetched_at=fetched_at, observed_at=observed_at, controls=controls)
     if not isinstance(bundle.get('points'), list) or len(bundle['points']) != horizon:

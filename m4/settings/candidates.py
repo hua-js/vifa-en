@@ -3,6 +3,7 @@
 There is no AI or device client here. The process keeps only the most recent
 result per station, including the exact input snapshot used by the optimizer.
 """
+from shared.project import get_project
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from threading import Lock
@@ -29,7 +30,7 @@ class CandidateService:
         self.clock = clock or (lambda: datetime.now(timezone.utc))
         self.orchestrator = M4Orchestrator(model_version='m4-milp-v2-early-valley',
             orchestrator_version='m4-live-candidates-v1', optimizer=optimizer, clock=self.clock)
-        self._locks = {station_id: Lock() for station_id in ('station-1', 'station-2')}
+        self._locks = {station_id: Lock() for station_id in tuple(s.id for s in get_project().stations)}
         self._results_lock = Lock()
         self._results = {}
 

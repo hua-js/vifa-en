@@ -16,6 +16,10 @@ function fixture({token = 'test-only-token', saved = 'station-2'} = {}) {
     crypto: {subtle: {digest: () => digest}}, TextEncoder,
     sessionStorage: {getItem: () => saved}, $: () => station,
     document: {querySelectorAll: () => buttons},
+    loadProject: async () => {
+      station.value = saved || 'station-1';
+      buttons.forEach(button => button.setAttribute('aria-pressed', String(button.dataset.stationId === station.value)));
+    },
     loadCurrent: () => calls.push(['plan',station.value]),
     refreshReferenceSources: () => calls.push(['logs',station.value])});
   vm.runInContext(init + '\n' + startup, context);

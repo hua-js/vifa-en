@@ -7,14 +7,19 @@ const fail = (status, detail) => {
 };
 const {stationId, resource, runId} = msg.req.params;
 const method = msg.req.method;
+const projectRequest = msg.req.route?.path === '/m4-api/project';
 const allowed = {
     GET: ['candidate-jobs','settings','control-sources','inputs','daily-inputs','daily-plan','candidates','selection-policy','decision-result','decision-history','decision-runs','bills'],
     PUT: ['settings','selection-policy'],
     POST: ['candidate-jobs','daily-plan','candidates','selection','decision-runs']
 };
-if (!['station-1','station-2'].includes(stationId)) return fail(404, '未知电站');
+// The backend project registry is authoritative; only path-safe IDs reach it.
+if (!projectRequest && (typeof stationId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/.test(stationId))) return fail(404, '未知电站');
 let route;
-if (runId !== undefined) {
+if (projectRequest) {
+    if (method !== 'GET') return fail(404, '不支持的 M4 操作');
+    route = 'project';
+} else if (runId !== undefined) {
     if (method !== 'GET' || typeof runId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(runId)) return fail(404, '未知记录');
     route = 'decision-results/' + runId;
 } else {
@@ -41,7 +46,7 @@ if (method === 'GET' && resource === 'decision-history') {
 }
 const backend = env.get('M4_BACKEND_URL') || 'http://127.0.0.1:8844';
 if (typeof backend !== 'string' || !/^https?:\/\/[a-zA-Z0-9.-]+:\d{1,5}$/.test(backend)) return fail(503, 'M4 后端地址配置不正确');
-msg.requestPath = '/m4-api/stations/' + stationId + '/' + route + query;
+msg.requestPath = projectRequest ? '/m4-api/project' : '/m4-api/stations/' + stationId + '/' + route + query;
 msg.url = backend + msg.requestPath;
 delete msg.socketPath;
 msg.method = method;

@@ -1,4 +1,5 @@
 """On-demand, local whole-day comparison jobs. No EMS client or dispatch path."""
+from shared.project import get_project
 from copy import deepcopy
 from datetime import datetime, timezone
 import json
@@ -24,8 +25,10 @@ class DailyPlanService:
         self.jobs = {}
 
     def _path(self, station):
-        if station not in ('station-1', 'station-2'):
+        if station not in tuple(s.id for s in get_project().stations):
             raise ValueError('未知电站')
+        from .project_storage import bind_root
+        bind_root(self.root)
         return self.root / (station+'.json')
 
     def latest(self, station):
@@ -42,7 +45,7 @@ class DailyPlanService:
             raw = json.loads(path.read_text())
         if raw['station_id'] != station or raw.get('status') != 'completed':
             raise ValueError('invalid saved daily result')
-        if station == 'station-2' and raw.get('request', {}).get('source_versions', {}).get('pv_gap_policy') != DAILY_PV_POLICY:
+        if get_project().station(station).has_pv and raw.get('request', {}).get('source_versions', {}).get('pv_gap_policy') != DAILY_PV_POLICY:
             return dict(station_id=station, status='empty', result=None,
                 message='旧日计划的光伏预测不完整，请等待完整输入后重新生成。')
         comparison = raw.get('result', {}).get('record', {}).get('daily_comparison', {})

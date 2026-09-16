@@ -7,7 +7,13 @@ from pydantic import Field, model_validator, model_serializer
 from m4.optimizer.contracts import StrictModel
 from .roster import STATION_CABINETS
 
-StationId = Literal['station-1', 'station-2']
+from pydantic import AfterValidator
+from shared.project import get_project
+
+def _known_station(value):
+    return get_project().station(value).id
+
+StationId = Annotated[str, AfterValidator(_known_station)]
 Positive = Annotated[float, Field(gt=0, allow_inf_nan=False)]
 NonNegative = Annotated[float, Field(ge=0, allow_inf_nan=False)]
 Percentage = Annotated[float, Field(ge=0, le=100, allow_inf_nan=False)]

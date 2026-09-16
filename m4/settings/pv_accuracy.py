@@ -1,4 +1,5 @@
 """On-demand, read-only forward PV evaluation; reports stay on local disk."""
+from shared.project import get_project
 import argparse
 from collections import defaultdict
 from datetime import datetime, timedelta
@@ -19,8 +20,9 @@ def metrics(pairs):
 
 
 def evaluate(client, run, now):
+    allowed_sources = {s.source_code for s in get_project().stations if s.has_pv}
     start, end = _time(run['forecast_start']), _time(run['forecast_end'])
-    if (run['es_sn'] != 'ES02' or run['run_kind'] != 'operational' or run['status'] != 'completed'
+    if (run['es_sn'] not in allowed_sources or run['run_kind'] != 'operational' or run['status'] != 'completed'
             or end > now or end-start != timedelta(days=1) or run['expected_points'] != 96
             or run['interval_minutes'] != 15 or not _time(run['as_of']) <= _time(run['generated_at']) < start):
         raise ValueError('invalid completed forward forecast')
@@ -29,12 +31,12 @@ def evaluate(client, run, now):
     if len(points) != 96:
         raise ValueError('incomplete forecast')
     raw = client.list_rows('t_es_data', fields='timestamp,es_sn,ac_solar_power',
-        filters={'es_sn': {'$eq': 'ES02'}, 'timestamp': {'$gte': start.isoformat(), '$lt': end.isoformat()}},
+        filters={'es_sn': {'$eq': run['es_sn']}, 'timestamp': {'$gte': start.isoformat(), '$lt': end.isoformat()}},
         sort='timestamp', page_size=2000, max_pages=100)
     seen, minute = set(), defaultdict(list)
     for row in raw:
         at = _time(row['timestamp'])
-        if row['es_sn'] != 'ES02' or not start <= at < end or at in seen:
+        if row['es_sn'] != run['es_sn'] or not start <= at < end or at in seen:
             raise ValueError('invalid or duplicate measured timestamp')
         seen.add(at)
         if row.get('ac_solar_power') is not None:
@@ -73,6 +75,7 @@ def evaluate(client, run, now):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True, help='New immutable local report directory')
+    parser.add_argument('--station', required=True, choices=[s.id for s in get_project().stations if s.has_pv])
     args = parser.parse_args()
     if args.output.exists():
         parser.error('output already exists')
@@ -81,7 +84,7 @@ def main():
     now = datetime.now(ZoneInfo('Asia/Shanghai'))
     from .pv_forecast_source import RUN_FIELDS
     runs = client.list_rows('energy_pv_forecast_runs', fields=RUN_FIELDS,
-        filters={'es_sn': {'$eq': 'ES02'}, 'status': {'$eq': 'completed'}, 'run_kind': {'$eq': 'operational'},
+        filters={'es_sn': {'$eq': get_project().station(args.station).source_code}, 'status': {'$eq': 'completed'}, 'run_kind': {'$eq': 'operational'},
                  'forecast_end': {'$lte': now.isoformat()}}, sort='-forecast_end,-id', page_size=20, limit=20)
     args.output.mkdir(parents=True, exist_ok=False)
     summaries = []
