@@ -121,6 +121,24 @@ class RollingPlanService:
                 message='滚动任务已中断，等待更新。')
         return result
 
+    def history(self, station):
+        from .rolling_history import advisory_history
+        self.daily._path(station)
+        archive = self.root / station
+        jobs, unreadable = [], 0
+        if archive.is_symlink():
+            raise ValueError('invalid rolling archive path')
+        for path in sorted(archive.glob('*.json')):
+            try:
+                if path.is_symlink():
+                    raise ValueError('invalid rolling archive file')
+                jobs.append(json.loads(path.read_text()))
+            except (OSError, ValueError):
+                unreadable += 1
+        result = advisory_history(station, jobs, datetime.now(ZONE))
+        result['skipped'] += unreadable
+        return result
+
     def start(self, station):
         self.daily._path(station)
         with self.lock:
@@ -212,7 +230,10 @@ class RollingPlanService:
             archive = self.root / station
             archive.mkdir(exist_ok=True)
             encoded = json.dumps(job, ensure_ascii=False, allow_nan=False)
-            (archive / (run_id+'.json')).write_text(encoded)
+            archived = archive / (run_id+'.json')
+            archive_temporary = archived.with_suffix('.tmp')
+            archive_temporary.write_text(encoded)
+            archive_temporary.replace(archived)
             path = self.root / (station+'.json')
             temporary = path.with_suffix('.tmp')
             temporary.write_text(encoded)

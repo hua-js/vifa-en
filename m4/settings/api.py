@@ -195,7 +195,13 @@ def create_app(settings_path: Path | None = None, *, control_reader=None, input_
             except Exception:
                 rolling = dict(station_id=station_id, status='failed', result=None,
                     message='滚动建议读取失败，等待更新。')
-            return {**daily, 'automation': automatic.metadata(), 'rolling': rolling}
+            try:
+                history = rolling_plans.history(station_id)
+            except Exception:
+                history = dict(station_id=station_id, status='failed',
+                    message='滚动建议历史暂不可用。')
+            return {**daily, 'automation': automatic.metadata(), 'rolling': rolling,
+                'rolling_history': history}
         except Exception:
             raise HTTPException(503, '全天计划读取或校验失败，请重新计算。') from None
 
