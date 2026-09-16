@@ -113,9 +113,8 @@ def validate_candidate(
                 if request.pv_dispatch_policy in ('load_first_export_priority', 'load_first_storage_priority'):
                     export_max = constraints.grid_export_limit_kw if constraints.grid_export_enabled else 0.0
                     export_first = request.pv_dispatch_policy == 'load_first_export_priority'
-                    quota = min(surplus, export_max) if export_first else 0.0
-                    expected_charge = min(surplus-quota, available_charge, headroom_kw)
-                    expected_export = quota if export_first else min(max(surplus-expected_charge, 0.0), export_max)
+                    expected_charge = 0.0 if export_first else min(surplus, available_charge, headroom_kw)
+                    expected_export = surplus if export_first else min(max(surplus-expected_charge, 0.0), export_max)
                     if abs(charge_kw-expected_charge) > tolerance or abs(point.grid_export_kw-expected_export) > tolerance:
                         _raise(label, "PV customer allocation priority")
                 if not constraints.grid_export_enabled or point.pv_unabsorbed_kw > tolerance:

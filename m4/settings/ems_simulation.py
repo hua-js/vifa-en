@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 from m4.optimizer.contracts import PlanPoint
 
 
-EMS_BASELINE_POLICY = 'ems-demand-soc-duration-v6-pv-priority'
+EMS_BASELINE_POLICY = 'ems-demand-soc-duration-v7-pv-export-idle'
 INTERVAL_HOURS = 0.25
 EPSILON = 1e-9
 
@@ -65,9 +65,12 @@ def simulate_ems_day(capability, constraints, points, schedule, *, pv_dispatch_p
         reasons = []
         if customer_pv and net_load < 0:
             surplus = -net_load
-            export_quota = (min(surplus, constraints.grid_export_limit_kw)
-                if pv_dispatch_policy == 'load_first_export_priority' and constraints.grid_export_enabled else 0.0)
-            mode, power = 'charge', surplus-export_quota
+            if pv_dispatch_policy == 'load_first_export_priority':
+                if not constraints.grid_export_enabled or surplus > constraints.grid_export_limit_kw + EPSILON:
+                    raise ValueError('余电上网策略与外送限制冲突，请核对外送配置。')
+                mode, power = 'idle', 0.0
+            else:
+                mode, power = 'charge', surplus
             reasons.append('pv_export_priority' if pv_dispatch_policy == 'load_first_export_priority' else 'pv_storage_priority')
         elif peak_discharge > EPSILON:
             mode, power = 'discharge', max(peak_discharge, requested_kw if requested_mode == 'discharge' else 0.0)

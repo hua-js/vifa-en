@@ -13,6 +13,7 @@ from zoneinfo import ZoneInfo
 
 from .pv_forecast_source import load_pv_forecast, validate_source as validate_pv_source
 from .timeseries import InputDataError
+from .daily_pv_policy import POLICY as DAILY_PV_POLICY, fill_night_gaps
 from .forecast_source import load_forecast, _time
 from .live_inputs import _complete, _complete_tariff_periods, _display_number, _display_time
 from .runtime_config import runtime_parameters
@@ -40,10 +41,10 @@ class DailyInputService:
         if covered_start >= covered_end or not source['coverage_points']:
             raise InputDataError('M3光伏预测与当天没有重叠时段，未将全天填零')
         validate_pv_source(source, start=covered_start, end=covered_end, now=now)
-        missing = [i for i, value in enumerate(source['values']) if value is None]
-        filled = {**source, 'values': [0.0 if v is None else v for v in source['values']],
+        values, missing = fill_night_gaps(source['values'], start)
+        filled = {**source, 'values': values,
                   'forecast_coverage_points': source['coverage_points'], 'coverage_points': 96,
-                  'gap_policy': 'outside_forecast_window_zero', 'zero_filled_points': len(missing),
+                  'gap_policy': DAILY_PV_POLICY, 'zero_filled_points': len(missing),
                   'zero_filled_at': [(start+timedelta(minutes=15*i)).isoformat() for i in missing]}
         filled['version'] = 'pv-daily-zero-'+_version(filled)
         return filled
@@ -203,7 +204,7 @@ class DailyInputService:
             warnings=['预测可能包含当日零点后生成的批次，仅用于相同输入下的日费用回算；不代表零点已知计划或实测收益。',
                       '历史日期电价采用当前配置按时段展开；未接入历史电价版本。'])
         if sources.get('pv', {}).get('zero_filled_points'):
-            result['warnings'].append(f"光伏预测窗口外{sources['pv']['zero_filled_points']}个时段按0 kW估算，并非实测零发电。")
+            result['warnings'].append(f"光伏预测夜间缺测{sources['pv']['zero_filled_points']}个时段按0 kW估算，并非实测零发电。")
         result.update(baseline=None, comparison=None)
         if not missing:
             from .daily_baseline import prepare_ems_day

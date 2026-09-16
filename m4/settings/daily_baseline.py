@@ -11,6 +11,7 @@ from .objectives import get_daily_profiles
 from .daily_policy import daily_policy_version
 from .load_accuracy import require_gate
 from .forecast_source import validate_forecast_values
+from .daily_pv_policy import POLICY as DAILY_PV_POLICY
 from .ems_simulation import EMS_BASELINE_POLICY, simulate_ems_day
 from .schedule_power import effective_station_power, station_schedule, station_energy_capacity
 
@@ -29,6 +30,8 @@ def prepare_ems_day(configuration, bundle):
     sources = bundle['sources']
     if any(sources.get(k, {}).get('status') != 'ready' for k in ('load', 'pv', 'tariff', 'controls', 'initial_soc')):
         raise ValueError('全天预测、电价、零点 SOC 或 EMS 时段尚未就绪。')
+    if configuration.station_id == 'station-2' and sources['pv'].get('gap_policy') != DAILY_PV_POLICY:
+        raise ValueError('光伏预测完整性规则已更新，请重新读取输入。')
     require_gate(sources['load'].get('accuracy_gate'), configuration.station_id,
                  datetime.fromisoformat(bundle['fetched_at']))
     control, initial = sources['controls'], sources['initial_soc']
@@ -80,9 +83,9 @@ def prepare_ems_day(configuration, bundle):
             'load_policy': sources['load']['policy'], 'load_run_id': sources['load']['run_id'],
             'controls': control['version'], 'configuration': configuration.version,
             'capability': initial['version'], 'planning_basis': 'whole-station-retrospective-v1',
-            **({'pv_gap_policy': 'outside_forecast_window_zero',
-                'pv_zero_filled_points': str(sources['pv']['zero_filled_points'])}
-               if sources['pv'].get('zero_filled_points') else {}),
+            **({'pv_gap_policy': DAILY_PV_POLICY,
+                'pv_zero_filled_points': str(sources['pv'].get('zero_filled_points', 0))}
+               if configuration.station_id == 'station-2' else {}),
             **({'physical_grid_policy': 'station-1-550-v1', 'economic_policy': 'station-1-cost-first-v1'} if configuration.station_id == 'station-1' else {}),
             'terminal_target': format(terminal, '.17g'), 'baseline_policy': EMS_BASELINE_POLICY,
             **({'daily_policy': policy_version} if policy_version else {})})

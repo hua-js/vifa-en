@@ -158,6 +158,8 @@ class M4Optimizer:
             model_version += '/' + request.peak_reserve_policy.version
         if request.pv_dispatch_policy == "load_first_economic":
             return f"{model_version}/pv-load-first-economic-v1"
-        if request.pv_dispatch_policy in ("load_first_export_priority", "load_first_storage_priority"):
+        if request.pv_dispatch_policy == "load_first_export_priority":
+            return f"{model_version}/pv-{request.pv_dispatch_policy}-v2"
+        if request.pv_dispatch_policy == "load_first_storage_priority":
             return f"{model_version}/pv-{request.pv_dispatch_policy}-v1"
         return model_version

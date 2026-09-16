@@ -95,6 +95,8 @@ def build_model(request: OptimizationRequest, *, terminal_soc_target_pct: float 
         return charge_max if request.ems_schedule_modes is None or request.ems_schedule_modes[t] == "charge" else 0.0
 
     def charge_bound(m, t):
+        if request.pv_dispatch_policy == "load_first_export_priority" and surplus[t] > 0:
+            return (0.0, 0.0)
         return (0.0, min(allowed_charge(t), surplus[t]) if load_first and surplus[t] > 0 else allowed_charge(t))
 
     def discharge_bound(m, t):
@@ -190,15 +192,13 @@ def build_model(request: OptimizationRequest, *, terminal_soc_target_pct: float 
     # In surplus periods the battery cannot discharge or import from the grid.
     # Filling the battery and hitting the charge bound are the two ways charging
     # can saturate; the existing storage_full binary encodes the former.
-    if request.pv_dispatch_policy in ('load_first_export_priority', 'load_first_storage_priority'):
-        export_first = request.pv_dispatch_policy == 'load_first_export_priority'
-        export_quota = {t: min(surplus[t], export_max) if export_first else 0.0
-                        for t in model.pv_surplus_periods}
-        if export_first:
-            model.pv_export_priority = pyo.Constraint(model.pv_surplus_periods,
-                rule=lambda m, t: m.grid_export[t] == export_quota[t])
+    if request.pv_dispatch_policy == 'load_first_export_priority':
+        # Full surplus export is mandatory; conflicting export caps are infeasible.
+        model.pv_export_priority = pyo.Constraint(model.pv_surplus_periods,
+            rule=lambda m, t: m.grid_export[t] == surplus[t])
+    elif request.pv_dispatch_policy == 'load_first_storage_priority':
         model.pv_priority_charge = pyo.Constraint(model.pv_surplus_periods,
-            rule=lambda m, t: m.charge[t] >= min(allowed_charge(t), surplus[t]-export_quota[t])
+            rule=lambda m, t: m.charge[t] >= min(allowed_charge(t), surplus[t])
                 * (1-m.pv_storage_full[t]))
 
     model.preferred_soc_low = pyo.Constraint(model.periods, rule=lambda m, t:

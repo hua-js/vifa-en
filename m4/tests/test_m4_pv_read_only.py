@@ -53,12 +53,8 @@ class ReadOnlyPVTests(TestCase):
         result = service._pv('station-2', begin, begin)
         self.assertEqual(result['coverage_points'], 96)
         self.assertEqual(result['run_id'], 'pv-batch')
-        filled = service._pv('station-2', begin.replace(hour=0), begin)
-        self.assertEqual(filled['values'][:24], [0.0]*24)
-        self.assertEqual(filled['values'][24:], [10.0]*72)
-        self.assertEqual(filled['zero_filled_points'], 24)
-        self.assertEqual(filled['forecast_coverage_points'], 72)
-        self.assertEqual(filled['gap_policy'], 'outside_forecast_window_zero')
+        with self.assertRaisesRegex(Exception, '白天光伏预测不完整'):
+            service._pv('station-2', begin.replace(hour=0), begin)
         self.assertEqual(service._pv('station-2', begin, begin+timedelta(hours=3))['coverage_points'], 96)
         with self.assertRaisesRegex(Exception, '没有重叠'):
             service._pv('station-2', begin.replace(hour=0)-timedelta(days=1), begin)

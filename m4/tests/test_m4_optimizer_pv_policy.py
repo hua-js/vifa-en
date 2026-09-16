@@ -47,6 +47,42 @@ def solve(request):
 
 
 class PVPolicyTests(unittest.TestCase):
+    def test_customer_export_priority_idles_despite_low_export_price(self):
+        request = pv_request(export=True, export_limit=100.0, sell=0.0).model_copy(
+            update={'pv_dispatch_policy': 'load_first_export_priority'})
+        for candidate in solve(request).candidates:
+            point = candidate.plan[0]
+            self.assertEqual(point.mode, 'idle')
+            self.assertAlmostEqual(point.grid_export_kw, 60.0)
+            self.assertAlmostEqual(point.pv_unabsorbed_kw, 0.0)
+        from m4.settings.ems_simulation import simulate_ems_day
+        schedule = [dict(start_time='00:00:00', end_time='24:00:00',
+                         repeat='daily', mode='charge', power_kw=100.0)]
+        plan, _ = simulate_ems_day(request.capability, request.constraints,
+            request.points, schedule, pv_dispatch_policy=request.pv_dispatch_policy)
+        self.assertEqual(plan[0].mode, 'idle')
+        self.assertAlmostEqual(plan[0].grid_export_kw, 60.0)
+
+    def test_customer_export_limit_conflict_never_falls_back_to_charging(self):
+        from m4.settings.ems_simulation import simulate_ems_day
+        for enabled, limit in [(True, 50.0), (False, 0.0)]:
+            request = pv_request(export=enabled, export_limit=limit).model_copy(
+                update={'pv_dispatch_policy': 'load_first_export_priority'})
+            result = M4Optimizer(model_version='pv-policy-test').optimize(request)
+            self.assertTrue(all(c.status not in {'optimal', 'feasible'} for c in result.candidates))
+            with self.assertRaisesRegex(ValueError, '外送限制冲突'):
+                simulate_ems_day(request.capability, request.constraints, request.points,
+                    [dict(start_time='00:00:00', end_time='24:00:00', repeat='daily',
+                          mode='charge', power_kw=100.0)],
+                    pv_dispatch_policy=request.pv_dispatch_policy)
+
+    def test_customer_export_validation_rejects_economic_charging(self):
+        economic = pv_request(export=True, export_limit=100.0, sell=0.0, terminal=0.0)
+        strict = economic.model_copy(update={'pv_dispatch_policy': 'load_first_export_priority'})
+        for candidate in solve(economic).candidates:
+            with self.assertRaises(ResultValidationError):
+                validate_candidate(strict, candidate)
+
     def test_disabled_export_absorbs_surplus_up_to_physical_limits(self):
         cases = [
             (100.0, 50.0, True, 60.0, 0.0),
