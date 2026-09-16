@@ -1,5 +1,6 @@
 """Terminal reserve must survive the last peak, not be recharged afterwards."""
 import unittest
+from shared.project import get_project
 
 from m4.optimizer.contracts import OptimizationRequest, PeakReservePolicy
 from m4.optimizer.model import build_model
@@ -15,6 +16,7 @@ def reserve_request(version='peak-reserve-v2', peaks=((40, 48), (56, 76))):
     payload = make_request().model_dump()
     payload.update(station_id='station-2', solver_mip_rel_gap=0.0, profiles=[p.model_dump(mode='json') for p in get_daily_profiles('station-2')],
                    peak_reserve_policy={'version': version, 'terminal_soc_min_pct': 2})
+    payload['source_versions']['project_configuration'] = get_project().fingerprint
     payload['source_versions']['daily_policy'] = 'm4-daily-peak-reserve-' + version.rsplit('-', 1)[-1]
     payload['capability'].update(initial_soc_pct=2, charge_efficiency=.98, discharge_efficiency=.98)
     payload['constraints'].update(soc_min_pct=1, soc_max_pct=98, preferred_soc_min_pct=2,
@@ -27,6 +29,9 @@ def reserve_request(version='peak-reserve-v2', peaks=((40, 48), (56, 76))):
                      buy_price_per_kwh=1.1 if peak else .27 if i < 28 else .66)
     if version != 'peak-reserve-v3':
         for profile in payload['profiles']:
+            # Archived v1/v2 fixtures must not inherit v3-only objective layers.
+            profile['objective_order'] = [layer for layer in profile['objective_order']
+                if not ({'discharge_starts', 'power_variation'} & layer['terms'].keys())]
             layers=profile['objective_order']
             reserve=next(layer for layer in layers if layer['name']=='peak-reserve-shortfall')
             layers.remove(reserve)

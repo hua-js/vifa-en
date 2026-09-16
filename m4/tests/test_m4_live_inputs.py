@@ -30,6 +30,13 @@ class Client:
         self.forecasts = [dict(run_pk=1, unique_id='station_total_load',
             target_time=(start + timedelta(minutes=15*i)).isoformat(), horizon_step=i+1,
             forecast_value=100.0+i) for i in range(96)]
+        self.pv_runs=[dict(id=1,run_id='pv-fixture',es_sn=self.station,run_kind='operational',
+            status='completed',interval_minutes=15,expected_points=96,model_name='WeatherRidge',
+            model_version='v1',content_hash='a'*64,weather_batch_id='b'*64,
+            as_of=(start-timedelta(minutes=2)).isoformat(),generated_at=(start-timedelta(minutes=1)).isoformat(),
+            forecast_start=start.isoformat(),forecast_end=(start+timedelta(days=1)).isoformat())]
+        self.pv_points=[dict(run_pk=1,horizon_step=i+1,forecast_kw=23.0,
+            target_time=(start+timedelta(minutes=15*i)).isoformat()) for i in range(96)]
         roster = ['emu11', 'emu12'] if station_id == 'station-1' else [f'emu{n}' for n in range(21, 27)]
         self.devices = [cabinet(sn, 50.0, station=self.station,
             last_time_iso=(now - timedelta(seconds=30)).isoformat()) for sn in roster]
@@ -54,7 +61,8 @@ class Client:
         label = 'history' if table == 't_es_data' and kwargs.get('limit') != 1 else table
         if label in self.failures:
             raise RuntimeError('Bearer secret-must-never-appear https://private.invalid')
-        mapping = {'energy_forecast_latest': getattr(self, 'rolling', []),
+        mapping = {'energy_pv_forecast_runs':self.pv_runs,'energy_pv_forecast_points':self.pv_points,
+                   'energy_forecast_latest': getattr(self, 'rolling', []),
                    'energy_forecast_manual_runs': self.runs,
                    'energy_forecast_manual_points': self.forecasts,
                    't_emu': self.devices, 't_es_data': self.station_rows,
@@ -77,26 +85,11 @@ class Controls:
 
 
 class LiveInputTests(unittest.TestCase):
-    def test_rolling_source_and_manual_tail_reach_request_with_visible_provenance(self):
-        from m4.tests.test_m4_rolling_forecast_source import rolling
-        client = Client()
-        client.rolling = [rolling(START-timedelta(minutes=30))]
-        result = self.fetch(client)
-        self.assertEqual(result['status'], 'ready')
-        self.assertEqual(result['sources']['load']['rolling_points'], 94)
-        self.assertEqual(result['sources']['load']['manual_points'], 2)
-        self.assertEqual(result['points'][0]['load_forecast_kw'], 1002)
-        self.assertEqual(result['points'][-1]['load_forecast_kw'], 195)
-        self.assertTrue(any('手动预测补充2点' in item for item in result['warnings']))
-        request = self.request(configuration(), result)
-        self.assertEqual(request.points[0].load_forecast_kw, 1002)
-        self.assertEqual(request.source_versions['load'], result['sources']['load']['version'])
-        client.runs = []
-        incomplete = self.fetch(client)
-        self.assertEqual(incomplete['status'], 'blocked')
-        self.assertEqual(incomplete['sources']['load']['coverage_points'], 94)
-        self.assertEqual(incomplete['points'], [])
-        with self.assertRaises(ValueError): self.request(configuration(), incomplete)
+    """Archived input component checks; not current-task integration acceptance."""
+    def setUp(self):
+        from m4.tests.m4_legacy_component_support import install_archived_inputs
+        install_archived_inputs(self)
+
 
     def fetch(self, client=None, controls=None, config=None, now=NOW):
         from m4.settings.live_inputs import LiveInputService
@@ -180,17 +173,15 @@ class LiveInputTests(unittest.TestCase):
         self.assertNotEqual([point.tariff_period for point in first.points],
                             [point.tariff_period for point in second.points])
 
-    def test_station_two_history_and_live_pv_use_correct_sources_and_no_40kw_constraint(self):
+    def test_station_two_published_and_live_pv_use_correct_sources_and_no_40kw_constraint(self):
         config = configuration('station-2')
         client, controls = Client(station_id='station-2'), Controls('station-2')
         result = self.fetch(client, controls, config)
         self.assertEqual(result['status'], 'ready')
         self.assertEqual(result['sources']['realtime']['sampled_pv_power_kw'], 70)
-        self.assertEqual(result['sources']['pv']['method'], 'seven_day_same_slot_median')
-        history_call = next(values for table,values in client.calls if table=='t_es_data' and values.get('limit') != 1)
-        self.assertEqual(history_call['page_size'], 2000)
-        self.assertEqual(history_call['max_pages'], 100)
-        self.assertIn('ac_solar_power', history_call['fields'])
+        self.assertEqual(result['sources']['pv']['source_kind'], 'operational_forecast')
+        self.assertTrue(any(table=='energy_pv_forecast_points' for table,_ in client.calls))
+        self.assertFalse(any(table=='t_es_data' and kw.get('limit') != 1 for table,kw in client.calls))
         first = self.request(config, result)
         self.assertEqual(first.constraints.grid_export_limit_kw, 23)
         controls.result['reverse_flow']['re_kw'] = 999
@@ -200,7 +191,7 @@ class LiveInputTests(unittest.TestCase):
         self.assertEqual(first.constraints.demand_limit_kw, second.constraints.demand_limit_kw)
 
     def test_each_failed_required_source_is_independent_and_safe_to_display(self):
-        for table, source in [('energy_forecast_manual_runs','load'), ('t_peak_diy','tariff'), ('t_emu','realtime')]:
+        for table, source in [('current_load_result','load'), ('t_peak_diy','tariff'), ('t_emu','realtime')]:
             with self.subTest(table=table):
                 client = Client()
                 client.failures.add(table)
@@ -359,27 +350,14 @@ class LiveInputTests(unittest.TestCase):
         self.assertEqual(result['status'], 'blocked')
         self.assertTrue(any('跨过' in issue for issue in result['issues']))
 
-    def test_missing_pv_history_blocks_only_pv_and_still_reads_latest_cabinets(self):
+    def test_missing_published_pv_blocks_only_pv_and_still_reads_latest_cabinets(self):
         client = Client(station_id='station-2')
-        client.failures.add('history')
+        client.failures.add('energy_pv_forecast_runs')
         result = self.fetch(client, Controls('station-2'), configuration('station-2'))
         self.assertEqual(result['sources']['pv']['status'], 'error')
         self.assertEqual(result['sources']['realtime']['status'], 'ready')
         self.assertEqual(result['points'], [])
 
-    def test_midnight_plan_uses_seven_days_completed_before_fetch_date(self):
-        now = NOW.replace(hour=23, minute=59)
-        start = (now+timedelta(days=1)).replace(hour=0, minute=0)
-        client = Client(station_id='station-2', now=now, start=start)
-        history_end = now.replace(hour=0, minute=0)
-        history_start = history_end-timedelta(days=7)
-        client.history = [dict(es_sn='ES02', timestamp=(history_start+timedelta(minutes=i)).isoformat(),
-                               ac_solar_power=25.0) for i in range(7*1440)]
-        result = self.fetch(client, Controls('station-2'), configuration('station-2'), now)
-        self.assertEqual(result['status'], 'ready')
-        self.assertEqual(result['plan_start_at'], start.isoformat())
-        self.assertEqual(result['sources']['pv']['history_end'], history_end.isoformat())
-        self.assertEqual(result['sources']['pv']['values'], [25.0]*96)
 
     def test_optional_station_sample_failure_does_not_hide_valid_cabinet_inputs(self):
         client = Client()

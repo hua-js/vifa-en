@@ -13,6 +13,8 @@ from m4.settings.control_sources import ControlSourceError, ControlSourceReader
 def source_rows():
     updated = '2026-09-07T00:00:00Z'
     return {
+        't_es': [dict(id=1, sn='ES01', es_power_storage='500', updatedAt=updated),
+                 dict(id=2, sn='ES02', es_power_storage=1500, updatedAt=updated)],
         't_need': [
             dict(id=1, f_es_sn='ES01', need_kw='1062.5', reserved_kw=50,
                  rated_capacity=1250, load_rate=.85, updatedAt=updated),
@@ -83,6 +85,15 @@ class ControlSourceTests(unittest.TestCase):
             result = ControlSourceReader('test-secret').fetch(station)
         return result, opener
 
+    def test_capacity_is_required_and_cannot_fall_back_to_manual_settings(self):
+        for capacity in ([], [dict(sn='ES01', es_power_storage=0, updatedAt='2026-09-07T00:00:00Z')],
+                         [dict(sn='ES01', es_power_storage=-1, updatedAt='2026-09-07T00:00:00Z')]):
+            rows=source_rows();rows['t_es']=capacity
+            with self.subTest(capacity=capacity),self.assertRaises(ControlSourceError):
+                self.fetch(rows)
+        rows=source_rows();rows['t_es'].append(copy.deepcopy(rows['t_es'][0]))
+        with self.assertRaises(ControlSourceError):self.fetch(rows)
+
     def test_station_mapping_numbers_and_daily_schedule_with_reverse_control_inactive(self):
         one, opener = self.fetch()
         two, _ = self.fetch(station='station-2')
@@ -95,9 +106,12 @@ class ControlSourceTests(unittest.TestCase):
         self.assertEqual(two['schedule'][1]['power_kw'], 90)
         self.assertEqual(one['schedule'][0]['repeat'], 'daily')
         self.assertEqual(one['status'], 'ready')
-        self.assertEqual(one['power_scope'], 'station')
+        self.assertEqual(one['storage_capacity']['energy_capacity_kwh'], 500)
+        self.assertEqual(two['storage_capacity']['energy_capacity_kwh'], 1500)
+        self.assertEqual(one['configured_cabinet_count'], 2)
+        self.assertEqual(one['power_scope'], 'cabinet')
         self.assertEqual(one['source_health'], {'demand': 'ready', 'reverse_flow': 'ready', 'schedule': 'ready'})
-        self.assertEqual(one['control_policy_version'], 'm4-control-policy-v2-reverse-inactive')
+        self.assertEqual(one['control_policy_version'], 'm4-control-policy-v5-need-import-limit')
         self.assertFalse(one['reverse_flow']['enabled'])
         self.assertIsNone(one['reverse_flow']['effective_limit_kw'])
         self.assertEqual(one['warnings'], [])
@@ -124,7 +138,7 @@ class ControlSourceTests(unittest.TestCase):
     def test_pagination_loads_all_rows_before_station_filtering(self):
         result, opener = self.fetch(station='station-2', page_size=1)
         self.assertEqual(len(result['schedule']), 2)
-        self.assertEqual(len(opener.calls), 8)
+        self.assertEqual(len(opener.calls), 10)
 
     def test_missing_and_duplicate_demand_controls_fail(self):
         for duplicate in (False, True):

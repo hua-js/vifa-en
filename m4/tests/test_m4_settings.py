@@ -2,7 +2,7 @@ import json
 import tempfile
 import sqlite3
 import unittest
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -77,7 +77,7 @@ class SettingsTests(unittest.TestCase):
             with self.subTest(changes=changes), self.assertRaises(ValidationError):
                 parameters(**changes)
 
-    def test_config_adapter_uses_live_soc_and_applies_every_parameter(self):
+    def test_config_adapter_uses_live_soc_and_service_owned_runtime_limits(self):
         config=self.store.save('station-1', parameters(), expected_revision=0)
         fixture=make_request(station_id='station-1')
         live=LiveStationState(station_id='station-1',participating_cabinet_ids=['emu11','emu12'], initial_soc_pct=61.0,
@@ -93,11 +93,12 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(request.constraints.soc_min_pct,15)
         self.assertEqual(request.constraints.preferred_soc_max_pct,75)
         self.assertEqual(request.constraints.terminal_soc_tolerance_pct,4)
-        self.assertEqual(request.constraints.cycle_cost_per_kwh,.02)
-        self.assertEqual(request.max_input_age_seconds,300)
+        # Saved manual runtime values yield to service/project configuration.
+        self.assertEqual(request.constraints.cycle_cost_per_kwh,0)
+        self.assertEqual(request.max_input_age_seconds,86400)
         self.assertIn(config.version, request.source_versions['constraints'])
         self.assertIn('confirmed-controls-test-v1', request.source_versions['constraints'])
-        self.assertEqual(request.constraints.grid_import_limit_kw,200)
+        self.assertEqual(request.constraints.grid_import_limit_kw,550)
         self.assertFalse(request.constraints.grid_export_enabled)
         self.assertIn('manual',request.source_versions['capability'])
         self.assertIn('ems-observation-1',request.source_versions['capability'])
@@ -123,7 +124,7 @@ class SettingsTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             build_request(config,live.model_copy(update={'station_id':'station-2'}),**kwargs)
         with self.assertRaises(ValueError):
-            build_request(config,live.model_copy(update={'observed_at':datetime.fromisoformat('2026-09-03T20:00:00+08:00')}),**kwargs)
+            build_request(config,live.model_copy(update={'observed_at':fixture.plan_start_at-timedelta(seconds=86401)}),**kwargs)
 
     def test_live_state_requires_explicit_valid_cabinet_scope(self):
         fixture=make_request(station_id='station-1')
@@ -165,13 +166,13 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(request.capability.charge_efficiency,.94)
         self.assertEqual(request.capability.discharge_efficiency,.93)
         self.assertEqual(request.constraints.demand_limit_kw,140)
-        self.assertEqual(request.constraints.grid_import_limit_kw,200)
+        self.assertEqual(request.constraints.grid_import_limit_kw,550)
         self.assertEqual(request.constraints.soc_min_pct,15)
         self.assertEqual(request.constraints.soc_max_pct,85)
         self.assertEqual(request.constraints.preferred_soc_min_pct,25)
         self.assertEqual(request.constraints.preferred_soc_max_pct,75)
         self.assertEqual(request.constraints.terminal_soc_tolerance_pct,4)
-        self.assertEqual(request.constraints.cycle_cost_per_kwh,.02)
+        self.assertEqual(request.constraints.cycle_cost_per_kwh,0)
         self.assertEqual(config.model_dump(),before)
         self.assertEqual(self.store.get('station-1').model_dump(),before)
         self.assertEqual(json.loads(request.source_versions['participating_cabinets']),['emu12'])
@@ -257,7 +258,7 @@ class SettingsTests(unittest.TestCase):
         self.assertNotEqual(first.request_id,second.request_id)
         self.assertNotEqual(first.source_versions['constraints'],second.source_versions['constraints'])
         self.assertEqual(second.constraints.demand_limit_kw,150)
-        self.assertEqual(second.constraints.grid_import_limit_kw,200)
+        self.assertEqual(second.constraints.grid_import_limit_kw,550)
 
     def test_control_api_separate_from_manual_storage_and_does_not_fall_back(self):
         from m4.settings.control_sources import ControlSourceError

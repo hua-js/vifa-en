@@ -4,6 +4,7 @@ from unittest import TestCase
 from unittest.mock import Mock, patch
 
 from m4.settings.daily_inputs import DailyInputService
+from m4.settings.timeseries import InputDataError
 from m4.settings.pv_forecast_source import ForecastRefreshRequired
 
 
@@ -14,7 +15,7 @@ class ReadOnlyPVTests(TestCase):
         at = datetime.fromisoformat('2026-09-10T00:00:00+08:00')
         with patch('m4.settings.daily_inputs.load_pv_forecast', return_value={'values': [1]*96, 'forecast_start': at.isoformat(), 'forecast_end': (at+timedelta(days=1)).isoformat(), 'coverage_points': 96}) as read, patch('m4.settings.daily_inputs.validate_pv_source') as validate:
             result = service._pv('station-2', at, at)
-        read.assert_called_once_with(live.client, plan_start_at=at, now=at)
+        read.assert_called_once_with(live.client, station_id='station-2', plan_start_at=at, now=at)
         validate.assert_called_once()
         live._pv.assert_not_called()
         self.assertEqual(result['values'], [1]*96)
@@ -53,12 +54,21 @@ class ReadOnlyPVTests(TestCase):
         result = service._pv('station-2', begin, begin)
         self.assertEqual(result['coverage_points'], 96)
         self.assertEqual(result['run_id'], 'pv-batch')
-        with self.assertRaisesRegex(Exception, '白天光伏预测不完整'):
-            service._pv('station-2', begin.replace(hour=0), begin)
+        midnight = service._pv('station-2', begin.replace(hour=0), begin)
+        self.assertEqual(midnight['values'][:24], [0]*24)
+        self.assertEqual(midnight['values'][24:], [10]*72)
         self.assertEqual(service._pv('station-2', begin, begin+timedelta(hours=3))['coverage_points'], 96)
         with self.assertRaisesRegex(Exception, '没有重叠'):
             service._pv('station-2', begin.replace(hour=0)-timedelta(days=1), begin)
+        # A missing daytime segment must still block, unlike the night-only gap.
+        later=begin+timedelta(hours=2)
+        run.update(forecast_start=later.isoformat(),forecast_end=(later+timedelta(days=1)).isoformat(),
+                   as_of=(later-timedelta(minutes=1)).isoformat(),generated_at=(later-timedelta(seconds=30)).isoformat())
+        for i, point in enumerate(points):point['target_time']=(later+timedelta(minutes=15*i)).isoformat()
+        with self.assertRaisesRegex(InputDataError, '白天光伏预测不完整'):
+            service._pv('station-2', begin.replace(hour=0), later)
         points.pop()
+        begin=later
         with self.assertRaisesRegex(Exception, '预测点不完整'):
             service._pv('station-2', begin.replace(hour=0), begin)
         live._pv.assert_not_called()

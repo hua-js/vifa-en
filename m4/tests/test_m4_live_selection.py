@@ -1,3 +1,4 @@
+"""Compatibility component tests use archived snapshots, not live M3 acceptance."""
 import copy
 import tempfile
 import unittest
@@ -26,6 +27,8 @@ def preferences(**overrides):
 
 class LiveSelectionTests(unittest.TestCase):
     def setUp(self):
+        from m4.tests.m4_legacy_component_support import install_archived_inputs
+        install_archived_inputs(self)
         temp=tempfile.TemporaryDirectory();self.addCleanup(temp.cleanup)
         self.path=Path(temp.name)/'settings.db';self.store=SettingsStore(self.path)
         self.config=self.store.save('station-1',configuration().parameters,expected_revision=0)

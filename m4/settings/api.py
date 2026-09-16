@@ -294,7 +294,7 @@ def create_app(settings_path: Path | None = None, *, control_reader=None, input_
         routes = {
             ('GET', 'settings'): lambda: get_settings(station_id),
             ('GET', 'selection-policy'): lambda: get_selection_policy(station_id),
-            ('GET', 'inputs'): lambda: prepared_inputs(store.get(station_id)),
+            ('GET', 'inputs'): lambda: get_inputs(station_id),
             ('POST', 'candidates'): lambda: calculate_candidates(station_id, CalculateCandidates.model_validate(data)),
             ('POST', 'selection'): lambda: select_live_candidate(station_id, SelectCandidate.model_validate(data)),
         }

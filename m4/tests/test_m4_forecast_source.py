@@ -8,10 +8,22 @@ DAY=START.replace(hour=0)
 def run(identifier,start,completed=None,station='ES01'):
  return dict(id=identifier,run_id=f'run-{identifier}',station_id=station,status='succeeded',
   forecast_start=start.isoformat(),forecast_end=(start+timedelta(days=1)).isoformat(),
-  interval_seconds=900,expected_points_per_series=96,completed_at=(completed or DAY-timedelta(hours=1)).isoformat(),content_hash=f'hash-{identifier}')
+  interval_seconds=900,forecast_days=1,model_manifest={'selection_policy':'weekly_load_v2'},expected_points_per_series=96,completed_at=(completed or DAY-timedelta(hours=1)).isoformat(),content_hash=f'hash-{identifier}')
 
 class Client:
  def __init__(self,runs,points=None):self.runs=runs;self.points=points;self.calls=[]
+ def current_load_result(self,station):
+  self.calls.append(('current_load_result',station))
+  if not self.runs:return None
+  item=self.runs[0]
+  start=datetime.fromisoformat(item['forecast_start'])
+  points=self.points if self.points is not None else [dict(run_id=item['run_id'],
+   unique_id='station_total_load',target_time=(start+timedelta(minutes=15*i)).isoformat(),
+   horizon_step=i+1,forecast_value=item['id']*100+i,
+   actual_value=item['id']*100 if i==0 else None,actual_quality='valid' if i==0 else None) for i in range(96)]
+  return {'run':item,'points':points,'current_score':dict(policy='load-night-weighted-mape-v1',
+   run_id=item['run_id'],unique_id='station_total_load',mape_percent=0,
+   actual_count=1,valid_count=1,calculated_at=start.isoformat())}
  def list_rows(self,table,**kwargs):
   self.calls.append((table,kwargs))
   if table=='energy_forecast_latest':return []
@@ -23,13 +35,14 @@ class Client:
   return [dict(run_pk=identifier,unique_id='station_total_load',target_time=(start+timedelta(minutes=15*i)).isoformat(),horizon_step=i+1,forecast_value=identifier*100+i) for i in range(96)]
 
 class ForecastTests(unittest.TestCase):
- def test_consecutive_runs_cover_rolling_day_and_newest_wins(self):
+ def test_current_task_is_not_stitched_with_other_runs(self):
   client=Client([run(1,DAY),run(2,DAY,DAY+timedelta(hours=1)),run(3,DAY+timedelta(days=1))])
   data=load_forecast(client,'station-1',plan_start_at=START,now=START)
-  self.assertEqual(data['coverage_points'],96)
-  self.assertEqual(data['values'][0],272)
-  self.assertEqual(data['values'][24],300)
-  self.assertEqual([r['run_id'] for r in data['runs']],['run-2','run-3'])
+  self.assertEqual(data['coverage_points'],24)
+  self.assertEqual(data['values'][0],172)
+  self.assertIsNone(data['values'][24])
+  self.assertEqual([r['run_id'] for r in data['runs']],['run-1'])
+  self.assertEqual(client.calls,[('current_load_result','ES01')])
  def test_missing_future_is_explicit_not_repeated_today(self):
   data=load_forecast(Client([run(1,DAY)]),'station-1',plan_start_at=START,now=START)
   self.assertEqual(data['coverage_points'],24)
@@ -38,12 +51,21 @@ class ForecastTests(unittest.TestCase):
  def test_station_time_grid_and_success_are_checked(self):
   for change in ({'station_id':'ES02'},{'interval_seconds':300},{'status':'running'}, {'completed_at':(START+timedelta(hours=1)).isoformat()}):
    item=run(1,DAY);item.update(change)
-   with self.subTest(change=change):
-    data=load_forecast(Client([item]),'station-1',plan_start_at=START,now=START)
-    self.assertEqual(data['coverage_points'],0)
+   with self.subTest(change=change),self.assertRaises(ValueError):
+    load_forecast(Client([item]),'station-1',plan_start_at=START,now=START)
  def test_malformed_latest_run_is_not_replaced_with_older_values(self):
   with self.assertRaises(ValueError):
    load_forecast(Client([run(1,DAY)],points=[]),'station-1',plan_start_at=START,now=START)
+ def test_current_points_reject_mixed_identity_duplicates_and_invalid_grid(self):
+  original=Client([run(1,DAY)]).current_load_result('ES01')['points']
+  for change in ({'run_id':'other'}, {'unique_id':'storage_soc'}, {'horizon_step':True},
+                 {'horizon_step':2}, {'target_time':(DAY+timedelta(minutes=1)).isoformat()}):
+   points=[{**original[0],**change},*original[1:]]
+   with self.subTest(change=change),self.assertRaises(ValueError):
+    load_forecast(Client([run(1,DAY)],points),'station-1',plan_start_at=DAY,now=DAY)
+  with self.assertRaises(ValueError):
+   load_forecast(Client([run(1,DAY)],[original[0],original[0],*original[2:]]),
+                 'station-1',plan_start_at=DAY,now=DAY)
  def test_unknown_station_and_unaligned_start_fail(self):
   with self.assertRaises(ValueError):load_forecast(Client([]),'other',plan_start_at=START,now=START)
   with self.assertRaises(ValueError):load_forecast(Client([]),'station-1',plan_start_at=START+timedelta(minutes=1),now=START)
@@ -52,7 +74,7 @@ class ForecastTests(unittest.TestCase):
   b=load_forecast(Client([run(2,DAY)]),'station-1',plan_start_at=START,now=START)
   self.assertNotEqual(a['version'],b['version'])
  def test_numeric_database_strings_are_normalized_without_changing_version(self):
-  points=[dict(run_pk=1,unique_id='station_total_load',target_time=(DAY+timedelta(minutes=15*i)).isoformat(),
+  points=[dict(run_pk=1,run_id='run-1',unique_id='station_total_load',target_time=(DAY+timedelta(minutes=15*i)).isoformat(),
                horizon_step=i+1,forecast_value=100.25+i) for i in range(96)]
   numeric=load_forecast(Client([run(1,DAY)],points=points),'station-1',plan_start_at=DAY,now=DAY)
   strings=[{**point,'forecast_value':f"{point['forecast_value']:.6f}"} for point in points]
@@ -62,7 +84,7 @@ class ForecastTests(unittest.TestCase):
   self.assertEqual(parsed['values'],numeric['values'])
   self.assertEqual(parsed['version'],numeric['version'])
  def test_invalid_numeric_strings_booleans_and_non_finite_power_are_rejected(self):
-  points=[dict(run_pk=1,unique_id='station_total_load',target_time=(DAY+timedelta(minutes=15*i)).isoformat(),
+  points=[dict(run_pk=1,run_id='run-1',unique_id='station_total_load',target_time=(DAY+timedelta(minutes=15*i)).isoformat(),
                horizon_step=i+1,forecast_value=100.0) for i in range(96)]
   for value in ('',' ',' 1','1 ','NaN','Infinity','-Infinity','1e9999','-1','-1e-9999',
                 True,False,None,-1,float('nan'),float('inf')):

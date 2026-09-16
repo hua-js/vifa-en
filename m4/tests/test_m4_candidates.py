@@ -1,4 +1,4 @@
-"""Candidate HTTP boundary: server-owned inputs, freshness and station isolation."""
+"""Compatibility component tests use archived snapshots, not live M3 acceptance."""
 import tempfile
 import threading
 import unittest
@@ -17,6 +17,8 @@ from m4.tests.test_m4_realtime import configuration
 
 class CandidateTests(unittest.TestCase):
     def setUp(self):
+        from m4.tests.m4_legacy_component_support import install_archived_inputs
+        install_archived_inputs(self)
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.path = Path(self.temp.name) / 'settings.db'

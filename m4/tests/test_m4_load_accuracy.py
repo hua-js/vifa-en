@@ -46,14 +46,25 @@ class AccuracyTests(unittest.TestCase):
 
 class SolverEntryTests(unittest.TestCase):
  def test_rolling_gate_blocks_optimizer(self):
-  from m4.tests.test_m4_candidates import CandidateTests
-  from m4.settings.candidates import CandidateError
-  case=CandidateTests();case.setUp();self.addCleanup(case.doCleanups)
-  case.client.current_load_result=lambda station:row('31',now=case.client.now,station=station)
-  with self.assertRaises(CandidateError) as caught:case.run_once(case.service())
-  self.assertEqual(caught.exception.status_code,422)
-  self.assertTrue(any('MAPE' in issue for issue in caught.exception.detail['issues']))
-  self.assertEqual(case.solve_calls,[])
+  import tempfile
+  from pathlib import Path
+  from unittest.mock import Mock
+  from m4.tests.test_m4_live_inputs import Client,Controls,NOW as LIVE_NOW
+  from m4.tests.test_m4_realtime import configuration
+  from m4.settings.live_inputs import LiveInputService
+  from m4.settings.store import SettingsStore
+  from m4.settings.candidates import CandidateService,CandidateError
+  client=Client();client.current_load_result=lambda station:row('31',now=LIVE_NOW,station=station)
+  controls=Controls();optimizer=Mock()
+  with tempfile.TemporaryDirectory() as directory:
+   store=SettingsStore(Path(directory)/'settings.db')
+   config=store.save('station-1',configuration().parameters,expected_revision=0)
+   service=CandidateService(store=store,fetch_inputs=lambda c:LiveInputService(client,controls).fetch(c,now=LIVE_NOW),
+       read_controls=controls.fetch,optimizer=optimizer,clock=lambda:LIVE_NOW)
+   with self.assertRaises(CandidateError) as caught:service.calculate('station-1',config.version)
+   self.assertEqual(caught.exception.status_code,422)
+   self.assertTrue(any('MAPE' in issue for issue in caught.exception.detail['issues']))
+   optimizer.optimize.assert_not_called()
  def test_daily_gate_blocks_optimizer_even_if_ready_flag_forged(self):
   import tempfile
   from unittest.mock import Mock,patch

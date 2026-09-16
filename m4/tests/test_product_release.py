@@ -17,7 +17,7 @@ class ProductReleaseTests(unittest.TestCase):
             target = Path(temp) / 'release'
             result = subprocess.run([
                 sys.executable, str(ROOT / 'm4/deploy/build_package.py'),
-                '--output', str(target), '--platform', 'linux/arm64', '--include-m1',
+                '--output', str(target), '--platform', 'linux/arm64',
                 '--revision', 'a' * 40,
                 '--image', 'registry.example.test/vifa/m4:revision-arm64',
             ], capture_output=True, text=True)
@@ -26,10 +26,8 @@ class ProductReleaseTests(unittest.TestCase):
             self.assertEqual(manifest['platform'], 'linux/arm64')
             self.assertEqual(manifest['schema_version'], 1)
             self.assertEqual(manifest['api_contract'], 'm4-project-v1')
-            self.assertEqual(manifest['modules'], ['m1', 'm4'])
-            self.assertTrue((target / 'backend/app/m1/dashboard_energy_api.py').is_file())
-            self.assertEqual((target / 'node_red/m1_dashboard_template.html').read_bytes(),
-                             (ROOT / 'm1/web/dashboard_energy.html').read_bytes())
+            self.assertEqual(manifest['modules'], ['m4'])
+            self.assertFalse((target / 'backend/app/m1').exists())
             self.assertTrue((target / 'backend/app/shared/project.py').is_file())
             self.assertTrue((target / 'backend/app/config/projects/vifa.json').is_file())
             self.assertTrue((target / 'config/project.json').is_file())
@@ -49,11 +47,9 @@ class ProductReleaseTests(unittest.TestCase):
 from pathlib import Path
 from fastapi.testclient import TestClient
 from shared.project import get_project
-from m1 import dashboard_energy_api
 from m4.settings.api import create_app
 project = get_project()
 assert project.id == 'example'
-assert len(dashboard_energy_api.TARGET_STATIONS) == 3
 client = TestClient(create_app(settings_path=Path('isolated.sqlite3')))
 assert client.get('/m4-api/project').json() == project.public_metadata()
 for station in project.stations:
