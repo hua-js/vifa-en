@@ -42,7 +42,9 @@ def prepare_remaining_request(configuration, inputs, now):
     start = now.replace(second=0, microsecond=0, minute=now.minute//15*15)+timedelta(minutes=15)
     if start.date() != now.date():
         raise ValueError('当日已无完整的后续时段，等待次日日计划。')
-    base = OptimizationRequest.model_validate(inputs['request'])
+    # Daily inputs are JSON-compatible snapshots; strict datetime fields must
+    # be restored through JSON validation, as in DailyPlanService.latest.
+    base = OptimizationRequest.model_validate_json(json.dumps(inputs['request']))
     measured_soc, measured_power = soc['soc_pct'], power['power_kw']
     if any(type(v) not in (int, float) or not math.isfinite(v) for v in (measured_soc, measured_power)):
         raise ValueError('当前实测数据无效，暂停滚动建议。')
@@ -76,7 +78,7 @@ def prepare_remaining_request(configuration, inputs, now):
         raw['peak_reserve_policy'] = policy.model_dump(mode='json')
     raw['source_versions'].update(planning_basis=POLICY, capability=soc['observed_at'],
         terminal_target=format(terminal, '.17g'))
-    request = OptimizationRequest.model_validate(raw)
+    request = OptimizationRequest.model_validate_json(json.dumps(raw))
     return request, replay, simulation, dict(observed_at=soc['observed_at'],
         measured_soc_pct=measured_soc, power_observed_at=power['observed_at'],
         measured_power_kw=measured_power, effective_at=start.isoformat(),
