@@ -223,6 +223,26 @@ def build_model(request: OptimizationRequest, *, terminal_soc_target_pct: float 
     if peak_reserve is not None:
         model.peak_reserve_shortfall = pyo.Expression(expr=model.peak_reserve_energy_shortfall)
 
+    if any("discharge_starts" in layer.terms for profile in request.profiles
+           for layer in profile.objective_order):
+        # Classify effective discharge at 0.01 kW without imposing a new physical
+        # minimum power. Unlike discharge_on, this flag cannot bridge idle slots.
+        threshold = 0.01
+        model.discharge_active = pyo.Var(model.periods, domain=pyo.Binary)
+        model.discharge_start = pyo.Var(model.periods, domain=pyo.Binary)
+        model.discharge_active_upper = pyo.Constraint(model.periods, rule=lambda m, t:
+            m.discharge[t] <= threshold + discharge_max * m.discharge_active[t])
+        model.discharge_active_lower = pyo.Constraint(model.periods, rule=lambda m, t:
+            m.discharge[t] >= threshold * m.discharge_active[t])
+        model.discharge_start_lower = pyo.Constraint(model.periods, rule=lambda m, t:
+            m.discharge_start[t] >= m.discharge_active[t]
+                - (m.discharge_active[t-1] if t > 0 else 0))
+        model.discharge_start_active = pyo.Constraint(model.periods, rule=lambda m, t:
+            m.discharge_start[t] <= m.discharge_active[t])
+        model.discharge_start_previous = pyo.Constraint(model.periods, rule=lambda m, t:
+            m.discharge_start[t] <= 1 - (m.discharge_active[t-1] if t > 0 else 0))
+        model.discharge_starts = pyo.Expression(expr=pyo.quicksum(model.discharge_start.values()))
+
     if continuity:
         model.power_edges = pyo.RangeSet(0, horizon)
         model.power_change = pyo.Var(model.power_edges, domain=pyo.NonNegativeReals)

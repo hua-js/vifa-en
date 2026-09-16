@@ -16,6 +16,7 @@ ObjectiveName = Literal[
     "throughput",
     "valley_charge_delay",
     "power_variation",
+    "discharge_starts",
     "peak_reserve_shortfall",
 ]
 CandidateStatus = Literal["optimal", "feasible", "infeasible", "timeout", "error"]
@@ -202,6 +203,14 @@ class OptimizationRequest(StrictModel):
                 flattened.remove("peak_reserve_shortfall")
             elif "peak_reserve_shortfall" in flattened:
                 raise ValueError("peak reserve objective requires an explicit policy")
+            if "discharge_starts" in flattened:
+                if (self.station_id != 'station-2' or self.peak_reserve_policy is None
+                        or self.peak_reserve_policy.version != 'peak-reserve-v3'
+                        or flattened.count('discharge_starts') != 1
+                        or term_sets[-3:] != [{'discharge_starts'}, {'power_variation'}, {'valley_charge_delay'}]
+                        or 'throughput' not in flattened[:flattened.index('discharge_starts')]):
+                    raise ValueError('discharge starts requires a late separate station-2 daily layer')
+                flattened.remove('discharge_starts')
             if "power_variation" in flattened:
                 continuity_scope = cost_first or (
                     self.station_id == 'station-2' and self.peak_reserve_policy is not None
