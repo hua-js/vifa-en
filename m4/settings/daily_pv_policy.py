@@ -4,7 +4,7 @@ from zoneinfo import ZoneInfo
 
 from .timeseries import InputDataError
 
-POLICY = 'pv-night-zero-20-05-v1'
+POLICY = 'pv-night-zero-20-07-v1'
 ZONE = ZoneInfo('Asia/Shanghai')
 
 
@@ -14,6 +14,6 @@ def fill_night_gaps(values, start):
     missing = [i for i, value in enumerate(values) if value is None]
     for i in missing:
         at = (start + timedelta(minutes=15*i)).astimezone(ZONE)
-        if 5 <= at.hour < 20:
+        if 7 <= at.hour < 20:
             raise InputDataError('白天光伏预测不完整，请等待 M3 更新后生成日计划。')
     return [0.0 if value is None else value for value in values], missing

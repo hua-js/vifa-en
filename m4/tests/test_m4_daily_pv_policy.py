@@ -16,18 +16,18 @@ class DailyPVPolicyTests(TestCase):
         self.start = datetime.fromisoformat('2026-09-16T00:00:00+08:00')
 
     def test_night_gaps_fill_but_existing_predictions_are_preserved(self):
-        values = [None]*20 + [100.0]*60 + [None]*16
+        values = [None]*28 + [100.0]*52 + [None]*16
         values[0] = 7.0
         filled, missing = fill_night_gaps(values, self.start)
         self.assertEqual(filled[0], 7.0)
-        self.assertEqual(filled[1:20], [0.0]*19)
-        self.assertEqual(filled[20:80], [100.0]*60)
+        self.assertEqual(filled[1:28], [0.0]*27)
+        self.assertEqual(filled[28:80], [100.0]*52)
         self.assertEqual(filled[80:], [0.0]*16)
-        self.assertEqual(len(missing), 35)
+        self.assertEqual(len(missing), 43)
         self.assertIsNone(values[1])
 
     def test_each_daylight_boundary_and_midday_gap_blocks(self):
-        for slot in (20, 48, 56, 79):
+        for slot in (28, 48, 56, 79):
             with self.subTest(slot=slot):
                 values = [100.0]*96
                 values[slot] = None
@@ -44,15 +44,15 @@ class DailyPVPolicyTests(TestCase):
                 service._pv('station-2', self.start, self.start)
 
     def test_night_only_gap_source_has_new_policy(self):
-        source = dict(values=[None]*20+[100.0]*76, coverage_points=76,
-            forecast_start=(self.start+timedelta(hours=5)).isoformat(),
-            forecast_end=(self.start+timedelta(days=1,hours=5)).isoformat())
+        source = dict(values=[None]*25+[100.0]*71, coverage_points=71,
+            forecast_start=(self.start+timedelta(hours=6, minutes=15)).isoformat(),
+            forecast_end=(self.start+timedelta(days=1,hours=6,minutes=15)).isoformat())
         service = DailyInputService(SimpleNamespace(client=None))
         with patch('m4.settings.daily_inputs.load_pv_forecast', return_value=source), patch('m4.settings.daily_inputs.validate_pv_source'):
             result=service._pv('station-2', self.start, self.start)
         self.assertEqual(result['gap_policy'], POLICY)
-        self.assertEqual(result['zero_filled_points'], 20)
-        self.assertEqual(result['values'][20:], [100.0]*76)
+        self.assertEqual(result['zero_filled_points'], 25)
+        self.assertEqual(result['values'][25:], [100.0]*71)
 
     def test_legacy_completed_job_is_not_reused_as_current_plan(self):
         with TemporaryDirectory() as root:
