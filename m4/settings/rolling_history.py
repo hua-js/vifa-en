@@ -43,6 +43,9 @@ def advisory_history(station, jobs, now):
                     raise ValueError('invalid SOC')
                 item = {k: point[k] for k in ('timestamp', 'mode', 'target_power_kw',
                     'grid_import_kw', 'expected_soc_pct')}
+                export = point.get('grid_export_kw')
+                if type(export) in (int, float) and math.isfinite(export) and export >= 0:
+                    item['grid_export_kw'] = export
                 item['timestamp'] = at.astimezone(now.tzinfo).isoformat()
                 source = inputs.get(point['timestamp'], {})
                 for key in ('load_forecast_kw', 'pv_forecast_kw'):
