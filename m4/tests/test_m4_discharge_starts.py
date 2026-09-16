@@ -9,6 +9,30 @@ from m4.settings.daily_policy import matches_current_daily_policy
 
 
 class DischargeStartTests(unittest.TestCase):
+    def test_full_optimizer_pipeline_with_start_variables(self):
+        from m4.optimizer.service import M4Optimizer
+        from m4.optimizer.validation import validate_candidate
+        from m4.optimizer.lexicographic import build_layer_objective
+        request = reserve_request('peak-reserve-v3')
+        request.pv_dispatch_policy = 'load_first_export_priority'
+        for point in request.points:
+            point.load_forecast_kw = 0
+        built = build_model(request)
+        self.assertEqual(built.index.size, len(built.problem.variables))
+        for name in ('discharge_active', 'discharge_start', 'power_variation'):
+            column = getattr(built.index, name).start
+            expected = 'power_change[0]' if name == 'power_variation' else name+'[0]'
+            self.assertEqual(built.problem.variables[column].name, expected)
+        for profile in request.profiles:
+            for layer in profile.objective_order:
+                self.assertEqual(len(build_layer_objective(built, layer)), built.index.size)
+        result = M4Optimizer(model_version='discharge-start-pipeline').optimize(request)
+        for candidate, profile in zip(result.candidates, request.profiles):
+            self.assertEqual(candidate.status, 'optimal', candidate.solver_message)
+            self.assertEqual(len(candidate.layers), len(profile.objective_order))
+            self.assertEqual(len(candidate.plan), 96)
+            validate_candidate(request, candidate)
+
     def test_idle_cannot_bridge_discharge_episodes(self):
         for slots, expected in [((72, 73), 1), ((72, 74), 2), ((0, 95), 2), ((), 0)]:
             with self.subTest(slots=slots):

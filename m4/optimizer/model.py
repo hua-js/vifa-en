@@ -33,6 +33,8 @@ class VariableIndex:
     size: int
     peak_reserve_shortfall: int | None = None
     power_variation: slice | None = None
+    discharge_active: slice | None = None
+    discharge_start: slice | None = None
 
 
 @dataclass(frozen=True)
@@ -50,8 +52,11 @@ def build_model(request: OptimizationRequest, *, terminal_soc_target_pct: float 
     peak_reserve = request.peak_reserve_policy
     continuity = any("power_variation" in layer.terms for profile in request.profiles
                      for layer in profile.objective_order)
+    discharge_starts = any("discharge_starts" in layer.terms for profile in request.profiles
+                           for layer in profile.objective_order)
     index = _build_variable_index(load_first=load_first, horizon=horizon,
-                                  peak_reserve=peak_reserve is not None, continuity=continuity)
+                                  peak_reserve=peak_reserve is not None, continuity=continuity,
+                                  discharge_starts=discharge_starts)
     capability, constraints = request.capability, request.constraints
     charge_max = capability.max_charge_kw if capability.available else 0.0
     discharge_max = capability.max_discharge_kw if capability.available else 0.0
@@ -223,8 +228,7 @@ def build_model(request: OptimizationRequest, *, terminal_soc_target_pct: float 
     if peak_reserve is not None:
         model.peak_reserve_shortfall = pyo.Expression(expr=model.peak_reserve_energy_shortfall)
 
-    if any("discharge_starts" in layer.terms for profile in request.profiles
-           for layer in profile.objective_order):
+    if discharge_starts:
         # Classify effective discharge at 0.01 kW without imposing a new physical
         # minimum power. Unlike discharge_on, this flag cannot bridge idle slots.
         threshold = 0.01
@@ -259,6 +263,8 @@ def build_model(request: OptimizationRequest, *, terminal_soc_target_pct: float 
         model.power_variation = pyo.Expression(expr=pyo.quicksum(model.power_change.values()))
 
     variables = tuple(model.component_data_objects(pyo.Var))
+    if index.size != len(variables):
+        raise ValueError("model variable index does not match native solver columns")
     problem = PyomoProblem(model, variables)
     # Vectors are an export of the native expressions for existing layer locks,
     # materialization and independent validation; they do not define the model.
@@ -313,7 +319,8 @@ def _overnight_valley_windows(
 
 
 def _build_variable_index(*, load_first: bool = False, horizon: int = HORIZON_POINTS,
-                          peak_reserve: bool = False, continuity: bool = False) -> VariableIndex:
+                          peak_reserve: bool = False, continuity: bool = False,
+                          discharge_starts: bool = False) -> VariableIndex:
     cursor = 0
 
     def allocate(size: int) -> slice:
@@ -341,6 +348,8 @@ def _build_variable_index(*, load_first: bool = False, horizon: int = HORIZON_PO
     peak_reserve_shortfall = cursor if peak_reserve else None
     if peak_reserve:
         cursor += 1
+    discharge_active = allocate(horizon) if discharge_starts else None
+    discharge_start = allocate(horizon) if discharge_starts else None
     power_variation = allocate(horizon + 1) if continuity else None
     return VariableIndex(
         charge=charge,
@@ -361,4 +370,6 @@ def _build_variable_index(*, load_first: bool = False, horizon: int = HORIZON_PO
         size=cursor,
         peak_reserve_shortfall=peak_reserve_shortfall,
         power_variation=power_variation,
+        discharge_active=discharge_active,
+        discharge_start=discharge_start,
     )
