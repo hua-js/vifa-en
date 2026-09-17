@@ -145,7 +145,8 @@
             "repeat": "daily"
           }
         ]
-      }
+      },
+      "ems_model_record_id": 7
     }
   ]
 }

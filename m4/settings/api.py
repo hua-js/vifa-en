@@ -96,7 +96,17 @@ def create_app(settings_path: Path | None = None, *, control_reader=None, input_
     daily_plans = DailyPlanService(store, daily_inputs, decision_results.root.parent / 'daily-comparisons')
     from .auto_plans import AutomaticPlans
     from .rolling_plans import RollingPlanService, PlanningCoordinator
-    rolling_plans = RollingPlanService(daily_plans)
+    from .ems_model_update import EMSModelUpdateAdapter
+    from .ems_remaining_plan import EMSRemainingPlanAdapter
+    model_reader = SimpleNamespace(_read_table=lambda table:
+        (reader if reader is not None else ControlSourceReader(token))._read_table(table))
+    from .ems_table_writer import EMSTableWriter
+    remaining_adapter = EMSRemainingPlanAdapter(model_reader)
+    table_writer = EMSTableWriter(remaining_adapter, daily_plans.root / 'ems-table-writes', token,
+        enabled=os.environ.get('M4_EMS_STATION2_TABLE_WRITES') == '1')
+    rolling_plans = RollingPlanService(daily_plans,
+        ems_model_adapter=EMSModelUpdateAdapter(model_reader),
+        ems_remaining_adapter=remaining_adapter, ems_table_writer=table_writer)
     coordinator = PlanningCoordinator(daily_plans, rolling_plans)
     automatic = AutomaticPlans(coordinator, daily_plans.root,
         enabled=os.environ.get('M4_AUTO_PLAN_ENABLED', '1').lower() not in ('0', 'false', 'off'))
@@ -208,7 +218,7 @@ def create_app(settings_path: Path | None = None, *, control_reader=None, input_
                 history = dict(station_id=station_id, status='failed',
                     message='滚动建议历史暂不可用。')
             return {**daily, 'automation': automatic.metadata(), 'rolling': rolling,
-                'rolling_history': history}
+                'rolling_history': history, 'ems_table_write': table_writer.status(station_id)}
         except Exception:
             raise HTTPException(503, '全天计划读取或校验失败，请重新计算。') from None
 

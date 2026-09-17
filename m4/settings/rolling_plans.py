@@ -1,4 +1,5 @@
-"""Remaining-day advisory plans anchored to measured state; no dispatch client."""
+"""Remaining-day advice with opt-in, station-2 EMS table commissioning."""
+from shared.project import get_project
 from copy import deepcopy
 from datetime import datetime, timedelta
 import json
@@ -110,8 +111,11 @@ def prepare_remaining_request(configuration, inputs, now):
 
 
 class RollingPlanService:
-    def __init__(self, daily):
+    def __init__(self, daily, *, ems_model_adapter=None, ems_remaining_adapter=None, ems_table_writer=None):
         self.daily = daily
+        self.ems_model_adapter = ems_model_adapter
+        self.ems_remaining_adapter = ems_remaining_adapter
+        self.ems_table_writer = ems_table_writer
         self.root = daily.root / 'rolling'
         self.running, self.jobs = set(), {}
         self.lock = Lock()
@@ -241,7 +245,7 @@ class RollingPlanService:
                     or current_configuration.version != configuration.version
                     or current_controls['version'] != request.source_versions['controls']):
                 raise ValueError('生效窗口或配置已变化，本轮建议作废。')
-            payload = dict(schema_version='m4-rolling-plan-v1', station_id=station, date=day,
+            payload = dict(schema_version='m4-rolling-plan-v1', station_id=station, date=day, run_id=run_id,
                 configuration_version=configuration.version, daily_run_id=daily['run_id'],
                 daily_gate_passed=admitted, daily_net_savings_yuan=gate.get('net_savings_yuan'),
                 effective_at=request.plan_start_at.isoformat(),
@@ -256,6 +260,31 @@ class RollingPlanService:
                 actual_load=inputs['sources'].get('actual_load'),
                 pv_correction=inputs['sources'].get('pv_correction'),
                 dispatch_status='not_dispatched', usage='remaining_day_advice_only')
+            if self.ems_remaining_adapter is None and self.ems_model_adapter is not None and get_project().station(station).ems_model_record_id is not None:
+                from .ems_model_update import ModelUpdateError
+                try:
+                    payload['ems_model_update'] = self.ems_model_adapter.preview(
+                        station, payload, configuration)
+                except Exception as error:
+                    payload['ems_model_update'] = dict(status='blocked', dispatch_status='not_dispatched',
+                        network_write_performed=False, request=None,
+                        reason=str(error) if isinstance(error, ModelUpdateError) else '计划更新预览暂不可用。')
+            if self.ems_remaining_adapter is not None and get_project().station(station).ems_model_record_id is not None:
+                from .ems_model_update import ModelUpdateError
+                try:
+                    payload['ems_remaining_plan'] = self.ems_remaining_adapter.preview(
+                        station, payload, configuration)
+                except Exception as error:
+                    payload['ems_remaining_plan'] = dict(status='blocked', dispatch_status='not_dispatched',
+                        network_write_performed=False, execution_ready=False, operations=None,
+                        reason=str(error) if isinstance(error, ModelUpdateError) else '剩余计划预览暂不可用。')
+            if self.ems_table_writer is not None:
+                try:
+                    payload['ems_table_write'] = self.ems_table_writer.submit(station, payload, configuration)
+                except Exception as error:
+                    payload['ems_table_write'] = dict(status='table_write_unconfirmed', network_write_performed=None,
+                        device_execution_status='unverified',
+                        reason=str(error) if isinstance(error, ValueError) else '计划表写入暂不可用。')
             job = dict(station_id=station, run_id=run_id, status='completed', result=payload,
                 policy_version=POLICY, message=reason)
         except Exception as error:

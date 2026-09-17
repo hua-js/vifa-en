@@ -72,6 +72,7 @@ class Station:
     grid_import_limit_kw: float | None
     alarm_advisory_cabinets: tuple[str, ...]
     ems_baseline: dict | None = None
+    ems_model_record_id: int | None = None
 
 
 @dataclass(frozen=True)
@@ -133,8 +134,13 @@ def load_project(path):
     # Enforce cross-station ownership within each source namespace, not globally.
     ems_devices, inverters = set(), set()
     for item in data['stations']:
-        item = {'ems_baseline': None, **item}
+        item = {'ems_baseline': None, 'ems_model_record_id': None, **item}
         _fields(item, set(Station.__dataclass_fields__), 'station')
+        record_id = item['ems_model_record_id']
+        if record_id is not None and (type(record_id) is not int or record_id <= 0):
+            raise ValueError('Invalid EMS model record id')
+        if record_id is not None and any(s.ems_model_record_id == record_id for s in stations):
+            raise ValueError('EMS model record cannot be shared by stations')
         if item['ems_baseline'] is not None and type(item['ems_baseline']) is not dict:
             raise ValueError('Invalid EMS baseline configuration')
         sid, code = _identifier(item['id']), _identifier(item['source_code'])
@@ -170,7 +176,7 @@ def load_project(path):
         inverters.update(solar)
         stations.append(Station(sid, code, item['name'], cabinets, item['has_pv'], meter,
                                 solar, item['policy'], float(limit) if limit is not None else None, advisory,
-                                item['ems_baseline']))
+                                item['ems_baseline'], record_id))
     fingerprint = hashlib.sha256(json.dumps(data, sort_keys=True, ensure_ascii=False, allow_nan=False).encode()).hexdigest()
     return Project(project_id, site_id, data['timezone'], tuple(stations), sources, dict(data['m1']), fingerprint)
 

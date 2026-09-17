@@ -1,0 +1,6 @@
+# Commissioning only: station-2 plan table writes, EMS device execution inhibited.
+# Remove this override and recreate m4-api to return to preview-only mode.
+services:
+  m4-api:
+    environment:
+      M4_EMS_STATION2_TABLE_WRITES: "1"
