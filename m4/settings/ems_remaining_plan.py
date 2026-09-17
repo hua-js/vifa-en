@@ -35,17 +35,20 @@ def _mutation(action, row, station, *, body=None):
 
 
 class EMSRemainingPlanAdapter:
-    def __init__(self, reader):
+    def __init__(self, reader, *, fixed_cabinet_power=False):
         self.reader = reader
+        self.fixed_cabinet_power = fixed_cabinet_power
         self.single = EMSModelUpdateAdapter(reader)
 
-    def preview(self, station_id, payload, configuration, *, now=None):
+    def preview(self, station_id, payload, configuration, *, now=None, fixed_cabinet_power=None):
         station, observed, start, _, run_id, points, request = self.single._context(
             station_id, payload, configuration, now=now)
         midnight = datetime.combine(observed.date()+timedelta(days=1), datetime.min.time(), ZONE)
         if len(points) != int((midnight-start).total_seconds()/900):
             raise ModelUpdateError('剩余日计划未完整覆盖至当天结束。')
         validate_dispatch_safety(request, points)
+        if fixed_cabinet_power is None:
+            fixed_cabinet_power = self.fixed_cabinet_power
         segments = []
         for index, point in enumerate(points):
             at = start+timedelta(minutes=15*index)
@@ -62,7 +65,7 @@ class EMSRemainingPlanAdapter:
                     or power > min(cap, getattr(configuration.parameters, 'max_'+mode+'_kw'))+1e-7):
                 raise ModelUpdateError('剩余日计划功率超过本站配置上限。')
             end = at+timedelta(minutes=15)
-            kw = power/len(station.cabinet_sns)
+            kw = (100 if mode == 'charge' else 90) if fixed_cabinet_power else power/len(station.cabinet_sns)
             if segments and segments[-1]['end'] == at and segments[-1]['mode'] == mode and segments[-1]['kw'] == kw:
                 segments[-1]['end'] = end
             else:

@@ -45,7 +45,7 @@ class EMSTableWriter:
             return dict(status='disabled', network_write_performed=False, device_execution_status='unverified')
         if not self.token or any(c.isspace() for c in self.token):
             raise ModelUpdateError('计划表写入凭据不可用。')
-        prepared = self.adapter.preview(station, payload, configuration, now=now)
+        prepared = self.adapter.preview(station, payload, configuration, now=now, fixed_cabinet_power=True)
         run_id = prepared['run_id']  # UUID validated by adapter
         self.root.mkdir(parents=True, exist_ok=True)
         journal = self.root / (run_id+'.json')
@@ -123,7 +123,7 @@ class EMSTableWriter:
                     outcome['pending_operation'] = None
                     outcome['completed_operations'] += 1
                     save()
-            final = self.adapter.preview(station, payload, configuration, now=now)
+            final = self.adapter.preview(station, payload, configuration, now=now, fixed_cabinet_power=True)
             if any(final['operations'].values()):
                 raise ModelUpdateError('计划表最终回读不一致。')
             outcome['status'] = 'plan_table_readback_verified'

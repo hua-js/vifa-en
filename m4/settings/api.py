@@ -101,7 +101,7 @@ def create_app(settings_path: Path | None = None, *, control_reader=None, input_
     model_reader = SimpleNamespace(_read_table=lambda table:
         (reader if reader is not None else ControlSourceReader(token))._read_table(table))
     from .ems_table_writer import EMSTableWriter
-    remaining_adapter = EMSRemainingPlanAdapter(model_reader)
+    remaining_adapter = EMSRemainingPlanAdapter(model_reader, fixed_cabinet_power=True)
     table_writer = EMSTableWriter(remaining_adapter, daily_plans.root / 'ems-table-writes', token,
         enabled=os.environ.get('M4_EMS_STATION2_TABLE_WRITES') == '1')
     rolling_plans = RollingPlanService(daily_plans,

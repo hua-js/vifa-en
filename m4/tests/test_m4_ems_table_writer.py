@@ -104,3 +104,19 @@ class TableWriterTests(unittest.TestCase):
             self.assertEqual(result['status'], 'table_write_unconfirmed')
             self.assertFalse(result['network_write_performed'])
             self.transport.open.assert_not_called()
+
+    def test_fixed_cabinet_power_changes_only_outgoing_kw(self):
+        from copy import deepcopy
+        for mode, reference_power, cabinet_kw in [('charge',120,100),('discharge',533.39706,90)]:
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as root:
+                writer = self.prepare(root)
+                self.payload['plan'][0].update(mode=mode,target_power_kw=reference_power)
+                # Original charge 120 stays under 1000; mapped 600 would not.
+                self.payload['request']['constraints']['demand_limit_kw'] = 1000
+                original = deepcopy(self.payload)
+                result = writer.submit('station-2', self.payload, self.config, now=self.now)
+                self.assertEqual(result['status'],'plan_table_readback_verified')
+                row = next(r for r in self.rows if r['id']==10)
+                self.assertEqual((row['type'],row['kw'],row['start_time'],row['end_time']),
+                    (mode,cabinet_kw,'14:15:00','14:30:00'))
+                self.assertEqual(self.payload,original)
