@@ -13,6 +13,7 @@ const job={station_id:'station-2',status:'completed',result:{station_id:'station
 const ctx=vm.createContext({projectReady:true,selectedStationKey:()=> 'test', $,Date:Clock,JSON,rollingAdvice:job,rollingHistory:null,today:()=> '2026-09-16',finite:Number.isFinite,fmt:String,esc:String,clock:String,timeText:String,renderChart(){},renderInspector(){},renderScheduleTable(){},clearTimeout(){},generation:0,pollTimer:null,context:null,sessionStorage:{setItem(){}},plan:{station:'station-2',date:'2026-09-16'},restoreView:()=>false,setLoading(){},clearPlan(){},readCurrent:()=>new Promise(()=>{})});
 vm.runInContext(extract('function currentRollingPayload(){','function rollingDisplayPoints'),ctx);
 vm.runInContext(extract('let rollingRenderKey=null;','setInterval(renderRollingAdvice'),ctx);
+vm.runInContext(extract('function renderEMSTableWrite(', 'async function loadCurrent('),ctx);
 vm.runInContext(extract('async function loadCurrent(){','function renderBaseline'),ctx);
 vm.runInContext('renderRollingAdvice()',ctx);
 const markup=$('rolling-rows').innerHTML;
