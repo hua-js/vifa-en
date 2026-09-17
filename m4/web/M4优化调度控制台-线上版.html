@@ -206,6 +206,13 @@ function emsSchedulePowers(baseline,station,controlsVersion){
 function optimizedDisplayPower(power,startSoc,endSoc,minSoc){
  return power>0&&power<=.01&&startSoc<=minSoc+1e-5&&endSoc<=minSoc+1e-5?0:power;
 }
+function comparisonControls(inputs,liveControls,station){
+ const reference=inputs?.sources?.controls;
+ if(reference?.baseline_source!=='fixed_configuration')return liveControls;
+ assert(reference.station_id===station&&reference.status==='ready'&&typeof reference.version==='string'&&reference.version.length>0,'EMS 比较基线来源不匹配');
+ assert(typeof reference.baseline_version==='string'&&reference.baseline_version.length>0&&reference.baseline_version===inputs.request?.source_versions?.ems_baseline&&reference.baseline_version===inputs.baseline?.reference_version,'EMS 比较基线已变化，请重新生成计划');
+ return reference;
+}
 function mapPlan(record,request,station,date,settings,controls,emsBaseline){
  const c=record?.daily_comparison,start=Date.parse(date+'T00:00:00+08:00');
  assert(record?.station_id===station&&request?.station_id===station,'计划电站不匹配');
@@ -213,7 +220,8 @@ function mapPlan(record,request,station,date,settings,controls,emsBaseline){
  assert(['ems','optimized'].includes(c.status),'暂无可用全天比较结果');
  assert(c.date===date&&Date.parse(c.start_at)===start&&Date.parse(c.end_at)===start+86400000&&Date.parse(request.plan_start_at)===start,'计划日期不匹配，请重新生成当天计划');
  assert(record.input_summary?.configuration_version===settings.version&&c.controls_version===controls.version&&request.source_versions?.controls===controls.version,'配置已变化，请重新生成计划');
- assert(c.baseline_policy_version==='ems-demand-soc-duration-v7-pv-export-idle','EMS 基线版本已变化，请重新生成');
+ assert(['ems-demand-soc-duration-v7-pv-export-idle','ems-demand-soc-duration-v8-reference-soc'].includes(c.baseline_policy_version)&&c.baseline_policy_version===request.source_versions?.baseline_policy&&c.baseline_policy_version===emsBaseline?.controller_version,'EMS 基线版本已变化，请重新生成');
+ if(controls.baseline_source==='fixed_configuration')assert(c.baseline_policy_version==='ems-demand-soc-duration-v8-reference-soc'&&request.source_versions?.ems_baseline===controls.baseline_version&&emsBaseline?.reference_version===controls.baseline_version,'EMS 比较基线已变化，请重新生成计划');
  const chosen=c.recommended,base=c.baseline;
  assert(validSeries(chosen?.plan,start)&&validSeries(base?.plan,start),'全天计划不完整或存在无效数值');
  const inputs=request.points;
@@ -272,7 +280,7 @@ function setLoading(visible){
  $('loading-message').textContent='正在读取电站数据，请稍候…';
  if(visible)loadingTimer=setTimeout(()=>{$('loading-message').textContent='数据读取较慢，仍在加载中…';},5000);
 }
-const viewKey=(station,date)=>'m4-view-v17:'+JSON.stringify([projectCacheKey(),viewCacheScope,date,station]);
+const viewKey=(station,date)=>'m4-view-v18:'+JSON.stringify([projectCacheKey(),viewCacheScope,date,station]);
 function rememberView(station,date){
  const snapshot={station,date,at:Date.now(),plan,title:header.textContent,message:$('decision-copy').textContent};
  viewCache.set(viewKey(station,date),snapshot);
@@ -332,13 +340,14 @@ async function loadCurrent(){
  const id=++generation,station=$('station').value,date=$('plan-date').value;let cacheable=false;clearTimeout(pollTimer);context=null;if(rollingAdvice?.station_id!==station||rollingAdvice?.result?.date!==date)rollingAdvice=null;if(rollingHistory?.station_id!==station||rollingHistory?.date!==date)rollingHistory=null;renderRollingAdvice();$('simulate').disabled=true;try{sessionStorage.setItem(selectedStationKey(),station);}catch{}const retained=plan?.station===station&&plan.date===date&&date===today();const restored=retained||restoreView(station,date);setLoading(!restored);if(!restored)clearPlan('正在读取当天数据','正在核对电价、预测与计划来源…');
  if(date!==today()){setLoading(false);clearPlan('请选择当天查看策略','当前接口仅提供当天计划；历史日期请在「调度记录」中筛选。');return;}
  try{
-  const [inputs,job,settings,controls]=await readCurrent(station,date);
+  const [inputs,job,settings,liveControls]=await readCurrent(station,date);
   if(id!==generation)return;validateJob(job,station);rollingAdvice=job.rolling||null;rollingHistory=job.rolling_history||null;renderRollingAdvice();
   autoPlanEnabled=job.automation?.enabled===true;
   $('auto-plan-status').textContent=autoPlanEnabled?'日计划 + 每15分钟滚动 · 未下发':'手动调试 · 未下发设备';
   $('auto-plan-status').title=autoPlanEnabled?'后台自动运行，页面关闭后仍继续；下一周期 '+timeText(job.automation.next_check_at):'当前后端未启用自动生成';
   assert(inputs.schema_version==='m4-daily-inputs-v1'&&inputs.date===date&&inputs.usage==='retrospective_comparison_only'&&inputs.dispatch_status==='not_dispatched'&&inputs.configuration_version===settings.version,'全天输入日期或配置不匹配');
-  context={station,date,inputs,settings,controls};latestJobs.set(station,job);cacheable=true;
+  const controls=inputs.can_compare?comparisonControls(inputs,liveControls,station):liveControls;
+  context={station,date,inputs,settings,controls,executionControls:liveControls};latestJobs.set(station,job);cacheable=true;
   if(job.status==='running'){if(plan?.station===station&&plan.date===date){badge.textContent='新计划计算中 · 保留上次计划';}else{clearPlan('计划计算中',job.message||'正在读取输入并计算…');}schedulePlanStatusPoll(station,date,id);return;}
   if(!inputs.can_compare){clearPlan('等待完整数据',inputs.checks?.filter(c=>c.status!=='ready').map(c=>c.detail).join('；')||'当天输入尚未通过校验。');return;}
   if(job.status==='failed')clearPlan('计划未生成',job.message||'请检查数据后重新生成');
