@@ -5,6 +5,7 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import Mock, patch
+from urllib.error import HTTPError
 from urllib.parse import urlsplit, parse_qs
 
 from m4.settings.ems_remaining_plan import EMSRemainingPlanAdapter
@@ -120,3 +121,15 @@ class TableWriterTests(unittest.TestCase):
                 self.assertEqual((row['type'],row['kw'],row['start_time'],row['end_time']),
                     (mode,cabinet_kw,'14:15:00','14:30:00'))
                 self.assertEqual(self.payload,original)
+
+    def test_http_failure_records_status_and_stage_without_secrets(self):
+        with tempfile.TemporaryDirectory() as root:
+            writer = self.prepare(root)
+            self.transport.open.side_effect = HTTPError('https://example.invalid/private',403,
+                'dummy-test-only',{},None)
+            result = writer.submit('station-2',self.payload,self.config,now=self.now)
+            self.assertEqual(result['http_status'],403)
+            self.assertEqual(result['failure_stage'],'http_request')
+            self.assertNotIn('dummy-test-only',json.dumps(result))
+            self.assertNotIn('example.invalid',json.dumps(result))
+            self.transport.open.assert_called_once()

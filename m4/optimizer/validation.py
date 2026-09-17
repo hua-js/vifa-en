@@ -34,13 +34,16 @@ def validate_candidate(
     terminal_reserve_start = None
     if peak_reserve is not None:
         if (any(point.tariff_period not in ('gu', 'ping', 'feng') for point in request.points)
-                or not any(point.tariff_period == 'feng' for point in request.points)):
+                or (not request.is_remaining_day and not any(point.tariff_period == 'feng' for point in request.points))):
             raise ResultValidationError('peak reserve policy requires known tariffs and a peak period')
         if not constraints.preferred_soc_min_pct <= peak_reserve.terminal_soc_min_pct <= constraints.soc_max_pct:
             raise ResultValidationError('peak reserve terminal SOC floor outside allowed bounds')
         if terminal_soc_target_pct is not None and peak_reserve.terminal_soc_min_pct < terminal_soc_target_pct:
             raise ResultValidationError('peak reserve terminal SOC floor below baseline target')
         if peak_reserve.version in ('peak-reserve-v2', 'peak-reserve-v3'):
+            # With no future peak, the whole remaining tail follows the last peak.
+            if request.is_remaining_day:
+                terminal_reserve_start = 0
             # Independently identify the beginning of the last peak block.
             for index, source in enumerate(request.points):
                 if source.tariff_period == 'feng' and (

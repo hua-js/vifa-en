@@ -84,7 +84,7 @@ def build_model(request: OptimizationRequest, *, terminal_soc_target_pct: float 
             raise ValueError('peak reserve policy requires known tariff periods')
         first_peak = next((t for t, point in enumerate(request.points)
                            if point.tariff_period == 'feng'), None)
-        if first_peak is None:
+        if first_peak is None and not request.is_remaining_day:
             raise ValueError('peak reserve policy requires at least one peak period')
     surplus = {t: max(p.pv_forecast_kw - p.load_forecast_kw, 0.0)
                for t, p in enumerate(request.points)}
@@ -148,14 +148,19 @@ def build_model(request: OptimizationRequest, *, terminal_soc_target_pct: float 
                                    bounds=lambda m, t: (0, 1 if surplus[t] > 0 else 0))
     if peak_reserve is not None:
         model.peak_reserve_energy_shortfall = pyo.Var(domain=pyo.NonNegativeReals)
-        model.peak_reserve_preparation = pyo.Constraint(expr=
-            model.peak_reserve_energy_shortfall + model.energy[first_peak]
-            >= capacity * constraints.preferred_soc_max_pct / 100.0)
+        if first_peak is None:
+            # A remaining-day tail can have no peak left to prepare for.
+            model.peak_reserve_preparation = pyo.Constraint(
+                expr=model.peak_reserve_energy_shortfall == 0.0)
+        else:
+            model.peak_reserve_preparation = pyo.Constraint(expr=
+                model.peak_reserve_energy_shortfall + model.energy[first_peak]
+                >= capacity * constraints.preferred_soc_max_pct / 100.0)
         if peak_reserve.version in ('peak-reserve-v2', 'peak-reserve-v3'):
             # Preserve the terminal reserve from the final contiguous peak block,
             # including its starting energy state and every later state.
-            last_peak_start = max(t for t, point in enumerate(request.points)
-                                  if point.tariff_period == 'feng')
+            last_peak_start = max((t for t, point in enumerate(request.points)
+                                  if point.tariff_period == 'feng'), default=0)
             while last_peak_start > 0 and request.points[last_peak_start - 1].tariff_period == 'feng':
                 last_peak_start -= 1
             model.terminal_reserve_states = pyo.RangeSet(last_peak_start, horizon)

@@ -7,6 +7,7 @@ from datetime import datetime
 import json
 import os
 from pathlib import Path
+from urllib.error import HTTPError
 from urllib.parse import urlencode
 from urllib.request import Request, build_opener
 
@@ -74,6 +75,7 @@ class EMSTableWriter:
                 os.fsync(output.fileno())
             temporary.replace(journal)
 
+        phase = 'journal'
         try:
             save()  # durable intent before the first POST
             # Only for inhibited EMS commissioning. Live use requires atomic activation.
@@ -81,6 +83,7 @@ class EMSTableWriter:
                 for operation in prepared['operations'][action]:
                     if (now or datetime.now(ZONE)) >= _stamp(prepared['effective_at']):
                         raise ModelUpdateError('已错过计划表写入窗口。')
+                    phase = 'read_before_write'
                     before = self.adapter.reader._read_table('t_model')
                     identifier = operation['query'].get('filterByTk')
                     if action != 'create':
@@ -100,7 +103,10 @@ class EMSTableWriter:
                     outcome['pending_operation'] = dict(action=action, request=operation)
                     outcome['network_write_performed'] = True
                     save()
+                    phase = 'http_request'
                     with self.opener.open(command, timeout=8) as response:
+                        outcome['http_status'] = response.status
+                        phase = 'http_response'
                         raw = response.read(2*1024*1024+1)
                         if response.status != 200 or len(raw) > 2*1024*1024:
                             raise ModelUpdateError('计划表响应未确认。')
@@ -111,6 +117,7 @@ class EMSTableWriter:
                         identifier = (result.get('data') or {}).get('id')
                         if type(identifier) is not int or identifier <= 0 or any(row.get('id') == identifier for row in before):
                             raise ModelUpdateError('新增计划记录未确认。')
+                    phase = 'readback'
                     after = self.adapter.reader._read_table('t_model')
                     matches = [row for row in after if row.get('id') == identifier]
                     if action == 'destroy':
@@ -123,15 +130,25 @@ class EMSTableWriter:
                     outcome['pending_operation'] = None
                     outcome['completed_operations'] += 1
                     save()
+            phase = 'final_readback'
             final = self.adapter.preview(station, payload, configuration, now=now, fixed_cabinet_power=True)
             if any(final['operations'].values()):
                 raise ModelUpdateError('计划表最终回读不一致。')
             outcome['status'] = 'plan_table_readback_verified'
             save()
             hold.unlink()
-        except Exception:
-            # Hold survives timeout/crash; no blind retries or credential-bearing errors.
-            outcome['reason'] = '计划表写入未完全确认，暂停后续写入，需核对记录。'
+        except Exception as error:
+            # Classify failures without exposing response bodies, URLs or credentials.
+            outcome['failure_stage'] = phase
+            outcome['error_type'] = type(error).__name__
+            if isinstance(error, HTTPError):
+                outcome['http_status'] = error.code
+                outcome['reason'] = '计划表接口返回 HTTP '+str(error.code)+'，写入未确认。'
+            elif isinstance(error, ModelUpdateError):
+                outcome['reason'] = str(error)
+            else:
+                outcome['reason'] = '计划表写入未确认（'+phase+' / '+type(error).__name__+'）。'
+
             try:
                 save()
             except OSError:

@@ -108,9 +108,15 @@ class OptimizationRequest(StrictModel):
             output.pop("peak_reserve_policy", None)
         return output
 
+    @property
+    def is_remaining_day(self) -> bool:
+        return self.source_versions.get('planning_basis') in (
+            'remaining-day-v1', 'remaining-day-pv-correction-v2',
+            'remaining-day-pv-correction-v3', 'remaining-day-fixed-baseline-v4')
+
     @model_validator(mode="after")
     def validate_cross_fields(self) -> "OptimizationRequest":
-        if self.source_versions.get('planning_basis') in ('remaining-day-v1', 'remaining-day-pv-correction-v2', 'remaining-day-pv-correction-v3', 'remaining-day-fixed-baseline-v4'):
+        if self.is_remaining_day:
             start = self.plan_start_at
             end = start + timedelta(minutes=15*self.horizon_points)
             if (start.utcoffset() != timedelta(hours=8) or start.minute % 15
@@ -164,7 +170,7 @@ class OptimizationRequest(StrictModel):
         if self.peak_reserve_policy is not None:
             if any(point.tariff_period is None for point in self.points):
                 raise ValueError("peak reserve policy requires known tariff periods")
-            if not any(point.tariff_period == "feng" for point in self.points):
+            if not any(point.tariff_period == "feng" for point in self.points) and not self.is_remaining_day:
                 raise ValueError("peak reserve policy requires at least one peak period")
         required_objectives = {
             "demand_peak",
