@@ -1,13 +1,17 @@
 """Regression coverage for JSON inputs crossing the rolling request boundary."""
 from datetime import timedelta
 from types import SimpleNamespace
+import json
+from pathlib import Path
+import tempfile
 import unittest
 from unittest.mock import patch
 
 from pydantic import ValidationError
 
-from m4.settings.rolling_plans import prepare_remaining_request
+from m4.settings.rolling_plans import prepare_remaining_request, RollingPlanService
 from m4.tests.m4_optimizer_test_support import make_request
+from m4.settings.pv_correction import correct_forecast
 
 
 class RollingRequestTests(unittest.TestCase):
@@ -51,3 +55,34 @@ class RollingRequestTests(unittest.TestCase):
         self.inputs['request']['points'][0]['timestamp'] = 'invalid'
         with self.assertRaises(ValidationError):
             self.prepare()
+
+    def test_pv_correction_applies_to_both_comparison_inputs_without_mutation(self):
+        history = [dict(timestamp=self.now.replace(minute=0)-timedelta(minutes=15*i),
+            forecast_kw=20., actual_kw=10., valid_minutes=15) for i in range(1, 5)]
+        future = [dict(timestamp=p.timestamp, forecast_kw=p.pv_forecast_kw)
+            for p in self.base.points if p.timestamp > self.now]
+        correction = correct_forecast(history, future, self.now)
+        correction.update(station_id='station-1', source_version='pv-test', version='correction-test')
+        self.inputs['sources'].update(pv=dict(version='pv-test'), pv_correction=correction)
+        request, baseline, _, _, _ = self.prepare()
+        self.assertEqual(request.points[0].pv_forecast_kw, 10.)
+        self.assertEqual(request.source_versions['pv_correction'], 'correction-test')
+        self.assertEqual(self.inputs['request'], self.base.model_dump(mode='json'))
+        # EMS and optimizer use the same corrected net load (idle EMS at noon).
+        self.assertAlmostEqual(baseline[0].grid_import_kw, 90.)
+        correction['points'][0]['solver_kw'] = 25.
+        with self.assertRaises(ValueError): self.prepare()
+
+    def test_unreadable_optional_pv_measurements_keep_original_forecast(self):
+        self.inputs['sources']['pv_correction'] = dict(status='read_failed')
+        request, _, _, _, _ = self.prepare()
+        self.assertEqual(request.points[0].pv_forecast_kw, 20.)
+
+    def test_old_policy_becomes_stale_without_breaking_daily_read(self):
+        with tempfile.TemporaryDirectory() as directory:
+            daily = SimpleNamespace(root=Path(directory), _path=lambda station: None)
+            service = RollingPlanService(daily)
+            service.root.mkdir()
+            (service.root/'station-1.json').write_text(json.dumps(dict(station_id='station-1',
+                policy_version='remaining-day-v1', status='completed')))
+            self.assertEqual(service.latest('station-1')['status'], 'stale')

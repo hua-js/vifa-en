@@ -110,7 +110,7 @@ class OptimizationRequest(StrictModel):
 
     @model_validator(mode="after")
     def validate_cross_fields(self) -> "OptimizationRequest":
-        if self.source_versions.get('planning_basis') == 'remaining-day-v1':
+        if self.source_versions.get('planning_basis') in ('remaining-day-v1', 'remaining-day-pv-correction-v2', 'remaining-day-pv-correction-v3'):
             start = self.plan_start_at
             end = start + timedelta(minutes=15*self.horizon_points)
             if (start.utcoffset() != timedelta(hours=8) or start.minute % 15

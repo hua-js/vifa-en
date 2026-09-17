@@ -15,9 +15,10 @@ from m4.optimizer.validation import validate_candidate
 from .ems_simulation import simulate_ems_day
 from .load_accuracy import require_gate
 from .daily_comparison import REVENUE_GATE_VERSION, MIN_NET_SAVINGS_YUAN
+from .pv_correction import read_correction, POLICY as PV_CORRECTION_POLICY
 
 ZONE = ZoneInfo('Asia/Shanghai')
-POLICY = 'remaining-day-v1'
+POLICY = 'remaining-day-pv-correction-v3'
 
 
 def prepare_remaining_request(configuration, inputs, now):
@@ -64,6 +65,24 @@ def prepare_remaining_request(configuration, inputs, now):
     points = [p for p in base.points if p.timestamp >= start]
     if not points or points[0].timestamp != start:
         raise ValueError('后续预测时段不完整，暂停滚动建议。')
+    correction = source.get('pv_correction')
+    if correction and correction.get('status') in ('applied', 'unchanged', 'unavailable'):
+        if (correction.get('station_id') != station
+                or correction.get('source_version') != source['pv']['version']
+                or correction.get('policy') != PV_CORRECTION_POLICY
+                or not 0 <= (now-datetime.fromisoformat(correction['as_of'])).total_seconds() <= 60):
+            raise ValueError('光伏校正来源已变化，暂停滚动建议。')
+        by_time = {datetime.fromisoformat(p['timestamp']): p for p in correction['points']}
+        adjusted = []
+        for point in points:
+            value = by_time.get(point.timestamp)
+            if (value is None or value['original_kw'] != point.pv_forecast_kw
+                    or type(value['solver_kw']) not in (float, int)
+                    or not math.isfinite(value['solver_kw'])
+                    or not 0 <= value['solver_kw'] <= point.pv_forecast_kw):
+                raise ValueError('光伏校正时段无效，暂停滚动建议。')
+            adjusted.append(point.model_copy(update={'pv_forecast_kw': value['solver_kw']}))
+        points = adjusted
     replay, simulation = simulate_ems_day(cap, base.constraints, points,
         inputs['baseline']['schedule'], pv_dispatch_policy=base.pv_dispatch_policy, remaining_day=True)
     terminal = replay[-1].expected_soc_pct
@@ -78,6 +97,8 @@ def prepare_remaining_request(configuration, inputs, now):
         raw['peak_reserve_policy'] = policy.model_dump(mode='json')
     raw['source_versions'].update(planning_basis=POLICY, capability=soc['observed_at'],
         terminal_target=format(terminal, '.17g'))
+    if correction:
+        raw['source_versions']['pv_correction'] = correction.get('version', PV_CORRECTION_POLICY+'-unavailable')
     request = OptimizationRequest.model_validate_json(json.dumps(raw))
     return request, replay, simulation, dict(observed_at=soc['observed_at'],
         measured_soc_pct=measured_soc, power_observed_at=power['observed_at'],
@@ -103,8 +124,11 @@ class RollingPlanService:
             result = json.loads(path.read_text())
         if result is None:
             return dict(station_id=station, status='empty', result=None)
-        if result.get('station_id') != station or result.get('policy_version') != POLICY:
+        if result.get('station_id') != station:
             raise ValueError('invalid rolling result')
+        if result.get('policy_version') != POLICY:
+            return dict(station_id=station, status='stale', result=None,
+                message='滚动策略已更新，等待新的建议。')
         now = datetime.now(ZONE)
         if result['status'] == 'completed':
             payload = result['result']
@@ -163,6 +187,13 @@ class RollingPlanService:
             if daily['request']['source_versions']['configuration'] != configuration.version:
                 raise ValueError('参数已变化，请先重新生成日计划。')
             inputs = self.daily.inputs.fetch(configuration, now.date())
+            try:
+                inputs['sources']['pv_correction'] = read_correction(
+                    self.daily.inputs.live.client, station, inputs, datetime.now(ZONE))
+            except Exception:
+                # Optional calibration never turns unreadable telemetry into zero PV.
+                inputs['sources']['pv_correction'] = dict(policy=PV_CORRECTION_POLICY,
+                    status='read_failed', points=[], reason='近期光伏实测不可用，沿用原预测。')
             # Use the post-fetch clock for measurement freshness and effective time.
             now = datetime.now(ZONE)
             if now.date().isoformat() != day:
@@ -219,6 +250,7 @@ class RollingPlanService:
                 metrics=metrics.model_dump(mode='json'), baseline_metrics=base_metrics.model_dump(mode='json'),
                 candidates=[c.model_dump(mode='json') for c in candidates],
                 actual_load=inputs['sources'].get('actual_load'),
+                pv_correction=inputs['sources'].get('pv_correction'),
                 dispatch_status='not_dispatched', usage='remaining_day_advice_only')
             job = dict(station_id=station, run_id=run_id, status='completed', result=payload,
                 policy_version=POLICY, message=reason)

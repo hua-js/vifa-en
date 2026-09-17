@@ -5,7 +5,7 @@
 ## 每日 06:00 自动预测
 
 - `PV_DAILY_SCHEDULE_ENABLED=1` 开启，`0` 关闭；两份 Compose 已设为开启。程序默认关闭，只有 `pv` 服务构建管理器时启用，M3 worker/dashboard 不受影响。
-- 固定 `Asia/Shanghai`，服务每15秒检查，在06:00这一分钟内提交一次 forecast，自动更新天气并生成未来24小时96点。复用现有训练与发布校验，保留手动入口。
+- 固定 `Asia/Shanghai`，服务每15秒检查，在06:00这一分钟内提交一次 forecast，生成未来24小时96点。2026-09-17本地版本先增量更新训练实测与历史天气，再读取预报并拟合；已完成本地专项与只读刷新验证，尚未部署。详见[持续训练数据更新](../光伏运行预测说明.md)。
 - 与手动任务共用互斥锁，已有任务不被替换；若整个06:00分钟均忙碌或服务离线，当天跳过，不在稍后启动时补跑。失败或中断不自动重新提交，可人工查看状态后手动生成。
 - `PV_MANUAL_STATE_DIR/daily-schedule.json` 持久保存当天提交意图及 job_id，在提交前先写意图，重启不会重复提交；不确定提交状态须人工核对。具体结果仍见 `latest.json` 和 `jobs/<job_id>/job.json`。
 - 生效需要重新构建并部署包含新代码的镜像。`compose.registry.yaml` 已固定新版远端镜像摘要；仅修改环境变量不会给旧镜像增加定时能力。
@@ -16,7 +16,7 @@
 | Flow 按钮/接口 | 行为 |
 |---|---|
 | 1 · 手动采集并保存天气 | 从 Open-Meteo Forecast API 获取 current 和 50 个小时标签，通过 NocoBase 保存天气并回读核验 |
-| 2 · 手动生成一次预测 | 自动获取一批新天气，使用已验证训练快照拟合 WeatherRidge，生成未来24小时96点，写预测批次与结果并核验 |
+| 2 · 手动生成一次预测 | 增量更新训练源，再获取新天气、拟合 WeatherRidge，生成未来24小时96点，写预测批次与结果并核验 |
 | 查看最近一次手动任务 | 查看 queued / running / completed / failed / interrupted；提交返回202仅代表已接收 |
 | 3 · 查询最新已完成预测 | 返回最新完整 completed 批次、96点、积分电量、峰值、训练截止时间和新鲜度 |
 | GET `/pv-forecast-api/ES02/latest` | 对外只读查询；须携带 EMS 当前用户的 `Authorization: Bearer …`，不接受查询参数 |
@@ -51,7 +51,7 @@ install -o root -g root -m 600 /etc/vifa-m3/raw-source.token /userdata/holo/pyfi
 
 Python 接受现有 `0640` 和原 `0600` 文件（及各自去掉写权限的模式），校验文件属主/组与进程的访问范围，拒绝其他用户可读或组可写的文件。无需修改原 M3 文件权限。
 
-NocoBase Key 运行时需要 `energy_weather_points:list/create`、`energy_pv_forecast_runs:list/create/update`、`energy_pv_forecast_points:list/create`，不再调用 `collections:get`。运行前通过业务list请求检查字段可访问性；空表允许首次写入，写入响应、最终回读和哈希仍必须完整匹配。字段物理类型/索引/约束的管理元数据检查留在独立建表部署工具，不宣称运行时仍验证这些元数据。本版运行不查询实测表，也不创建表、修改角色或删除记录。
+NocoBase Key 运行时需要 `energy_weather_points:list/create`、`energy_pv_forecast_runs:list/create/update`、`energy_pv_forecast_points:list/create`；持续更新版另需 `t_es_data:list`读取光伏实测，不创建表、修改角色或删除记录。历史天气仅保留本地快照，不新增入库权限。`PV_MANUAL_STATE_DIR/training-state.json`及其引用的jobs训练目录必须持久保留；状态损坏或其引用目录缺失时报错；新链已有发布工件而状态丢失也阻断，旧版本首次升级允许使用种子。仍不调用`collections:get`，发布后逐字段回读核验。
 
 ## 每日06:00版本的镜像部署（已推送CCR）
 

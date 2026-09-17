@@ -89,7 +89,8 @@ def build_manager():
 
     def operate(kind, directory):
         subprocess.run([sys.executable, str(project/'m3/scripts/run-pv-manual.py'), '--operation', kind,
-            '--job-dir', str(directory), '--training-source', str(training)], cwd=project,
+            '--job-dir', str(directory), '--training-source', str(training),
+            '--training-state', str(root/'training-state.json')], cwd=project,
             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             check=True, timeout=600)
         return json.loads((directory/'result.json').read_text())

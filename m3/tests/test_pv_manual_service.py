@@ -102,7 +102,7 @@ class ManualPipelineTests(unittest.TestCase):
 
     def test_invalid_training_prevents_network_and_database_changes(self):
         module=load('run-pv-manual.py')
-        with patch.object(module.generator,'load_inputs',side_effect=ValueError('bad SHA')), \
+        with patch.object(module.refresh,'load_source',side_effect=ValueError('bad SHA')), \
              patch.object(module.collector,'fetch') as fetch:
             with self.assertRaises(ValueError): module.perform('forecast',Path('/unused'),Path('/invalid'))
             fetch.assert_not_called()
@@ -111,7 +111,7 @@ class ManualPipelineTests(unittest.TestCase):
         module=load('run-pv-manual.py')
         with tempfile.TemporaryDirectory() as temp:
             def fetch(path): path.mkdir(); return {},b'{}'
-            with patch.object(module.generator,'load_inputs'), \
+            with patch.object(module,'refresh_training',return_value=Path(temp)/'training'), \
                  patch.object(module.collector,'fetch',side_effect=fetch), \
                  patch.object(module.collector,'prepare_snapshot',return_value=([{}],{'source_batch_id':'batch'})), \
                  patch.object(module.collector.history,'execute',side_effect=ValueError('unverified')), \

@@ -152,22 +152,28 @@ def original_inputs():
     return [json.loads(line) for line in pv.read_text().splitlines() if line.strip()],weather
 
 
-def refresh(archive_directory,output,previous=None):
+def refresh(archive_directory,output,previous=None, *, require_import=True):
     if output.exists():
         raise ValueError('training output already exists')
     if previous:
         prior=load_source(previous);old=prior['raw']
-        base_weather=[r for r in prior['weather'] if pv_operational.timestamp(r['weather_time'])<pd.Timestamp('2026-09-01',tz='Asia/Shanghai')]
+        base_weather=prior['weather']
     else:
         old,base_weather=original_inputs()
     raw=(archive_directory/'response.json').read_bytes()
     envelope=archive.shared.load_json((archive_directory/'envelope.json').read_bytes())
     recent,summary=archive.prepare_snapshot(envelope,raw)
-    if envelope['parameters']['start_date']!='2026-09-01':
-        raise ValueError('refresh requires September 1 onward archive batch')
-    verified=json.loads((archive_directory/'import_verification.json').read_text())
-    if verified['status']!='completed' or verified['source_batch_id']!=summary['source_batch_id']:
-        raise ValueError('archive batch lacks successful import verification')
+    if require_import:
+        verified=json.loads((archive_directory/'import_verification.json').read_text())
+        if verified['status']!='completed' or verified['source_batch_id']!=summary['source_batch_id']:
+            raise ValueError('archive batch lacks successful import verification')
+    # Reanalysis may arrive late. Keep previously valid hours when the new
+    # response has a gap, while replacing revised valid hours by timestamp.
+    weather_by_time={pv_operational.timestamp(r['weather_time']):r for r in base_weather}
+    for row in recent:
+        at=pv_operational.timestamp(row['weather_time'])
+        if row['quality_status']=='valid' or at not in weather_by_time:
+            weather_by_time[at]=row
     until=pd.Timestamp.now(tz='Asia/Shanghai').floor('ms')
     last=max(pv_operational.timestamp(r['timestamp']) for r in old)
     since=last-pd.Timedelta(hours=48)
@@ -177,9 +183,12 @@ def refresh(archive_directory,output,previous=None):
         'pv_query_since':since.isoformat(),'pv_query_until':until.isoformat(),'delta_rows':len(delta),
         'history_policy':'preserve_earlier_snapshot_replace_from_previous_latest_minus_48h',
         'archive_directory':str(archive_directory.resolve()),'archive_response_sha256':sha(archive_directory/'response.json'),
-        'previous_source':str(previous.resolve()) if previous else 'first_verified_pv_snapshot'}
-    save_source(output,merged,[*base_weather,*recent],provenance)
+        'previous_source':str(previous.resolve()) if previous else 'first_verified_pv_snapshot',
+        'archive_publication':'verified' if require_import else 'local_snapshot_only'}
+    save_source(output,merged,[weather_by_time[t] for t in sorted(weather_by_time)],provenance)
     data=load_source(output)
+    if data['training'].empty or (previous and data['training'].index.max()<prior['training'].index.max()):
+        raise ValueError('refreshed training is empty or regresses')
     result={'status':'completed','training_source':str(output.resolve()),'pv_rows':len(merged),'delta_rows':len(delta),
         'training_rows':len(data['training']),'training_end':(data['training'].index.max()+pd.Timedelta(minutes=15)).isoformat(),
         'weather_batches':data['weather_batches']}
