@@ -13,6 +13,8 @@ LOG = logging.getLogger(__name__)
 
 class AutomaticPlans:
     interval_seconds = 900
+    retry_seconds = 60
+    max_attempts = 3
 
     def __init__(self, service, root, *, enabled=True):
         self.service, self.root, self.enabled = service, Path(root), enabled
@@ -40,16 +42,34 @@ class AutomaticPlans:
                 LOG.exception('Cannot read automatic plan state; skipping this check')
                 return
             for station in tuple(s.id for s in get_project().stations):
-                if state.get(station) == window or station in self.service.running:
+                claim = state.get(station)
+                # Accept previous integer claims without replaying that window.
+                if claim == window or station in self.service.running:
                     continue
+                same_window = isinstance(claim, dict) and claim.get('window') == window
+                if same_window:
+                    if claim.get('attempts', self.max_attempts) >= self.max_attempts or now < claim['retry_at']:
+                        continue
+                    if not claim.get('start_failed'):
+                        try:
+                            latest = self.service.latest(station)
+                        except Exception:
+                            LOG.exception('Cannot read automatic plan status for %s', station)
+                            continue
+                        if not isinstance(latest, dict) or latest.get('status') not in ('failed', 'stale', 'empty'):
+                            continue
                 # Persist the claim under the cross-process lock before dispatch.
-                state[station] = window
+                state[station] = dict(window=window,
+                    attempts=claim['attempts']+1 if same_window else 1, retry_at=now+self.retry_seconds)
                 temporary = path.with_suffix('.tmp')
                 temporary.write_text(json.dumps(state))
                 temporary.replace(path)
                 try:
                     self.service.start(station)
                 except Exception:
+                    state[station]['start_failed'] = True
+                    temporary.write_text(json.dumps(state))
+                    temporary.replace(path)
                     LOG.exception('Automatic plan start failed for %s', station)
 
     def start(self):

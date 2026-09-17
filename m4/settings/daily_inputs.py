@@ -19,6 +19,7 @@ from .forecast_source import load_forecast, _time
 from .live_inputs import _complete, _complete_tariff_periods, _display_number, _display_time
 from .runtime_config import runtime_parameters
 from .roster import STATION_CABINETS
+from .frozen_baseline import planning_controls
 
 
 SHANGHAI = ZoneInfo('Asia/Shanghai')
@@ -136,7 +137,9 @@ class DailyInputService:
                 plan_start_at=start, now=now, require_full_day=True),
             'pv': lambda: self._pv(station_id, start, now),
             'tariff': lambda: self.live._tariff(start),
-            'controls': lambda: self.live._controls(station_id),
+            # Daily/rolling bind their fixed reference after the read. Current
+            # execution schedule readiness is not a prerequisite for that path.
+            'controls': lambda: self.live._controls(station_id, validate_schedule=False),
             'initial_soc': lambda: self._initial_soc(station_id, start),
             'current_soc': lambda: self._current_soc(station_id, now),
             'current_power': lambda: self._current_power(station_id),
@@ -160,6 +163,9 @@ class DailyInputService:
                 except Exception:
                     sources[key] = dict(status='error', issues=[labels.get(key, '当前实测数据')+'读取或校验失败，请重新读取。'])
         load = sources.get('load', {})
+        sources['execution_controls'] = sources['controls']
+        if sources['controls'].get('status') == 'ready':
+            sources['controls'] = planning_controls(sources['controls'])
         actual_values = load.get('actual_values', [None] * 96)
         sources['actual_load'] = dict(station_id=station_id,
             source='M3 station_total_load', run_id=load.get('run_id'),

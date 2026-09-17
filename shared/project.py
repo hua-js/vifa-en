@@ -71,6 +71,7 @@ class Station:
     policy: str
     grid_import_limit_kw: float | None
     alarm_advisory_cabinets: tuple[str, ...]
+    ems_baseline: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -132,7 +133,10 @@ def load_project(path):
     # Enforce cross-station ownership within each source namespace, not globally.
     ems_devices, inverters = set(), set()
     for item in data['stations']:
+        item = {'ems_baseline': None, **item}
         _fields(item, set(Station.__dataclass_fields__), 'station')
+        if item['ems_baseline'] is not None and type(item['ems_baseline']) is not dict:
+            raise ValueError('Invalid EMS baseline configuration')
         sid, code = _identifier(item['id']), _identifier(item['source_code'])
         if sid in ids or code in codes:
             raise ValueError('Duplicate station id or source_code')
@@ -165,7 +169,8 @@ def load_project(path):
         ems_devices.update(owned)
         inverters.update(solar)
         stations.append(Station(sid, code, item['name'], cabinets, item['has_pv'], meter,
-                                solar, item['policy'], float(limit) if limit is not None else None, advisory))
+                                solar, item['policy'], float(limit) if limit is not None else None, advisory,
+                                item['ems_baseline']))
     fingerprint = hashlib.sha256(json.dumps(data, sort_keys=True, ensure_ascii=False, allow_nan=False).encode()).hexdigest()
     return Project(project_id, site_id, data['timezone'], tuple(stations), sources, dict(data['m1']), fingerprint)
 

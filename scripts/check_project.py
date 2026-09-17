@@ -19,6 +19,9 @@ def main():
     try:
         from shared.project import get_project
         metadata = get_project().public_metadata()
+        from m4.settings.frozen_baseline import baseline_configuration
+        for station in get_project().stations:
+            baseline_configuration(station.id)
     except (OSError, ValueError, TypeError, KeyError):
         # Configuration errors must not leak private URLs or accidental credentials.
         print('项目配置校验失败，请检查版本、必填项、站点/设备归属及数据源格式。', file=sys.stderr)

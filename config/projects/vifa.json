@@ -32,7 +32,49 @@
       "grid_import_limit_kw": 550.0,
       "alarm_advisory_cabinets": [
         "emu11"
-      ]
+      ],
+      "ems_baseline": {
+        "version": "confirmed-20260917-v1",
+        "confirmed_at": "2026-09-17T06:54:34.093186+00:00",
+        "power_scope": "cabinet",
+        "soc_limits_source": "M4 settings station-1-settings-v6-3288a00996084602/service/f8b8f742a5d4818e",
+        "soc_min_pct": 1,
+        "soc_max_pct": 99,
+        "schedule": [
+          {
+            "id": 13,
+            "start_time": "00:00:00",
+            "end_time": "08:00:00",
+            "mode": "charge",
+            "power_kw": 100.0,
+            "repeat": "daily"
+          },
+          {
+            "id": 14,
+            "start_time": "08:00:00",
+            "end_time": "12:00:00",
+            "mode": "discharge",
+            "power_kw": 60.0,
+            "repeat": "daily"
+          },
+          {
+            "id": 15,
+            "start_time": "14:00:00",
+            "end_time": "18:00:00",
+            "mode": "discharge",
+            "power_kw": 60.0,
+            "repeat": "daily"
+          },
+          {
+            "id": 16,
+            "start_time": "19:00:00",
+            "end_time": "21:00:00",
+            "mode": "discharge",
+            "power_kw": 60.0,
+            "repeat": "daily"
+          }
+        ]
+      }
     },
     {
       "id": "station-2",
@@ -61,7 +103,49 @@
       ],
       "policy": "peak_reserve",
       "grid_import_limit_kw": null,
-      "alarm_advisory_cabinets": []
+      "alarm_advisory_cabinets": [],
+      "ems_baseline": {
+        "version": "confirmed-20260917-v1",
+        "confirmed_at": "2026-09-17T06:54:34.336660+00:00",
+        "power_scope": "cabinet",
+        "soc_limits_source": "M4 settings station-2-settings-v1-d08d42250761c517/service/2d5b18941cd7e111",
+        "soc_min_pct": 1,
+        "soc_max_pct": 98,
+        "schedule": [
+          {
+            "id": 7,
+            "start_time": "00:00:00",
+            "end_time": "08:00:00",
+            "mode": "charge",
+            "power_kw": 100.0,
+            "repeat": "daily"
+          },
+          {
+            "id": 8,
+            "start_time": "08:00:00",
+            "end_time": "12:00:00",
+            "mode": "discharge",
+            "power_kw": 90.0,
+            "repeat": "daily"
+          },
+          {
+            "id": 9,
+            "start_time": "14:00:00",
+            "end_time": "18:00:00",
+            "mode": "discharge",
+            "power_kw": 90.0,
+            "repeat": "daily"
+          },
+          {
+            "id": 10,
+            "start_time": "19:00:00",
+            "end_time": "21:00:00",
+            "mode": "discharge",
+            "power_kw": 90.0,
+            "repeat": "daily"
+          }
+        ]
+      }
     }
   ]
 }

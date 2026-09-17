@@ -10,6 +10,7 @@ from uuid import uuid4
 from m4.optimizer.contracts import OptimizationRequest, CandidateResult
 from m4.optimizer.service import M4Optimizer
 from .daily_baseline import prepare_ems_day
+from .frozen_baseline import planning_controls, baseline_version
 from .daily_comparison import compare_daily_plan, REVENUE_GATE_VERSION
 from .ems_simulation import EMS_BASELINE_POLICY
 from .forecast_source import LOAD_POLICY
@@ -45,6 +46,9 @@ class DailyPlanService:
             raw = json.loads(path.read_text())
         if raw['station_id'] != station or raw.get('status') != 'completed':
             raise ValueError('invalid saved daily result')
+        if raw.get('request', {}).get('source_versions', {}).get('ems_baseline') != baseline_version(station):
+            return dict(station_id=station, status='empty', result=None,
+                message='EMS 比较基线已更新，等待重新生成日计划。')
         if get_project().station(station).has_pv and raw.get('request', {}).get('source_versions', {}).get('pv_gap_policy') != DAILY_PV_POLICY:
             return dict(station_id=station, status='empty', result=None,
                 message='旧日计划的光伏预测不完整，请等待完整输入后重新生成。')
@@ -111,7 +115,7 @@ class DailyPlanService:
                 raise ValueError('计算期间参数已变化，请重新计算。')
             if not matches_current_daily_policy(station, request.model_dump(mode='json')):
                 raise ValueError('计算期间日优化策略已变化，请重新计算。')
-            controls = self.inputs.live._controls(station)
+            controls = planning_controls(self.inputs.live._controls(station, validate_schedule=False))
             if controls['version'] != request.source_versions['controls'] or datetime.now(SHANGHAI).date() != day:
                 raise ValueError('计算期间 EMS 原计划或日期变化，请重新计算。')
             finished = datetime.now(timezone.utc).isoformat()

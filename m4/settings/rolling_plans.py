@@ -16,16 +16,19 @@ from .ems_simulation import simulate_ems_day
 from .load_accuracy import require_gate
 from .daily_comparison import REVENUE_GATE_VERSION, MIN_NET_SAVINGS_YUAN
 from .pv_correction import read_correction, POLICY as PV_CORRECTION_POLICY
+from .frozen_baseline import planning_controls
 
 ZONE = ZoneInfo('Asia/Shanghai')
-POLICY = 'remaining-day-pv-correction-v3'
+POLICY = 'remaining-day-fixed-baseline-v4'
 
 
 def prepare_remaining_request(configuration, inputs, now):
     """Project a recent measurement to the next quarter; never use midnight SOC."""
     station = configuration.station_id
     if inputs.get('station_id') != station or not inputs.get('can_compare'):
-        raise ValueError('预测与配置尚未就绪，暂停滚动建议。')
+        details = [f"{c['label']}：{c['detail']}" for c in inputs.get('checks', [])
+                   if c.get('status') != 'ready' and c.get('label') and c.get('detail')]
+        raise ValueError('；'.join(details) if details else '预测与配置尚未就绪，暂停滚动建议。')
     source = inputs['sources']
     soc, power = source['current_soc'], source['current_power']
     max_age = min(configuration.parameters.max_input_age_seconds, 900)
@@ -176,6 +179,7 @@ class RollingPlanService:
         return deepcopy(job)
 
     def _run(self, station, run_id):
+        inputs = None
         try:
             now = datetime.now(ZONE)
             day = now.date().isoformat()
@@ -229,7 +233,7 @@ class RollingPlanService:
             metrics = calculate_metrics(request, points)
             current_configuration = self.daily.store.get(station)
             current_daily = self.daily.latest(station)
-            current_controls = self.daily.inputs.live._controls(station)
+            current_controls = planning_controls(self.daily.inputs.live._controls(station, validate_schedule=False))
             finished = datetime.now(ZONE)
             if (finished >= request.plan_start_at
                     or (finished-datetime.fromisoformat(anchor['observed_at'])).total_seconds() > min(configuration.parameters.max_input_age_seconds, 900)
@@ -256,7 +260,9 @@ class RollingPlanService:
                 policy_version=POLICY, message=reason)
         except Exception as error:
             job = dict(station_id=station, run_id=run_id, status='failed', result=None,
-                policy_version=POLICY, message=str(error) if isinstance(error, ValueError) else '滚动建议生成失败，等待更新。')
+                policy_version=POLICY, failed_at=datetime.now(ZONE).isoformat(),
+                input_checks=deepcopy(inputs.get('checks', [])) if inputs else [],
+                message=str(error) if isinstance(error, ValueError) else '滚动建议生成失败，等待更新。')
         try:
             self.root.mkdir(parents=True, exist_ok=True)
             archive = self.root / station
@@ -294,3 +300,9 @@ class PlanningCoordinator:
         if latest.get('status') != 'completed' or comparison.get('date') != datetime.now(ZONE).date().isoformat():
             return self.daily.start(station)
         return self.rolling.start(station)
+
+    def latest(self, station):
+        daily = self.daily.latest(station)
+        if daily.get('status') != 'completed':
+            return daily
+        return self.rolling.latest(station)

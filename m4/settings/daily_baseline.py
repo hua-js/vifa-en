@@ -83,6 +83,7 @@ def prepare_ems_day(configuration, bundle):
         source_versions={**{k: sources[k]['version'] for k in ('load', 'pv', 'tariff')},
             'load_policy': sources['load']['policy'], 'load_run_id': sources['load']['run_id'],
             'controls': control['version'], 'configuration': configuration.version,
+            **({'ems_baseline': control['baseline_version']} if control.get('baseline_version') else {}),
             'project_configuration': get_project().fingerprint,
             'capability': initial['version'], 'planning_basis': 'whole-station-retrospective-v1',
             **({'pv_gap_policy': DAILY_PV_POLICY,
@@ -94,6 +95,9 @@ def prepare_ems_day(configuration, bundle):
     baseline = dict(schema_version='m4-ems-daily-baseline-v1', station_id=configuration.station_id,
         basis='ems_rule_simulation', schedule=schedule, source_schedule=control['schedule'], source_power_scope=control['power_scope'], simulation=simulation, input_sha256=comparison_input_sha256(request),
         controls_version=control['version'], controller_version=EMS_BASELINE_POLICY,
+        reference_source=control.get('baseline_source', 'live_ems_schedule'),
+        reference_version=control.get('baseline_version'),
+        reference_configuration=control.get('baseline_configuration'),
         initial_state_version=initial['version'], initial_state_at=start.isoformat(),
         initial_soc_pct=initial['initial_soc_pct'], terminal_soc_pct=terminal,
         plan=[p.model_dump(mode='json') for p in plan])

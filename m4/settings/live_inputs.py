@@ -139,13 +139,14 @@ class LiveInputService:
                 sort='timestamp', page_size=2000, max_pages=100)
         return build_pv_reference(station_id, history, plan_start_at=plan_start, history_end_at=history_end)
 
-    def _controls(self, station_id):
+    def _controls(self, station_id, *, validate_schedule=True):
         result = self.control_reader.fetch(station_id)
         if (result.get('station_id') != station_id or result.get('status') != 'ready'
                 or not isinstance(result.get('version'), str) or not result['version'].strip()
                 or not _complete([result.get('demand', {}).get('need_kw')] * HORIZON)):
             raise ValueError('控制来源不完整或不属于本站')
-        cabinet_power_limits(result)
+        if validate_schedule:
+            cabinet_power_limits(result)
         return result
 
     def fetch(self, configuration: StationConfiguration, *, now: datetime | None = None) -> dict:

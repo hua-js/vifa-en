@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 from m4.optimizer.contracts import PlanPoint
 
 
-EMS_BASELINE_POLICY = 'ems-demand-soc-duration-v7-pv-export-idle'
+EMS_BASELINE_POLICY = 'ems-demand-soc-duration-v8-reference-soc'
 INTERVAL_HOURS = 0.25
 EPSILON = 1e-9
 
@@ -33,6 +33,17 @@ def simulate_ems_day(capability, constraints, points, schedule, *, pv_dispatch_p
         raise ValueError('未知光伏余电策略。')
     if (not points or len(points) > 96 or (not remaining_day and len(points) != 96)) or not schedule:
         raise ValueError('EMS 模拟需要完整96点输入及原时段配置。')
+    # A frozen reference's SOC policy also covers schedule gaps, where local
+    # demand/PV protection can still act. All rows carry the same reference.
+    reference_lower = schedule[0].get('soc_min_pct', constraints.soc_min_pct)
+    reference_upper = schedule[0].get('soc_max_pct', constraints.soc_max_pct)
+    if (any(type(v) not in (int, float) or not math.isfinite(v)
+            for v in (reference_lower, reference_upper))
+            or not 0 <= reference_lower < reference_upper <= 100
+            or any((row.get('soc_min_pct', constraints.soc_min_pct),
+                    row.get('soc_max_pct', constraints.soc_max_pct)) != (reference_lower, reference_upper)
+                   for row in schedule)):
+        raise ValueError('EMS 基线 SOC 范围无效或时段间不一致。')
     slots = [None]*96
     for item in schedule:
         a, b = _slot(item['start_time']), _slot(item['end_time'])
@@ -50,6 +61,10 @@ def simulate_ems_day(capability, constraints, points, schedule, *, pv_dispatch_p
     capacity = capability.energy_capacity_kwh
     lower = capacity*constraints.soc_min_pct/100
     upper = capacity*constraints.soc_max_pct/100
+    slot_lower = max(lower, capacity*reference_lower/100)
+    slot_upper = min(upper, capacity*reference_upper/100)
+    if slot_lower >= slot_upper:
+        raise ValueError('EMS 基线 SOC 与当前安全范围无交集。')
     energy = capacity*capability.initial_soc_pct/100
     if not lower-EPSILON <= energy <= upper+EPSILON:
         raise ValueError('零点 SOC 位于当前安全范围之外，请核对历史状态与参数。')
@@ -90,7 +105,7 @@ def simulate_ems_day(capability, constraints, points, schedule, *, pv_dispatch_p
             # No storage export revenue is modeled by the existing input contract.
             power = max(net_load, 0.0)
             reasons.append('load_limit')
-        headroom = max(upper-energy, 0.0) if mode == 'charge' else max(energy-lower, 0.0)
+        headroom = max(slot_upper-energy, 0.0) if mode == 'charge' else max(energy-slot_lower, 0.0)
         battery_rate = power*capability.charge_efficiency if mode == 'charge' else power/capability.discharge_efficiency
         active_hours = min(INTERVAL_HOURS, headroom/battery_rate) if power > EPSILON else 0.0
         average_kw = power*active_hours/INTERVAL_HOURS
@@ -99,7 +114,7 @@ def simulate_ems_day(capability, constraints, points, schedule, *, pv_dispatch_p
             reasons.append(reason)
             if active_hours > EPSILON:
                 events.append(dict(at=(point.timestamp+timedelta(hours=active_hours)).isoformat(),
-                    reason=reason, soc_pct=constraints.soc_max_pct if mode == 'charge' else constraints.soc_min_pct))
+                    reason=reason, soc_pct=(slot_upper if mode == 'charge' else slot_lower)/capacity*100))
         actual_mode = mode if average_kw > EPSILON else 'idle'
         if actual_mode == 'idle':
             average_kw, active_hours = 0.0, 0.0
