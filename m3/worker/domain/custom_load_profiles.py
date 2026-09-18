@@ -14,8 +14,10 @@ import numpy as np
 import pandas as pd
 
 from m3.worker.domain.custom_training_data import CustomTrainingDataset
+from m3.worker.domain.work_schedule import schedule_slot
 
 
+# Keep the existing page contract; the schedule has its own manifest version.
 LOAD_SELECTION_POLICY = "weekly_load_v2"
 MODEL_ORDER = (
     "WeeklyNaive",
@@ -136,15 +138,25 @@ def weekly_profile_values(
         else:
             values.append(float(median(lag_values)))
     if model_name == "WeeklyRegimeAdjusted" and values:
-        lower, low_ceiling, upper = np.percentile(values, (10, 40, 90))
-        separated = upper > 0 and (lower <= 0 or upper >= lower * 3)
-        recent_values = [
-            value
-            for timestamp, value in source_values.items()
-            if origin - timedelta(days=3) <= timestamp < origin
-        ]
-        low_values = [value for value in values if value <= low_ceiling]
-        if separated and recent_values and low_values:
+        for workday in (True, False):
+            indices = [
+                index for index in range(periods)
+                if schedule_slot(origin + index * interval)[0] == workday
+            ]
+            if not indices:
+                continue
+            group_values = [values[index] for index in indices]
+            lower, low_ceiling, upper = np.percentile(group_values, (10, 40, 90))
+            separated = upper > 0 and (lower <= 0 or upper >= lower * 3)
+            recent_values = [
+                value
+                for timestamp, value in source_values.items()
+                if origin - timedelta(days=3) <= timestamp < origin
+                and schedule_slot(timestamp)[0] == workday
+            ]
+            low_values = [value for value in group_values if value <= low_ceiling]
+            if not (separated and recent_values and low_values):
+                continue
             recent_ceiling = float(np.percentile(recent_values, 25))
             recent_low_values = [
                 value for value in recent_values if value <= recent_ceiling
@@ -153,10 +165,9 @@ def weekly_profile_values(
             recent_standby = float(median(recent_low_values))
             if base_standby > 0:
                 ratio = min(1.5, max(0.5, recent_standby / base_standby))
-                values = [
-                    value * ratio if value <= low_ceiling else value
-                    for value in values
-                ]
+                for index in indices:
+                    if values[index] <= low_ceiling:
+                        values[index] *= ratio
     return values
 
 

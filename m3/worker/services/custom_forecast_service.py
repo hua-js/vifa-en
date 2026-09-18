@@ -18,6 +18,7 @@ from m3.worker.custom_forecast_contracts import (
 )
 from m3.worker.domain.custom_forecasting import (
     CustomChampion,
+    SOC_SCHEDULE_POLICY,
     forecast_custom_series,
     interpolate_soc_forecast,
     seasonal_naive_champion,
@@ -28,6 +29,7 @@ from m3.worker.domain.custom_load_profiles import (
     LOAD_SELECTION_POLICY,
     LoadCandidateScore,
 )
+from m3.worker.domain.work_schedule import WORK_SCHEDULE_POLICY
 from m3.worker.domain.custom_training_data import (
     CustomWeekSummary,
     build_custom_training_dataset,
@@ -519,6 +521,8 @@ class CustomForecastService:
             }
             model_manifest = {
                 "selection_policy": LOAD_SELECTION_POLICY,
+                "work_schedule_policy": WORK_SCHEDULE_POLICY,
+                "soc_schedule_policy": SOC_SCHEDULE_POLICY,
                 "model_policy": run.config.model_policy,
                 "interval_seconds": run.config.interval_seconds,
                 "daily_season_length": run.config.daily_season_length,

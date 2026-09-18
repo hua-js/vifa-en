@@ -19,11 +19,17 @@ from m3.worker.domain.forecasting import (
 )
 from m3.worker.domain.training_data import build_training_dataset
 from m3.worker.errors import M3Error
+from m3.worker.domain.work_schedule import LoadScheduleProfile
 from m3.tests.m3_test_support import (
     make_cv_result,
     make_forecast_result,
     make_quarter_hour_points,
 )
+
+
+def _scoring_cv_fixture(engine, frame, *, model_name):
+    """Supply restored load predictions to isolate scoring from calendar fitting."""
+    return engine.cross_validation(df=frame, h=96, step_size=96, n_windows=7)
 
 
 class M3ForecastingTests(unittest.TestCase):
@@ -56,6 +62,7 @@ class M3ForecastingTests(unittest.TestCase):
         self.assertEqual(series.status, "insufficient_history")
         self.assertEqual(series.points, [])
 
+    @patch("m3.worker.domain.forecasting.schedule_cross_validation", new=_scoring_cv_fixture)
     @patch("m3.worker.domain.forecasting.StatsForecast")
     def test_selection_uses_exact_cv_arguments(self, statsforecast_type):
         dataset = build_training_dataset(
@@ -74,6 +81,7 @@ class M3ForecastingTests(unittest.TestCase):
             self.assertEqual(call.kwargs["n_windows"], 7)
         self.assertEqual(champion.model_name, "SeasonalNaive")
 
+    @patch("m3.worker.domain.forecasting.schedule_cross_validation", new=_scoring_cv_fixture)
     @patch("m3.worker.domain.forecasting.StatsForecast")
     def test_failed_candidate_is_skipped_without_affecting_other_cv_runs(
         self, statsforecast_type
@@ -99,6 +107,7 @@ class M3ForecastingTests(unittest.TestCase):
         self.assertEqual(champion.model_name, "AutoARIMA")
         self.assertAlmostEqual(champion.cv_mape_percent, 1.0)
 
+    @patch("m3.worker.domain.forecasting.schedule_cross_validation", new=_scoring_cv_fixture)
     @patch("m3.worker.domain.forecasting.StatsForecast")
     def test_candidate_setup_failure_is_also_isolated(self, statsforecast_type):
         dataset = build_training_dataset(
@@ -119,6 +128,7 @@ class M3ForecastingTests(unittest.TestCase):
 
         self.assertEqual(champion.model_name, "AutoETS")
 
+    @patch("m3.worker.domain.forecasting.schedule_cross_validation", new=_scoring_cv_fixture)
     @patch("m3.worker.domain.forecasting.StatsForecast")
     def test_selection_excludes_zero_and_imputed_actuals(self, statsforecast_type):
         dataset = build_training_dataset(
@@ -157,6 +167,7 @@ class M3ForecastingTests(unittest.TestCase):
         self.assertEqual(champion.model_name, "SeasonalNaive")
         self.assertEqual(champion.cv_mape_percent, 0.0)
 
+    @patch("m3.worker.domain.forecasting.schedule_cross_validation", new=_scoring_cv_fixture)
     @patch("m3.worker.domain.forecasting.StatsForecast")
     def test_candidate_with_partial_nan_predictions_is_rejected(
         self, statsforecast_type
@@ -181,6 +192,7 @@ class M3ForecastingTests(unittest.TestCase):
         self.assertEqual(champion.model_name, "AutoETS")
         self.assertEqual(champion.cv_mape_percent, 1.0)
 
+    @patch("m3.worker.domain.forecasting.schedule_cross_validation", new=_scoring_cv_fixture)
     @patch("m3.worker.domain.forecasting.StatsForecast")
     def test_candidate_with_infinite_predictions_is_rejected(
         self, statsforecast_type
@@ -201,6 +213,7 @@ class M3ForecastingTests(unittest.TestCase):
 
         self.assertEqual(raised.exception.code, "model_selection_failed")
 
+    @patch("m3.worker.domain.forecasting.schedule_cross_validation", new=_scoring_cv_fixture)
     @patch("m3.worker.domain.forecasting.StatsForecast")
     def test_all_nonfinite_candidate_outputs_fail_safely(self, statsforecast_type):
         dataset = build_training_dataset(
@@ -243,6 +256,7 @@ class M3ForecastingTests(unittest.TestCase):
         self.assertTrue(np.isfinite(champion.cv_mape_percent))
         autoets_type.assert_called_once_with(season_length=96, alias="AutoETS")
 
+    @patch("m3.worker.domain.forecasting.schedule_cross_validation", new=_scoring_cv_fixture)
     @patch("m3.worker.domain.forecasting.StatsForecast")
     def test_equal_scores_have_a_deterministic_winner(self, statsforecast_type):
         dataset = build_training_dataset(
@@ -261,6 +275,7 @@ class M3ForecastingTests(unittest.TestCase):
 
         self.assertEqual(champion.model_name, "AutoARIMA")
 
+    @patch("m3.worker.domain.forecasting.schedule_cross_validation", new=_scoring_cv_fixture)
     @patch("m3.worker.domain.forecasting.StatsForecast")
     def test_all_candidate_failures_raise_model_selection_error(
         self, statsforecast_type
@@ -301,8 +316,12 @@ class M3ForecastingTests(unittest.TestCase):
         )
         as_of = dataset.end + timedelta(minutes=15)
         values = [-3.0] + [800.0] * 95
+        offsets = LoadScheduleProfile.fit(dataset.frame, origin=as_of).offsets(
+            pd.date_range(as_of, periods=96, freq="15min")
+        )
+        residuals = (np.asarray(values) - offsets).tolist()
         statsforecast_type.return_value.forecast.return_value = make_forecast_result(
-            "AutoARIMA", as_of, values
+            "AutoARIMA", as_of, residuals
         )
         champion = self._champion(dataset, "AutoARIMA")
 
@@ -418,8 +437,12 @@ class M3ForecastingTests(unittest.TestCase):
         self.assertNotIn("champion password", series.fallback_reason)
         self.assertNotIn("fallback password", series.fallback_reason)
         self.assertEqual(statsforecast_type.call_count, 2)
-        champion_engine.forecast.assert_called_once_with(df=dataset.frame, h=96)
-        fallback_engine.forecast.assert_called_once_with(df=dataset.frame, h=96)
+        for engine in (champion_engine, fallback_engine):
+            engine.forecast.assert_called_once()
+            self.assertEqual(engine.forecast.call_args.kwargs["h"], 96)
+            residual_frame = engine.forecast.call_args.kwargs["df"]
+            self.assertEqual(list(residual_frame["ds"]), list(dataset.frame["ds"]))
+            self.assertTrue(np.allclose(residual_frame["y"], 0.0))
 
     @patch("m3.worker.domain.forecasting.StatsForecast")
     def test_warming_up_forecast_is_truthfully_flagged(self, statsforecast_type):

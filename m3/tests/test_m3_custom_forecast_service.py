@@ -412,7 +412,7 @@ class CustomForecastServiceTests(unittest.TestCase):
         )
         self.assertEqual(
             repository.captured_baselines["storage_soc"].model_name,
-            "SeasonalNaive5mLinear",
+            "SOCScheduleDelta5mLinear",
         )
         soc_model = repository.run.model_manifest["series"]["storage_soc"]
         self.assertEqual(soc_model["model_interval_seconds"], 300)
@@ -542,6 +542,7 @@ class CustomForecastServiceTests(unittest.TestCase):
                 )
             )
         self.assertEqual(run.model_manifest["selection_policy"], "weekly_load_v2")
+        self.assertEqual(run.model_manifest["work_schedule_policy"], "mon-sat-work-sun-rest-v1")
         self.assertEqual(
             run.model_manifest["series"]["station_total_load"]["model_name"],
             "WeeklyNaive",
@@ -639,7 +640,7 @@ class CustomForecastServiceTests(unittest.TestCase):
         )
         self.assertEqual(
             repository.captured_baselines["storage_soc"].model_name,
-            "SeasonalNaive",
+            "SOCScheduleDelta",
         )
 
     def test_execute_accepts_one_imputation_in_minimum_weekly_load_baseline(self):

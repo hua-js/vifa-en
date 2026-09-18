@@ -137,6 +137,7 @@ def persisted_model_manifest(*, version: str = "2.1.1") -> dict:
     }
     return {
         "statsforecast_version": version,
+        "work_schedule_policy": "mon-sat-work-sun-rest-v1",
         "series": {
             "station_total_load": {**common, "model_name": "AutoETS"},
             "storage_soc": {**common, "model_name": "AutoARIMA"},
@@ -349,6 +350,13 @@ class ForecastServiceTests(unittest.TestCase):
         self.assertIsNotNone(restore, "forecast service must restore persisted models")
         self.assertFalse(restore("station-1"))
         self.assertEqual(service.state("station-1").state, "initializing")
+
+    def test_restore_models_rejects_pre_schedule_selection(self):
+        manifest = persisted_model_manifest()
+        del manifest["work_schedule_policy"]
+        service = make_service(source_with_history(), FakeSink(model_manifest=manifest))
+        service.bootstrap("station-1", BOOTSTRAP_AT)
+        self.assertFalse(service.restore_models("station-1"))
 
     def test_restore_models_returns_false_for_runtime_version_mismatch(self):
         service = make_service(

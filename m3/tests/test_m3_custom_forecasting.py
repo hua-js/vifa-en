@@ -408,7 +408,7 @@ class LoadDispatchSelectionTests(unittest.TestCase):
     @patch("m3.worker.domain.custom_forecasting.AutoARIMA")
     @patch("m3.worker.domain.custom_forecasting.AutoETS")
     @patch("m3.worker.domain.custom_forecasting.StatsForecast")
-    def test_soc_compares_weekly_delta_only_with_daily_baseline(
+    def test_soc_compares_weekly_delta_with_schedule_baseline(
         self,
         statsforecast_type,
         autoets_type,
@@ -433,10 +433,9 @@ class LoadDispatchSelectionTests(unittest.TestCase):
         self.assertEqual(champion.cv_mape_percent, 0.0)
         self.assertEqual(
             [score.model_name for score in champion.candidate_scores],
-            ["SOCWeeklyDelta", "SeasonalNaive"],
+            ["SOCWeeklyDelta", "SOCScheduleDelta"],
         )
-        self.assertEqual(statsforecast_type.call_count, 1)
-        self.assertEqual(engine.forecast.call_args.kwargs["h"], 7 * 24)
+        statsforecast_type.assert_not_called()
         autoets_type.assert_not_called()
         autoarima_type.assert_not_called()
         mstl_type.assert_not_called()
@@ -478,7 +477,7 @@ class LoadDispatchSelectionTests(unittest.TestCase):
         self.assertEqual(champion.model_name, "SOCWeeklyDelta")
         self.assertEqual(
             [score.model_name for score in champion.candidate_scores],
-            ["SOCWeeklyDelta", "SeasonalNaive"],
+            ["SOCWeeklyDelta", "SOCScheduleDelta"],
         )
         autoets_type.assert_not_called()
         autoarima_type.assert_not_called()
@@ -554,11 +553,13 @@ class LoadDispatchSelectionTests(unittest.TestCase):
         holdout_length = 7 * dataset.points_per_day
         autoarima_engine = Mock()
         autoarima_engine.forecast.return_value = pd.DataFrame(
-            {"AutoARIMA": [100.0] * holdout_length}
+            {"ds": pd.date_range(latest_week.start, periods=holdout_length, freq="15min"),
+             "AutoARIMA": [80.0] * holdout_length}
         )
         mstl_engine = Mock()
         mstl_engine.forecast.return_value = pd.DataFrame(
-            {"MSTL": [90.0] * holdout_length}
+            {"ds": pd.date_range(latest_week.start, periods=holdout_length, freq="15min"),
+             "MSTL": [70.0] * holdout_length}
         )
         statsforecast_type.side_effect = [autoarima_engine, mstl_engine]
 
@@ -632,7 +633,8 @@ class LoadDispatchSelectionTests(unittest.TestCase):
         failed_autoarima.forecast.side_effect = RuntimeError("private model failure")
         winning_mstl = Mock()
         winning_mstl.forecast.return_value = pd.DataFrame(
-            {"MSTL": [100.0] * holdout_length}
+            {"ds": pd.date_range(dataset.usable_weeks[-1].start, periods=holdout_length, freq="15min"),
+             "MSTL": [80.0] * holdout_length}
         )
         statsforecast_type.side_effect = [failed_autoarima, winning_mstl]
 

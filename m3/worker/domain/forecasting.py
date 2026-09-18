@@ -13,6 +13,7 @@ from m3.worker.domain.soc_anchoring import (
     recent_soc_residual_offset,
 )
 from m3.worker.domain.training_data import TrainingDataset
+from m3.worker.domain.work_schedule import schedule_cross_validation, schedule_forecast
 from m3.worker.errors import M3Error
 
 
@@ -116,7 +117,9 @@ def select_champion(dataset: TrainingDataset) -> Champion:
         try:
             model = factory()
             engine = StatsForecast(models=[model], freq="15min", n_jobs=1)
-            cv = engine.cross_validation(
+            cv = schedule_cross_validation(
+                engine, dataset.frame, model_name=model_name,
+            ) if not needs_soc_anchor else engine.cross_validation(
                 df=dataset.frame,
                 h=96,
                 step_size=96,
@@ -173,7 +176,11 @@ def forecast_frame(
         engine = StatsForecast(
             models=[model_by_name(model_name)], freq="15min", n_jobs=1
         )
-        frame = engine.forecast(
+        frame = schedule_forecast(
+            engine, dataset.frame,
+            origin=dataset.end + timedelta(minutes=15),
+            periods=96, model_name=model_name,
+        ) if not needs_soc_anchor else engine.forecast(
             df=dataset.frame,
             h=96,
             **({"fitted": True} if needs_soc_anchor else {}),
@@ -186,7 +193,11 @@ def forecast_frame(
         fallback = StatsForecast(
             models=[model_by_name("SeasonalNaive")], freq="15min", n_jobs=1
         )
-        frame = fallback.forecast(
+        frame = schedule_forecast(
+            fallback, dataset.frame,
+            origin=dataset.end + timedelta(minutes=15),
+            periods=96, model_name="SeasonalNaive",
+        ) if not needs_soc_anchor else fallback.forecast(
             df=dataset.frame,
             h=96,
             **({"fitted": True} if needs_soc_anchor else {}),

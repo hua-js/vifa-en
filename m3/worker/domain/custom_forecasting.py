@@ -26,6 +26,7 @@ from m3.worker.domain.custom_load_profiles import (
     weekly_profile_values,
 )
 from m3.worker.domain.custom_training_data import CustomTrainingDataset
+from m3.worker.domain.work_schedule import schedule_forecast, schedule_slot
 from m3.worker.errors import M3Error
 
 
@@ -33,9 +34,12 @@ logger = logging.getLogger(__name__)
 
 
 SOC_WEEKLY_DELTA_MODEL = "SOCWeeklyDelta"
+SOC_SCHEDULE_DELTA_MODEL = "SOCScheduleDelta"
+SOC_SCHEDULE_POLICY = "soc-schedule-delta-v2"
 SOC_FIVE_MINUTE_LINEAR_SUFFIX = "5mLinear"
 SOC_MODEL_ORDER = (
     SOC_WEEKLY_DELTA_MODEL,
+    SOC_SCHEDULE_DELTA_MODEL,
     "SeasonalNaive",
     "AutoETS",
     "AutoARIMA",
@@ -64,10 +68,6 @@ def _candidate_factories(config: CustomForecastConfig):
     ]
 
 
-def _soc_candidate_factories(config: CustomForecastConfig):
-    return _candidate_factories(config)[:1]
-
-
 @dataclass(frozen=True)
 class CustomChampion:
     model_name: str
@@ -85,8 +85,10 @@ class CustomChampion:
 def seasonal_naive_champion(
     dataset: CustomTrainingDataset, selection_reason: str | None = None
 ) -> CustomChampion:
+    """Baseline factory; SOC uses matched-day changes instead of daily copying."""
     return CustomChampion(
-        model_name="SeasonalNaive",
+        model_name=("SeasonalNaive" if is_load_series(dataset.frame["unique_id"].iloc[0])
+                    else SOC_SCHEDULE_DELTA_MODEL),
         cv_mape_percent=None,
         selected_at=pd.Timestamp.now(tz="Asia/Shanghai"),
         training_start=pd.Timestamp(dataset.start),
@@ -193,7 +195,12 @@ def select_load_champion(
                     freq=config.pandas_frequency,
                     n_jobs=1,
                 )
-                forecast = engine.forecast(df=training.frame, h=len(holdout))
+                forecast = schedule_forecast(
+                    engine, training.frame, origin=latest_week.start,
+                    periods=len(holdout), model_name=model_name,
+                )
+                if list(forecast["ds"]) != list(holdout["ds"]):
+                    raise M3Error("forecast_alignment_invalid", "Load holdout is misaligned")
                 predictions = forecast[model_name].tolist()
             score = load_candidate_score(
                 model_name, holdout, predictions, excluded_times
@@ -326,66 +333,30 @@ def _select_soc_champion(
         if key_unique_id == unique_id
     )
 
-    scores: list[LoadCandidateScore] = []
-    try:
-        weekly_delta = _soc_weekly_delta_values(
-            training,
-            origin=holdout_start,
-            periods=len(holdout),
-        )
-        scores.append(
-            load_candidate_score(
-                SOC_WEEKLY_DELTA_MODEL,
-                holdout,
-                [min(max(value, 0.0), 100.0) for value in weekly_delta],
-                excluded_times,
-            )
-        )
-    except Exception as error:
-        scores.append(
-            LoadCandidateScore(
-                SOC_WEEKLY_DELTA_MODEL,
-                None,
-                None,
-                None,
-                0,
-                type(error).__name__,
-            )
-        )
+    # Evaluate the weekdays that this request will actually predict. A Sunday
+    # holdout must not choose the winner for a Monday-only request.
+    target_weekdays = {
+        (config.forecast_start + timedelta(days=day)).weekday()
+        for day in range(config.forecast_days)
+    }
+    matching = holdout["ds"].dt.weekday.isin(target_weekdays).to_numpy()
+    scored_holdout = holdout.loc[matching]
 
-    for model_name, factory in _soc_candidate_factories(config):
+    scores: list[LoadCandidateScore] = []
+    for model_name, predictor in (
+        (SOC_WEEKLY_DELTA_MODEL, _soc_weekly_delta_values),
+        (SOC_SCHEDULE_DELTA_MODEL, _soc_schedule_delta_values),
+    ):
         try:
-            engine = StatsForecast(
-                models=[factory()], freq=config.pandas_frequency, n_jobs=1
-            )
-            forecast = engine.forecast(
-                df=training.frame,
-                h=len(holdout),
-            )
-            raw_values = list(pd.to_numeric(forecast[model_name], errors="raise"))
-            if len(raw_values) != len(holdout):
-                raise ValueError("SOC candidate horizon is incomplete")
-            offset = _last_real_value(training, unique_id) - float(raw_values[0])
-            predictions = [
-                min(max(float(value) + offset, 0.0), 100.0)
-                for value in raw_values
-            ]
-            scores.append(
-                load_candidate_score(
-                    model_name, holdout, predictions, excluded_times
-                )
-            )
+            values = predictor(training, origin=holdout_start, periods=len(holdout))
+            scores.append(load_candidate_score(
+                model_name, scored_holdout,
+                [_clip(unique_id, value)[1] for value, keep in zip(values, matching, strict=True) if keep], excluded_times,
+            ))
         except Exception as error:
-            scores.append(
-                LoadCandidateScore(
-                    model_name,
-                    None,
-                    None,
-                    None,
-                    0,
-                    type(error).__name__,
-                )
-            )
+            scores.append(LoadCandidateScore(
+                model_name, None, None, None, 0, type(error).__name__,
+            ))
 
     viable_scores = [score for score in scores if score.mae is not None]
     if not viable_scores:
@@ -406,58 +377,116 @@ def _select_soc_champion(
     )
 
 
-def _soc_weekly_delta_values(
-    dataset: CustomTrainingDataset,
-    *,
-    origin: datetime,
-    periods: int,
+def _soc_weekly_delta_values(dataset, *, origin: datetime, periods: int) -> list[float]:
+    return _soc_delta_values(dataset, origin=origin, periods=periods, weekly=True)
+
+
+def _soc_schedule_delta_values(dataset, *, origin: datetime, periods: int) -> list[float]:
+    return _soc_delta_values(dataset, origin=origin, periods=periods, weekly=False)
+
+
+def _soc_day_context(timestamp: datetime) -> tuple[bool, bool]:
+    return schedule_slot(timestamp)[0], schedule_slot(timestamp - timedelta(days=1))[0]
+
+
+def _recent_soc_plateau(source_values, origin, interval):
+    """Highest stable real plateau in the last completed day, or no evidence.
+
+    Require at least one hour and two consecutive observations within 0.5
+    percentage points. This is a forecast reference, not a device SOC limit.
+    """
+    groups = []
+    group = []
+    previous = None
+    for timestamp, value in sorted(source_values.items()):
+        if not origin - timedelta(days=1) <= timestamp < origin:
+            continue
+        if (previous is None or timestamp - previous != interval
+                or max([value, *group]) - min([value, *group]) > 0.5):
+            if len(group) >= 2 and len(group) * interval >= timedelta(hours=1):
+                groups.append(float(median(group)))
+            group = []
+        group.append(value)
+        previous = timestamp
+    if len(group) >= 2 and len(group) * interval >= timedelta(hours=1):
+        groups.append(float(median(group)))
+    return max(groups) if groups else None
+
+
+def _soc_delta_values(
+    dataset: CustomTrainingDataset, *, origin: datetime, periods: int, weekly: bool,
 ) -> list[float]:
-    """Forecast SOC state from median same-weekday deltas over three weeks."""
-
-    if type(origin) is not datetime:
-        raise ValueError("origin must be a datetime")
-    if type(periods) is not int or periods < 0:
-        raise ValueError("periods must be a non-negative integer")
-    if periods == 0:
+    """Integrate past real SOC changes without carrying saturation overshoot."""
+    if type(origin) is not datetime or type(periods) is not int or periods < 0:
+        raise ValueError("invalid SOC forecast origin or horizon")
+    if not periods:
         return []
-
     unique_id = dataset.frame["unique_id"].iloc[0]
-    imputed = {
-        timestamp
-        for key_unique_id, timestamp in dataset.imputed_keys
-        if key_unique_id == unique_id
-    }
-    source_values: dict[datetime, float] = {}
+    imputed = {t for uid, t in dataset.imputed_keys if uid == unique_id}
+    source_values = {}
     for row in dataset.frame.itertuples(index=False):
         timestamp = pd.Timestamp(row.ds).to_pydatetime()
-        try:
-            value = float(row.y)
-        except (TypeError, ValueError, OverflowError):
+        if timestamp >= origin or timestamp in imputed:
             continue
-        if timestamp < origin and np.isfinite(value):
+        value = float(row.y)
+        if np.isfinite(value):
             source_values[timestamp] = value
-
+    if not source_values:
+        raise M3Error("training_data_invalid", "No real SOC history")
     interval = timedelta(seconds=dataset.interval_seconds)
-    current = _last_real_value(dataset, unique_id)
+    current = source_values[max(source_values)]
     values = [current]
+    current = _clip(unique_id, current)[1]
+    # A rest-day plateau is evidence for the following workday, not a
+    # persistent charging target for ordinary workdays after discharging.
+    recent_plateau = (
+        _recent_soc_plateau(source_values, origin, interval)
+        if _soc_day_context(origin) == (True, False) else None
+    )
+    day_starts = {}
+    day_peaks = {}
+    for timestamp, value in sorted(source_values.items()):
+        date = timestamp.date()
+        if timestamp.hour == timestamp.minute == timestamp.second == 0:
+            day_starts[date] = value
+        day_peaks[date] = max(day_peaks.get(date, value), value)
+    forecast_day_start = current
+    previous_day = origin.date()
     for period in range(1, periods):
         target = origin + period * interval
-        deltas: list[float] = []
-        for week_lag in (1, 2, 3):
-            source_time = target - timedelta(days=7 * week_lag)
+        if target.date() != previous_day:
+            forecast_day_start = current
+            previous_day = target.date()
+        deltas = []
+        ranked_deltas = []
+        # Weekly candidate preserves same-weekday behavior. The baseline uses
+        # closest matching day context and starting SOC, never predicted donors.
+        for days in ((7, 14, 21) if weekly else range(1, 29)):
+            source_time = target - timedelta(days=days)
             previous_time = source_time - interval
-            if source_time in imputed or previous_time in imputed:
+            if source_time not in source_values or previous_time not in source_values:
                 continue
-            if source_time in source_values and previous_time in source_values:
-                deltas.append(
-                    source_values[source_time] - source_values[previous_time]
-                )
+            if (_soc_day_context(source_time) != _soc_day_context(target)
+                    or schedule_slot(previous_time)[0] != schedule_slot(target - interval)[0]):
+                continue
+            delta = source_values[source_time] - source_values[previous_time]
+            if weekly:
+                deltas.append(delta)
+            elif source_time.date() in day_starts:
+                distance = abs(day_starts[source_time.date()] - forecast_day_start)
+                if recent_plateau is not None and target < origin + timedelta(days=1):
+                    distance += abs(day_peaks[source_time.date()] - recent_plateau)
+                ranked_deltas.append((distance, days, delta))
+        if not weekly and ranked_deltas:
+            deltas = [min(ranked_deltas)[2]]
         if not deltas:
-            raise ValueError(
-                f"missing weekly SOC delta source for {target.isoformat()}"
-            )
-        current += float(median(deltas))
-        values.append(current)
+            raise M3Error("insufficient_history", "Missing matching SOC change history")
+        raw = current + float(median(deltas))
+        if (not weekly and recent_plateau is not None
+                and target < origin + timedelta(days=1) and raw > current):
+            raw = min(raw, max(current, recent_plateau))
+        values.append(raw)
+        current = _clip(unique_id, raw)[1]
     return values
 
 
@@ -507,44 +536,23 @@ def _forecast_frame(
         return _forecast_load_frame(dataset, champion, config)
     try:
         if champion.model_name == SOC_WEEKLY_DELTA_MODEL:
-            values = _soc_weekly_delta_values(
-                dataset,
-                origin=config.forecast_start,
-                periods=config.expected_points_per_series,
-            )
-            return (
-                _load_frame(
-                    config,
-                    unique_id,
-                    SOC_WEEKLY_DELTA_MODEL,
-                    values,
-                ),
-                SOC_WEEKLY_DELTA_MODEL,
-                None,
-            )
-        model = _model_by_name(champion.model_name, config)
-        engine = StatsForecast(
-            models=[model], freq=config.pandas_frequency, n_jobs=1
-        )
-        return (
-            engine.forecast(df=dataset.frame, h=config.expected_points_per_series),
-            champion.model_name,
-            None,
-        )
+            predictor = _soc_weekly_delta_values
+        elif champion.model_name == SOC_SCHEDULE_DELTA_MODEL:
+            predictor = _soc_schedule_delta_values
+        else:
+            raise ValueError("retired SOC model requires schedule-aware fallback")
+        values = predictor(dataset, origin=config.forecast_start,
+                           periods=config.expected_points_per_series)
+        return _load_frame(config, unique_id, champion.model_name, values), champion.model_name, None
     except Exception as champion_error:
-        if champion.model_name == "SeasonalNaive":
+        if champion.model_name == SOC_SCHEDULE_DELTA_MODEL:
             raise
-        fallback = StatsForecast(
-            models=[_model_by_name("SeasonalNaive", config)],
-            freq=config.pandas_frequency,
-            n_jobs=1,
+        values = _soc_schedule_delta_values(
+            dataset, origin=config.forecast_start, periods=config.expected_points_per_series,
         )
         return (
-            fallback.forecast(
-                df=dataset.frame, h=config.expected_points_per_series
-            ),
-            "SeasonalNaive",
-            type(champion_error).__name__,
+            _load_frame(config, unique_id, SOC_SCHEDULE_DELTA_MODEL, values),
+            SOC_SCHEDULE_DELTA_MODEL, type(champion_error).__name__,
         )
 
 
@@ -608,7 +616,10 @@ def _forecast_load_model(
     model = _load_automatic_model(champion.model_name, config)
     engine = StatsForecast(models=[model], freq=config.pandas_frequency, n_jobs=1)
     return (
-        engine.forecast(df=dataset.frame, h=config.expected_points_per_series),
+        schedule_forecast(
+            engine, dataset.frame, origin=config.forecast_start,
+            periods=config.expected_points_per_series, model_name=champion.model_name,
+        ),
         champion.model_name,
         None,
     )
@@ -701,7 +712,7 @@ def forecast_custom_series(
         raise M3Error("forecast_alignment_invalid", "Forecast start is misaligned")
 
     soc_offset = 0.0
-    if not is_load_series(unique_id):
+    if not is_load_series(unique_id) and used_model not in {SOC_WEEKLY_DELTA_MODEL, SOC_SCHEDULE_DELTA_MODEL}:
         first_raw = float(frame[used_model].iloc[0])
         soc_offset = _last_real_value(dataset, unique_id) - first_raw
 

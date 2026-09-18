@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 
 from m3.worker.contracts import SeriesId, is_load_series
+from m3.worker.domain.work_schedule import schedule_interpolate, schedule_slot
 from m3.worker.custom_forecast_contracts import (
     CustomForecastConfig,
     CustomObservationPoint,
@@ -146,7 +147,9 @@ def build_custom_training_dataset(
 
     missing = frame["y"].isna()
     missing_groups = (missing != missing.shift()).cumsum()
-    interpolated = frame["y"].interpolate(
+    interpolated = schedule_interpolate(
+        frame["y"], limit=SHORT_GAP_BUCKETS,
+    ) if is_load_series(unique_id) else frame["y"].interpolate(
         method="time", limit=SHORT_GAP_BUCKETS, limit_area="inside"
     )
     imputed_times: set[datetime] = set()
@@ -163,6 +166,8 @@ def build_custom_training_dataset(
     for value in frame.index[frame["y"].isna()]:
         for lag in seasonal_lags:
             donor = value - lag * config.interval
+            if is_load_series(unique_id) and schedule_slot(value)[0] != schedule_slot(donor)[0]:
+                continue
             if donor in seasonal_donors.index and pd.notna(seasonal_donors.loc[donor]):
                 frame.loc[value, "y"] = seasonal_donors.loc[donor]
                 imputed_times.add(value.to_pydatetime())

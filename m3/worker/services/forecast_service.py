@@ -23,6 +23,7 @@ from m3.worker.domain.forecasting import (
     seasonal_naive_champion,
     select_champion,
 )
+from m3.worker.domain.work_schedule import WORK_SCHEDULE_POLICY
 from m3.worker.domain.training_data import (
     OPERATIONAL_HISTORY_DAYS,
     READY_HISTORY_DAYS,
@@ -52,8 +53,8 @@ PERSISTED_CHAMPION_FIELDS = {
     "selection_reason",
 }
 PERSISTED_MANIFEST_FIELDS = {
-    frozenset({"statsforecast_version", "series"}),
-    frozenset({"statsforecast_version", "series", "readiness"}),
+    frozenset({"statsforecast_version", "work_schedule_policy", "series"}),
+    frozenset({"statsforecast_version", "work_schedule_policy", "series", "readiness"}),
 }
 
 
@@ -176,6 +177,7 @@ def _persisted_champions(
             type(manifest) is not dict
             or frozenset(manifest) not in PERSISTED_MANIFEST_FIELDS
             or manifest["statsforecast_version"] != required_version
+            or manifest.get("work_schedule_policy") != WORK_SCHEDULE_POLICY
         ):
             return None
         series = manifest["series"]
@@ -324,6 +326,7 @@ def build_latest_snapshot(
 
     manifest = {
         "statsforecast_version": required_version,
+        "work_schedule_policy": WORK_SCHEDULE_POLICY,
         "series": {
             unique_id: _champion_manifest(champions[unique_id])
             for unique_id in SERIES_IDS

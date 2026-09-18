@@ -3,7 +3,8 @@ from datetime import datetime, timedelta
 
 import pandas as pd
 
-from m3.worker.contracts import ObservationPoint, SeriesId
+from m3.worker.contracts import ObservationPoint, SeriesId, is_load_series
+from m3.worker.domain.work_schedule import schedule_interpolate, schedule_slot
 
 
 GRID = timedelta(minutes=15)
@@ -81,7 +82,9 @@ def build_training_dataset(
         if long_gap_ends:
             frame = frame.loc[max(long_gap_ends) + GRID :]
         missing_before_interpolation = frame["y"].isna()
-        frame["y"] = frame["y"].interpolate(
+        frame["y"] = schedule_interpolate(
+            frame["y"], limit=SHORT_GAP_BUCKETS,
+        ) if is_load_series(unique_id) else frame["y"].interpolate(
             method="time", limit=SHORT_GAP_BUCKETS, limit_area="inside"
         )
         imputed_times.update(
@@ -91,7 +94,9 @@ def build_training_dataset(
             ]
         )
     else:
-        interpolated = frame["y"].interpolate(
+        interpolated = schedule_interpolate(
+            frame["y"], limit=SHORT_GAP_BUCKETS,
+        ) if is_load_series(unique_id) else frame["y"].interpolate(
             method="time", limit=SHORT_GAP_BUCKETS, limit_area="inside"
         )
         for group in missing_groups:
@@ -106,6 +111,8 @@ def build_training_dataset(
         for value in frame.index[frame["y"].isna()]:
             for lag in SEASONAL_LAG_BUCKETS:
                 donor = value - lag * GRID
+                if is_load_series(unique_id) and schedule_slot(value)[0] != schedule_slot(donor)[0]:
+                    continue
                 if donor in seasonal_donors.index and pd.notna(
                     seasonal_donors.loc[donor]
                 ):
@@ -113,18 +120,18 @@ def build_training_dataset(
                     imputed_times.add(value.to_pydatetime())
                     break
 
-        unresolved = frame["y"].isna()
-        if unresolved.any():
-            unresolved_groups = (
-                unresolved != unresolved.shift()
-            ).cumsum()
-            last_unresolved = max(
-                group.index[-1]
-                for _, group in frame[unresolved].groupby(
-                    unresolved_groups[unresolved]
-                )
+    unresolved = frame["y"].isna()
+    if unresolved.any():
+        unresolved_groups = (
+            unresolved != unresolved.shift()
+        ).cumsum()
+        last_unresolved = max(
+            group.index[-1]
+            for _, group in frame[unresolved].groupby(
+                unresolved_groups[unresolved]
             )
-            frame = frame.loc[last_unresolved + GRID :]
+        )
+        frame = frame.loc[last_unresolved + GRID :]
 
     frame = frame.loc[frame["y"].notna()].reset_index()
     if frame.empty:

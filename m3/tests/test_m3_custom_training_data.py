@@ -72,7 +72,7 @@ def make_points(
 def build_dataset_with_week_imputation(imputed_points: int):
     history_start = HISTORY_END - timedelta(days=14)
     imputed_times = {
-        HISTORY_END - timedelta(days=7) + timedelta(minutes=15 * index)
+        HISTORY_END - timedelta(days=6) + timedelta(minutes=15 * index)
         for index in range(imputed_points)
     }
     return build_custom_training_dataset(
@@ -89,7 +89,7 @@ def build_dataset_with_week_imputation(imputed_points: int):
 def build_dataset_with_two_weeks(latest_imputed_points: int):
     history_start = HISTORY_END - timedelta(days=14)
     imputed_times = {
-        HISTORY_END - timedelta(days=7) + timedelta(minutes=15 * index)
+        HISTORY_END - timedelta(days=6) + timedelta(minutes=15 * index)
         for index in range(latest_imputed_points)
     }
     return build_custom_training_dataset(
@@ -161,7 +161,7 @@ class CustomTrainingDataUsableWeekTests(unittest.TestCase):
     def test_negative_load_after_source_start_remains_invalid_evidence(self):
         history_start = HISTORY_END - timedelta(days=8)
         points = make_points(history_start, HISTORY_END)
-        negative_time = history_start + timedelta(days=1)
+        negative_time = history_start + timedelta(days=2)
         negative_index = next(
             index for index, point in enumerate(points) if point.ds == negative_time
         )

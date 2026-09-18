@@ -550,7 +550,8 @@ class CustomForecastRepository:
         values: list[dict[str, object]] = []
         baseline_models_by_id = {
             "station_total_load": {"WeeklyNaive"},
-            "storage_soc": {"SeasonalNaive", "SeasonalNaive5mLinear"},
+            "storage_soc": {"SeasonalNaive", "SeasonalNaive5mLinear",
+                            "SOCScheduleDelta", "SOCScheduleDelta5mLinear"},
         }
         for unique_id in ("station_total_load", "storage_soc"):
             item = by_id[unique_id]
