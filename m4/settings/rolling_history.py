@@ -49,6 +49,8 @@ def advisory_history(station, jobs, now):
                     item['grid_export_kw'] = export
                 item['timestamp'] = at.astimezone(now.tzinfo).isoformat()
                 source = inputs.get(point['timestamp'], {})
+                if source.get('tariff_period') in ('gu', 'ping', 'feng', 'jian'):
+                    item['tariff_period'] = source['tariff_period']
                 for key in ('load_forecast_kw', 'pv_forecast_kw'):
                     value = source.get(key)
                     if type(value) in (int, float) and math.isfinite(value):

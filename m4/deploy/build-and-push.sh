@@ -87,8 +87,8 @@ Published:
   $version_ref
 Matching deployment files: $release_dir
 
-Production update (VIFA station-2 EMS table commissioning):
-Copy the entire parenthesized block into the production terminal.
+服务器更新命令（VIFA 电站2 EMS计划表联调）：
+将下面从左括号到右括号的完整代码块复制到服务器终端执行。
 The fixed tag is always pulled. Cleanup runs only after health and source-content checks.
 Existing project settings, credentials and data volumes are preserved.
 
@@ -116,6 +116,8 @@ Existing project settings, credentials and data volumes are preserved.
   if [ -n "\$m4_previous_image" ] && [ "\$m4_previous_image" != "\$m4_current_image" ]; then
     docker image rm "\$m4_previous_image" || echo "Old image retained: still referenced or cleanup failed; no forced removal."
   fi
+  m4_compose ps
+  m4_compose logs --tail=80 m4-api
 )
 
 Frontend: replace the M4 Node-RED Template content with:

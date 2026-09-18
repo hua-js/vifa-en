@@ -16,6 +16,18 @@ from m4.tests.m4_optimizer_test_support import make_request
 
 
 class M4OptimizerSolverTests(unittest.TestCase):
+    def test_zero_objective_locks_preserve_feasibility_and_other_locks(self):
+        for bound, expected in ((0.0, 'optimal'), (1e-6, 'optimal'), (-1e-6, 'infeasible')):
+            with self.subTest(bound=bound):
+                result = solve_milp(self.make_one_variable_problem(), np.array([-1.0]),
+                    (ObjectiveLock(np.zeros(1), bound),
+                     ObjectiveLock(np.ones(1), 0.4)), 2.0, 0.0)
+                self.assertEqual(result.status, expected)
+                if expected == 'optimal':
+                    np.testing.assert_allclose(result.x, [0.4], atol=1e-7)
+                else:
+                    self.assertIsNone(result.x)
+
     def test_solver_finds_the_cheapest_binary_choice(self):
         problem = MilpProblem(
             integrality=np.array([1, 1], dtype=np.uint8),

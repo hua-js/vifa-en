@@ -88,6 +88,22 @@ class RollingRequestTests(unittest.TestCase):
             self.assertEqual(service.latest('station-1')['status'], 'stale')
 
 class PostPeakRollingTests(unittest.TestCase):
+    def test_1700_rolling_window_finishes_smoothing_after_zero_valley_objective(self):
+        from m4.optimizer.model import build_model
+        from m4.optimizer.service import M4Optimizer
+        from m4.optimizer.validation import validate_candidate
+        request, _, _, _, terminal = self.prepare_at(16, 58)
+        built = build_model(request, terminal_soc_target_pct=terminal)
+        self.assertFalse(built.valley_charge_windows)
+        self.assertFalse(built.objectives['valley_charge_delay'].any())
+        result = M4Optimizer(model_version='zero-valley-rolling-regression').optimize(
+            request, terminal_soc_target_pct=terminal)
+        for candidate in result.candidates:
+            self.assertEqual(candidate.status, 'optimal', candidate.solver_message)
+            self.assertEqual([layer.name for layer in candidate.layers][-2:],
+                             ['valley-charge-delay', 'power-variation'])
+            validate_candidate(request, candidate, terminal_soc_target_pct=terminal)
+
     def prepare_at(self, hour, minute):
         from m4.tests.test_m4_late_peak_reserve import reserve_request
         base = reserve_request('peak-reserve-v3')

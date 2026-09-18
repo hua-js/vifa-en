@@ -163,7 +163,13 @@ def solve_milp(
     model.active_objective = pyo.Objective(expr=_linear_expression(variables, objective))
     model.objective_locks = pyo.ConstraintList()
     for lock in locks:
-        model.objective_locks.add((None, _linear_expression(variables, lock.vector), float(lock.upper_bound)))
+        if not np.any(lock.vector):
+            # A remaining-day window can have no eligible valley slots. Its
+            # zero objective still needs a symbolic lock, not Python True/False.
+            model.objective_locks.add(pyo.Constraint.Feasible if 0.0 <= lock.upper_bound
+                                      else pyo.Constraint.Infeasible)
+        else:
+            model.objective_locks.add((None, _linear_expression(variables, lock.vector), float(lock.upper_bound)))
 
     remaining = time_limit_seconds - (monotonic() - started)
     if remaining <= 0 or not _HIGHS_LOCK.acquire(timeout=remaining):
