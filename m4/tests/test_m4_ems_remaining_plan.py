@@ -45,11 +45,58 @@ class RemainingPlanTests(unittest.TestCase):
         self.assertEqual(result['operations']['destroy'][0]['query']['filterByTk'], 9)
         self.opener.open.assert_not_called()
 
-    def test_active_row_crossing_cutover_is_not_silently_changed(self):
+    def test_active_row_is_truncated_when_new_plan_is_idle(self):
         self.full_day()
         self.reader._read_table.return_value = [dict(self.row, start_time='14:00:00', end_time='18:00:00')]
-        with self.assertRaisesRegex(ModelUpdateError, '连续切换'):
-            self.remaining()
+        result = self.remaining()
+        self.assertEqual(result['cutover_record_ids'], [7])
+        self.assertEqual(result['operations']['update'][0]['body'], {'end_time': '14:15:00'})
+        self.assertFalse(result['operations']['create'])
+        self.assertFalse(result['operations']['destroy'])
+
+    def test_identical_active_tail_updates_only_ownership_metadata(self):
+        self.full_day()
+        for i in (0, 1):
+            self.payload['plan'][i].update(mode='discharge', target_power_kw=300+i*20)
+        row = dict(self.row, id=27, start_time='14:00:00', end_time='14:45:00',
+                   type='discharge', kw=90)
+        self.reader._read_table.return_value = [self.row, row]
+        adapter = EMSRemainingPlanAdapter(self.reader, fixed_cabinet_power=True)
+        result = adapter.preview('station-2', self.payload, self.config, now=self.now)
+        self.assertEqual(result['carried_record_ids'], [27])
+        self.assertFalse(result['operations']['create'])
+        self.assertFalse(result['operations']['destroy'])
+        body = result['operations']['update'][0]['body']
+        self.assertEqual(body, dict(m4_run_id=self.payload['run_id'], m4_plan_date=self.payload['date']))
+        row.update(body)
+        result = adapter.preview('station-2', self.payload, self.config, now=self.now)
+        self.assertFalse(any(result['operations'].values()))
+
+    def test_changed_active_tail_splits_at_cutover_but_overlap_stays_blocked(self):
+        for changes in ({'end_time': '14:30:00'}, {'end_time': '15:00:00'},
+                        {'kw': 80}, {'type': 'charge'}, {'overlap': True}):
+            with self.subTest(changes=changes):
+                self.full_day()
+                for i in (0, 1):
+                    self.payload['plan'][i].update(mode='discharge', target_power_kw=300)
+                row = dict(self.row, id=27, start_time='14:00:00', end_time='14:45:00',
+                           type='discharge', kw=90)
+                row.update({k: v for k, v in changes.items() if k != 'overlap'})
+                rows = [self.row, row]
+                if changes.get('overlap'):
+                    rows.append(dict(row, id=28, start_time='14:30:00'))
+                self.reader._read_table.return_value = rows
+                adapter = EMSRemainingPlanAdapter(self.reader, fixed_cabinet_power=True)
+                if changes.get('overlap'):
+                    with self.assertRaisesRegex(ModelUpdateError, '连续切换'):
+                        adapter.preview('station-2', self.payload, self.config, now=self.now)
+                else:
+                    result = adapter.preview('station-2', self.payload, self.config, now=self.now)
+                    self.assertEqual(result['cutover_record_ids'], [27])
+                    self.assertEqual(result['operations']['update'][0]['body'], {'end_time': '14:15:00'})
+                    self.assertEqual(result['operations']['create'][0]['body']['start_time'], '14:15:00')
+                    self.assertEqual(result['operations']['create'][0]['body']['end_time'], '14:45:00')
+                    self.assertFalse(result['operations']['destroy'])
 
     def test_missing_tail_or_gap_or_future_overpower_rejected(self):
         self.full_day()
@@ -69,7 +116,8 @@ class RemainingPlanTests(unittest.TestCase):
         self.full_day()
         self.payload['plan'][0].update(mode='discharge', target_power_kw=540)
         self.reader._read_table.return_value = [dict(self.row, id=8,
-            start_time='14:15:00', end_time='14:30:00', type='discharge', kw=90)]
+            start_time='14:15:00', end_time='14:30:00', type='discharge', kw=90,
+            m4_run_id=self.payload['run_id'], m4_plan_date=self.payload['date'])]
         result = self.remaining()
         self.assertEqual(result['unchanged_record_ids'], [8])
         self.assertFalse(any(result['operations'].values()))

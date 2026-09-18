@@ -14,6 +14,7 @@ from urllib.request import Request, build_opener
 from shared.project import get_project
 from .control_sources import _NoRedirect
 from .ems_model_update import ModelUpdateError, ZONE, _stamp
+from .ems_remaining_plan import matches_body
 
 
 class EMSTableWriter:
@@ -57,7 +58,8 @@ class EMSTableWriter:
             station_id=station, network_write_performed=False,
             device_execution_status='unverified', commissioning_only=True, completed_operations=0,
             effective_at=prepared['effective_at'], configuration_version=prepared['configuration_version'],
-            operations=prepared['operations'], pending_operation=None, verified_operations=[])
+            operations=prepared['operations'], cutover_record_ids=prepared.get('cutover_record_ids', []),
+            pending_operation=None, verified_operations=[])
         try:
             fd = os.open(hold, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         except FileExistsError:
@@ -79,8 +81,14 @@ class EMSTableWriter:
         try:
             save()  # durable intent before the first POST
             # Only for inhibited EMS commissioning. Live use requires atomic activation.
-            for action in ('destroy', 'update', 'create'):
-                for operation in prepared['operations'][action]:
+            cutovers = set(prepared.get('cutover_record_ids', []))
+            updates = prepared['operations']['update']
+            batches = [('destroy', prepared['operations']['destroy']),
+                       ('update', [op for op in updates if op['query']['filterByTk'] not in cutovers]),
+                       ('create', prepared['operations']['create']),
+                       ('update', [op for op in updates if op['query']['filterByTk'] in cutovers])]
+            for action, operations in batches:
+                for operation in operations:
                     if (now or datetime.now(ZONE)) >= _stamp(prepared['effective_at']):
                         raise ModelUpdateError('已错过计划表写入窗口。')
                     phase = 'read_before_write'
@@ -125,7 +133,7 @@ class EMSTableWriter:
                     if action == 'destroy':
                         verified = not matches
                     else:
-                        verified = len(matches) == 1 and all(matches[0].get(k) == v for k, v in operation['body'].items())
+                        verified = len(matches) == 1 and matches_body(matches[0], operation['body'])
                     if not verified:
                         raise ModelUpdateError('计划表回读未确认。')
                     outcome['verified_operations'].append(dict(action=action, record_id=identifier))
@@ -137,6 +145,12 @@ class EMSTableWriter:
             if any(final['operations'].values()):
                 raise ModelUpdateError('计划表最终回读不一致。')
             outcome['status'] = 'plan_table_readback_verified'
+            # Business execution means confirmed EMS table synchronization;
+            # physical device execution remains independently unverified.
+            outcome['execution_basis'] = 'ems_plan_table_readback_v1'
+            outcome['plan_date'] = payload['date']
+            outcome['confirmed_plan'] = [{k: p[k] for k in
+                ('timestamp', 'mode', 'target_power_kw')} for p in payload['plan']]
             save()
             hold.unlink()
         except Exception as error:

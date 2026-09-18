@@ -285,6 +285,8 @@ class RollingPlanService:
                     payload['ems_table_write'] = dict(status='table_write_unconfirmed', network_write_performed=None,
                         device_execution_status='unverified',
                         reason=str(error) if isinstance(error, ValueError) else '计划表写入暂不可用。')
+            from .ems_execution import annotate_execution
+            annotate_execution(station, run_id, payload, payload['plan'])
             job = dict(station_id=station, run_id=run_id, status='completed', result=payload,
                 policy_version=POLICY, message=reason)
         except Exception as error:

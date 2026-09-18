@@ -12,6 +12,22 @@ from .ems_model_update import EMSModelUpdateAdapter, ModelUpdateError, ZONE, _st
 POLICY = 'ems-remaining-plan-preview-v1'
 
 
+def matches_body(row, body):
+    """Compare date-only fields with NocoBase's optional midnight encoding."""
+    for key, expected in body.items():
+        actual = row.get(key)
+        if key == 'm4_plan_date' and isinstance(actual, str) and actual != expected:
+            try:
+                at = datetime.fromisoformat(actual.replace('Z', '+00:00'))
+                if at.time() == datetime.min.time():
+                    actual = at.date().isoformat()
+            except ValueError:
+                pass
+        if actual != expected:
+            return False
+    return True
+
+
 def _clock(value, day, *, end=False):
     if value == '24:00:00' and end:
         return datetime.combine(day+timedelta(days=1), datetime.min.time(), ZONE)
@@ -75,6 +91,7 @@ class EMSRemainingPlanAdapter:
 
         rows = self.reader._read_table('t_model')
         future, preserved, identifiers = {}, [], set()
+        carried, cutovers, windows = {}, {}, []
         for row in rows:
             owners = row.get('es_sn')
             if not isinstance(owners, list):
@@ -98,26 +115,57 @@ class EMSRemainingPlanAdapter:
             if end <= start:
                 preserved.append(identifier)
                 continue
+            windows.append((identifier, begin, end))
             if begin < start:
-                raise ModelUpdateError('现有计划跨越新方案生效时刻，需先确认连续切换方式。')
+                first = segments[0] if segments else None
+                try:
+                    kw = float(row.get('kw'))
+                except (ValueError, TypeError):
+                    kw = float('nan')
+                if isinstance(row.get('kw'), bool) or not math.isfinite(kw) or kw < 0:
+                    raise ModelUpdateError('现有计划功率无效，无法确认连续切换方式。')
+                if (not first or first['start'] != start or first['end'] != end
+                        or first['mode'] != row['type'] or isinstance(row.get('kw'), bool)
+                        or not math.isfinite(kw) or first['kw'] != kw):
+                    cutovers[identifier] = row
+                    continue
+                carried[identifier] = row
+                # Match only the remaining portion while preserving the actual
+                # running record's original boundaries and power.
+                begin = start
             if (begin, end) in future:
                 raise ModelUpdateError('现有未来计划时段重复。')
             future[begin, end] = row
 
+        for identifier, begin, end in windows:
+            if identifier in (carried.keys() | cutovers.keys()) and any(other != identifier and b < end and e > begin
+                                              for other, b, e in windows):
+                raise ModelUpdateError('承接中的计划与其他时段重叠，需先确认连续切换方式。')
+
         operations = dict(create=[], update=[], destroy=[])
+        # Apply these updates LAST, after all future records are read back.
+        # Leave the elapsed portion and its original version ownership intact.
+        for row in cutovers.values():
+            operations['update'].append(_mutation('update', row, station,
+                body={'end_time': start.strftime('%H:%M:%S')}))
         unchanged, schedule = [], []
         for segment in segments:
             begin, end = segment['start'], segment['end']
             body = dict(start_time=begin.strftime('%H:%M:%S'), end_time=end.strftime('%H:%M:%S'),
-                type=segment['mode'], kw=segment['kw'], repeat='每天重复', es_sn=[station.source_code])
-            schedule.append(dict(start_at=begin.isoformat(), end_at=end.isoformat(), **body))
+                type=segment['mode'], kw=segment['kw'], repeat='每天重复', es_sn=[station.source_code],
+                m4_run_id=run_id, m4_plan_date=start.date().isoformat())
             row = future.pop((begin, end), None)
+            carrying = row is not None and row['id'] in carried
+            if carrying:
+                body.update(start_time=row['start_time'], end_time=row['end_time'], kw=row['kw'])
+            schedule.append(dict(start_at=begin.isoformat(), end_at=end.isoformat(), **body))
             if row is None:
                 operations['create'].append(dict(method='POST', path='t_model:create', query={}, body=body))
-            elif all(row.get(k) == v for k, v in body.items()):
+            elif matches_body(row, body):
                 unchanged.append(row['id'])
             else:
-                operations['update'].append(_mutation('update', row, station, body=body))
+                update = {k: body[k] for k in ('m4_run_id', 'm4_plan_date')} if carrying else body
+                operations['update'].append(_mutation('update', row, station, body=update))
         # Includes old future charge/discharge rows in newly idle gaps. Omitting
         # idle creates must not leave an old conflicting instruction in place.
         for row in future.values():
@@ -128,6 +176,8 @@ class EMSRemainingPlanAdapter:
             effective_at=start.isoformat(), end_at=midnight.isoformat(), power_scope='cabinet',
             configuration_version=configuration.version, schedule=schedule, operations=operations,
             preserved_record_ids=preserved, unchanged_record_ids=unchanged,
+            carried_record_ids=list(carried),
+            cutover_record_ids=list(cutovers),
             dispatch_status='not_dispatched', network_write_performed=False, execution_ready=False,
             activation_requirements=['atomic_plan_activation_unverified', 'daily_repeat_expiry_unverified'],
             execution_order=None)

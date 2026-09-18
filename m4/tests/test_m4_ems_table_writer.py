@@ -156,3 +156,74 @@ class TableWriterTests(unittest.TestCase):
             self.assertNotIn('dummy-test-only',json.dumps(result))
             self.assertNotIn('example.invalid',json.dumps(result))
             self.transport.open.assert_called_once()
+
+    def test_new_fields_are_written_and_confirmed_plan_is_archived(self):
+        with tempfile.TemporaryDirectory() as root:
+            writer = self.prepare(root)
+            result = writer.submit('station-2', self.payload, self.config, now=self.now)
+            created = next(row for row in self.rows if row['id'] == 10)
+            self.assertEqual(created['m4_run_id'], self.payload['run_id'])
+            self.assertEqual(created['m4_plan_date'], self.payload['date'])
+            self.assertEqual(result['execution_basis'], 'ems_plan_table_readback_v1')
+            self.assertEqual(len(result['confirmed_plan']), len(self.payload['plan']))
+
+    def test_running_record_is_carried_without_rewriting_execution_fields(self):
+        with tempfile.TemporaryDirectory() as root:
+            writer = self.prepare(root)
+            self.rows[1].update(start_time='14:00:00', end_time='14:30:00', type='discharge', kw=90)
+            result = writer.submit('station-2', self.payload, self.config, now=self.now)
+            self.assertEqual(result['status'], 'plan_table_readback_verified')
+            self.assertEqual(result['completed_operations'], 1)
+            request = self.transport.open.call_args.args[0]
+            self.assertTrue(urlsplit(request.full_url).path.endswith(':update'))
+            self.assertEqual(set(json.loads(request.data)), {'m4_run_id', 'm4_plan_date'})
+            self.assertEqual((self.rows[1]['start_time'], self.rows[1]['end_time'], self.rows[1]['kw']),
+                             ('14:00:00', '14:30:00', 90))
+
+    def test_changed_running_record_is_cut_only_after_future_readback(self):
+        with tempfile.TemporaryDirectory() as root:
+            writer = self.prepare(root)
+            self.rows[1].update(start_time='14:00:00', end_time='16:00:00', type='charge', kw=100)
+            original = self.transport.open.side_effect
+            def check_order(request, **kwargs):
+                action = urlsplit(request.full_url).path.split(':')[-1]
+                if action == 'create':
+                    self.assertEqual(self.rows[1]['end_time'], '16:00:00')
+                if action == 'update':
+                    self.assertTrue(any(r['id'] == 10 for r in self.rows))
+                    self.assertEqual(json.loads(request.data), {'end_time': '14:15:00'})
+                return original(request, **kwargs)
+            self.transport.open.side_effect = check_order
+            result = writer.submit('station-2', self.payload, self.config, now=self.now)
+            self.assertEqual(result['status'], 'plan_table_readback_verified')
+            self.assertEqual(result['verified_operations'], [dict(action='create', record_id=10),
+                                                           dict(action='update', record_id=8)])
+            self.assertEqual(self.rows[1]['start_time'], '14:00:00')
+            self.assertEqual(self.rows[1]['kw'], 100)
+
+    def test_future_create_failure_leaves_running_end_untouched(self):
+        with tempfile.TemporaryDirectory() as root:
+            writer = self.prepare(root)
+            self.rows[1].update(start_time='14:00:00', end_time='16:00:00')
+            self.transport.open.side_effect = TimeoutError('no response')
+            result = writer.submit('station-2', self.payload, self.config, now=self.now)
+            self.assertEqual(result['status'], 'table_write_unconfirmed')
+            self.assertEqual(result['pending_operation']['action'], 'create')
+            self.assertEqual(self.rows[1]['end_time'], '16:00:00')
+            self.assertTrue((Path(root)/'station-2.hold').exists())
+
+    def test_missing_new_field_in_readback_keeps_hold(self):
+        with tempfile.TemporaryDirectory() as root:
+            writer = self.prepare(root)
+            original = self.transport.open.side_effect
+            def strip_date(request, **kwargs):
+                response = original(request, **kwargs)
+                for row in self.rows:
+                    row.pop('m4_plan_date', None)
+                return response
+            self.transport.open.side_effect = strip_date
+            result = writer.submit('station-2', self.payload, self.config, now=self.now)
+            self.assertEqual(result['status'], 'table_write_unconfirmed')
+            self.assertEqual(result['failure_stage'], 'readback')
+            self.assertNotIn('confirmed_plan', result)
+            self.assertTrue((Path(root)/'station-2.hold').exists())

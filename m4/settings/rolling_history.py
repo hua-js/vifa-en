@@ -1,6 +1,7 @@
 """Reconstruct advisory coverage from immutable rolling archives, never execution."""
 from datetime import datetime, timedelta
 import math
+from .ems_execution import annotate_execution
 
 STEP = timedelta(minutes=15)
 
@@ -55,6 +56,7 @@ def advisory_history(station, jobs, now):
                 points.append(item)
             if not points or not isinstance(job['run_id'], str):
                 raise ValueError('empty archive')
+            annotate_execution(station, job['run_id'], p, points)
             versions.append(dict(run_id=job['run_id'], daily_run_id=p['daily_run_id'],
                 source=p['source'], finished_at=finished.isoformat(),
                 effective_at=effective.isoformat(), valid_until=until.isoformat(),

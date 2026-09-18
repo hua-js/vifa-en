@@ -26,7 +26,7 @@ _TABLES = {
     't_es': ('电站容量', 'id,sn,es_power_storage,updatedAt'),
     't_need': ('需量控制', 'id,f_es_sn,need_kw,reserved_kw,rated_capacity,load_rate,updatedAt'),
     're_flow': ('防逆流', 'id,fk_es_sn,re_kw,updatedAt'),
-    't_model': ('每日充放电计划', 'id,es_sn,start_time,end_time,type,kw,repeat,updatedAt'),
+    't_model': ('每日充放电计划', 'id,es_sn,start_time,end_time,type,kw,repeat,updatedAt,m4_run_id,m4_plan_date'),
 }
 _TIME = re.compile(r'(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d\Z')
 _PAGE_SIZE = 100
