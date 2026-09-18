@@ -28,6 +28,15 @@ class TableWriterTests(unittest.TestCase):
             action = urlsplit(request.full_url).path.split(':')[-1]
             body = json.loads(request.data)
             identifier = int(parse_qs(urlsplit(request.full_url).query).get('filterByTk', ['0'])[0])
+            if action != 'create':
+                predicate = json.loads(parse_qs(urlsplit(request.full_url).query)['filter'][0])['$and']
+                # Reproduce the deployed collection: array $eq silently matches
+                # no rows even though the endpoint returns HTTP 200.
+                if any(isinstance(value['$eq'], list) for clause in predicate for value in clause.values()):
+                    response = io.BytesIO(b'{"data": []}')
+                    response.status = 200
+                    return response
+                self.assertEqual({key for clause in predicate for key in clause}, {'id', 'updatedAt'})
             if action == 'destroy':
                 self.rows[:] = [r for r in self.rows if r['id'] != identifier]
                 data = {}
@@ -93,6 +102,20 @@ class TableWriterTests(unittest.TestCase):
             (Path(root)/'station-2.hold').write_text('previous run')
             self.assertEqual(writer.submit('station-2', self.payload, self.config, now=self.now)['status'], 'blocked')
             self.transport.open.assert_not_called()
+
+    def test_changed_station_or_version_before_post_blocks_write(self):
+        for changed in ({'es_sn': ['ES01']}, {'es_sn': ['ES02', 'ES01']},
+                        {'updatedAt': '2026-09-18T00:00:00Z'}):
+            with self.subTest(changed=changed), tempfile.TemporaryDirectory() as root:
+                writer = self.prepare(root)
+                prepared = writer.adapter.preview('station-2', self.payload, self.config, now=self.now)
+                writer.adapter.preview = Mock(return_value=prepared)
+                self.rows[1].update(changed)
+                result = writer.submit('station-2', self.payload, self.config, now=self.now)
+                self.assertEqual(result['status'], 'table_write_unconfirmed')
+                self.assertEqual(result['failure_stage'], 'read_before_write')
+                self.assertFalse(result['network_write_performed'])
+                self.transport.open.assert_not_called()
 
     def test_read_crossing_cutover_prevents_post(self):
         with tempfile.TemporaryDirectory() as root:

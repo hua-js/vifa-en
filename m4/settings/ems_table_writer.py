@@ -89,8 +89,10 @@ class EMSTableWriter:
                     if action != 'create':
                         selected = [row for row in before if row.get('id') == identifier]
                         predicate = json.loads(operation['query']['filter'])['$and']
-                        if len(selected) != 1 or any(selected[0].get(key) != expected['$eq']
-                                for clause in predicate for key, expected in clause.items()):
+                        if (len(selected) != 1
+                                or selected[0].get('es_sn') != [get_project().station(station).source_code]
+                                or any(selected[0].get(key) != expected['$eq']
+                                for clause in predicate for key, expected in clause.items())):
                             raise ModelUpdateError('计划表已被其他操作修改，暂停写入。')
                     url = get_project().sources['m4_base_url'].rstrip('/')+'/'+operation['path']
                     if operation['query']:

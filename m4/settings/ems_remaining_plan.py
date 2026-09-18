@@ -25,8 +25,10 @@ def _clock(value, day, *, end=False):
 
 
 def _mutation(action, row, station, *, body=None):
+    # Array equality on es_sn does not match this NocoBase collection. Ownership
+    # is checked before each POST; id + updatedAt guard the checked row remotely.
     predicate = {'$and': [{'id': {'$eq': row['id']}},
-        {'es_sn': {'$eq': [station.source_code]}}, {'updatedAt': {'$eq': row['updatedAt']}}]}
+        {'updatedAt': {'$eq': row['updatedAt']}}]}
     result = dict(method='POST', path='t_model:'+action,
         query=dict(filterByTk=row['id'], filter=json.dumps(predicate, ensure_ascii=False, separators=(',', ':'))))
     if body is not None:
