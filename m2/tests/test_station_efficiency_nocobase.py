@@ -69,6 +69,49 @@ DEVICE_POINT = {
 
 
 class StationEfficiencyNocoBaseTests(unittest.TestCase):
+    def test_single_record_array_acknowledges_queued_event(self):
+        import tempfile
+        from pathlib import Path
+        from m2.station_efficiency_event_outbox import enqueue_event, flush_station_events
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'queue.sqlite3'
+            enqueue_event(BOTTLENECK_EVENT, path)
+            result = flush_station_events(
+                'ES02', path,
+                save_event=lambda event: save_bottleneck_event(
+                    event, CONFIG, request_json=lambda *args: {'data': [{'id': 42}]},
+                ),
+            )
+            self.assertEqual(result, {'attempted': 1, 'saved': 1, 'failed': 0, 'outbox_pending': 0})
+
+    def test_decimal_strings_from_device_table_reach_bottleneck_evaluator_as_numbers(self):
+        from m2.station_efficiency_bottlenecks import evaluate_station_bottlenecks
+        from m2.tests.test_station_efficiency_bottlenecks import RULE, battery_point, minute_point
+
+        source = [battery_point('cab-1', minute, '31.8') for minute in range(2)]
+        source[0]['battery_power_kw'] = '-12.5'
+        rows = fetch_device_points(
+            'ES02', '2026-08-27T10:00:00+08:00', '2026-08-27T10:02:00+08:00',
+            CONFIG, request_json=lambda *args: {'data': source},
+        )
+        events = evaluate_station_bottlenecks(
+            station_id='ES02', rule=RULE, active_events=[], device_points=rows,
+            minute_points=[minute_point(0, storage_load=80), minute_point(1, storage_load=81)],
+        )
+        self.assertEqual([(e['event_type'], e['device_id']) for e in events], [('chain_low_efficiency', 'storage_load')])
+        self.assertEqual(rows[0]['temperature_c'], 31.8)
+        self.assertEqual(rows[0]['battery_power_kw'], -12.5)
+        self.assertEqual(source[0]['temperature_c'], '31.8')
+
+    def test_device_numeric_conversion_rejects_invalid_values(self):
+        for value in ('NaN', 'Infinity', '', 'unknown', '1_000', True, float('inf')):
+            with self.subTest(value=value), self.assertRaises(StationEfficiencyStoreError):
+                fetch_device_points(
+                    'ES02', '2026-08-27T10:00:00+08:00', '2026-08-27T10:02:00+08:00',
+                    CONFIG, request_json=lambda *args: {'data': [{'temperature_c': value}]},
+                )
+
     def test_device_save_uses_four_field_identity(self):
         calls = []
 

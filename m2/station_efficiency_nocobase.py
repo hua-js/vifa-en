@@ -3,6 +3,9 @@
 from datetime import datetime, timezone
 import json
 import math
+import re
+import sys
+import time
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urlsplit
 from urllib.request import Request, urlopen
@@ -18,6 +21,31 @@ ALLOWED_COLLECTIONS = {
     "t_efficiency_bottleneck_events",
     "t_efficiency_device_points",
 }
+
+_DEVICE_NUMERIC_FIELDS = (
+    "active_power_kw", "rated_power_kw", "load_rate_pct",
+    "battery_power_kw", "temperature_c",
+)
+_DECIMAL_TEXT = re.compile(r"[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?")
+
+
+def _normalize_device_record(record):
+    """Decode NocoBase decimal strings at the storage boundary, not in rules."""
+    normalized = dict(record)
+    for field in _DEVICE_NUMERIC_FIELDS:
+        value = record.get(field)
+        if value is None:
+            continue
+        if isinstance(value, str) and _DECIMAL_TEXT.fullmatch(value.strip()):
+            value = float(value)
+        try:
+            valid = type(value) in (int, float) and math.isfinite(value)
+        except OverflowError:
+            valid = False
+        if not valid:
+            raise StationEfficiencyStoreError(f"设备分钟数据 {field} 必须是有限数值或 null")
+        normalized[field] = value
+    return normalized
 
 
 class StationEfficiencyStoreError(ValueError):
@@ -80,8 +108,7 @@ def _request_json(url, token, timeout, body):
             },
             method="POST",
         )
-        with urlopen(request, timeout=timeout) as response:
-            return json.load(response)
+        return _transport_json(request, timeout)
     except HTTPError as exc:
         if exc.code in {401, 403}:
             raise StationEfficiencyStoreError("NocoBase 写入未授权") from exc
@@ -102,8 +129,7 @@ def _request_get_json(url, token, timeout):
             },
             method="GET",
         )
-        with urlopen(request, timeout=timeout) as response:
-            return json.load(response)
+        return _transport_json(request, timeout)
     except HTTPError as exc:
         if exc.code in {401, 403}:
             raise StationEfficiencyStoreError("NocoBase 读取未授权") from exc
@@ -117,6 +143,57 @@ def _request_get_json(url, token, timeout):
 def _request_post_json(url, token, timeout):
     """执行不需要业务请求体的固定 NocoBase POST 操作。"""
     return _request_json(url, token, timeout, {})
+
+
+def _transport_json(request, timeout):
+    """Report allowlisted transport metadata immediately, without request secrets."""
+    started = time.monotonic()
+
+    def report(kind, status=None):
+        resource = urlsplit(request.full_url).path.rsplit("/", 1)[-1]
+        collection, _, operation = resource.partition(":")
+        diagnostic = {
+            "source": "m2_store_diagnostic",
+            "collection": collection if collection in ALLOWED_COLLECTIONS else "unknown",
+            "operation": operation if operation in {"list", "updateOrCreate", "destroy"} else "unknown",
+            "error_type": kind,
+            "http_status": status if type(status) is int and 100 <= status <= 599 else None,
+            "elapsed_ms": max(0, round((time.monotonic() - started) * 1000)),
+        }
+        try:
+            print(json.dumps(diagnostic, separators=(",", ":")), file=sys.stderr, flush=True)
+        except (OSError, ValueError):
+            pass  # Diagnostic output must not change persistence behavior.
+
+    status = None
+    try:
+        with urlopen(request, timeout=timeout) as response:
+            status = getattr(response, "status", None)
+            payload = json.load(response)
+    except HTTPError as exc:
+        report("http_error", exc.code)
+        raise
+    except (URLError, TimeoutError, OSError) as exc:
+        reason = exc.reason if isinstance(exc, URLError) else exc
+        report("timeout" if isinstance(reason, TimeoutError) else "network_error")
+        raise
+    except (TypeError, ValueError):
+        report("invalid_json", status)
+        raise
+    if not isinstance(payload, dict) or payload.get("errors"):
+        report("response_error", status)
+    else:
+        operation = urlsplit(request.full_url).path.rsplit(":", 1)[-1]
+        data = payload.get("data")
+        valid = (
+            _is_single_record(data) if operation == "updateOrCreate" else
+            isinstance(data, list) if operation == "list" else
+            type(data) is int and data >= 0 if operation == "destroy" else
+            isinstance(data, (dict, list))
+        )
+        if not valid:
+            report("invalid_response", status)
+    return payload
 
 
 def _canonical_time(value, field):
@@ -276,7 +353,10 @@ def fetch_device_points(
         _config_text(config, "nocobase_token"),
         _timeout(config),
     )
-    return _read_records(payload, "NocoBase 未返回合法设备分钟数据")
+    return [
+        _normalize_device_record(record)
+        for record in _read_records(payload, "NocoBase 未返回合法设备分钟数据")
+    ]
 
 
 def fetch_active_events(station_id, config, request_json=None):
@@ -330,15 +410,22 @@ def fetch_dashboard_events(
     )
 
 
+def _is_single_record(data):
+    # NocoBase may return the update branch as a one-record array.
+    return isinstance(data, dict) or (
+        isinstance(data, list) and len(data) == 1 and isinstance(data[0], dict)
+    )
+
+
 def _saved_record(payload):
     if not isinstance(payload, dict):
         raise StationEfficiencyStoreError("NocoBase 未返回合法结果")
     if payload.get("errors"):
         raise StationEfficiencyStoreError("NocoBase 拒绝写入")
     record = payload.get("data")
-    if not isinstance(record, dict):
+    if not _is_single_record(record):
         raise StationEfficiencyStoreError("NocoBase 未返回保存后的记录")
-    return record
+    return record[0] if isinstance(record, list) else record
 
 
 def _save_upsert(envelope, config, request_json=None):

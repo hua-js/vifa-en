@@ -342,8 +342,8 @@
     "type": "function",
     "z": "b9c07ab9fb24cf5f",
     "g": "6a0f5b7f19c0f860",
-    "name": "丢弃分钟stderr",
-    "func": "return null;",
+    "name": "解析分钟存储诊断",
+    "func": "const collections = ['t_efficiency_points', 't_efficiency_device_points', 't_efficiency_bottleneck_events'];\nconst operations = ['list', 'updateOrCreate', 'destroy', 'unknown'];\nconst errorTypes = ['http_error', 'timeout', 'network_error', 'invalid_json', 'response_error', 'invalid_response'];\nconst diagnostics = [];\nfor (const line of String(msg.payload || '').split(/\\r?\\n/).slice(0, 100)) {\n    try {\n        const value = JSON.parse(line);\n        if (!value || value.source !== 'm2_store_diagnostic' ||\n            !collections.includes(value.collection) ||\n            !operations.includes(value.operation) ||\n            !errorTypes.includes(value.error_type)) continue;\n        diagnostics.push({\n            collection: value.collection,\n            operation: value.operation,\n            error_type: value.error_type,\n            http_status: Number.isInteger(value.http_status) && value.http_status >= 100 && value.http_status <= 599 ? value.http_status : null,\n            elapsed_ms: Number.isSafeInteger(value.elapsed_ms) && value.elapsed_ms >= 0 ? value.elapsed_ms : null\n        });\n    } catch (_) {\n        // Ignore all raw stderr, tracebacks and unexpected fields.\n    }\n}\nif (!diagnostics.length) return null;\nreturn { payload: {\n    status: 'error',\n    source: 'm2_store_diagnostic',\n    station_id: ['ES01', 'ES02'].includes(msg.m2_station_id) ? msg.m2_station_id : null,\n    diagnostics\n} };\n",
     "outputs": 1,
     "timeout": "",
     "noerr": 0,
@@ -352,7 +352,11 @@
     "libs": [],
     "x": 650,
     "y": 1480,
-    "wires": []
+    "wires": [
+      [
+        "06ead490a31a7ae1"
+      ]
+    ]
   },
   {
     "id": "d55c1e0a8d4f9014",

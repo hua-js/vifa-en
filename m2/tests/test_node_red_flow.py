@@ -14,6 +14,28 @@ process.stdout.write(JSON.stringify(result));
 
 
 class NodeRedFlowTests(unittest.TestCase):
+    def test_store_diagnostic_redacts_untrusted_stderr_fields(self):
+        diagnostic = {
+            "source": "m2_store_diagnostic",
+            "collection": "t_efficiency_bottleneck_events",
+            "operation": "updateOrCreate",
+            "error_type": "http_error",
+            "http_status": 403,
+            "elapsed_ms": 123,
+            "message": "PRIVATE",
+            "token": "PRIVATE",
+        }
+        result = self._run_function("解析分钟存储诊断", {
+            "m2_station_id": "ES02",
+            "payload": 'PRIVATE\n' + json.dumps(diagnostic),
+        })
+        self.assertIsNotNone(result)
+        self.assertEqual(result["payload"]["station_id"], "ES02")
+        self.assertEqual(result["payload"]["diagnostics"][0]["http_status"], 403)
+        self.assertNotIn("PRIVATE", json.dumps(result))
+        diagnostic["collection"] = "PRIVATE"
+        self.assertIsNone(self._run_function("解析分钟存储诊断", {"payload": json.dumps(diagnostic)}))
+
     @classmethod
     def setUpClass(cls):
         cls.flow = json.loads(FLOW_PATH.read_text(encoding="utf-8"))
@@ -223,7 +245,7 @@ class NodeRedFlowTests(unittest.TestCase):
         self.assertIsNone(minute_non_json[0])
         self.assertNotIn("untrusted-secret", json.dumps(minute_non_json[1]))
         self.assertEqual(
-            self._run_function("丢弃分钟stderr", {"payload": "untrusted-secret"}),
+            self._run_function("解析分钟存储诊断", {"payload": "untrusted-secret"}),
             None,
         )
         self.assertEqual(
