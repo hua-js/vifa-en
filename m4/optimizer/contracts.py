@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_serializer, model_validator
@@ -35,7 +36,7 @@ class ForecastPoint(StrictModel):
     pv_forecast_kw: NonNegativeFloat
     buy_price_per_kwh: NonNegativeFloat
     sell_price_per_kwh: NonNegativeFloat = 0.0
-    tariff_period: Literal["gu", "ping", "feng"] | None = None
+    tariff_period: Literal["gu", "ping", "feng", "jian"] | None = None
 
 
 class CapabilitySnapshot(StrictModel):
@@ -83,6 +84,8 @@ class PeakReservePolicy(StrictModel):
 class OptimizationRequest(StrictModel):
     ems_schedule_modes: list[Literal["charge", "discharge", "idle"]] | None = None
     pv_dispatch_policy: Literal["legacy", "load_first_economic", "load_first_export_priority", "load_first_storage_priority"] = "legacy"
+    pv_midday_economic: bool = False
+
     peak_reserve_policy: PeakReservePolicy | None = None
     request_id: str = Field(min_length=1)
     station_id: str = Field(min_length=1)
@@ -104,9 +107,16 @@ class OptimizationRequest(StrictModel):
         output = handler(self)
         if self.ems_schedule_modes is None:
             output.pop("ems_schedule_modes", None)
+        if not self.pv_midday_economic:
+            output.pop("pv_midday_economic", None)
         if self.peak_reserve_policy is None:
             output.pop("peak_reserve_policy", None)
         return output
+
+    def pv_policy_at(self, timestamp: datetime) -> str:
+        if self.pv_midday_economic and 12 <= timestamp.astimezone(ZoneInfo("Asia/Shanghai")).hour < 14:
+            return "load_first_economic"
+        return self.pv_dispatch_policy
 
     @property
     def is_remaining_day(self) -> bool:
@@ -170,7 +180,7 @@ class OptimizationRequest(StrictModel):
         if self.peak_reserve_policy is not None:
             if any(point.tariff_period is None for point in self.points):
                 raise ValueError("peak reserve policy requires known tariff periods")
-            if not any(point.tariff_period == "feng" for point in self.points) and not self.is_remaining_day:
+            if not any(point.tariff_period in ("feng", "jian") for point in self.points) and not self.is_remaining_day:
                 raise ValueError("peak reserve policy requires at least one peak period")
         required_objectives = {
             "demand_peak",

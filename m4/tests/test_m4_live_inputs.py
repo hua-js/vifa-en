@@ -99,6 +99,19 @@ class LiveInputTests(unittest.TestCase):
         from m4.settings.live_inputs import request_from_inputs
         return request_from_inputs(config, bundle, make_profiles(), now=NOW)
 
+    def test_export_revenue_price_tracks_flat_tariff_source(self):
+        client = Client()
+        client.rates[0]['fprice'] = 0.81
+        result = self.fetch(client)
+        self.assertEqual(result['status'], 'ready')
+        self.assertTrue(all(p['sell_price_per_kwh'] == 0.81 for p in result['points']))
+        request = self.request(configuration(), result)
+        self.assertEqual(request.source_versions['pv_export_policy'], 'pv-export-flat-tariff-v1')
+        changed = copy.deepcopy(result)
+        changed['points'][0]['sell_price_per_kwh'] = 0.28
+        with self.assertRaises(ValueError):
+            self.request(configuration(), changed)
+
     def test_complete_sources_build_96_real_points_and_validated_request(self):
         client = Client()
         config = configuration()
@@ -110,7 +123,7 @@ class LiveInputTests(unittest.TestCase):
         self.assertEqual(result['horizon_points'], 96)
         self.assertEqual(len(result['points']), 96)
         self.assertEqual(result['points'][0]['load_forecast_kw'], 100)
-        self.assertTrue(all(point['pv_forecast_kw'] == 0 and point['sell_price_per_kwh'] == 0 for point in result['points']))
+        self.assertTrue(all(point['pv_forecast_kw'] == 0 and point['sell_price_per_kwh'] == float(client.rates[0]['fprice']) for point in result['points']))
         self.assertEqual(result['sources']['tariff']['period_types'], ['ping'] * 96)
         self.assertTrue(all(point['tariff_period'] == 'ping' for point in result['points']))
         self.assertTrue(all(source['status'] == 'ready' for source in result['sources'].values()))
@@ -388,7 +401,7 @@ class LiveInputTests(unittest.TestCase):
             with self.subTest(short_source=source), self.assertRaises(ValueError):
                 request_from_inputs(configuration(), bundle, make_profiles(), now=NOW)
 
-    def test_request_rechecks_timeline_and_zero_export_price(self):
+    def test_request_rechecks_timeline_and_confirmed_export_price(self):
         from m4.settings.live_inputs import request_from_inputs
         original = self.fetch()
         changes = [

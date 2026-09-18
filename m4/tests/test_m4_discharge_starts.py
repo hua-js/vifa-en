@@ -78,6 +78,11 @@ class DischargeStartTests(unittest.TestCase):
 
     def test_old_continuity_plan_is_not_current(self):
         payload = reserve_request('peak-reserve-v3').model_dump(mode='json')
+        payload['pv_midday_economic'] = True
+        payload['source_versions'].update(pv_export_policy='pv-export-flat-tariff-v1',
+            pv_export_price=format(0.6, '.17g'))
+        for point in payload['points']:
+            point['sell_price_per_kwh'] = 0.6
         self.assertTrue(matches_current_daily_policy('station-2', payload))
         for profile in payload['profiles']:
             profile['profile_version'] = profile['profile_version'].replace('station-2-continuity-v2', 'station-2-continuity-v1')

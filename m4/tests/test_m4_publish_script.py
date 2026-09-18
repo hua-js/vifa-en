@@ -1,4 +1,4 @@
-"""Exercise release orchestration with real Git snapshots and a fake Docker CLI."""
+"""Exercise release orchestration with real workspace packages and a fake Docker CLI."""
 import hashlib
 import json
 import os
@@ -65,7 +65,7 @@ if args[:1] == ['push'] and os.environ.get('MOCK_PUSH_FAIL'):
 ''')
         docker.chmod(0o755)
         self.env = dict(os.environ, PATH=str(bin_dir) + os.pathsep + os.environ['PATH'],
-                        CRR_IMAGE='registry.example.invalid/team/vifa', VERSION='m4-0.1.0',
+                        CRR_IMAGE='registry.example.invalid/team/vifa',
                         RELEASE_DIR=str(self.output), MOCK_DOCKER_LOG=str(self.log))
 
     def git(self, *args):
@@ -79,10 +79,10 @@ if args[:1] == ['push'] and os.environ.get('MOCK_PUSH_FAIL'):
     def calls(self):
         return [json.loads(line) for line in self.log.read_text().splitlines()] if self.log.exists() else []
 
-    def test_release_uses_committed_snapshot_and_matching_image_metadata(self):
+    def test_release_uses_fixed_tag_and_matching_image_metadata(self):
         result = self.run_script()
         self.assertEqual(result.returncode, 0, result.stderr)
-        reference = f'registry.example.invalid/team/vifa:m4-{self.sha[:12]}-amd64'
+        reference = 'registry.example.invalid/team/vifa:0.1.0-amd64'
         metadata = json.loads((self.output / 'release.json').read_text())
         self.assertEqual(metadata['image'], reference)
         self.assertEqual(metadata['revision'], self.sha)
@@ -95,9 +95,14 @@ if args[:1] == ['push'] and os.environ.get('MOCK_PUSH_FAIL'):
         self.assertEqual(build[build.index('--platform') + 1], 'linux/amd64')
         self.assertEqual(build[-1], str(self.output / 'backend'))
         pushes = [call for call in calls if call[0] == 'push']
-        self.assertEqual(pushes, [['push', reference], ['push', 'registry.example.invalid/team/vifa:0.1.0-amd64']])
+        self.assertEqual(pushes, [['push', reference]])
         self.assertLess(calls.index(next(c for c in calls if c[:2] == ['image', 'inspect'])), calls.index(pushes[0]))
-        self.assertEqual(sum(c[:2] == ['buildx', 'imagetools'] for c in calls), 2)
+        self.assertEqual(sum(c[:2] == ['buildx', 'imagetools'] for c in calls), 1)
+        self.assertIn('-f compose.yaml -f m4-production.override.yaml -f m4-ems-table.override.yaml', result.stdout)
+        self.assertIn('os.environ.get("M4_EMS_STATION2_TABLE_WRITES") == "1"', result.stdout)
+        self.assertIn('--wait --wait-timeout 120', result.stdout)
+        self.assertLess(result.stdout.index('[ "$m4_actual_source" ='),
+                        result.stdout.index('docker image rm'))
         self.assertFalse((self.output / 'local-secret.txt').exists())
         for line in (self.output / 'SHA256SUMS').read_text().splitlines():
             digest, name = line.split('  ', 1)
@@ -107,12 +112,31 @@ if args[:1] == ['push'] and os.environ.get('MOCK_PUSH_FAIL'):
             self.assertEqual(archive.read(self.output.name + '/release.json'),
                              (self.output / 'release.json').read_bytes())
 
-    def test_dirty_source_stops_before_docker(self):
-        (self.repo / 'm4/settings/__init__.py').write_text('# uncommitted change')
+    def test_dirty_and_untracked_source_are_packaged_with_content_identity(self):
+        changed = self.repo / 'm4/settings/__init__.py'
+        added = self.repo / 'm4/settings/new_module.py'
+        changed.write_text('# uncommitted change\n')
+        added.write_text('VALUE = 42\n')
+        (self.repo / '.local').mkdir()
+        (self.repo / '.local/config.py').write_text('SECRET = "fixture-only"\n')
         result = self.run_script()
-        self.assertEqual(result.returncode, 65)
-        self.assertEqual(self.calls(), [])
-        self.assertFalse(self.output.exists())
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for source in (changed, added):
+            packaged = self.output / 'backend/app' / source.relative_to(self.repo)
+            self.assertEqual(packaged.read_bytes(), source.read_bytes())
+        self.assertFalse((self.output / 'backend/app/.local').exists())
+        self.assertEqual(json.loads((self.output / 'release.json').read_text())['revision'], self.sha)
+        source_digest = hashlib.sha256((self.output / 'SHA256SUMS').read_bytes()).hexdigest()
+        build = next(c for c in self.calls() if c[:2] == ['buildx', 'build'])
+        self.assertIn('vifa.m4.source-sha256=' + source_digest, build)
+        self.assertIn('org.opencontainers.image.revision=' + self.sha, build)
+        self.assertIn('[ "$m4_actual_source" = "' + source_digest + '" ]', result.stdout)
+        with zipfile.ZipFile(str(self.output) + '.zip') as archive:
+            self.assertFalse(any('/.local/' in name or name.endswith('/local-secret.txt')
+                                 for name in archive.namelist()))
+            for source in (changed, added):
+                self.assertEqual(archive.read(self.output.name + '/backend/app/'
+                    + source.relative_to(self.repo).as_posix()), source.read_bytes())
 
     def test_unsupported_platform_is_rejected(self):
         result = self.run_script(PLATFORM='linux/arm/v7')
@@ -124,10 +148,10 @@ if args[:1] == ['push'] and os.environ.get('MOCK_PUSH_FAIL'):
         self.assertEqual(result.returncode, 0, result.stderr)
         metadata = json.loads((self.output / 'release.json').read_text())
         self.assertEqual(metadata['platform'], 'linux/arm64')
-        self.assertEqual(metadata['image'], f'registry.example.invalid/team/vifa:m4-{self.sha[:12]}-arm64')
+        self.assertEqual(metadata['image'], 'registry.example.invalid/team/vifa:0.1.0-arm64')
         self.assertIn('M4_PLATFORM=linux/arm64', (self.output / 'backend/.env.example').read_text())
         pushes = [call for call in self.calls() if call[0] == 'push']
-        self.assertEqual(pushes[-1], ['push', 'registry.example.invalid/team/vifa:0.1.0-arm64'])
+        self.assertEqual(pushes, [['push', 'registry.example.invalid/team/vifa:0.1.0-arm64']])
 
     def test_wrong_architecture_never_pushes(self):
         result = self.run_script(MOCK_ARCH='linux/arm64')
@@ -141,7 +165,7 @@ if args[:1] == ['push'] and os.environ.get('MOCK_PUSH_FAIL'):
         self.assertFalse(any(c[0] in ('tag', 'push') for c in self.calls()))
         self.assertNotIn('Published:', result.stdout)
 
-    def test_failed_revision_push_stops_release_tag_and_success_message(self):
+    def test_failed_fixed_tag_push_stops_inspection_and_success_message(self):
         result = self.run_script(MOCK_PUSH_FAIL='1')
         self.assertEqual(result.returncode, 10)
         self.assertEqual(sum(c[0] == 'push' for c in self.calls()), 1)

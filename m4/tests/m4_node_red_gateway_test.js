@@ -425,3 +425,34 @@ test('retired allocation routes cannot reach the backend', () => {
         }
     }
 });
+
+test('manual recalculation sends a JSON object accepted by the gateway', async () => {
+    const html = fs.readFileSync(path.join(root, 'm4/web/M4优化调度控制台-线上版.html'), 'utf8');
+    const start = html.indexOf('async function recalculatePlan(){');
+    const end = html.indexOf('\nfunction schedulePlanStatusPoll(', start);
+    assert.ok(start >= 0 && end > start);
+    let writes = 0, reads = 0;
+    const notices = [];
+    const context = vm.createContext({
+        $: id => id === 'station' ? {value:'station-2'} : id === 'plan-date' ? {value:'2026-09-18'} : {disabled:false},
+        today: () => '2026-09-18', updateRecalculateButton(){}, submittingPlans:new Set(),
+        generation:0, pollTimer:null, clearTimeout(){}, latestJobs:new Map(), pendingReads:new Map(),
+        validateJob(){}, forgetView(){}, viewKey:()=>'test', notify:text=>notices.push(text),
+        loadCurrent:async()=>{reads++;},
+        api:async(station, resource, options)=>{
+            writes++;
+            assert.equal(station,'station-2');assert.equal(resource,'daily-plan');
+            assert.equal(options.method,'POST');
+            assert.equal(options.headers['Content-Type'],'application/json');
+            assert.deepEqual(JSON.parse(options.body),{});
+            const msg=prepared(request({station,resource,method:options.method,payload:JSON.parse(options.body)}));
+            assert.equal(msg.payload,'{}');
+            return {station_id:station,status:'running'};
+        },
+    });
+    vm.runInContext(html.slice(start,end),context);
+    await context.recalculatePlan();
+    assert.equal(writes,1);assert.equal(reads,1);
+    assert.equal(notices.length,1);assert.match(notices[0],/^已提交重算/);
+    assert.equal(context.submittingPlans.size,0);
+});

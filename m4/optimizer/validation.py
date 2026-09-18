@@ -33,8 +33,8 @@ def validate_candidate(
     peak_reserve = request.peak_reserve_policy
     terminal_reserve_start = None
     if peak_reserve is not None:
-        if (any(point.tariff_period not in ('gu', 'ping', 'feng') for point in request.points)
-                or (not request.is_remaining_day and not any(point.tariff_period == 'feng' for point in request.points))):
+        if (any(point.tariff_period not in ('gu', 'ping', 'feng', 'jian') for point in request.points)
+                or (not request.is_remaining_day and not any(point.tariff_period in ('feng', 'jian') for point in request.points))):
             raise ResultValidationError('peak reserve policy requires known tariffs and a peak period')
         if not constraints.preferred_soc_min_pct <= peak_reserve.terminal_soc_min_pct <= constraints.soc_max_pct:
             raise ResultValidationError('peak reserve terminal SOC floor outside allowed bounds')
@@ -46,8 +46,8 @@ def validate_candidate(
                 terminal_reserve_start = 0
             # Independently identify the beginning of the last peak block.
             for index, source in enumerate(request.points):
-                if source.tariff_period == 'feng' and (
-                        index == 0 or request.points[index - 1].tariff_period != 'feng'):
+                if source.tariff_period in ('feng', 'jian') and (
+                        index == 0 or request.points[index - 1].tariff_period not in ('feng', 'jian')):
                     terminal_reserve_start = index
     current_energy = capability.energy_capacity_kwh * capability.initial_soc_pct / 100.0
     for index, (source, point) in enumerate(zip(request.points, candidate.plan, strict=True)):
@@ -67,7 +67,7 @@ def validate_candidate(
         if peak_reserve is not None:
             net_load = max(source.load_forecast_kw - source.pv_forecast_kw, 0.0)
             maximum_discharge = min(capability.max_discharge_kw, net_load)
-            if peak_reserve.version != 'peak-reserve-v3' and source.tariff_period != 'feng':
+            if peak_reserve.version != 'peak-reserve-v3' and source.tariff_period not in ('feng', 'jian'):
                 grid_boundary = constraints.demand_limit_kw
                 if constraints.grid_import_limit_kw is not None:
                     grid_boundary = min(grid_boundary, constraints.grid_import_limit_kw)
@@ -98,7 +98,8 @@ def validate_candidate(
         ):
             _raise(label, "PV attribution boundary")
 
-        if request.pv_dispatch_policy != "legacy":
+        pv_policy = request.pv_policy_at(source.timestamp)
+        if pv_policy != "legacy":
             surplus = max(source.pv_forecast_kw - source.load_forecast_kw, 0.0)
             if (discharge_kw - max(source.load_forecast_kw - source.pv_forecast_kw, 0.0) > tolerance
                     or point.grid_export_kw + point.pv_unabsorbed_kw - surplus > tolerance):
@@ -113,9 +114,9 @@ def validate_candidate(
                     - current_energy, 0.0,
                 ) / (capability.charge_efficiency * INTERVAL_HOURS)
                 absorbable = min(surplus, available_charge, headroom_kw)
-                if request.pv_dispatch_policy in ('load_first_export_priority', 'load_first_storage_priority'):
+                if pv_policy in ('load_first_export_priority', 'load_first_storage_priority'):
                     export_max = constraints.grid_export_limit_kw if constraints.grid_export_enabled else 0.0
-                    export_first = request.pv_dispatch_policy == 'load_first_export_priority'
+                    export_first = pv_policy == 'load_first_export_priority'
                     expected_charge = 0.0 if export_first else min(surplus, available_charge, headroom_kw)
                     expected_export = surplus if export_first else min(max(surplus-expected_charge, 0.0), export_max)
                     if abs(charge_kw-expected_charge) > tolerance or abs(point.grid_export_kw-expected_export) > tolerance:

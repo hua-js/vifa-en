@@ -47,7 +47,8 @@ class BuiltModel:
 
 def build_model(request: OptimizationRequest, *, terminal_soc_target_pct: float | None = None) -> BuiltModel:
     """Build the station rules as named Pyomo variables and constraints."""
-    load_first = request.pv_dispatch_policy != "legacy"
+    policies = [request.pv_policy_at(point.timestamp) for point in request.points]
+    load_first = any(policy != "legacy" for policy in policies)
     horizon = request.horizon_points
     peak_reserve = request.peak_reserve_policy
     continuity = any("power_variation" in layer.terms for profile in request.profiles
@@ -80,10 +81,10 @@ def build_model(request: OptimizationRequest, *, terminal_soc_target_pct: float 
             raise ValueError('peak reserve terminal SOC floor is outside allowed bounds')
         if terminal_soc_target_pct is not None and peak_reserve.terminal_soc_min_pct < terminal_soc_target_pct:
             raise ValueError('peak reserve terminal SOC floor cannot be below baseline target')
-        if any(p.tariff_period not in ('gu', 'ping', 'feng') for p in request.points):
+        if any(p.tariff_period not in ('gu', 'ping', 'feng', 'jian') for p in request.points):
             raise ValueError('peak reserve policy requires known tariff periods')
         first_peak = next((t for t, point in enumerate(request.points)
-                           if point.tariff_period == 'feng'), None)
+                           if point.tariff_period in ('feng', 'jian')), None)
         if first_peak is None and not request.is_remaining_day:
             raise ValueError('peak reserve policy requires at least one peak period')
     surplus = {t: max(p.pv_forecast_kw - p.load_forecast_kw, 0.0)
@@ -94,23 +95,23 @@ def build_model(request: OptimizationRequest, *, terminal_soc_target_pct: float 
     model.periods = pyo.RangeSet(0, horizon - 1)
     model.energy_states = pyo.RangeSet(0, horizon)
     model.pv_policy_periods = pyo.Set(initialize=range(horizon) if load_first else (), ordered=True)
-    model.pv_surplus_periods = pyo.Set(initialize=[t for t in model.periods if load_first and surplus[t] > 0], ordered=True)
+    model.pv_surplus_periods = pyo.Set(initialize=[t for t in model.periods if policies[t] != "legacy" and surplus[t] > 0], ordered=True)
 
     def allowed_charge(t):
         return charge_max if request.ems_schedule_modes is None or request.ems_schedule_modes[t] == "charge" else 0.0
 
     def charge_bound(m, t):
-        if request.pv_dispatch_policy == "load_first_export_priority" and surplus[t] > 0:
+        if policies[t] == "load_first_export_priority" and surplus[t] > 0:
             return (0.0, 0.0)
-        return (0.0, min(allowed_charge(t), surplus[t]) if load_first and surplus[t] > 0 else allowed_charge(t))
+        return (0.0, min(allowed_charge(t), surplus[t]) if policies[t] != "legacy" and surplus[t] > 0 else allowed_charge(t))
 
     def discharge_bound(m, t):
         if request.ems_schedule_modes is not None and request.ems_schedule_modes[t] != "discharge":
             return 0.0, 0.0
         point = request.points[t]
         net_load = max(point.load_forecast_kw - point.pv_forecast_kw, 0.0)
-        maximum = min(discharge_max, net_load) if load_first or peak_reserve is not None else discharge_max
-        if peak_reserve is not None and peak_reserve.version != 'peak-reserve-v3' and point.tariff_period != 'feng':
+        maximum = min(discharge_max, net_load) if policies[t] != "legacy" or peak_reserve is not None else discharge_max
+        if peak_reserve is not None and peak_reserve.version != 'peak-reserve-v3' and point.tariff_period not in ('feng', 'jian'):
             grid_boundary = min(constraints.demand_limit_kw, import_max)
             maximum = min(maximum, max(net_load - grid_boundary, 0.0))
         return 0.0, maximum
@@ -130,7 +131,7 @@ def build_model(request: OptimizationRequest, *, terminal_soc_target_pct: float 
     model.charge = pyo.Var(model.periods, domain=pyo.NonNegativeReals, bounds=charge_bound)
     model.discharge = pyo.Var(model.periods, domain=pyo.NonNegativeReals, bounds=discharge_bound)
     model.grid_import = pyo.Var(model.periods, domain=pyo.NonNegativeReals,
-                                bounds=lambda m, t: (0.0, 0.0 if load_first and surplus[t] > 0 else import_max))
+                                bounds=lambda m, t: (0.0, 0.0 if policies[t] != "legacy" and surplus[t] > 0 else import_max))
     model.grid_export = pyo.Var(model.periods, domain=pyo.NonNegativeReals, bounds=(0.0, export_max))
     model.pv_unabsorbed = pyo.Var(model.periods, domain=pyo.NonNegativeReals,
                                  bounds=lambda m, t: (0.0, request.points[t].pv_forecast_kw))
@@ -160,8 +161,8 @@ def build_model(request: OptimizationRequest, *, terminal_soc_target_pct: float 
             # Preserve the terminal reserve from the final contiguous peak block,
             # including its starting energy state and every later state.
             last_peak_start = max((t for t, point in enumerate(request.points)
-                                  if point.tariff_period == 'feng'), default=0)
-            while last_peak_start > 0 and request.points[last_peak_start - 1].tariff_period == 'feng':
+                                  if point.tariff_period in ('feng', 'jian')), default=0)
+            while last_peak_start > 0 and request.points[last_peak_start - 1].tariff_period in ('feng', 'jian'):
                 last_peak_start -= 1
             model.terminal_reserve_states = pyo.RangeSet(last_peak_start, horizon)
             model.late_peak_terminal_reserve = pyo.Constraint(
@@ -187,7 +188,8 @@ def build_model(request: OptimizationRequest, *, terminal_soc_target_pct: float 
     model.pv_available = pyo.Constraint(model.periods, rule=lambda m, t:
         m.grid_export[t] + m.pv_unabsorbed[t] <= request.points[t].pv_forecast_kw)
     model.pv_load_first = pyo.Constraint(model.pv_policy_periods, rule=lambda m, t:
-        m.grid_export[t] + m.pv_unabsorbed[t] <= surplus[t])
+        m.grid_export[t] + m.pv_unabsorbed[t] <= surplus[t]
+        if policies[t] != "legacy" else pyo.Constraint.Skip)
     # Curtailment requires saturated export and either saturated charging power
     # (storage_full=0) or a full battery at the next SOC state (storage_full=1).
     model.pv_curtailment_gate = pyo.Constraint(model.pv_surplus_periods, rule=lambda m, t:
@@ -202,14 +204,13 @@ def build_model(request: OptimizationRequest, *, terminal_soc_target_pct: float 
     # In surplus periods the battery cannot discharge or import from the grid.
     # Filling the battery and hitting the charge bound are the two ways charging
     # can saturate; the existing storage_full binary encodes the former.
-    if request.pv_dispatch_policy == 'load_first_export_priority':
-        # Full surplus export is mandatory; conflicting export caps are infeasible.
-        model.pv_export_priority = pyo.Constraint(model.pv_surplus_periods,
-            rule=lambda m, t: m.grid_export[t] == surplus[t])
-    elif request.pv_dispatch_policy == 'load_first_storage_priority':
-        model.pv_priority_charge = pyo.Constraint(model.pv_surplus_periods,
-            rule=lambda m, t: m.charge[t] >= min(allowed_charge(t), surplus[t])
-                * (1-m.pv_storage_full[t]))
+    model.pv_export_priority = pyo.Constraint(model.pv_surplus_periods,
+        rule=lambda m, t: m.grid_export[t] == surplus[t]
+        if policies[t] == 'load_first_export_priority' else pyo.Constraint.Skip)
+    model.pv_priority_charge = pyo.Constraint(model.pv_surplus_periods,
+        rule=lambda m, t: m.charge[t] >= min(allowed_charge(t), surplus[t])
+            * (1-m.pv_storage_full[t])
+        if policies[t] == 'load_first_storage_priority' else pyo.Constraint.Skip)
 
     model.preferred_soc_low = pyo.Constraint(model.periods, rule=lambda m, t:
         m.soc_low_deviation[t] + 100.0 / capacity * m.energy[t + 1] >= constraints.preferred_soc_min_pct)
@@ -224,7 +225,7 @@ def build_model(request: OptimizationRequest, *, terminal_soc_target_pct: float 
         request.points[t].buy_price_per_kwh * model.grid_import[t]
         - request.points[t].sell_price_per_kwh * model.grid_export[t] for t in model.periods))
     model.pv_unused = pyo.Expression(expr=INTERVAL_HOURS * pyo.quicksum(
-        model.pv_unabsorbed[t] + (model.grid_export[t] if not load_first else 0.0) for t in model.periods))
+        model.pv_unabsorbed[t] + (model.grid_export[t] if policies[t] == "legacy" else 0.0) for t in model.periods))
     model.throughput = pyo.Expression(expr=INTERVAL_HOURS * pyo.quicksum(
         model.charge[t] + model.discharge[t] for t in model.periods))
     model.valley_charge_delay = pyo.Expression(expr=pyo.quicksum(

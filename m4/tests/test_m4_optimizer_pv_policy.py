@@ -47,6 +47,37 @@ def solve(request):
 
 
 class PVPolicyTests(unittest.TestCase):
+    def test_midday_choice_overrides_only_the_confirmed_window(self):
+        from datetime import timedelta, timezone
+        from zoneinfo import ZoneInfo
+        request = pv_request().model_copy(update={
+            'pv_dispatch_policy': 'load_first_storage_priority', 'pv_midday_economic': True})
+        start = request.plan_start_at.astimezone(ZoneInfo('Asia/Shanghai')).replace(hour=0, minute=0)
+        for minute, expected in ((719, 'load_first_storage_priority'),
+                                 (720, 'load_first_economic'), (839, 'load_first_economic'),
+                                 (840, 'load_first_storage_priority')):
+            at = (start + timedelta(minutes=minute)).astimezone(timezone.utc)
+            self.assertEqual(request.pv_policy_at(at), expected)
+
+    def test_midday_economics_can_choose_either_storage_or_export(self):
+        # Same surplus and export price, different future avoided purchase value.
+        for hour, minute, future_buy, charge in ((12, 0, 1.1, 60.0), (12, 0, 0.1, 0.0),
+                                                (11, 45, 0.1, 60.0), (14, 0, 0.1, 60.0)):
+            payload = pv_request(export=True, export_limit=100.0, sell=0.6,
+                                 future_buy=future_buy, terminal=0.0).model_dump()
+            payload.update(pv_dispatch_policy='load_first_storage_priority', pv_midday_economic=True)
+            shift = payload['plan_start_at'].replace(hour=hour, minute=minute) - payload['plan_start_at']
+            payload['plan_start_at'] += shift
+            payload['input_observed_at'] += shift
+            for point in payload['points']:
+                point['timestamp'] += shift
+            request = OptimizationRequest.model_validate(payload)
+            for candidate in solve(request).candidates:
+                point = candidate.plan[0]
+                self.assertAlmostEqual(point.target_power_kw if point.mode == 'charge' else 0.0,
+                                       charge, delta=1e-5)
+                self.assertAlmostEqual(point.grid_export_kw, 60.0-charge, delta=1e-5)
+
     def test_customer_export_priority_idles_despite_low_export_price(self):
         request = pv_request(export=True, export_limit=100.0, sell=0.0).model_copy(
             update={'pv_dispatch_policy': 'load_first_export_priority'})

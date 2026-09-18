@@ -13,7 +13,7 @@ import math
 from zoneinfo import ZoneInfo
 
 from .pv_forecast_source import load_pv_forecast, validate_source as validate_pv_source
-from .timeseries import InputDataError
+from .timeseries import InputDataError, tariff_export_price
 from .daily_pv_policy import POLICY as DAILY_PV_POLICY, fill_night_gaps
 from .forecast_source import load_forecast, _time
 from .live_inputs import _complete, _complete_tariff_periods, _display_number, _display_time
@@ -155,6 +155,7 @@ class DailyInputService:
                     if key in ('load', 'pv', 'tariff'):
                         complete = _complete(result.get('values'), 96) and not result.get('issues')
                         if key == 'tariff':
+                            tariff_export_price(result)
                             complete = complete and _complete_tariff_periods(result.get('period_types'), 96)
                         result = {**result, 'status': 'ready' if complete else 'incomplete'}
                     sources[key] = result
@@ -197,7 +198,7 @@ class DailyInputService:
                 load_forecast_kw=float(sources['load']['values'][i]),
                 pv_forecast_kw=float(sources['pv']['values'][i]),
                 buy_price_per_kwh=float(sources['tariff']['values'][i]),
-                tariff_period=sources['tariff']['period_types'][i], sell_price_per_kwh=0.0)
+                tariff_period=sources['tariff']['period_types'][i], sell_price_per_kwh=tariff_export_price(sources['tariff']))
                 for i in range(96)]
         missing = [item['key'] for item in checks if item['status'] != 'ready']
         result = dict(schema_version='m4-daily-inputs-v1', station_id=station_id,

@@ -32,6 +32,32 @@ def pv_history():
 
 
 class TariffInputsTests(unittest.TestCase):
+    def test_export_price_follows_flat_rate_even_without_flat_periods(self):
+        periods = [dict(start_time='00:00:00', end_time='24:00:00', period_type='gu')]
+        rates = [dict(vprice=0.2, fprice=0.6)]
+        first = build_tariff_points(periods, rates, plan_start_at=START)
+        self.assertEqual(first['sell_price_per_kwh'], 0.6)
+        rates[0]['fprice'] = 0.75
+        second = build_tariff_points(periods, rates, plan_start_at=START)
+        self.assertEqual(second['sell_price_per_kwh'], 0.75)
+        self.assertEqual(first['values'], second['values'])
+        self.assertNotEqual(first['version'], second['version'])
+        for bad in (None, True, -1, float('nan')):
+            rates[0]['fprice'] = bad
+            with self.assertRaises(ValueError):
+                build_tariff_points(periods, rates, plan_start_at=START)
+
+    def test_sharp_period_uses_its_own_price_and_preserves_label(self):
+        periods, rates = tariffs()
+        periods[1]['period_type'] = 'jian'
+        rates[0]['jprice'] = 1.5201
+        result = build_tariff_points(periods, rates, plan_start_at=START)
+        self.assertEqual(result['values'][32:72], [1.5201] * 40)
+        self.assertEqual(result['period_types'][32:72], ['jian'] * 40)
+        rates[0]['jprice'] = None
+        with self.assertRaises(ValueError):
+            build_tariff_points(periods, rates, plan_start_at=START)
+
     def test_confirmed_last_minute_covers_full_last_quarter(self):
         periods, rates = tariffs()
         result = build_tariff_points(periods, rates, plan_start_at=START)

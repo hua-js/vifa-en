@@ -96,7 +96,7 @@ def build_request(
         max_input_age_seconds=parameters.max_input_age_seconds,
         interval_minutes=15,horizon_points=len(points),points=points,
         capability=capability,constraints=constraints,profiles=profiles,
-        pv_dispatch_policy=parameters.pv_dispatch_policy,
+        pv_dispatch_policy=parameters.pv_dispatch_policy, pv_midday_economic=True,
         source_versions={**source_versions,
             'constraints':f'{configuration.version}/{control_limits.source_version}',
             'capability':f'manual-limits/{configuration.version}/live/{live_state.source_version}/scope/{scope_version}',

@@ -17,7 +17,7 @@ from .models import LiveStationState, ResolvedControlLimits, StationConfiguratio
 from .realtime import ALARM_POLICY, SOURCE_FIELDS, alarm_is_advisory, build_realtime_snapshot
 from .roster import CABINET_ISOLATION_POLICY, STATION_CABINETS
 from .schedule_power import SCHEDULE_POWER_POLICY, cabinet_power_limits, effective_station_power, station_energy_capacity
-from .timeseries import InputDataError, build_pv_reference, build_tariff_points
+from .timeseries import InputDataError, tariff_export_price, build_pv_reference, build_tariff_points
 from .upstream import SourceReadError
 
 
@@ -51,7 +51,7 @@ def _complete(values, horizon=HORIZON):
 
 def _complete_tariff_periods(period_types, horizon=HORIZON):
     return (isinstance(period_types, list) and len(period_types) == horizon
-            and all(isinstance(kind, str) and kind in ('gu', 'ping', 'feng') for kind in period_types))
+            and all(isinstance(kind, str) and kind in ('gu', 'ping', 'feng', 'jian') for kind in period_types))
 
 
 def _read_result(future, label):
@@ -126,7 +126,7 @@ class LiveInputService:
             periods = pool.submit(self.client.list_rows, 't_peak_diy',
                 fields='id,start_time,end_time,period_type,updatedAt', sort='start_time', page_size=100)
             rates = pool.submit(self.client.list_rows, 't_rate',
-                fields='id,hprice,fprice,vprice,updatedAt', sort='id', page_size=100)
+                fields='id,hprice,fprice,vprice,jprice,updatedAt', sort='id', page_size=100)
             return build_tariff_points(periods.result(), rates.result(), plan_start_at=plan_start)
 
     def _pv(self, station_id, plan_start, history_end):
@@ -203,6 +203,12 @@ class LiveInputService:
                     if key == 'tariff' and not _complete_tariff_periods(result.get('period_types'), horizon):
                         complete = False
                         source_issues = [*source_issues, f'共用电价缺少完整有效的 {horizon} 点时段标签']
+                    if key == 'tariff':
+                        try:
+                            tariff_export_price(result)
+                        except InputDataError as error:
+                            complete = False
+                            source_issues = [*source_issues, str(error)]
                     status = 'ready' if complete and not source_issues else 'incomplete'
                     sources[key] = {**result, 'status': status, 'issues': source_issues,
                                     'coverage_points': result.get('coverage_points', horizon if complete else 0)}
@@ -281,7 +287,7 @@ class LiveInputService:
                 'pv_forecast_kw': float(sources['pv']['values'][i]),
                 'buy_price_per_kwh': float(sources['tariff']['values'][i]),
                 'tariff_period': sources['tariff']['period_types'][i],
-                'sell_price_per_kwh': 0.0} for i in range(horizon)]
+                'sell_price_per_kwh': tariff_export_price(sources['tariff'])} for i in range(horizon)]
         ready = (not issues and configuration.parameters is not None and bool(configuration.version)
                  and len(points) == horizon and all(source['status'] == 'ready' for source in sources.values()))
         return {'station_id': station_id, 'fetched_at': finished_at.isoformat(),
@@ -440,13 +446,15 @@ def request_from_inputs(configuration: StationConfiguration, bundle: dict, profi
                 or point.pv_forecast_kw != sources['pv']['values'][index]
                 or point.buy_price_per_kwh != sources['tariff']['values'][index]
                 or point.tariff_period != sources['tariff']['period_types'][index]
-                or point.sell_price_per_kwh != 0):
-            raise ValueError('计划点与来源序列或已确认的零售电收益口径不一致')
+                or point.sell_price_per_kwh != tariff_export_price(sources['tariff'])):
+            raise ValueError('计划点与来源序列或已确认的上网电价口径不一致')
     live = LiveStationState(station_id=configuration.station_id, available=True,
         initial_soc_pct=snapshot['initial_soc_pct'], observed_at=observed_at,
         participating_cabinet_ids=participants,
         source_version=snapshot['source_version'])
     versions = {key: sources[key]['version'] for key in ('load','pv','tariff')}
+    versions['pv_export_policy'] = sources['tariff']['export_price_policy']
+    versions['pv_export_price'] = format(tariff_export_price(sources['tariff']), '.17g')
     # Legacy evidence without this field keeps its original strict semantics
     # and request identity; new snapshots carry the explicit alarm policy.
     if snapshot.get('alarm_policy') is not None:

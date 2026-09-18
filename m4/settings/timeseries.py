@@ -21,7 +21,8 @@ class InputDataError(ValueError):
 
 _SHANGHAI = ZoneInfo('Asia/Shanghai')
 _CLOCK = re.compile(r'(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d\Z')
-_PRICE_FIELDS = {'gu': 'vprice', 'ping': 'fprice', 'feng': 'hprice'}
+_PRICE_FIELDS = {'gu': 'vprice', 'ping': 'fprice', 'feng': 'hprice', 'jian': 'jprice'}
+PV_EXPORT_POLICY = 'pv-export-flat-tariff-v1'
 _PV_METHOD = 'seven_day_same_slot_median'
 
 
@@ -77,6 +78,7 @@ def build_tariff_points(period_rows, rate_rows, *, plan_start_at: datetime) -> d
         raise InputDataError('共用电价必须且只能有一条明确生效配置')
     if not periods:
         raise InputDataError('共用电价时段为空')
+    sell_price = _number(rates[0].get('fprice'), '平段上网电价 fprice')
     segments = []
     normalized = False
     for row in periods:
@@ -117,10 +119,23 @@ def build_tariff_points(period_rows, rate_rows, *, plan_start_at: datetime) -> d
     return {
         'values': daily_values[first_slot:] + daily_values[:first_slot],
         'period_types': daily_period_types[first_slot:] + daily_period_types[:first_slot],
-        'version': _version('shared-tariff', {'values': daily_values, 'period_types': daily_period_types}),
+        'sell_price_per_kwh': sell_price,
+        'export_price_policy': PV_EXPORT_POLICY,
+        'version': _version('shared-tariff', {'values': daily_values, 'period_types': daily_period_types,
+            'sell_price_per_kwh': sell_price, 'export_price_policy': PV_EXPORT_POLICY}),
         'normalized_end_of_day': normalized,
         'source': 'shared_tariff',
     }
+
+
+def tariff_export_price(source):
+    """Require the confirmed flat-price source; never infer or default revenue."""
+    if source.get('export_price_policy') != PV_EXPORT_POLICY:
+        raise InputDataError('上网电价来源已更新，请重新读取电价。')
+    value = source.get('sell_price_per_kwh')
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise InputDataError('缺少有效平段上网电价。')
+    return _number(value, '平段上网电价')
 
 
 def _timestamp(value):

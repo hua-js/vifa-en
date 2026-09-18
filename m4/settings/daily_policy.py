@@ -1,5 +1,6 @@
 """Versioned daily planning rules; never inferred when replaying old requests."""
 from shared.project import get_project
+import math
 
 PEAK_RESERVE_DAILY_POLICY = 'm4-daily-peak-reserve-v3'
 PEAK_RESERVE_SELECTOR = 'daily-peak-reserve-cost-gate-v3'
@@ -19,9 +20,22 @@ def matches_current_daily_policy(station_id, request):
     """Reject stale daily plans before either memory or disk results are adopted."""
     if not isinstance(request, dict):
         return False
-    expected = daily_policy_version(station_id)
+    from .timeseries import PV_EXPORT_POLICY
+    points = request.get('points')
     versions = request.get('source_versions')
-    if (not isinstance(versions, dict) or versions.get('daily_policy') != expected
+    if not isinstance(versions, dict) or versions.get('pv_export_policy') != PV_EXPORT_POLICY:
+        return False
+    if (request.get('pv_midday_economic') is not True
+            or not isinstance(points, list) or len(points) != 96
+            or any(not isinstance(point, dict)
+                   or type(point.get('sell_price_per_kwh')) not in (int, float)
+                   or not math.isfinite(point['sell_price_per_kwh'])
+                   or point['sell_price_per_kwh'] < 0
+                   or format(point['sell_price_per_kwh'], '.17g') != versions.get('pv_export_price')
+                   for point in points)):
+        return False
+    expected = daily_policy_version(station_id)
+    if (versions.get('daily_policy') != expected
             or versions.get('project_configuration') != get_project().fingerprint):
         return False
     # Bounded debug plans remain readable as history, but are no longer current.
