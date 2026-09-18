@@ -131,7 +131,7 @@ class TableWriterTests(unittest.TestCase):
 
     def test_fixed_cabinet_power_changes_only_outgoing_kw(self):
         from copy import deepcopy
-        for mode, reference_power, cabinet_kw in [('charge',120,100),('discharge',533.39706,90)]:
+        for mode, reference_power, cabinet_kw in [('charge',120,100),('discharge',533.39706,100)]:
             with self.subTest(mode=mode), tempfile.TemporaryDirectory() as root:
                 writer = self.prepare(root)
                 self.payload['plan'][0].update(mode=mode,target_power_kw=reference_power)
@@ -170,7 +170,7 @@ class TableWriterTests(unittest.TestCase):
     def test_running_record_is_carried_without_rewriting_execution_fields(self):
         with tempfile.TemporaryDirectory() as root:
             writer = self.prepare(root)
-            self.rows[1].update(start_time='14:00:00', end_time='14:30:00', type='discharge', kw=90)
+            self.rows[1].update(start_time='14:00:00', end_time='14:30:00', type='discharge', kw=100)
             result = writer.submit('station-2', self.payload, self.config, now=self.now)
             self.assertEqual(result['status'], 'plan_table_readback_verified')
             self.assertEqual(result['completed_operations'], 1)
@@ -178,7 +178,7 @@ class TableWriterTests(unittest.TestCase):
             self.assertTrue(urlsplit(request.full_url).path.endswith(':update'))
             self.assertEqual(set(json.loads(request.data)), {'m4_run_id', 'm4_plan_date'})
             self.assertEqual((self.rows[1]['start_time'], self.rows[1]['end_time'], self.rows[1]['kw']),
-                             ('14:00:00', '14:30:00', 90))
+                             ('14:00:00', '14:30:00', 100))
 
     def test_changed_running_record_is_cut_only_after_future_readback(self):
         with tempfile.TemporaryDirectory() as root:

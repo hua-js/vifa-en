@@ -223,11 +223,19 @@ class OptimizationRequest(StrictModel):
                 flattened.remove("peak_reserve_shortfall")
             elif "peak_reserve_shortfall" in flattened:
                 raise ValueError("peak reserve objective requires an explicit policy")
+            early_valley_before_smoothing = (
+                station is not None and station.policy == 'peak_reserve'
+                and self.peak_reserve_policy is not None
+                and self.peak_reserve_policy.version == 'peak-reserve-v3'
+                and profile.profile_version.endswith('/station-2-continuity-v3'))
             if "discharge_starts" in flattened:
+                starts_tail = ([{'discharge_starts'}, {'valley_charge_delay'}, {'power_variation'}]
+                               if early_valley_before_smoothing else
+                               [{'discharge_starts'}, {'power_variation'}, {'valley_charge_delay'}])
                 if (station is None or station.policy != 'peak_reserve' or self.peak_reserve_policy is None
                         or self.peak_reserve_policy.version != 'peak-reserve-v3'
                         or flattened.count('discharge_starts') != 1
-                        or term_sets[-3:] != [{'discharge_starts'}, {'power_variation'}, {'valley_charge_delay'}]
+                        or term_sets[-3:] != starts_tail
                         or 'throughput' not in flattened[:flattened.index('discharge_starts')]):
                     raise ValueError('discharge starts requires a late separate station-2 daily layer')
                 flattened.remove('discharge_starts')
@@ -240,6 +248,8 @@ class OptimizationRequest(StrictModel):
                 expected_tail = ([{'power_variation'}, {'soc_preferred_deviation'},
                                   {'valley_charge_delay'}] if continuity_before_soc else
                                  [{'power_variation'}, {'valley_charge_delay'}])
+                if early_valley_before_smoothing:
+                    expected_tail = [{'discharge_starts'}, {'valley_charge_delay'}, {'power_variation'}]
                 if (not continuity_scope
                         or flattened.count('power_variation') != 1
                         or term_sets[-len(expected_tail):] != expected_tail
@@ -248,10 +258,10 @@ class OptimizationRequest(StrictModel):
                 flattened.remove('power_variation')
             if "valley_charge_delay" in flattened:
                 if (
-                    term_sets[-1] != {"valley_charge_delay"}
+                    term_sets[-2 if early_valley_before_smoothing else -1] != {"valley_charge_delay"}
                     or flattened.count("valley_charge_delay") != 1
                 ):
-                    raise ValueError("valley charge preference must be a separate final layer")
+                    raise ValueError("valley charge preference must be a separate final layer or precede station-2 v3 smoothing")
                 flattened = flattened[:-1]
             if set(flattened) != required_objectives or len(flattened) != len(
                 required_objectives

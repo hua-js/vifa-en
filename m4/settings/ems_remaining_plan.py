@@ -84,6 +84,9 @@ class EMSRemainingPlanAdapter:
                 raise ModelUpdateError('剩余日计划功率超过本站配置上限。')
             end = at+timedelta(minutes=15)
             kw = (100 if mode == 'charge' else 90) if fixed_cabinet_power else power/len(station.cabinet_sns)
+            if fixed_cabinet_power and station_id == 'station-2':
+                # t_model stores per-cabinet kW; commissioning uses 600 kW total in either mode.
+                kw = 600 / len(station.cabinet_sns)
             if segments and segments[-1]['end'] == at and segments[-1]['mode'] == mode and segments[-1]['kw'] == kw:
                 segments[-1]['end'] = end
             else:

@@ -125,7 +125,7 @@ def get_daily_profiles(station_id: str) -> list[ObjectiveProfile]:
         return profiles
     settings, _ = _resolve(station_id)
     for profile in profiles:
-        profile.profile_version += '/' + policy_version + '/station-2-continuity-v2'
+        profile.profile_version += '/' + policy_version + '/station-2-continuity-v3'
         # Economic objectives precede reserve preparation; reserve is a tie-break.
         position = next(i for i, layer in enumerate(profile.objective_order) if layer.name == 'throughput')
         profile.objective_order.insert(position, ObjectiveLayer(
@@ -136,7 +136,8 @@ def get_daily_profiles(station_id: str) -> list[ObjectiveProfile]:
         profile.objective_order.insert(len(profile.objective_order)-1, ObjectiveLayer(
             name='discharge-starts', terms={'discharge_starts': 1.0},
             absolute_tolerance=0.0, relative_tolerance=0.0))
-        profile.objective_order.insert(len(profile.objective_order)-1, ObjectiveLayer(
+        # Early valley charging takes priority over power smoothing.
+        profile.objective_order.append(ObjectiveLayer(
             name='power-variation', terms={'power_variation': 1.0},
             absolute_tolerance=settings.absolute_tolerance,
             relative_tolerance=settings.relative_tolerance))
