@@ -85,8 +85,8 @@ class EMSRemainingPlanAdapter:
             end = at+timedelta(minutes=15)
             kw = (100 if mode == 'charge' else 90) if fixed_cabinet_power else power/len(station.cabinet_sns)
             if fixed_cabinet_power and station_id == 'station-2':
-                # t_model stores per-cabinet kW; commissioning uses 600 kW total in either mode.
-                kw = 600 / len(station.cabinet_sns)
+                # Station-2 commissioning explicitly requires literal kw=600 in both modes.
+                kw = 600
             if segments and segments[-1]['end'] == at and segments[-1]['mode'] == mode and segments[-1]['kw'] == kw:
                 segments[-1]['end'] = end
             else:

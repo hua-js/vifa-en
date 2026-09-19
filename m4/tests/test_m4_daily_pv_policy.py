@@ -63,3 +63,19 @@ class DailyPVPolicyTests(TestCase):
             self.assertEqual(result['status'], 'empty')
             self.assertIsNone(result['result'])
             self.assertEqual(service.jobs['station-2']['status'], 'completed')
+
+    def test_previous_evening_batch_covers_next_day_with_only_night_fill(self):
+        begin = self.start - timedelta(hours=1, minutes=45)
+        source = dict(values=[100.0]*89+[None]*7, coverage_points=89,
+            source_kind='operational_forecast', es_sn='ES02',
+            as_of=(begin-timedelta(minutes=15)).isoformat(),
+            generated_at=(begin-timedelta(minutes=14)).isoformat(),
+            forecast_start=begin.isoformat(),
+            forecast_end=(begin+timedelta(days=1)).isoformat())
+        service = DailyInputService(SimpleNamespace(client=None))
+        with patch('m4.settings.daily_inputs.load_pv_forecast', return_value=source):
+            result = service._pv('station-2', self.start, self.start+timedelta(minutes=30))
+        self.assertEqual(result['coverage_points'], 96)
+        self.assertEqual(result['zero_filled_points'], 7)
+        self.assertEqual(result['values'][28:80], [100.0]*52)
+        self.assertEqual(result['values'][89:], [0.0]*7)

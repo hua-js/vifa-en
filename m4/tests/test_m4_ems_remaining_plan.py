@@ -59,7 +59,7 @@ class RemainingPlanTests(unittest.TestCase):
         for i in (0, 1):
             self.payload['plan'][i].update(mode='discharge', target_power_kw=300+i*20)
         row = dict(self.row, id=27, start_time='14:00:00', end_time='14:45:00',
-                   type='discharge', kw=100)
+                   type='discharge', kw=600)
         self.reader._read_table.return_value = [self.row, row]
         adapter = EMSRemainingPlanAdapter(self.reader, fixed_cabinet_power=True)
         result = adapter.preview('station-2', self.payload, self.config, now=self.now)
@@ -74,13 +74,13 @@ class RemainingPlanTests(unittest.TestCase):
 
     def test_changed_active_tail_splits_at_cutover_but_overlap_stays_blocked(self):
         for changes in ({'end_time': '14:30:00'}, {'end_time': '15:00:00'},
-                        {'kw': 80}, {'type': 'charge'}, {'overlap': True}):
+                        {'kw': 100}, {'type': 'charge'}, {'overlap': True}):
             with self.subTest(changes=changes):
                 self.full_day()
                 for i in (0, 1):
                     self.payload['plan'][i].update(mode='discharge', target_power_kw=300)
                 row = dict(self.row, id=27, start_time='14:00:00', end_time='14:45:00',
-                           type='discharge', kw=100)
+                           type='discharge', kw=600)
                 row.update({k: v for k, v in changes.items() if k != 'overlap'})
                 rows = [self.row, row]
                 if changes.get('overlap'):

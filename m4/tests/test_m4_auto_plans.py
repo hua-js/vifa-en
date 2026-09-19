@@ -59,3 +59,22 @@ class AutomaticPlanTests(unittest.TestCase):
                     start.assert_called_once()
                     self.assertFalse(automatic.metadata()['enabled'])
                 stop.assert_called_once()
+
+    def test_waiting_inputs_retry_then_continue_when_ready(self):
+        with tempfile.TemporaryDirectory() as d:
+            service = Mock()
+            service.running = set()
+            service.latest.return_value = {'status': 'failed'}
+            service.start.side_effect = ValueError('inputs incomplete')
+            auto = AutomaticPlans(service, Path(d))
+            with self.assertLogs('m4.settings.auto_plans', level='ERROR'):
+                auto.tick(1800)
+                auto.tick(1860)
+                auto.tick(1920)
+            self.assertEqual(service.start.call_count, 6)
+            # Inputs become ready after this window has exhausted its retries.
+            service.start.side_effect = None
+            auto.tick(1980)
+            self.assertEqual(service.start.call_count, 6)
+            auto.tick(2700)
+            self.assertEqual(service.start.call_count, 8)
