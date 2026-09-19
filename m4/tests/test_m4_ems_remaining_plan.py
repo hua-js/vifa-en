@@ -33,6 +33,37 @@ class RemainingPlanTests(unittest.TestCase):
         self.assertFalse(result['execution_ready'])
         self.assertIsNone(result['execution_order'])
 
+    def test_dispatch_requires_strictly_more_than_ten_kw(self):
+        for mode in ('charge', 'discharge'):
+            for power in (0.000132683, 9.999, 10, 10.000001):
+                with self.subTest(mode=mode, power=power):
+                    self.full_day()
+                    self.payload['plan'][0].update(mode=mode, target_power_kw=power)
+                    result = EMSRemainingPlanAdapter(self.reader, fixed_cabinet_power=True).preview(
+                        'station-2', self.payload, self.config, now=self.now)
+                    self.assertEqual(len(result['schedule']), int(power > 10))
+                    if power > 10:
+                        self.assertEqual(result['schedule'][0]['kw'], 600)
+                        self.assertEqual(result['schedule'][0]['type'], mode)
+                    self.assertEqual(self.payload['plan'][0]['target_power_kw'], power)
+
+    def test_filtered_small_power_removes_conflicting_future_row(self):
+        self.full_day()
+        self.payload['plan'][0].update(mode='charge', target_power_kw=10)
+        self.reader._read_table.return_value = [self.row, dict(self.row, id=8,
+            start_time='14:15:00', end_time='14:30:00', kw=600)]
+        result = self.remaining()
+        self.assertFalse(result['schedule'])
+        self.assertEqual(result['operations']['destroy'][0]['query']['filterByTk'], 8)
+
+    def test_filtered_discharge_cannot_hide_demand_violation(self):
+        self.full_day()
+        self.payload['plan'][0].update(mode='discharge', target_power_kw=10)
+        limit = self.payload['request']['constraints']['demand_limit_kw']
+        self.payload['request']['points'][0]['load_forecast_kw'] = limit + 5
+        with self.assertRaisesRegex(ModelUpdateError, '需量|购电'):
+            self.remaining()
+
     def test_same_future_slot_updates_and_idle_removes_old_future(self):
         self.full_day()
         self.payload['plan'][0].update(mode='discharge', target_power_kw=540)

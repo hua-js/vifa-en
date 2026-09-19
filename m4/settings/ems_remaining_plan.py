@@ -8,6 +8,7 @@ import json
 import math
 
 from .ems_model_update import EMSModelUpdateAdapter, ModelUpdateError, ZONE, _stamp, validate_dispatch_safety
+from .dispatch_power import dispatch_points
 
 POLICY = 'ems-remaining-plan-preview-v1'
 
@@ -64,6 +65,8 @@ class EMSRemainingPlanAdapter:
         midnight = datetime.combine(observed.date()+timedelta(days=1), datetime.min.time(), ZONE)
         if len(points) != int((midnight-start).total_seconds()/900):
             raise ModelUpdateError('剩余日计划未完整覆盖至当天结束。')
+        validate_dispatch_safety(request, points)
+        points = dispatch_points(points)
         validate_dispatch_safety(request, points)
         if fixed_cabinet_power is None:
             fixed_cabinet_power = self.fixed_cabinet_power

@@ -15,6 +15,7 @@ from shared.project import get_project
 from .control_sources import _NoRedirect
 from .ems_model_update import ModelUpdateError, ZONE, _stamp
 from .ems_remaining_plan import matches_body
+from .dispatch_power import dispatch_points
 
 
 class EMSTableWriter:
@@ -150,7 +151,7 @@ class EMSTableWriter:
             outcome['execution_basis'] = 'ems_plan_table_readback_v1'
             outcome['plan_date'] = payload['date']
             outcome['confirmed_plan'] = [{k: p[k] for k in
-                ('timestamp', 'mode', 'target_power_kw')} for p in payload['plan']]
+                ('timestamp', 'mode', 'target_power_kw')} for p in dispatch_points(payload['plan'])]
             save()
             hold.unlink()
         except Exception as error:

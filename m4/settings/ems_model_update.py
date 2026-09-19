@@ -13,6 +13,7 @@ from zoneinfo import ZoneInfo
 
 from shared.project import get_project
 from .control_sources import _NoRedirect
+from .dispatch_power import MIN_DISPATCH_POWER_KW, dispatch_points
 
 ZONE = ZoneInfo('Asia/Shanghai')
 POLICY = 'ems-single-model-preview-v1'
@@ -138,11 +139,12 @@ class EMSModelUpdateAdapter:
         station, observed, start, end, run_id, points, request = self._context(
             station_id, payload, configuration, now=now)
         mode, power = points[0]['mode'], points[0]['target_power_kw']
-        if mode == 'idle':
+        if mode == 'idle' or power <= MIN_DISPATCH_POWER_KW:
             return dict(policy_version=POLICY, status='skipped', reason='待机时段不下发。',
                 station_id=station_id, record_id=station.ems_model_record_id, run_id=run_id,
                 dispatch_status='not_dispatched', network_write_performed=False, request=None)
         validate_dispatch_safety(request, points)
+        validate_dispatch_safety(request, dispatch_points(points))
         row = self._row(station)
         # Reusing an old row is allowed; replacing a currently active row is not.
         from .ems_remaining_plan import _clock

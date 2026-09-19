@@ -14,6 +14,16 @@ from shared.project import get_project
 
 
 class ModelUpdateTests(unittest.TestCase):
+    def test_low_power_single_row_is_not_submitted(self):
+        for mode in ('charge', 'discharge'):
+            for power in (0.000132683, 10):
+                with self.subTest(mode=mode, power=power):
+                    self.payload['plan'][0].update(mode=mode, target_power_kw=power)
+                    result = self.adapter.preview('station-2', self.payload, self.config, now=self.now)
+                    self.assertEqual(result['status'], 'skipped')
+                    self.assertIsNone(result['request'])
+                    self.reader._read_table.assert_not_called()
+
     def setUp(self):
         self.now = datetime(2026, 9, 17, 14, 7, tzinfo=ZoneInfo('Asia/Shanghai'))
         self.start = self.now.replace(minute=15)

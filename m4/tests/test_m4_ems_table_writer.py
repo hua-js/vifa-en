@@ -60,6 +60,17 @@ class TableWriterTests(unittest.TestCase):
         writer.enabled = True
         self.assertEqual(writer.submit('station-1', {}, None)['status'], 'disabled')
 
+    def test_small_charge_is_removed_and_not_confirmed_as_charging(self):
+        with tempfile.TemporaryDirectory() as root:
+            writer = self.prepare(root)
+            self.payload['plan'][0].update(mode='charge', target_power_kw=0.000132683)
+            result = writer.submit('station-2', self.payload, self.config, now=self.now)
+            self.assertEqual(result['status'], 'plan_table_readback_verified')
+            self.assertEqual(result['confirmed_plan'][0]['mode'], 'idle')
+            self.assertEqual(result['confirmed_plan'][0]['target_power_kw'], 0)
+            self.assertFalse(result['operations']['create'])
+            self.assertEqual([r['id'] for r in self.rows], [7])
+
     def test_success_readback_deduplicated_across_writer_restart(self):
         with tempfile.TemporaryDirectory() as root:
             writer = self.prepare(root)
