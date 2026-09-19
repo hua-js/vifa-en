@@ -1,22 +1,21 @@
 #!/usr/bin/env python3
-"""Generate M4 checked-in delivery assets from canonical HTML and Function sources."""
+"""Sync M4 gateway sources; regenerate Flow only when explicitly requested."""
 import argparse
 import json
-from pathlib import Path
-
 from build_package import DEPLOY, HTML, ROOT, flow
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--write', action='store_true', help='Update generated repository assets; otherwise only check')
+    parser.add_argument('--flow', action='store_true', help='Also regenerate Flow for gateway changes, never for HTML-only edits')
     args = parser.parse_args()
-    html = HTML.read_text(encoding='utf-8')
     assets = {
-        ROOT / 'm4/node_red/m4_customer_template.html': html,
-        ROOT / 'm4/node_red/m4_customer_flow.json': json.dumps(flow(html), ensure_ascii=False, indent=2) + '\n',
         ROOT / 'm4/node_red/m4_prepare_proxy.js': (DEPLOY / 'node_red/prepare_proxy.js').read_text(encoding='utf-8'),
     }
+    if args.flow:
+        assets[ROOT / 'm4/node_red/m4_customer_flow.json'] = json.dumps(
+            flow(HTML.read_text(encoding='utf-8')), ensure_ascii=False, indent=2) + '\n'
     stale = []
     for path, content in assets.items():
         if not path.is_file() or path.read_text(encoding='utf-8') != content:

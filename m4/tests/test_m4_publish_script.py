@@ -104,6 +104,9 @@ if args[:1] == ['push'] and os.environ.get('MOCK_PUSH_FAIL'):
         self.assertLess(result.stdout.index('[ "$m4_actual_source" ='),
                         result.stdout.index('docker image rm'))
         self.assertFalse((self.output / 'local-secret.txt').exists())
+        self.assertFalse((self.output / 'node_red/m4_customer_template.html').exists())
+        self.assertFalse((self.output / 'node_red/m4_customer_flow.json').exists())
+        self.assertIn(str(self.repo / 'm4/web/M4优化调度控制台-线上版.html'), result.stdout)
         for line in (self.output / 'SHA256SUMS').read_text().splitlines():
             digest, name = line.split('  ', 1)
             self.assertEqual(hashlib.sha256((self.output / name).read_bytes()).hexdigest(), digest)

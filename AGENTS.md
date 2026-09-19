@@ -13,6 +13,7 @@
 - 当前Git及项目根为 `/Users/hua/Documents/LVK/code/vifa-en`；旧 `/Users/hua/Documents/LVK/code/vifa/vifa` 仅作迁移前参考。
 - 目录入口见 [README.md](README.md)。涉及业务、核心模块或历史续接时读 [CODEX_HANDOFF.md](CODEX_HANDOFF.md)，独立小任务按需读取。
 - `AGENTS.md`保存长期约定，`CODEX_HANDOFF.md`保存当前目标、有效口径、阻塞项、下一步和证据链接；实现细节放 `docs/<module>/`，历史归档不作为现行规则。
+- 控制上下文读取量：先用文件名和关键词定位，再读相关段落；不默认展开完整Flow JSON、历史交接、`docs/*/plans/`或生成产物。旧计划只供追溯，不作为现行执行指令；避免同一任务反复读取已核实内容。
 - 仅在上述状态变化时更新交接对应段落，不堆叠全过程日志，不写密码、Token、私钥或其他敏感信息。Git、服务、配置及发布状态按需重新核实。
 - 续接或整理项目文档时使用 [vifa-project-handoff](.agents/skills/vifa-project-handoff/SKILL.md)，不将其作为所有小任务的强制流程。
 

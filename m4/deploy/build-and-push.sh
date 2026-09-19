@@ -18,6 +18,8 @@ Optional environment variables:
 Requires Docker with buildx, python3 and registry login. No commit required.
 Packages the current working tree through build_package.py source allowlists,
 including uncommitted/new source files; runtime secrets and local data are excluded.
+Does not generate Flow JSON or standalone HTML copies. Update the Node-RED
+Template from the canonical workspace HTML when the frontend changes.
 Pushes only the fixed 0.1.0-<architecture> tag; the Git revision stays in image labels.
 Prints production update and scoped old-image cleanup commands. Never starts production services.
 EOF
@@ -149,7 +151,8 @@ Existing project settings, credentials and data volumes are preserved.
 )
 
 Frontend: replace the M4 Node-RED Template content with:
-  $release_dir/node_red/m4_customer_template.html
+  $repo_root/m4/web/M4优化调度控制台-线上版.html
+Use the source version matching release.json's html_sha256.
 Then deploy the updated Template in Node-RED. Updating the backend image
 does not update the frontend Template.
 

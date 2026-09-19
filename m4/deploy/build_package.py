@@ -116,6 +116,7 @@ def main():
     parser.add_argument('--output', type=Path, required=True,
                         help='New release directory; existing directories are not overwritten')
     parser.add_argument('--zip', action='store_true', help='Also create a ZIP archive (disabled by default)')
+    parser.add_argument('--include-flow', action='store_true', help='Generate a complete Flow for first installation or gateway changes')
     parser.add_argument('--image', help='Published image reference to put in backend/.env.example')
     parser.add_argument('--revision', help='Full Git revision identifying the release snapshot')
     parser.add_argument('--platform', choices=('linux/amd64', 'linux/arm64'), default='linux/amd64')
@@ -143,9 +144,9 @@ def main():
     (target / 'node_red').mkdir()
     (target / 'secrets').mkdir()
     page = HTML.read_text(encoding='utf-8')
-    (target / 'node_red/m4_customer_template.html').write_text(page, encoding='utf-8')
-    (target / 'node_red/m4_customer_flow.json').write_text(
-        json.dumps(flow(page), ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+    if args.include_flow:
+        (target / 'node_red/m4_customer_flow.json').write_text(
+            json.dumps(flow(page), ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
     (target / 'backend').mkdir()
     for filename in BACKEND_FILES:
         shutil.copyfile(DEPLOY / 'backend' / filename, target / 'backend' / filename)
@@ -181,7 +182,6 @@ def main():
             destination = target / 'backend/app/m1' / name
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source, destination)
-        shutil.copyfile(ROOT / 'm1/web/dashboard_energy.html', target / 'node_red/m1_dashboard_template.html')
     (target / 'config').mkdir()
     packaged_config = target / 'backend/app/config/projects'
     packaged_config.mkdir(parents=True)

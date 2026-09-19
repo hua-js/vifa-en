@@ -47,4 +47,6 @@ M3 FastAPI 入口为 `m3.worker.main:app`。M4 应用工厂为 `m4.settings.api:
 
 修改共用主题后同步两个实际页面，不恢复旧副本。历史发布快照保存其原始内容；`outputs/m4/solver-decisions/` 包含页面历史查询所需证据，不能视为随时可删的缓存。
 
-当前验证状态与待办见 [CODEX_HANDOFF.md](CODEX_HANDOFF.md)。M4的 `m4/deploy/backend/` 已恢复，发布入口为 `m4/deploy/build-and-push.sh`；尚有测试失败，不能据此认定已通过发布验收。发布范围、前置条件及命令见 [生产发布与接口缺口](docs/m4/deploy/生产发布与接口缺口.md)。日常开发不默认运行上述测试命令，执行时机以 [AGENTS.md](AGENTS.md) 为准。
+当前状态与待办见 [CODEX_HANDOFF.md](CODEX_HANDOFF.md)，发布入口为 `m4/deploy/build-and-push.sh`，操作以[部署手册](docs/m4/deploy/部署手册.md)为准。历史测试结果不能代表当前版本通过；日常开发不默认运行测试，执行时机以AGENTS.md为准。
+
+`docs/*/plans/`与[项目交接历史](docs/项目交接历史.md)保留作追溯，不是默认任务入口。先按文件名或关键词定位，再读必要片段；不默认读取完整Flow JSON或全部历史计划。M1–M4仅HTML改动时只维护上表所列正式页面，不生成Flow或页面副本。

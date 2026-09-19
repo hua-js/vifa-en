@@ -17,7 +17,7 @@ class ProductReleaseTests(unittest.TestCase):
             target = Path(temp) / 'release'
             result = subprocess.run([
                 sys.executable, str(ROOT / 'm4/deploy/build_package.py'),
-                '--output', str(target), '--platform', 'linux/arm64',
+                '--output', str(target), '--platform', 'linux/arm64', '--include-flow',
                 '--revision', 'a' * 40,
                 '--image', 'registry.example.test/vifa/m4:revision-arm64',
             ], capture_output=True, text=True)
@@ -34,7 +34,8 @@ class ProductReleaseTests(unittest.TestCase):
             self.assertTrue((target / 'backend/app/config/projects/vifa.json').is_file())
             self.assertTrue((target / 'config/project.json').is_file())
             self.assertIn('M4_PLATFORM=linux/arm64', (target / 'backend/.env.example').read_text())
-            html = (target / 'node_red/m4_customer_template.html').read_text()
+            self.assertFalse((target / 'node_red/m4_customer_template.html').exists())
+            html = (target / 'backend/app/m4/web/M4优化调度控制台-线上版.html').read_text()
             flow = json.loads((target / 'node_red/m4_customer_flow.json').read_text())
             self.assertEqual(next(n['template'] for n in flow if n['id'] == 'm4-page-template'), html)
             self.assertTrue(any(n.get('url') == '/m4-api/project' for n in flow))
