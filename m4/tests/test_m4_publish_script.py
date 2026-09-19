@@ -7,7 +7,6 @@ import shutil
 import subprocess
 import tempfile
 import unittest
-import zipfile
 
 
 DEPLOY = Path(__file__).resolve().parents[2] / 'm4/deploy'
@@ -93,7 +92,8 @@ if args[:1] == ['push'] and os.environ.get('MOCK_PUSH_FAIL'):
         build = next(call for call in calls if call[:2] == ['buildx', 'build'])
         self.assertIn('--load', build)
         self.assertEqual(build[build.index('--platform') + 1], 'linux/amd64')
-        self.assertEqual(build[-1], str(self.output / 'backend'))
+        self.assertFalse(Path(build[-1]).parent.parent.exists())
+        self.assertFalse((self.output / 'backend/app').exists())
         pushes = [call for call in calls if call[0] == 'push']
         self.assertEqual(pushes, [['push', reference]])
         self.assertLess(calls.index(next(c for c in calls if c[:2] == ['image', 'inspect'])), calls.index(pushes[0]))
@@ -107,10 +107,7 @@ if args[:1] == ['push'] and os.environ.get('MOCK_PUSH_FAIL'):
         for line in (self.output / 'SHA256SUMS').read_text().splitlines():
             digest, name = line.split('  ', 1)
             self.assertEqual(hashlib.sha256((self.output / name).read_bytes()).hexdigest(), digest)
-        with zipfile.ZipFile(str(self.output) + '.zip') as archive:
-            self.assertIsNone(archive.testzip())
-            self.assertEqual(archive.read(self.output.name + '/release.json'),
-                             (self.output / 'release.json').read_bytes())
+        self.assertFalse(Path(str(self.output) + '.zip').exists())
 
     def test_dirty_and_untracked_source_are_packaged_with_content_identity(self):
         changed = self.repo / 'm4/settings/__init__.py'
@@ -121,22 +118,25 @@ if args[:1] == ['push'] and os.environ.get('MOCK_PUSH_FAIL'):
         (self.repo / '.local/config.py').write_text('SECRET = "fixture-only"\n')
         result = self.run_script()
         self.assertEqual(result.returncode, 0, result.stderr)
+        manifest = dict(line.split('  ', 1)[::-1] for line in
+                        (self.output / 'SOURCE_SHA256SUMS').read_text().splitlines())
         for source in (changed, added):
-            packaged = self.output / 'backend/app' / source.relative_to(self.repo)
-            self.assertEqual(packaged.read_bytes(), source.read_bytes())
+            name = 'backend/app/' + source.relative_to(self.repo).as_posix()
+            self.assertEqual(manifest[name], hashlib.sha256(source.read_bytes()).hexdigest())
+        self.assertFalse(any('/.local/' in name or name.endswith('/local-secret.txt')
+                             for name in manifest))
+        self.assertFalse((self.output / 'backend/app').exists())
         self.assertFalse((self.output / 'backend/app/.local').exists())
         self.assertEqual(json.loads((self.output / 'release.json').read_text())['revision'], self.sha)
-        source_digest = hashlib.sha256((self.output / 'SHA256SUMS').read_bytes()).hexdigest()
+        source_digest = hashlib.sha256((self.output / 'SOURCE_SHA256SUMS').read_bytes()).hexdigest()
+        self.assertEqual(json.loads((self.output / 'release.json').read_text())['source_sha256'],
+                         source_digest)
         build = next(c for c in self.calls() if c[:2] == ['buildx', 'build'])
         self.assertIn('vifa.m4.source-sha256=' + source_digest, build)
         self.assertIn('org.opencontainers.image.revision=' + self.sha, build)
         self.assertIn('[ "$m4_actual_source" = "' + source_digest + '" ]', result.stdout)
-        with zipfile.ZipFile(str(self.output) + '.zip') as archive:
-            self.assertFalse(any('/.local/' in name or name.endswith('/local-secret.txt')
-                                 for name in archive.namelist()))
-            for source in (changed, added):
-                self.assertEqual(archive.read(self.output.name + '/backend/app/'
-                    + source.relative_to(self.repo).as_posix()), source.read_bytes())
+        self.assertFalse(Path(build[-1]).parent.parent.exists())
+        self.assertFalse(Path(str(self.output) + '.zip').exists())
 
     def test_unsupported_platform_is_rejected(self):
         result = self.run_script(PLATFORM='linux/arm/v7')
@@ -158,12 +158,18 @@ if args[:1] == ['push'] and os.environ.get('MOCK_PUSH_FAIL'):
         self.assertEqual(result.returncode, 70)
         self.assertFalse(any(c[0] in ('tag', 'push') for c in self.calls()))
         self.assertNotIn('Published:', result.stdout)
+        self.assertFalse(self.output.exists())
+        build = next(c for c in self.calls() if c[:2] == ['buildx', 'build'])
+        self.assertFalse(Path(build[-1]).parent.parent.exists())
 
     def test_build_failure_never_pushes(self):
         result = self.run_script(MOCK_BUILD_FAIL='1')
         self.assertEqual(result.returncode, 9)
         self.assertFalse(any(c[0] in ('tag', 'push') for c in self.calls()))
         self.assertNotIn('Published:', result.stdout)
+        self.assertFalse(self.output.exists())
+        build = next(c for c in self.calls() if c[:2] == ['buildx', 'build'])
+        self.assertFalse(Path(build[-1]).parent.parent.exists())
 
     def test_failed_fixed_tag_push_stops_inspection_and_success_message(self):
         result = self.run_script(MOCK_PUSH_FAIL='1')
@@ -171,6 +177,9 @@ if args[:1] == ['push'] and os.environ.get('MOCK_PUSH_FAIL'):
         self.assertEqual(sum(c[0] == 'push' for c in self.calls()), 1)
         self.assertFalse(any(c[:2] == ['buildx', 'imagetools'] for c in self.calls()))
         self.assertNotIn('Published:', result.stdout)
+        self.assertFalse(self.output.exists())
+        build = next(c for c in self.calls() if c[:2] == ['buildx', 'build'])
+        self.assertFalse(Path(build[-1]).parent.parent.exists())
 
 
 if __name__ == '__main__':

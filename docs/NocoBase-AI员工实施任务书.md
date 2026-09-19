@@ -105,6 +105,75 @@
 
 建议统一保护 8 张存在关联的集合；其中 1 张已受实验保护、另 7 张尚未处理。本轮仅排查，未扩展拦截或修改生产。[完整清单与证据](../outputs/ai-employee/test-host/20260919/association-audit/README.md)。范围仅当前测试身份与一级关联，不是全平台接口审计。
 
+## 1.7 八表统一插件（2026-09-19，测试机已部署）
+
+已将单表实验改为独立 NocoBase 服务端插件 `@vifa/plugin-association-read-guard@0.1.0`，源码在 [scripts/nocobase-association-guard](../scripts/nocobase-association-guard/)。policy.json 指定独立验收角色及八表普通字段白名单，服务器完成 setCurrentRole 后、原 acl 处理前拦截请求；不信任单独的 X-Role 声明，不替代原 ACL。禁止关联展开、关联字段选择及受保护集合的关联资源路径；正常普通查询继续执行原行权限与字段权限。
+
+测试部署使用官方离线 pm add / pm enable。插件实际位于测试实例的持久化 storage/plugins/@vifa/plugin-association-read-guard，注册状态为 enabled=true、installed=true。原核心 setCurrentRole.js 已恢复并重新加载，SHA-256 与原备份一致：04eade6a356aa1b8f488124e58228f881f1bbc9057509b75edc6cedd8e3f009f；不再依赖临时核心包装。旧单接口报告保留为历史证据。
+
+验证：67 项本地测试通过；10 张表普通读取通过；16 个一级关联的 49 项路径/展开请求均拒绝；另 10 项身份与参数变体对照符合预期；2 项 AI 内核 preview 普通查询成功，无模型外发。角色 ACL 按字段集合去重后与部署前相同。preview 的第一次验证因脚本使用了错误过滤格式返回 500，改为不传客户端过滤、仅使用原角色 ACL 后通过；没有因此修改服务端或放宽权限。
+
+[最终回执](../outputs/ai-employee/test-host/20260919/plugin-validation/receipt.json)、[关联回归](../outputs/ai-employee/test-host/20260919/plugin-validation/checks.json)、[身份对照](../outputs/ai-employee/test-host/20260919/plugin-validation/checks-after.json)、[插件及 AI 查询回读](../outputs/ai-employee/test-host/20260919/plugin-validation/plugin-readback.json)、[离线包](../outputs/ai-employee/test-host/20260919/vifa-association-read-guard-0.1.0.tgz)。
+
+### 部署和停用
+
+以下只记录已验证测试实例的操作，不授权直接用于生产。离线包复制到测试容器后：
+
+```sh
+docker exec nb-upload-test-holobase-1 yarn nocobase pm add /app/nocobase/storage/plugins/vifa-association-read-guard-0.1.0.tgz
+docker exec nb-upload-test-holobase-1 yarn nocobase pm enable @vifa/plugin-association-read-guard
+```
+
+如需回滚本次插件，可经对应授权执行：
+
+```sh
+docker exec nb-upload-test-holobase-1 yarn nocobase pm disable @vifa/plugin-association-read-guard
+```
+
+停用会撤去新增保护，不能把接口重新返回额外字段当作回滚后安全。无需恢复旧核心补丁，也不要回滚整个数据库。插件启停可能重载应用，须等 APP_COMMANDING 结束再验收。上述停用命令按官方 CLI 机制提供，本轮未实际停用已验证插件。
+
+边界：只保护 policy.json 的指定角色与八表，尚非全平台权限修复。禁用关联也会使该角色依赖这些关联列的页面请求返回 403，因此真实页面仍需回归。本节记录 2.2.14 测试结果；后续 2.2.2 隔离兼容结果见第 1.8 节。其他角色/数据源、任意嵌套深度、导出、内部工具的全部路径和真实模型业务对话尚未覆盖。测试库原有定时工作流在应用启动时恢复调度，本轮未手动触发或修改；容器外网隔离保留。页面回归及未覆盖读取路径仍需验收，再准备生产发布方案。
+
+## 1.8 2.2.2 独立兼容验证（2026-09-19，后端通过，页面待用户验收）
+
+用户授权在同一测试机新建隔离实例。新增 `vifa-compat-222-app` / `vifa-compat-222-db`，入口 `http://192.168.1.53:16222`，目录 `/userdata/vifa-compat-222-20260919`。独立空库初始化后创建十张最小模拟表、16 个一级关联和 ES01/ES02/ES99 模拟记录；使用同名验收角色的原字段与行过滤策略。未复用升级后的数据库，未复制生产数据、工作流或模型凭据。模拟表省略非必要字段及扩展字段类型，不代表完整生产表结构克隆。原 2.2.14 实例保持运行，结束时 API 仍返回 2.2.14。
+
+核心及 AI、ACL、auth、users、主数据源、数据源管理包均为 2.2.2，gitHead 均为 `336230738dda76255e363a0a68fcbec775c81564`，与先前生产 API 包元数据一致。测试镜像 ID 为 `sha256:3b3bad457434fea08bd80b5a26a899e6b1957c78f35a1168984e967f60135f01`；生产镜像摘要及运行定制仍未核验，不能据此宣称环境完全相同。
+
+同一份 0.1.0 离线包经 pm add / enable 安装，没有修改插件源码或核心文件。setCurrentRole.js 的镜像原文件与运行文件 SHA-256 均为 `04eade6a356aa1b8f488124e58228f881f1bbc9057509b75edc6cedd8e3f009f`。
+
+| 阶段 | 检查数 | 结果 |
+| --- | ---: | --- |
+| 未启用基线 | 32 | 复现关联额外字段；普通查询、行隔离及写入拒绝符合预期 |
+| 启用插件 | 94 | 通过 |
+| 应用容器重启后 | 94 | 通过 |
+| 停用插件 | 43 | 普通权限保持，关联额外字段恢复，符合撤除保护的预期 |
+| 重新启用 | 94 | 通过，最终保留启用状态 |
+
+94 项覆盖十表普通读、十表 ES99 不可见、16 个一级关联的展开/字段/资源路径拒绝、参数变体、伪造角色拒绝、管理员访问、模拟记录存在性、两项 AI 内核查询、vifa 可见和无工作流。所有阶段原角色 ACL 相同；vifa 提示词哈希与迁移前一致。停用阶段增加了模拟记录数量与员工可见性检查，因此较最初基线多 11 项。完整重启命令约 11 秒，其后等待 API 健康约 170 秒；插件启停 CLI 本次约 57–81 秒，不能承诺生产无中断。
+
+数据库 network=none，应用仅共享该数据库网络命名空间；仅新增测试入口代理 `vifa-compat-222-proxy`。新容器以 tmpfs 覆盖 /dev/mqueue 以适配主机缺少该文件系统；没有更改宿主机内核或 Docker 全局配置。主机不支持所声明的 cgroup 内存限制，Docker 报限制未生效；运行中检查仍有约 4.3 GiB 可用内存。容器 restart=no，代理未设开机自启，作为临时验收实例使用。
+
+手动登录：账号 `vifa_compat_test`；本机密码文件 `.local/ai-employee-acceptance/compat-2.2.2/登录信息.txt` 为 0600，不入 Git。该实例没有模型，也没有复制生产业务页面，适合检查登录和 AI 员工入口，不能用于真实模型回答或代表完整生产页面验收。首页及脚本资源 HTTP 检查成功不等同实际渲染；IAB 曾被审批拒绝，用户随后明确允许 IAB，但工具连接超时。用户最终选择自行验收页面，本轮没有继续浏览器操作。
+
+[最终回执](../outputs/ai-employee/test-host/20260919/compat-2.2.2/receipt.json)、[生命周期记录](../outputs/ai-employee/test-host/20260919/compat-2.2.2/lifecycle.json)、[最终接口检查](../outputs/ai-employee/test-host/20260919/compat-2.2.2/reenabled.json)、[隔离环境证据](../outputs/ai-employee/test-host/20260919/compat-2.2.2/environment.json)。仍未部署生产；待真实使用页面、未覆盖读取路径和业务模型问答验收后评估上线。
+
+## 1.9 修复插件动态前端入口缺失（2026-09-19，仅 16222 实例）
+
+用户反馈 16222 进不去。实测首页、核心 API、主 JS 均为 200，但匿名 `pm:listEnabled` 返回的自定义插件 `dist/client/index.js` 为 404。检查 2.2.2 实际运行的 PackageUrls/listEnabledPlugins 实现，legacy 清单即使缺少入口文件也会返回其 URL；0.1.0 包只有服务端文件，遗漏了这个页面启动依赖。此前首页及静态脚本的检查不覆盖动态插件，因此不能证明页面可用。未获得浏览器实际异常堆栈，不把单个 404 宣称为所有客户端故障的唯一原因。
+
+0.1.1 增加 client/client-v2 两套空操作 UMD 入口和 lane 标记文件；没有修改服务端中间件、字段策略和角色范围，两版归档中三个 server 文件逐字节一致。通过 pm update 离线包更新 16222 实例，等待重载健康后，包元数据为 0.1.1、enabled/installed 均 true。0.1.1 SHA-256：`ac540004e49bd6264de81451b56224e921febda4a85cb84d93d4a61cb6e33ee2`。
+
+验证：新增入口测试先因缺少标记文件失败，修复后两种全局加载方式及 AMD 加载共三项客户端测试通过；已有 67 项服务端测试通过。清单内 146 个动态客户端入口均返回 200 和 JavaScript 类型；94 项真实后端检查再次通过。该结果证明入口资源已补齐，页面实际渲染仍待用户确认。原 2.2.14 实例此轮未更新，仍为 0.1.0，不能将其页面视为已验收；生产未修改。
+
+[动态资源检查](../outputs/ai-employee/test-host/20260919/compat-2.2.2/client-assets-0.1.1.json)、[更新后权限回归](../outputs/ai-employee/test-host/20260919/compat-2.2.2/patched-0.1.1.json)、[0.1.1 离线包](../outputs/ai-employee/test-host/20260919/vifa-association-read-guard-0.1.1.tgz)。
+
+## 1.10 暂存与生产安装说明（2026-09-19）
+
+用户指出测试数据库不符合预期，已暂停后续测试及数据库调整。前述 2.2.2 结果限于最小模拟实例，不能作为真实业务环境验收结论。实例保持原状，无生产操作。
+
+按用户要求整理[生产安装、验收与回退步骤](NocoBase-关联权限插件生产安装.md)，使用 0.1.1 包，明确目标角色范围、核对真实数据库、维护窗口及验收限制。本文件不代表已授权或执行生产部署。
+
 ## 2. 目标与边界
 
 在现有员工上增量配置 M1 运行查询、M2 正式效率查询、M3 预测查询、M4 计划与状态解释。默认中文、结论优先，只读访问当前用户获授权的目标场站及电站数据。

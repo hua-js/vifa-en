@@ -1,0 +1,27 @@
+{
+  "name": "@vifa/plugin-association-read-guard",
+  "version": "0.1.1",
+  "displayName": "VIFA restricted association read guard",
+  "description": "Test-scoped association read restrictions for eight VIFA collections",
+  "main": "server/index.js",
+  "license": "UNLICENSED",
+  "peerDependencies": {
+    "@nocobase/server": "2.x",
+    "@nocobase/plugin-acl": "2.x"
+  },
+  "nocobase": {
+    "supportedVersions": [
+      "2.x"
+    ]
+  },
+  "scripts": {
+    "test": "node --test tests/*.test.cjs"
+  },
+  "files": [
+    "server",
+    "dist/client",
+    "dist/client-v2",
+    "client.js",
+    "client-v2.js"
+  ]
+}

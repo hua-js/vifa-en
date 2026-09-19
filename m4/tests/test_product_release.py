@@ -22,6 +22,8 @@ class ProductReleaseTests(unittest.TestCase):
                 '--image', 'registry.example.test/vifa/m4:revision-arm64',
             ], capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIsNone(json.loads(result.stdout)['archive'])
+            self.assertFalse(Path(str(target) + '.zip').exists())
             manifest = json.loads((target / 'release.json').read_text())
             self.assertEqual(manifest['platform'], 'linux/arm64')
             self.assertEqual(manifest['schema_version'], 1)

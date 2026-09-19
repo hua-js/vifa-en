@@ -1,0 +1,110 @@
+{
+  "roles": [
+    "vifa_ai_acceptance_20260919"
+  ],
+  "collections": {
+    "t_emu": [
+      "emu_name",
+      "emu_sn",
+      "emu_status",
+      "f_es_sn",
+      "input_ac_solar_power",
+      "last_time_iso",
+      "latest_power",
+      "latest_soc",
+      "latest_solar_power"
+    ],
+    "t_es": [
+      "createdAt",
+      "es_name",
+      "es_status",
+      "id",
+      "sn",
+      "updatedAt"
+    ],
+    "t_efficiency_points": [
+      "calculated_at",
+      "createdAt",
+      "data_time",
+      "id",
+      "pv_load_efficiency",
+      "pv_load_input_kw",
+      "pv_load_output_kw",
+      "pv_storage_efficiency",
+      "pv_storage_input_kw",
+      "pv_storage_output_kw",
+      "station_id",
+      "storage_load_efficiency",
+      "storage_load_input_kw",
+      "storage_load_output_kw",
+      "updatedAt"
+    ],
+    "t_efficiency_bottleneck_events": [
+      "createdAt",
+      "device_id",
+      "device_name",
+      "end_time",
+      "event_type",
+      "id",
+      "impact_chain",
+      "last_seen_time",
+      "observed_unit",
+      "observed_value",
+      "start_time",
+      "station_id",
+      "status",
+      "updatedAt"
+    ],
+    "energy_forecast_manual_runs": [
+      "completed_at",
+      "createdAt",
+      "forecast_days",
+      "forecast_end",
+      "forecast_start",
+      "id",
+      "interval_seconds",
+      "run_id",
+      "started_at",
+      "station_id",
+      "status",
+      "updatedAt"
+    ],
+    "energy_forecast_manual_points": [
+      "actual_quality",
+      "actual_value",
+      "createdAt",
+      "forecast_value",
+      "horizon_step",
+      "id",
+      "model_name",
+      "run_pk",
+      "target_time",
+      "unique_id",
+      "updatedAt"
+    ],
+    "energy_pv_forecast_points": [
+      "baseline_kw",
+      "createdAt",
+      "forecast_kw",
+      "horizon_step",
+      "id",
+      "lower_kw",
+      "raw_forecast_kw",
+      "run_pk",
+      "target_time",
+      "updatedAt",
+      "upper_kw"
+    ],
+    "t_model": [
+      "createdAt",
+      "end_time",
+      "es_sn",
+      "id",
+      "kw",
+      "repeat",
+      "start_time",
+      "type",
+      "updatedAt"
+    ]
+  }
+}

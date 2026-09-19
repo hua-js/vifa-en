@@ -11,7 +11,7 @@ Usage: bash m4/deploy/build-and-push.sh
 
 Optional environment variables:
   CRR_IMAGE     Repository (default: Tencent CCR namespace / vifa-m4)
-  RELEASE_DIR   New output directory for HTML/Flow/backend/manual/ZIP
+  RELEASE_DIR   New output directory for deployment files and release records
   PYTHON_IMAGE  Build base image (default: python:3.12-slim-bookworm)
   PLATFORM      linux/amd64 (default) or linux/arm64
 
@@ -55,23 +55,30 @@ short_sha="${commit_sha:0:12}"
 version_ref="${crr_image}:${version}-${architecture}"
 local_ref="vifa-m4:${version}-${architecture}"
 release_dir="${RELEASE_DIR:-${repo_root}/outputs/m4/releases/${version}-${short_sha}-$(date +%Y%m%d-%H%M%S)-$$}"
-if [[ -e "$release_dir" || -e "${release_dir}.zip" ]]; then
-  echo "Release directory or ZIP already exists; choose a new RELEASE_DIR." >&2; exit 73
+if [[ -e "$release_dir" ]]; then
+  echo "Release directory already exists; choose a new RELEASE_DIR." >&2; exit 73
 fi
 
+# Only this invocation's mktemp directory is removed, including on failure.
+build_root="$(mktemp -d "${TMPDIR:-/tmp}/vifa-m4-build.XXXXXXXX")"
+trap 'rm -rf -- "$build_root"' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+build_dir="$build_root/package"
+
 python3 "$repo_root/m4/deploy/build_package.py" \
-  --output "$release_dir" --image "$version_ref" --revision "$commit_sha" --platform "$platform"
+  --output "$build_dir" --image "$version_ref" --revision "$commit_sha" --platform "$platform"
 # A commit alone cannot identify uncommitted code. Bind the exact packaged
 # content to the image and the printed production verification command.
-source_sha="$(python3 -c 'import hashlib,sys; from pathlib import Path; print(hashlib.sha256(Path(sys.argv[1]).read_bytes()).hexdigest())' "$release_dir/SHA256SUMS")"
+source_sha="$(python3 -c 'import hashlib,sys; from pathlib import Path; print(hashlib.sha256(Path(sys.argv[1]).read_bytes()).hexdigest())' "$build_dir/SHA256SUMS")"
 
 echo "Building $local_ref from current workspace (Git base $commit_sha, source $source_sha) for $platform"
 docker buildx build --platform "$platform" \
-  --file "$release_dir/backend/Dockerfile" \
+  --file "$build_dir/backend/Dockerfile" \
   --build-arg "PYTHON_IMAGE=${PYTHON_IMAGE:-python:3.12-slim-bookworm}" \
   --label "org.opencontainers.image.revision=$commit_sha" \
   --label "vifa.m4.source-sha256=$source_sha" \
-  --tag "$local_ref" --load "$release_dir/backend"
+  --tag "$local_ref" --load "$build_dir/backend"
 built_platform="$(docker image inspect "$local_ref" --format '{{.Os}}/{{.Architecture}}')"
 if [[ "$built_platform" != "$platform" ]]; then
   echo "Built image platform mismatch: $built_platform" >&2; exit 70
@@ -80,6 +87,27 @@ fi
 docker tag "$local_ref" "$version_ref"
 docker push "$version_ref"
 docker buildx imagetools inspect "$version_ref"
+
+# Retain deployable assets and content evidence, never the full source tree.
+python3 - "$build_dir" "$release_dir" "$source_sha" <<'PY_RELEASE'
+import hashlib
+import json
+import shutil
+import sys
+from pathlib import Path
+source, target = map(Path, sys.argv[1:3])
+shutil.copytree(source, target, ignore=shutil.ignore_patterns('app'))
+(target / 'SHA256SUMS').rename(target / 'SOURCE_SHA256SUMS')
+metadata_path = target / 'release.json'
+metadata = json.loads(metadata_path.read_text())
+metadata['source_sha256'] = sys.argv[3]
+metadata['status'] = 'published'
+metadata_path.write_text(json.dumps(metadata, indent=2) + '\n')
+manifest = [hashlib.sha256(p.read_bytes()).hexdigest() + '  ' + p.relative_to(target).as_posix()
+            for p in sorted(target.rglob('*')) if p.is_file()]
+(target / 'SHA256SUMS').write_text('\n'.join(manifest) + '\n')
+PY_RELEASE
+rm -rf -- "$build_root"
 
 cat <<EOF
 

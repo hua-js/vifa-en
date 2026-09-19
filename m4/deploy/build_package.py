@@ -115,6 +115,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True,
                         help='New release directory; existing directories are not overwritten')
+    parser.add_argument('--zip', action='store_true', help='Also create a ZIP archive (disabled by default)')
     parser.add_argument('--image', help='Published image reference to put in backend/.env.example')
     parser.add_argument('--revision', help='Full Git revision identifying the release snapshot')
     parser.add_argument('--platform', choices=('linux/amd64', 'linux/arm64'), default='linux/amd64')
@@ -136,7 +137,7 @@ def main():
                 parser.error('M1 runtime input missing: ' + source)
     target = args.output.resolve()
     archive = Path(str(target) + '.zip')
-    if archive.exists():
+    if args.zip and archive.exists():
         parser.error('Output ZIP already exists; choose a new output directory')
     target.mkdir(parents=True, exist_ok=False)
     (target / 'node_red').mkdir()
@@ -211,11 +212,12 @@ def main():
         if path.is_file():
             manifest.append(hashlib.sha256(path.read_bytes()).hexdigest() + '  ' + path.relative_to(target).as_posix())
     (target / 'SHA256SUMS').write_text('\n'.join(manifest) + '\n', encoding='utf-8')
-    with zipfile.ZipFile(archive, 'x', zipfile.ZIP_DEFLATED) as output:
-        for path in sorted(target.rglob('*')):
-            if path.is_file():
-                output.write(path, Path(target.name) / path.relative_to(target))
-    print(json.dumps({'directory': str(target), 'archive': str(archive),
+    if args.zip:
+        with zipfile.ZipFile(archive, 'x', zipfile.ZIP_DEFLATED) as output:
+            for path in sorted(target.rglob('*')):
+                if path.is_file():
+                    output.write(path, Path(target.name) / path.relative_to(target))
+    print(json.dumps({'directory': str(target), 'archive': str(archive) if args.zip else None,
                       'files': len(manifest) + 1, 'html_sha256': hashlib.sha256(HTML.read_bytes()).hexdigest()}, ensure_ascii=False))
 
 

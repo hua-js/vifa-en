@@ -44,7 +44,8 @@
 ## 前端样式
 
 - 创建或修改页面前读 [docs/DESIGN.md](docs/DESIGN.md)，其规则优先于vifa-frontend-style默认值；不顺带重做未涉及的组件。
-- M3页面只维护 `m3/node_red/m3_production_gateway_template.html`；仅改HTML时不更新Flow JSON、不生成page.html副本、不运行旧同步脚本。`m3/node_red`仅保留生产Template、生产Flow和 `本地机器.txt`，说明写入 `docs/m3/部署说明.md`。
+- **VIFA-UI-002（2026-09-19）**：M1–M4均采用单一正式HTML维护。仅HTML变动时，每个受影响模块只修改其正式HTML，不生成或更新Node-RED Flow JSON，不同步额外HTML/Template/page.html副本，不为此运行副本或Flow同步脚本。仅实际涉及Flow逻辑或用户明确要求时修改相应Flow。正式入口：M1 `m1/web/dashboard_energy.html`；M2 `m2/web/场站三条能效链路能流图.html`；M3 `m3/node_red/m3_production_gateway_template.html`；M4 `m4/web/M4优化调度控制台-线上版.html`。来源：任务 `01a0b8f2-763f-7e41-aa67-47a32daf6209`，用户确认“M1到M4都适用”；替代原VIFA-M4-UI-002。
+- `m3/node_red`仅保留生产Template、生产Flow和 `本地机器.txt`，说明写入 `docs/m3/部署说明.md`。
 - M1/M2背景以M3生产Template为基准，明暗模式的渐变、面板底色、边框及阴影保持一致；未经要求不改M3基准。其他交互配色、按钮、排版和组件可按用途设计，保证对比度和状态辨识，不强制绿色或蓝色。
 - M1/M2共用源为 `shared/styles/vifa-m3-theme.css`，通过 `--m3-*` 变量适配，内嵌为 `style#vifa-m3-theme` 以保持单文件部署。修改主题源须同步 `m1/web/dashboard_energy.html` 和 `m2/web/场站三条能效链路能流图.html`；方法见 [shared/styles/README.md](shared/styles/README.md)，不恢复旧副本。
 - 保留业务数据逻辑、时间展示、历史查询和 `dashboard-theme` 明暗偏好。
