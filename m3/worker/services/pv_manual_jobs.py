@@ -90,23 +90,33 @@ class ManualJobs:
         if at.tzinfo is None or at.utcoffset() is None:
             raise ValueError('schedule time must include timezone')
         local = at.astimezone(ZoneInfo('Asia/Shanghai'))
-        if (local.hour, local.minute) != (6, 0):
+        if (local.hour, local.minute) not in ((6, 0), (22, 0)):
             return False
         day = local.date().isoformat()
+        slot = local.strftime('%H:%M')
         with self._mutex:
             path = self.root/'daily-schedule.json'
             state = json.loads(path.read_text()) if path.exists() else {}
-            if state.get('last_attempt_date', '') >= day:
+            # The legacy single-slot file represents only the 06:00 attempt.
+            attempts = state.get('last_attempt_dates')
+            if attempts is None:
+                attempts = {'06:00': state.get('last_attempt_date', '')}
+            if (not isinstance(attempts, dict)
+                    or any(k not in ('06:00', '22:00') or not isinstance(v, str)
+                           for k, v in attempts.items())):
+                raise ValueError('invalid PV schedule attempt state')
+            if attempts.get(slot, '') >= day:
                 return False
             if self._latest and self._latest['status'] in ('queued', 'running'):
                 return False
-            # This intent remains durable even if submission or the process fails.
-            atomic_json(path, {'last_attempt_date': day, 'timezone': 'Asia/Shanghai',
-                               'scheduled_time': '06:00', 'status': 'claimed'})
+            # Claim each slot before submission; uncertain writes are never replayed.
+            attempts = {**attempts, slot: day}
+            claim = {'last_attempt_date': max(attempts.values()),
+                     'last_attempt_dates': attempts, 'timezone': 'Asia/Shanghai',
+                     'scheduled_time': slot, 'status': 'claimed'}
+            atomic_json(path, claim)
             accepted, job = self.submit('forecast')
-            atomic_json(path, {'last_attempt_date': day, 'timezone': 'Asia/Shanghai',
-                               'scheduled_time': '06:00', 'status': 'submitted',
-                               'job_id': job['job_id']})
+            atomic_json(path, {**claim, 'status': 'submitted', 'job_id': job['job_id']})
             return accepted
 
     def start_daily_schedule(self):

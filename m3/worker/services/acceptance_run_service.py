@@ -32,6 +32,7 @@ RUN_FIELDS = (
     "calculated_at",
 )
 RUN_COLLECTION = "energy_forecast_acceptance_runs"
+AUDIT_FIELDS = frozenset({"createdAt", "updatedAt", "createdById", "updatedById"})
 BATCH_FIELDS = (
     "station_id",
     "acceptance_run_id",
@@ -120,9 +121,11 @@ def _exact_string(value: object) -> str:
 
 
 def _run_record(raw: object) -> AcceptanceRunRecord:
-    if type(raw) is not dict or set(raw) != set(RUN_FIELDS):
+    if (type(raw) is not dict or not set(RUN_FIELDS).issubset(raw)
+            or set(raw) - set(RUN_FIELDS) - AUDIT_FIELDS):
         raise _context_error()
-    row: dict[str, object] = raw
+    # Resource updates may return audit metadata even when list queries project fields.
+    row: dict[str, object] = {field: raw[field] for field in RUN_FIELDS}
     if type(row["id"]) is not int or row["id"] < 1:
         raise _context_error()
     station_id = _exact_string(row["station_id"])

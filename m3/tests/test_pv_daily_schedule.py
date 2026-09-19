@@ -1,6 +1,7 @@
 """Daily PV schedule: Beijing time, durable deduplication and manual exclusion."""
 from datetime import datetime
 from pathlib import Path
+import json
 import tempfile
 import threading
 import unittest
@@ -83,3 +84,49 @@ class DailyScheduleTests(unittest.TestCase):
             with patch.dict('os.environ', {'PV_DAILY_SCHEDULE_ENABLED': '1'}):
                 build_manager()
                 manager.return_value.start_daily_schedule.assert_called_once()
+
+    def test_evening_and_morning_have_independent_durable_claims(self):
+        with tempfile.TemporaryDirectory() as temp:
+            seen = []
+            operation = lambda *args: (seen.append(1) or {'status': 'completed'})
+            for at, expected in (
+                ('2026-09-10T06:00:00+08:00', True),
+                ('2026-09-10T14:00:00+00:00', True),
+                ('2026-09-10T22:00:30+08:00', False),
+                ('2026-09-10T06:00:30+08:00', False),
+                ('2026-09-11T06:00:00+08:00', True),
+            ):
+                jobs = ManualJobs(Path(temp), operation)
+                try:
+                    self.assertEqual(jobs.submit_daily(datetime.fromisoformat(at)), expected)
+                finally:
+                    jobs.close()
+            self.assertEqual(len(seen), 3)
+
+    def test_legacy_morning_claim_does_not_block_first_evening(self):
+        with tempfile.TemporaryDirectory() as temp:
+            (Path(temp)/'daily-schedule.json').write_text(json.dumps({
+                'last_attempt_date': '2026-09-10', 'scheduled_time': '06:00', 'status': 'claimed'}))
+            jobs = ManualJobs(Path(temp), lambda *a: {'status': 'completed'})
+            try:
+                self.assertFalse(jobs.submit_daily(datetime.fromisoformat('2026-09-10T06:00:00+08:00')))
+                self.assertTrue(jobs.submit_daily(datetime.fromisoformat('2026-09-10T22:00:00+08:00')))
+            finally:
+                jobs.close()
+
+    def test_uncertain_evening_is_not_replayed_but_next_morning_is_allowed(self):
+        with tempfile.TemporaryDirectory() as temp:
+            jobs = ManualJobs(Path(temp), lambda *a: {'status': 'completed'})
+            at = datetime.fromisoformat('2026-09-10T22:00:00+08:00')
+            try:
+                with patch.object(jobs, 'submit', side_effect=OSError('uncertain')):
+                    with self.assertRaises(OSError):
+                        jobs.submit_daily(at)
+            finally:
+                jobs.close()
+            jobs = ManualJobs(Path(temp), lambda *a: {'status': 'completed'})
+            try:
+                self.assertFalse(jobs.submit_daily(at))
+                self.assertTrue(jobs.submit_daily(datetime.fromisoformat('2026-09-11T06:00:00+08:00')))
+            finally:
+                jobs.close()
