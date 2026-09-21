@@ -198,10 +198,13 @@ class CustomObservationPoint(StrictModel):
         "coverage",
     ]
     source_revision: int = Field(strict=True, ge=0)
+    storage_power_kw: float | None = None
 
     @model_validator(mode="before")
     @classmethod
     def validate_origins(cls, value: object) -> object:
+        if type(value) is dict and "storage_power_kw" not in value:
+            value = {**value, "storage_power_kw": None}
         fields = _exact_mapping(
             value,
             (
@@ -211,6 +214,7 @@ class CustomObservationPoint(StrictModel):
                 "quality",
                 "source_state",
                 "source_revision",
+                "storage_power_kw",
             ),
             "custom observation point",
         )
@@ -219,6 +223,12 @@ class CustomObservationPoint(StrictModel):
             raise ValueError("source_revision must be an exact integer")
         if fields["y"] is not None and type(fields["y"]) not in {int, float}:
             raise ValueError("y must be an exact number or null")
+        power = fields["storage_power_kw"]
+        if power is not None:
+            if type(power) not in {int, float} or not math.isfinite(power):
+                raise ValueError("storage_power_kw must be a finite number or null")
+            if fields["unique_id"] != "storage_soc":
+                raise ValueError("storage power belongs to SOC observations only")
         return value
 
     @model_validator(mode="after")

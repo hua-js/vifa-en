@@ -1,6 +1,7 @@
 """Bounded execution and recovery for persistent custom M3 forecasts."""
 
 from contextlib import ExitStack
+from dataclasses import replace
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 import logging
@@ -425,6 +426,31 @@ class CustomForecastService:
                 )
                 for unique_id in SERIES_IDS
             }
+            power_source = {
+                'power_field': 't_es_data.emus_power',
+                'capacity_field': 't_es.es_power_storage',
+                'positive_direction': 'discharge',
+                'capacity_basis': 'current_nominal_snapshot',
+                'energy_capacity_kwh': None,
+                'status': 'unavailable',
+                'valid_power_points': sum(
+                    point.unique_id == 'storage_soc' and point.quality == 'valid'
+                    and point.storage_power_kw is not None
+                    for point in observations_by_series['storage_soc']),
+            }
+            capacity_reader = getattr(self._source, 'storage_capacity', None)
+            if callable(capacity_reader):
+                try:
+                    capacity = capacity_reader(run.station_id)
+                    if type(capacity) not in {int, float} or not math.isfinite(capacity) or capacity <= 0:
+                        raise M3Error('source_contract_invalid', 'Invalid SOC capacity')
+                    datasets['storage_soc'] = replace(datasets['storage_soc'], energy_capacity_kwh=capacity)
+                    power_source.update(energy_capacity_kwh=capacity, status='capacity_available',
+                                        fetched_at=datetime.now(ZoneInfo('Asia/Shanghai')).isoformat())
+                except M3Error as error:
+                    # This optional candidate must not disable the existing SOC
+                    # forecast when a deployment lacks the extra read scope.
+                    power_source['error_code'] = error.code
             champions: dict[str, CustomChampion] = {}
             for unique_id in SERIES_IDS:
                 selection_started = monotonic()
@@ -536,6 +562,7 @@ class CustomForecastService:
                 "selection_policy": LOAD_SELECTION_POLICY,
                 "work_schedule_policy": schedule_policy(),
                 "soc_schedule_policy": SOC_SCHEDULE_POLICY,
+                "soc_power_source": power_source,
                 "model_policy": run.config.model_policy,
                 "interval_seconds": run.config.interval_seconds,
                 "daily_season_length": run.config.daily_season_length,

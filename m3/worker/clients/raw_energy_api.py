@@ -232,6 +232,30 @@ class RawEnergySourceClient:
             raise M3Error("source_contract_invalid", "Raw source history is empty")
         return rows[-1][0]
 
+    def storage_capacity(self, station_id: str) -> float:
+        """Read station nominal energy capacity, never cabinet power ratings."""
+        self._require_station(station_id)
+        url = self._api_url.copy_with(path=self._api_url.path.rsplit('/', 1)[0] + '/t_es:list')
+        try:
+            with self._http.stream('GET', url, headers=self._headers, follow_redirects=False,
+                    params={'filter': json.dumps({'sn': station_id}), 'pageSize': '2',
+                            'fields': 'sn,es_power_storage'}) as response:
+                if response.status_code in {401, 403}:
+                    raise M3Error('source_unauthorized', 'Storage capacity authorization failed')
+                if response.status_code != 200 or response.history:
+                    raise M3Error('source_http_failed', 'Storage capacity request failed')
+                payload = json.loads(self._limited_body(response))
+        except (httpx.RequestError, ValueError) as error:
+            raise M3Error('source_contract_invalid', 'Storage capacity response invalid') from error
+        rows = payload.get('data') if isinstance(payload, dict) else None
+        if (not isinstance(rows, list) or len(rows) != 1 or not isinstance(rows[0], dict)
+                or rows[0].get('sn') != station_id):
+            raise M3Error('source_contract_invalid', 'Storage capacity station mismatch')
+        capacity = self._number(rows[0].get('es_power_storage'))
+        if capacity is None or capacity <= 0:
+            raise M3Error('source_contract_invalid', 'Storage capacity must be positive')
+        return capacity
+
     def list_observations(self, station_id: str, start: datetime, end: datetime) -> list[ObservationPoint]:
         """Return ordered two-series 15-minute points for one station."""
         self._require_station(station_id)
@@ -320,6 +344,9 @@ class RawEnergySourceClient:
             ]
             load_valid = self._covered(valid_load, bucket_start, bucket_end)
             soc_valid = self._covered(valid_soc, bucket_start, bucket_end)
+            power_values = [(timestamp, value) for timestamp, row in bucket
+                            if (value := self._number(row.get('emus_power'))) is not None]
+            power_valid = self._covered(power_values, bucket_start, bucket_end)
             if load_valid:
                 load_state = "valid"
             elif not bucket:
@@ -357,6 +384,8 @@ class RawEnergySourceClient:
                     CustomObservationPoint(
                         unique_id="storage_soc",
                         ds=bucket_start,
+                        storage_power_kw=(sum(v for _, v in power_values) / len(power_values)
+                                          if power_valid else None),
                         y=valid_soc[-1][1] if soc_valid else None,
                         quality="valid" if soc_valid else "invalid",
                         source_state=soc_state,

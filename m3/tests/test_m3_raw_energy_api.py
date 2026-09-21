@@ -36,6 +36,26 @@ def envelope(rows: list[dict[str, object]]) -> dict[str, object]:
 
 
 class RawEnergySourceClientTests(unittest.TestCase):
+    def test_custom_power_keeps_signed_mean_and_missing_coverage(self):
+        rows = minute_rows(es_sn=STATION_1, load_power=20, solar_power=0, emus_soc=50)
+        for row in rows:
+            row['emus_power'] = '-60'
+        client = self.make_client(lambda request: httpx.Response(200, json=envelope(rows)))
+        points = client.list_custom_observations(STATION_1, START, END, interval_seconds=900)
+        self.assertEqual(points[1].storage_power_kw, -60.)
+        for row in rows[1:]:
+            row['emus_power'] = None
+        points = client.list_custom_observations(STATION_1, START, END, interval_seconds=900)
+        self.assertIsNone(points[1].storage_power_kw)
+        self.assertEqual(points[1].y, 50.)
+
+    def test_capacity_rejects_wrong_station_and_reads_kwh(self):
+        rows = [{'sn': STATION_1, 'es_power_storage': '3132'}]
+        client = self.make_client(lambda request: httpx.Response(200, json={'data': rows}))
+        self.assertEqual(client.storage_capacity(STATION_1), 3132.)
+        with self.assertRaises(M3Error):
+            client.storage_capacity(STATION_2)
+
     def make_client(self, handler):
         http = httpx.Client(transport=httpx.MockTransport(handler))
         self.addCleanup(http.close)

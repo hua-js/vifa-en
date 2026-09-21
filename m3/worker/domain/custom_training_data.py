@@ -42,6 +42,7 @@ class CustomTrainingDataset:
     interval_seconds: int
     points_per_day: int
     usable_weeks: tuple[CustomWeekSummary, ...] = ()
+    energy_capacity_kwh: float | None = None
 
 
 def _history_mode(real_point_count: int, points_per_day: int) -> str:
@@ -133,6 +134,7 @@ def build_custom_training_dataset(
             "unique_id": unique_id,
             "ds": point.ds,
             "y": point.y if point.quality != "invalid" else None,
+            "storage_power_kw": point.storage_power_kw,
         }
         for point in selected
     ]
@@ -196,7 +198,8 @@ def build_custom_training_dataset(
     )
     real_point_count = len(frame) - len(retained_imputed)
     return CustomTrainingDataset(
-        frame=frame[["unique_id", "ds", "y"]],
+        frame=frame[["unique_id", "ds", "y"] +
+                    (["storage_power_kw"] if unique_id == "storage_soc" else [])],
         imputed_keys=imputed_keys,
         source_available_start=source_available_start,
         source_available_points=len(full_index),

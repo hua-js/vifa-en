@@ -35,12 +35,14 @@ logger = logging.getLogger(__name__)
 
 SOC_WEEKLY_DELTA_MODEL = "SOCWeeklyDelta"
 SOC_SCHEDULE_DELTA_MODEL = "SOCScheduleDelta"
-SOC_SCHEDULE_POLICY = "soc-schedule-delta-v3"
+SOC_POWER_MODEL = "SOCSchedulePower"
+SOC_SCHEDULE_POLICY = "soc-schedule-power-v1"
 # Percentage points, not a charge target. Weekly increments are transferable
 # only between similar initial states; saturation otherwise hides charging.
 SOC_WEEKLY_START_TOLERANCE = 10.0
 SOC_FIVE_MINUTE_LINEAR_SUFFIX = "5mLinear"
 SOC_MODEL_ORDER = (
+    SOC_POWER_MODEL,
     SOC_WEEKLY_DELTA_MODEL,
     SOC_SCHEDULE_DELTA_MODEL,
     "SeasonalNaive",
@@ -350,10 +352,13 @@ def _select_soc_champion(
     scored_holdout = pd.concat([actual for _, actual, _ in folds], ignore_index=True)
 
     scores: list[LoadCandidateScore] = []
-    for model_name, predictor in (
+    candidates = [
         (SOC_WEEKLY_DELTA_MODEL, _soc_weekly_delta_values),
         (SOC_SCHEDULE_DELTA_MODEL, _soc_schedule_delta_values),
-    ):
+    ]
+    if dataset.energy_capacity_kwh is not None:
+        candidates.append((SOC_POWER_MODEL, _soc_power_values))
+    for model_name, predictor in candidates:
         try:
             # Historical accuracy alone cannot establish applicability to a
             # low-SOC start after exceptional overtime. Check the actual window
@@ -406,6 +411,10 @@ def _soc_schedule_delta_values(dataset, *, origin: datetime, periods: int) -> li
     return _soc_delta_values(dataset, origin=origin, periods=periods, weekly=False)
 
 
+def _soc_power_values(dataset, *, origin: datetime, periods: int) -> list[float]:
+    return _soc_delta_values(dataset, origin=origin, periods=periods, weekly=False, power=True)
+
+
 def _soc_day_context(timestamp: datetime) -> tuple[bool, bool]:
     return schedule_day(timestamp), schedule_day(timestamp - timedelta(days=1))
 
@@ -436,6 +445,7 @@ def _recent_soc_plateau(source_values, origin, interval):
 
 def _soc_delta_values(
     dataset: CustomTrainingDataset, *, origin: datetime, periods: int, weekly: bool,
+    power: bool = False,
 ) -> list[float]:
     """Integrate past real SOC changes without carrying saturation overshoot."""
     if type(origin) is not datetime or type(periods) is not int or periods < 0:
@@ -455,6 +465,12 @@ def _soc_delta_values(
     if not source_values:
         raise M3Error("training_data_invalid", "No real SOC history")
     interval = timedelta(seconds=dataset.interval_seconds)
+    power_deltas = {}
+    if power:
+        from m3.worker.domain.soc_power import calibrated_power_deltas
+        power_deltas = calibrated_power_deltas(
+            dataset.frame, source_values, interval_seconds=dataset.interval_seconds,
+            capacity_kwh=dataset.energy_capacity_kwh)
     anchor_time = max(source_values)
     current = source_values[anchor_time]
     values = [current]
@@ -495,6 +511,10 @@ def _soc_delta_values(
                     or schedule_slot(previous_time)[0] != schedule_slot(target - interval)[0]):
                 continue
             delta = source_values[source_time] - source_values[previous_time]
+            if power:
+                if source_time not in power_deltas:
+                    continue
+                delta = power_deltas[source_time]
             if weekly:
                 if target.date() != origin.date():
                     # Later days enter with the previous day's final state,
@@ -584,6 +604,8 @@ def _forecast_frame(
             predictor = _soc_weekly_delta_values
         elif champion.model_name == SOC_SCHEDULE_DELTA_MODEL:
             predictor = _soc_schedule_delta_values
+        elif champion.model_name == SOC_POWER_MODEL:
+            predictor = _soc_power_values
         else:
             raise ValueError("retired SOC model requires schedule-aware fallback")
         values = predictor(dataset, origin=config.forecast_start,
