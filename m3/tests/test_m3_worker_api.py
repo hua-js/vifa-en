@@ -122,6 +122,23 @@ AUTH = {"Authorization": "Bearer admin-secret"}
 
 
 class WorkerApiTests(unittest.TestCase):
+    def test_rolling_soc_get_is_authenticated_read_only(self):
+        resources = FakeResources()
+        resources.clock = lambda: NOW
+        resources.rolling_soc = Mock()
+        resources.rolling_soc.snapshot.return_value = {
+            'station_id': ES02, 'status': 'pending', 'points': []}
+        app = create_app(settings(), resources, start_scheduler=False)
+        with TestClient(app) as client:
+            url = f'/v1/stations/{ES02}/rolling-soc'
+            self.assertEqual(client.get(url).status_code, 401)
+            response = client.get(url, headers={'Authorization': 'Bearer admin-secret'})
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json()['status'], 'pending')
+            self.assertEqual(client.get('/v1/stations/unknown/rolling-soc',
+                headers={'Authorization': 'Bearer admin-secret'}).status_code, 404)
+        resources.rolling_soc.update.assert_not_called()
+
     def test_latest_custom_forecast_is_selected_by_station_interval_and_horizon(self):
         """A browser without local run state can recover the newest matching result."""
         resources = FakeResources()
@@ -215,6 +232,7 @@ class WorkerApiTests(unittest.TestCase):
                 "/v1/jobs/{job_id}",
                 "/v1/stations/{station_id}/custom-forecast-performance",
                 "/v1/stations/{station_id}/custom-forecast-runs/latest",
+                "/v1/stations/{station_id}/rolling-soc",
                 "/v1/stations/{station_id}/runs/custom-forecast",
                 "/v1/stations/{station_id}/runs/forecast",
                 "/v1/stations/{station_id}/runs/model-selection",

@@ -83,6 +83,7 @@ class SchedulerRunner:
         *,
         custom_evaluation_service=None,
         daily_custom_forecast_service=None,
+        rolling_soc_service=None,
         poll_seconds: float = 15.0,
         stop_timeout_seconds: float | None = None,
         max_seen: int = 8192,
@@ -111,6 +112,7 @@ class SchedulerRunner:
         self._acceptance = acceptance_service
         self._custom_evaluations = custom_evaluation_service
         self._daily_custom_forecasts = daily_custom_forecast_service
+        self._rolling_soc = rolling_soc_service
         self._acceptance_enabled = acceptance_enabled
         self._alert_sink = alert_sink or (lambda *_args: None)
         self._clock = clock or (lambda: datetime.now(SHANGHAI))
@@ -276,6 +278,8 @@ class SchedulerRunner:
                 lambda: self._forecast.run_forecast(station_id, at),
             )
         ]
+        if self._rolling_soc is not None:
+            stages.insert(0, ('rolling_soc', lambda: self._rolling_soc.update(station_id, at)))
         if self._acceptance_enabled:
             stages.append(
                 (

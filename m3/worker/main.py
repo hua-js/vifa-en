@@ -34,6 +34,7 @@ from m3.worker.services.custom_forecast_evaluation_service import (
     CustomForecastEvaluationService,
 )
 from m3.worker.services.custom_forecast_service import CustomForecastService
+from m3.worker.services.rolling_soc_service import RollingSocService
 from m3.worker.services.daily_custom_forecast_service import (
     DailyCustomForecastService,
 )
@@ -125,6 +126,7 @@ class WorkerResources:
     clock: Callable[[], datetime]
     alert_sink: Callable[[str, str, str, datetime], None]
     statsforecast_version: str
+    rolling_soc: object | None = None
     alert_client: object | None = None
     recovery_ready: bool = False
     _startup_statsforecast_version: str = field(init=False, repr=False)
@@ -361,6 +363,7 @@ def build_resources(
             custom_repository,
             custom_forecasts,
         )
+        rolling_soc = RollingSocService(observation_source, settings.station_ids, schedule_provider)
         scheduler = SchedulerRunner(
             settings.station_ids,
             forecast_service,
@@ -370,6 +373,7 @@ def build_resources(
             acceptance_enabled=settings.acceptance_enabled,
             custom_evaluation_service=custom_evaluations,
             daily_custom_forecast_service=daily_custom_forecasts,
+            rolling_soc_service=rolling_soc,
         )
         jobs = JobService(
             scheduler.run_manual,
@@ -393,6 +397,7 @@ def build_resources(
             clock=clock,
             alert_sink=effective_alert_sink,
             statsforecast_version=locked_version,
+            rolling_soc=rolling_soc,
             alert_client=alert_client,
         )
     except Exception:

@@ -22,6 +22,7 @@ from m3.worker.api.models import (
     JobResponse,
     ManualRunRequest,
     StationStateResponse,
+    RollingSocResponse,
 )
 from m3.worker.contracts import SERIES_IDS
 from m3.worker.custom_forecast_contracts import ALLOWED_INTERVAL_SECONDS, RUN_ID_PATTERN
@@ -38,6 +39,15 @@ router = APIRouter(
     tags=["m3-operations"],
     dependencies=[Depends(require_admin)],
 )
+
+
+@router.get('/stations/{station_id}/rolling-soc')
+def rolling_soc_snapshot(request: Request, station_id: StationDep) -> RollingSocResponse:
+    service = getattr(request.app.state.resources, 'rolling_soc', None)
+    if service is None:
+        raise HTTPException(status_code=503, detail='rolling_soc_unavailable')
+    return RollingSocResponse.model_validate(
+        service.snapshot(station_id, request.app.state.resources.clock()))
 
 
 def _safe_code(value: object) -> str | None:

@@ -21,6 +21,28 @@ class ManualRunRequest(ApiModel):
     pass
 
 
+class RollingSocPoint(ApiModel):
+    target_time: datetime
+    forecast_value: float
+
+
+class RollingSocResponse(ApiModel):
+    station_id: str
+    status: Literal['pending', 'ready', 'stale', 'unavailable']
+    points: list[RollingSocPoint]
+    policy: str | None = None
+    origin: datetime | None = None
+    forecast_end: datetime | None = None
+    generated_at: datetime | None = None
+    interval_seconds: int | None = None
+    energy_capacity_kwh: float | None = None
+    anchor_bucket_start: datetime | None = None
+    anchor_soc: float | None = None
+    recent_power_correction: bool | None = None
+    correction_horizon_minutes: int | None = None
+    error_code: str | None = None
+
+
 class CustomRunRequest(CustomForecastRequest):
     pass
 
