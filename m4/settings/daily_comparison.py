@@ -10,6 +10,7 @@ from m4.optimizer.contracts import CandidateResult, PlanPoint
 from m4.optimizer.metrics import calculate_metrics
 from m4.optimizer.validation import validate_candidate, validate_peak_grid_charging
 from .ems_simulation import EMS_BASELINE_POLICY, simulate_ems_day
+from .terminal_policy import enabled as operating_floor, inventory_cost
 
 
 SHANGHAI = ZoneInfo('Asia/Shanghai')
@@ -100,6 +101,11 @@ def compare_daily_plan(request, candidate, *, baseline=None, controls_version=No
     output = _compare_daily_plan(request, candidate, baseline=baseline,
         controls_version=controls_version, terminal_soc_target_pct=terminal_soc_target_pct)
     recommended = output.get('recommended')
+    if (recommended is not None and operating_floor(request)
+            and recommended['plan'][-1]['expected_soc_pct'] < request.peak_reserve_policy.terminal_soc_min_pct-POWER_TOLERANCE_KW):
+        output.update(status='blocked', recommended_source=None, recommended=None,
+            reason='当前方案未满足日末最低电量，暂停推荐。')
+        return output
     if recommended is not None:
         plan = [PlanPoint.model_validate_json(json.dumps(point)) for point in recommended['plan']]
         try:
@@ -121,7 +127,7 @@ def _compare_daily_plan(request, candidate, *, baseline=None, controls_version=N
     reserve_policy = request.peak_reserve_policy
     if reserve_policy is not None:
         output.update(daily_policy_version=request.source_versions.get('daily_policy'),
-            terminal_energy_rule='not_less_than_baseline',
+            terminal_energy_rule=('operating_floor_inventory_adjusted' if operating_floor(request) else 'not_less_than_baseline'),
             baseline_terminal_soc_pct=None, optimized_terminal_soc_pct=None,
             retained_energy_kwh=None)
     output['controls_version'] = controls_version
@@ -145,10 +151,10 @@ def _compare_daily_plan(request, candidate, *, baseline=None, controls_version=N
         output['reason'] = 'EMS 日基线的来源、日初状态或有效功率尚未校验通过，暂无法比较；沿用原策略。'
         return output
     if reserve_policy is not None:
-        expected_floor = max(ems.metrics.terminal_soc_pct,
+        expected_floor = max(request.constraints.soc_min_pct if operating_floor(request) else ems.metrics.terminal_soc_pct,
                              request.constraints.preferred_soc_min_pct)
         if abs(reserve_policy.terminal_soc_min_pct - expected_floor) > 1e-9:
-            output['reason'] = '峰段保电的日末 SOC 下限与 EMS 基线及推荐下限不一致，请重新生成。'
+            output['reason'] = '日末电量目标与当前策略不一致，请重新生成。'
             return output
         output['baseline_terminal_soc_pct'] = ems.metrics.terminal_soc_pct
     ems_view = dict(profile_id='ems', plan_version=ems.plan_version,
@@ -190,14 +196,18 @@ def _compare_daily_plan(request, candidate, *, baseline=None, controls_version=N
     if reserve_policy is not None:
         output.update(optimized_terminal_soc_pct=metrics.terminal_soc_pct,
                       retained_energy_kwh=terminal_difference)
-    if ((reserve_policy is None and abs(terminal_difference) > ENERGY_TOLERANCE_KWH)
+    if not operating_floor(request) and ((reserve_policy is None and abs(terminal_difference) > ENERGY_TOLERANCE_KWH)
             or (reserve_policy is not None and terminal_difference < -ENERGY_TOLERANCE_KWH)):
         output['reason'] = ('保电优化方案的期末电量低于 EMS 基线，未采用；沿用 EMS 原计划。'
             if reserve_policy is not None else '两套日计划的期末电量不一致，费用不可直接比较；沿用 EMS 原计划。')
         return output
-    savings = ems.metrics.energy_cost - metrics.energy_cost
+    inventory = inventory_cost(request, ems.metrics.terminal_soc_pct, metrics.terminal_soc_pct)
+    savings = ems.metrics.energy_cost - metrics.energy_cost - inventory
     net_savings = (ems.metrics.energy_cost + ems.metrics.cycle_cost
-                   - metrics.energy_cost - metrics.cycle_cost)
+                   - metrics.energy_cost - metrics.cycle_cost - inventory)
+    if operating_floor(request):
+        output.update(terminal_inventory_adjustment_yuan=inventory,
+            raw_energy_savings_yuan=ems.metrics.energy_cost-metrics.energy_cost)
     output.update(optimized_cost_yuan=metrics.energy_cost, savings_yuan=savings,
                   net_savings_yuan=net_savings)
     if not math.isfinite(net_savings) or net_savings < MIN_NET_SAVINGS_YUAN:
@@ -205,7 +215,7 @@ def _compare_daily_plan(request, candidate, *, baseline=None, controls_version=N
         return output
     if savings > COST_TOLERANCE_YUAN:
         output.update(status='optimized', recommended_source='optimized',
-            reason=('峰段保电方案满足需量与安全约束，日末电量不低于 EMS，全天预计购电费用更低；未用电量保留到日末。'
+            reason=('方案满足安全及日末电量要求，预计净节省达到采用条件。' if operating_floor(request) else '峰段保电方案满足需量与安全约束，日末电量不低于 EMS，全天预计购电费用更低；未用电量保留到日末。'
                 if reserve_policy is not None else '优化方案满足需量与安全约束，且在相同期末电量下全天预计费用更低。'),
             recommended=dict(profile_id=candidate.profile_id, plan_version=candidate.plan_version,
                 plan=[point.model_dump(mode='json') for point in candidate.plan],

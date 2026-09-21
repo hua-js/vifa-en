@@ -86,7 +86,7 @@ class LatePeakReserveTests(unittest.TestCase):
                          {'version': 'peak-reserve-v1', 'terminal_soc_min_pct': 2.0})
 
     def test_new_daily_policy_rejects_old_saved_request(self):
-        self.assertEqual(PEAK_RESERVE_DAILY_POLICY, 'm4-daily-peak-reserve-v4')
+        self.assertEqual(PEAK_RESERVE_DAILY_POLICY, 'm4-daily-operating-floor-v1')
         current=reserve_request('peak-reserve-v4').model_dump(mode='json')
         current['pv_midday_economic'] = True
         current['source_versions'].update(pv_export_policy='pv-export-flat-tariff-v1',

@@ -10,6 +10,7 @@ from m4.optimizer.metrics import calculate_metrics
 from .daily_comparison import comparison_input_sha256, compare_daily_plan
 from .objectives import get_daily_profiles
 from .daily_policy import daily_policy_version, physical_grid_policy
+from .terminal_policy import POLICY as TERMINAL_POLICY, target as terminal_target
 from .startup_admission import require_admission, POLICY as STARTUP_POLICY
 from .forecast_source import validate_forecast_values
 from .daily_pv_policy import POLICY as DAILY_PV_POLICY
@@ -66,9 +67,16 @@ def prepare_ems_day(configuration, bundle):
     terminal = plan[-1].expected_soc_pct
     policy_version = daily_policy_version(configuration.station_id)
     reserve_policy = (PeakReservePolicy(version='peak-reserve-v4', terminal_soc_min_pct=max(
-        terminal, constraints.preferred_soc_min_pct)) if policy_version else None)
+        constraints.soc_min_pct, constraints.preferred_soc_min_pct)) if policy_version else None)
+    terminal_versions = {}
+    if policy_version:
+        valley_prices = [p.buy_price_per_kwh for p in points if p.tariff_period == 'gu']
+        if not valley_prices:
+            raise ValueError('谷段电价缺失，不能比较日末库存费用。')
+        terminal_versions = dict(terminal_policy=TERMINAL_POLICY,
+            terminal_inventory_price=format(max(valley_prices), '.17g'))
     profiles = get_daily_profiles(configuration.station_id)
-    content = {'grid_charging_policy': GRID_CHARGING_POLICY,
+    content = {**terminal_versions, 'grid_charging_policy': GRID_CHARGING_POLICY,
                'configuration': configuration.model_dump(mode='json'), 'points': bundle['points'],
                'controls_version': control['version'], 'initial': initial, 'terminal': terminal,
                'baseline_policy': EMS_BASELINE_POLICY, 'pv_midday_economic': True,
@@ -84,7 +92,7 @@ def prepare_ems_day(configuration, bundle):
         profiles=profiles, pv_dispatch_policy=parameters.pv_dispatch_policy, pv_midday_economic=True,
         peak_reserve_policy=reserve_policy,
         solver_time_limit_seconds=30.0, solver_mip_rel_gap=0.01,
-        source_versions={**(dict(startup_policy=STARTUP_POLICY, startup_window_end=startup['end_at'],
+        source_versions={**terminal_versions, **(dict(startup_policy=STARTUP_POLICY, startup_window_end=startup['end_at'],
                 startup_tariff_periods=json.dumps(sources['tariff']['period_types'])) if startup else {}),
             **{k: sources[k]['version'] for k in ('load', 'pv', 'tariff')},
             'pv_export_policy': sources['tariff']['export_price_policy'],
@@ -99,7 +107,7 @@ def prepare_ems_day(configuration, bundle):
                 'pv_zero_filled_points': str(sources['pv'].get('zero_filled_points', 0))}
                if get_project().station(configuration.station_id).has_pv else {}),
             **({'physical_grid_policy': physical_grid_policy(configuration.station_id), 'economic_policy': 'station-1-cost-first-v1'} if get_project().station(configuration.station_id).policy == 'cost_first' else {}),
-            'terminal_target': format(terminal, '.17g'), 'baseline_policy': EMS_BASELINE_POLICY,
+            'terminal_target': format(reserve_policy.terminal_soc_min_pct if reserve_policy else terminal, '.17g'), 'baseline_policy': EMS_BASELINE_POLICY,
             **({'daily_policy': policy_version} if policy_version else {})})
     baseline = dict(schema_version='m4-ems-daily-baseline-v1', station_id=configuration.station_id,
         basis='ems_rule_simulation', schedule=schedule, source_schedule=control['schedule'], source_power_scope=control['power_scope'], simulation=simulation, input_sha256=comparison_input_sha256(request),
@@ -111,7 +119,7 @@ def prepare_ems_day(configuration, bundle):
         initial_soc_pct=initial['initial_soc_pct'], terminal_soc_pct=terminal,
         plan=[p.model_dump(mode='json') for p in plan])
     comparison = compare_daily_plan(request, None, baseline=baseline, controls_version=control['version'],
-                                    terminal_soc_target_pct=terminal)
+                                    terminal_soc_target_pct=terminal_target(request, terminal))
     if comparison['status'] == 'unavailable':
         raise ValueError(comparison['reason'])
     comparison['reason'] = 'EMS 全天模拟基线已计算，已计入限充、削峰及 SOC 到限待机；请重新生成优化日计划比较费用。'

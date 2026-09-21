@@ -3,8 +3,8 @@ from shared.project import get_project
 from m4.optimizer.contracts import GRID_CHARGING_POLICY
 import math
 
-PEAK_RESERVE_DAILY_POLICY = 'm4-daily-peak-reserve-v4'
-PEAK_RESERVE_SELECTOR = 'daily-peak-reserve-cost-gate-v4'
+PEAK_RESERVE_DAILY_POLICY = 'm4-daily-operating-floor-v1'
+PEAK_RESERVE_SELECTOR = 'daily-operating-floor-cost-gate-v1'
 
 
 def physical_grid_policy(station_id):
@@ -52,7 +52,21 @@ def matches_current_daily_policy(station_id, request):
                 and request.get('constraints', {}).get('grid_import_limit_kw') == get_project().station(station_id).grid_import_limit_kw
                 and versions.get('economic_policy') == 'station-1-cost-first-v1'
                 and request.get('profiles') == [p.model_dump(mode='json') for p in get_daily_profiles(station_id)])
+    from .terminal_policy import POLICY as TERMINAL_POLICY
+    if versions.get('terminal_policy') != TERMINAL_POLICY:
+        return False
+    valley = [p.get('buy_price_per_kwh') for p in points if p['tariff_period'] == 'gu']
+    if not valley or any(type(v) not in (float, int) or not math.isfinite(v) or v < 0 for v in valley):
+        return False
+    if versions.get('terminal_inventory_price') != format(max(valley), '.17g'):
+        return False
     if not isinstance(policy, dict) or policy.get('version') != 'peak-reserve-v4':
+        return False
+    bounds = request.get('constraints', {})
+    lower, preferred = bounds.get('soc_min_pct'), bounds.get('preferred_soc_min_pct')
+    if any(type(v) not in (float, int) or not math.isfinite(v) for v in (lower, preferred)):
+        return False
+    if policy.get('terminal_soc_min_pct') != max(lower, preferred):
         return False
     return request.get('profiles') == [
         profile.model_dump(mode='json') for profile in get_daily_profiles(station_id)

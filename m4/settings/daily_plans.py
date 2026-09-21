@@ -9,6 +9,7 @@ from uuid import uuid4
 
 from m4.optimizer.contracts import OptimizationRequest, CandidateResult
 from m4.optimizer.service import M4Optimizer
+from .terminal_policy import target as terminal_target
 from .daily_baseline import prepare_ems_day
 from .frozen_baseline import planning_controls, baseline_version
 from .daily_comparison import compare_daily_plan, REVENUE_GATE_VERSION
@@ -74,7 +75,7 @@ class DailyPlanService:
         chosen = CandidateResult.model_validate_json(json.dumps(raw['selected_candidate'])) if raw['selected_candidate'] else None
         expected = compare_daily_plan(request, chosen, baseline=raw['baseline'],
             controls_version=request.source_versions['controls'],
-            terminal_soc_target_pct=raw['baseline']['terminal_soc_pct'])
+            terminal_soc_target_pct=terminal_target(request, raw['baseline']['terminal_soc_pct']))
         if expected != raw['result']['record']['daily_comparison']:
             raise ValueError('saved daily comparison mismatch')
         return raw
@@ -112,14 +113,14 @@ class DailyPlanService:
                 from .load_accuracy import require_gate
                 require_gate(inputs['sources']['load'].get('accuracy_gate'), station, datetime.now(timezone.utc))
                 result = M4Optimizer(model_version='m4-daily-ems-baseline-v1').optimize(
-                    request, terminal_soc_target_pct=baseline['terminal_soc_pct'])
+                    request, terminal_soc_target_pct=terminal_target(request, baseline['terminal_soc_pct']))
                 usable = [c for c in result.candidates if c.status in ('optimal', 'feasible')
                     and (request.peak_reserve_policy is None
                          or ('PEAK_RESERVE_PREFERENCE_INCOMPLETE' not in c.risk_codes
                              and any(layer.name == 'peak-reserve-shortfall' for layer in c.layers)))]
                 chosen = min(usable, key=lambda c: (c.metrics.energy_cost, c.profile_id)) if usable else None
             comparison = compare_daily_plan(request, chosen, baseline=baseline,
-                controls_version=request.source_versions['controls'], terminal_soc_target_pct=baseline['terminal_soc_pct'])
+                controls_version=request.source_versions['controls'], terminal_soc_target_pct=terminal_target(request, baseline['terminal_soc_pct']))
             if self.store.get(station).version != configuration.version:
                 raise ValueError('计算期间参数已变化，请重新计算。')
             if not matches_current_daily_policy(station, request.model_dump(mode='json')):

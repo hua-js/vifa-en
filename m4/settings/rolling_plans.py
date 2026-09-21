@@ -13,6 +13,7 @@ from m4.optimizer.contracts import OptimizationRequest, GRID_CHARGING_POLICY
 from m4.optimizer.metrics import calculate_metrics
 from m4.optimizer.service import M4Optimizer
 from m4.optimizer.validation import validate_candidate, validate_peak_grid_charging
+from .terminal_policy import POLICY as TERMINAL_POLICY, enabled as operating_floor, target as terminal_target, inventory_cost
 from .ems_simulation import simulate_ems_day
 from .load_accuracy import read_gate, require_gate
 from .startup_admission import require_admission, window as startup_window, POLICY as STARTUP_POLICY
@@ -99,7 +100,7 @@ def prepare_remaining_request(configuration, inputs, now):
         inputs['baseline']['schedule'], pv_dispatch_policy=base.pv_dispatch_policy, remaining_day=True)
     if startup and any(p.mode not in ('charge', 'idle') for p in replay):
         raise ValueError('凌晨保底充电无法满足需量约束，暂停下发。')
-    terminal = replay[-1].expected_soc_pct
+    terminal = terminal_target(base, replay[-1].expected_soc_pct)
     policy = base.peak_reserve_policy.model_copy(deep=True) if base.peak_reserve_policy else None
     if policy:
         policy.terminal_soc_min_pct = max(terminal, base.constraints.preferred_soc_min_pct)
@@ -164,6 +165,10 @@ class RollingPlanService:
                 return dict(station_id=station, status='stale', result=None,
                     message='滚动建议已过期，等待更新。')
             if payload.get('request', {}).get('source_versions', {}).get('night_charging_policy') != NIGHT_POLICY:
+                if (get_project().station(station).policy == 'peak_reserve'
+                        and payload.get('request', {}).get('source_versions', {}).get('terminal_policy') != TERMINAL_POLICY):
+                    return dict(station_id=station, status='stale', result=None,
+                        message='日末电量规则已更新，等待新的建议。')
                 daily = self.daily.latest(station)
                 if daily.get('run_id') != payload['daily_run_id']:
                     return dict(station_id=station, status='stale', result=None,
@@ -240,6 +245,12 @@ class RollingPlanService:
                 now = datetime.now(ZONE)
                 if now.date().isoformat() != day:
                     raise ValueError('已跨日，等待次日日计划。')
+                if inputs['request'].get('source_versions', {}).get('terminal_policy'):
+                    # Freeze the approved daily floor and valuation across rolling updates.
+                    inputs = deepcopy(inputs)
+                    inputs['request']['peak_reserve_policy'] = deepcopy(daily['request']['peak_reserve_policy'])
+                    for key in ('terminal_policy', 'terminal_inventory_price'):
+                        inputs['request']['source_versions'][key] = daily['request']['source_versions'][key]
                 request, baseline, simulation, anchor, terminal = prepare_remaining_request(configuration, inputs, now)
                 base_metrics = calculate_metrics(request, baseline)
                 startup = request.source_versions.get('startup_policy') == STARTUP_POLICY
@@ -263,7 +274,8 @@ class RollingPlanService:
                         validate_candidate(request, candidate, terminal_soc_target_pct=terminal)
                         metrics = calculate_metrics(request, candidate.plan)
                         net = (base_metrics.energy_cost+base_metrics.cycle_cost
-                            -metrics.energy_cost-metrics.cycle_cost)
+                            -metrics.energy_cost-metrics.cycle_cost
+                            -inventory_cost(request, base_metrics.terminal_soc_pct, metrics.terminal_soc_pct))
                         if net > 1e-6:
                             viable.append((net, candidate.profile_id, candidate, metrics))
                     if viable:
@@ -272,6 +284,8 @@ class RollingPlanService:
                     else:
                         reason = '暂无更经济且可行的后续优化方案，沿用EMS。'
                 points = chosen.plan if chosen else baseline
+                if operating_floor(request) and points[-1].expected_soc_pct < terminal-1e-6:
+                    raise ValueError('后续方案未满足日末最低电量，暂停推荐及写表。')
                 try:
                     validate_peak_grid_charging(request, points)
                 except ValueError:

@@ -71,6 +71,11 @@ def validate_dispatch_safety(request, points):
             soc += (charge*cap.charge_efficiency-discharge/cap.discharge_efficiency)*0.25/cap.energy_capacity_kwh*100
             if not bounds.soc_min_pct-1e-6 <= soc <= bounds.soc_max_pct+1e-6:
                 raise ModelUpdateError('计划超出SOC安全范围，不能生成下发预览。')
+        from .terminal_policy import POLICY as TERMINAL_POLICY
+        if request.get('source_versions', {}).get('terminal_policy') == TERMINAL_POLICY:
+            floor = request['peak_reserve_policy']['terminal_soc_min_pct']
+            if type(floor) not in (int, float) or not math.isfinite(floor) or soc < floor-1e-6:
+                raise ModelUpdateError('计划未满足日末最低电量，不能生成下发预览。')
     except ModelUpdateError:
         raise
     except (KeyError, TypeError, ValueError):
@@ -121,6 +126,13 @@ class EMSModelUpdateAdapter:
         from m4.optimizer.contracts import GRID_CHARGING_POLICY
         if request.get('source_versions', {}).get('grid_charging_policy') != GRID_CHARGING_POLICY:
             raise ModelUpdateError('尖、峰段充电规则已更新，请重新生成计划。')
+        from .terminal_policy import POLICY as TERMINAL_POLICY
+        from .night_charging import POLICY as NIGHT_POLICY
+        versions = request.get('source_versions', {})
+        if (get_project().station(station_id).policy == 'peak_reserve'
+                and versions.get('night_charging_policy') != NIGHT_POLICY
+                and versions.get('terminal_policy') != TERMINAL_POLICY):
+            raise ModelUpdateError('日末电量规则已更新，请重新生成计划。')
         if (request.get('station_id') != station_id
                 or request.get('capability', {}).get('available') is not True
                 or request.get('source_versions', {}).get('configuration') != configuration.version
