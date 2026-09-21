@@ -34,7 +34,10 @@ class SocScheduleRegressionTests(unittest.TestCase):
         values=_soc_schedule_delta_values(dataset,origin=FORECAST_START,periods=3)
         self.assertEqual(values,[98.,98.,58.])
         from m3.worker.domain.custom_forecasting import _soc_weekly_delta_values
-        self.assertEqual(_soc_weekly_delta_values(dataset,origin=FORECAST_START,periods=3),[98.,148.,59.])
+        from m3.worker.errors import M3Error
+        # Weekly donors start at 40%, incompatible with this 98% anchor.
+        with self.assertRaises(M3Error):
+            _soc_weekly_delta_values(dataset,origin=FORECAST_START,periods=3)
 
     def test_no_matching_history_fails_instead_of_copying_sunday(self):
         from m3.worker.domain.custom_forecasting import _soc_schedule_delta_values
@@ -125,7 +128,8 @@ class SocScheduleRegressionTests(unittest.TestCase):
         with patch('m3.worker.domain.custom_forecasting._soc_weekly_delta_values', side_effect=predict), \
              patch('m3.worker.domain.custom_forecasting._soc_schedule_delta_values', side_effect=predict):
             champion = select_custom_champion(dataset, config)
-        self.assertEqual(len(calls), 2)
+        self.assertEqual(calls.count(config.forecast_start), 2)
+        self.assertEqual(calls.count(config.forecast_start - timedelta(days=7)), 2)
         self.assertTrue(all(score.scorable_point_count == config.points_per_day
                             for score in champion.candidate_scores))
 
@@ -138,3 +142,61 @@ class SocScheduleRegressionTests(unittest.TestCase):
             with self.assertRaises(M3Error) as raised:
                 select_custom_champion(soc_dataset_with_weekly_pattern(), make_selection_config(28, forecast_days=1))
         self.assertEqual(raised.exception.code, 'model_selection_failed')
+
+    def test_overtime_low_start_rejects_high_start_weekly_donors(self):
+        from m3.tests.test_m3_custom_forecasting import soc_dataset_with_weekly_pattern
+        from m3.worker.domain.custom_forecasting import _soc_weekly_delta_values, _soc_schedule_delta_values
+        from m3.worker.errors import M3Error
+        dataset = soc_dataset_with_weekly_pattern()
+        # Same schedule, but past Mondays were already full; other workdays
+        # charged overnight from low SOC, just like this exceptional Monday.
+        dataset.frame['y'] = [
+            95. if t.weekday() == 0 else min(95., 2. + 16. * t.hour)
+            for t in dataset.frame['ds']
+        ]
+        dataset.frame.loc[dataset.frame.index[-1], 'y'] = 2.
+        with patch('m3.worker.domain.custom_forecasting.schedule_day', return_value=True), \
+             patch('m3.worker.domain.custom_forecasting.schedule_slot', return_value=(True, 0)):
+            with self.assertRaises(M3Error):
+                _soc_weekly_delta_values(dataset, origin=FORECAST_START, periods=24)
+            baseline = _soc_schedule_delta_values(dataset, origin=FORECAST_START, periods=24)
+        self.assertEqual(baseline[0], 2.)
+        self.assertGreater(baseline[6], 90.)
+
+    def test_matching_weekly_start_retains_charging_increments(self):
+        from m3.tests.test_m3_custom_forecasting import soc_dataset_with_weekly_pattern
+        from m3.worker.domain.custom_forecasting import _soc_weekly_delta_values
+        dataset = soc_dataset_with_weekly_pattern()
+        dataset.frame['y'] = [min(95., 2. + 16. * t.hour) for t in dataset.frame['ds']]
+        dataset.frame.loc[dataset.frame.index[-1], 'y'] = 2.
+        with patch('m3.worker.domain.custom_forecasting.schedule_day', return_value=True), \
+             patch('m3.worker.domain.custom_forecasting.schedule_slot', return_value=(True, 0)):
+            values = _soc_weekly_delta_values(dataset, origin=FORECAST_START, periods=24)
+        self.assertEqual(values[0], 2.)
+        self.assertEqual(values[6], 95.)
+
+    def test_selection_excludes_weekly_candidate_unusable_at_actual_origin(self):
+        from m3.tests.test_m3_custom_forecasting import soc_dataset_with_weekly_pattern, make_selection_config
+        from m3.worker.errors import M3Error
+        config = make_selection_config(28, forecast_days=1)
+        def weekly(dataset, *, origin, periods):
+            if origin == config.forecast_start:
+                raise M3Error('insufficient_history', 'No similar initial SOC')
+            return [50.] * periods
+        with patch('m3.worker.domain.custom_forecasting._soc_weekly_delta_values', side_effect=weekly), \
+             patch('m3.worker.domain.custom_forecasting._soc_schedule_delta_values',
+                   side_effect=lambda dataset, *, origin, periods: [40.] * periods):
+            champion = select_custom_champion(soc_dataset_with_weekly_pattern(), config)
+        self.assertEqual(champion.model_name, 'SOCScheduleDelta')
+        self.assertIsNone(champion.candidate_scores[0].mae)
+
+    def test_weekly_later_day_compares_state_before_midnight_charge(self):
+        from m3.tests.test_m3_custom_forecasting import soc_dataset_with_weekly_pattern
+        from m3.worker.domain.custom_forecasting import _soc_weekly_delta_values
+        dataset = soc_dataset_with_weekly_pattern()
+        dataset.frame['y'] = [2. if t.hour == 23 else 20. for t in dataset.frame['ds']]
+        dataset.frame.loc[dataset.frame.index[-1], 'y'] = 20.
+        with patch('m3.worker.domain.custom_forecasting.schedule_day', return_value=True), \
+             patch('m3.worker.domain.custom_forecasting.schedule_slot', return_value=(True, 0)):
+            values = _soc_weekly_delta_values(dataset, origin=FORECAST_START, periods=26)
+        self.assertEqual(values[23:26], [2., 20., 20.])

@@ -35,7 +35,10 @@ logger = logging.getLogger(__name__)
 
 SOC_WEEKLY_DELTA_MODEL = "SOCWeeklyDelta"
 SOC_SCHEDULE_DELTA_MODEL = "SOCScheduleDelta"
-SOC_SCHEDULE_POLICY = "soc-schedule-delta-v2"
+SOC_SCHEDULE_POLICY = "soc-schedule-delta-v3"
+# Percentage points, not a charge target. Weekly increments are transferable
+# only between similar initial states; saturation otherwise hides charging.
+SOC_WEEKLY_START_TOLERANCE = 10.0
 SOC_FIVE_MINUTE_LINEAR_SUFFIX = "5mLinear"
 SOC_MODEL_ORDER = (
     SOC_WEEKLY_DELTA_MODEL,
@@ -352,6 +355,11 @@ def _select_soc_champion(
         (SOC_SCHEDULE_DELTA_MODEL, _soc_schedule_delta_values),
     ):
         try:
+            # Historical accuracy alone cannot establish applicability to a
+            # low-SOC start after exceptional overtime. Check the actual window
+            # using only observations before its origin, also for later days.
+            predictor(dataset, origin=config.forecast_start,
+                      periods=config.expected_points_per_series)
             values = []
             for day, actual, training in folds:
                 predicted = predictor(training, origin=day, periods=len(actual))
@@ -488,6 +496,18 @@ def _soc_delta_values(
                 continue
             delta = source_values[source_time] - source_values[previous_time]
             if weekly:
+                if target.date() != origin.date():
+                    # Later days enter with the previous day's final state,
+                    # before applying the midnight delta, not after it.
+                    source_midnight = source_time.replace(hour=0, minute=0, second=0, microsecond=0)
+                    reference = source_values.get(source_midnight - interval)
+                elif origin != origin_day_start:
+                    reference = source_values.get(anchor_time - timedelta(days=days))
+                else:
+                    reference = day_starts.get(source_time.date())
+                if (reference is None
+                        or abs(reference - forecast_day_start) > SOC_WEEKLY_START_TOLERANCE):
+                    continue
                 deltas.append(delta)
             else:
                 if target.date() == origin.date() and origin != origin_day_start:
