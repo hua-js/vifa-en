@@ -392,7 +392,7 @@ async function loadCurrent(){
   const controls=inputs.can_compare?comparisonControls(inputs,liveControls,station):liveControls;
   context={station,date,inputs,settings,controls,executionControls:liveControls};latestJobs.set(station,job);cacheable=true;
   if(job.status==='running'){if(plan?.station===station&&plan.date===date){badge.textContent='新计划计算中 · 保留上次计划';}else{clearPlan('计划计算中',job.message||'正在读取输入并计算…');}schedulePlanStatusPoll(station,date,id);return;}
-  if(!inputs.can_compare){clearPlan('等待完整数据',inputs.checks?.filter(c=>c.status!=='ready').map(c=>c.detail).join('；')||'当天数据尚未就绪。');return;}
+  if(!inputs.can_compare){const night=currentRollingPayload()?.request?.source_versions?.night_charging_policy==='night-valley-direct-v1';clearPlan(night?'凌晨谷电充电':'等待完整数据',night?'充电安排已生成，下发状态请查看调度记录。':inputs.checks?.filter(c=>c.status!=='ready').map(c=>c.detail).join('；')||'当天数据尚未就绪。');return;}
   if(job.status==='failed')clearPlan('计划未生成',job.message||'请检查数据后重新生成');
   else if(job.status==='completed'&&job.result?.record){try{renderPlan(mapPlan(job.result.record,job.request,station,date,settings,controls,job.baseline));}catch(error){if(inputs.comparison?.status==='ems')renderBaseline(context,error.message);else throw error;}}
   else if(inputs.can_compare&&inputs.comparison?.status==='ems'){

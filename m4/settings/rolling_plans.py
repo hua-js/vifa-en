@@ -19,6 +19,7 @@ from .startup_admission import require_admission, window as startup_window, POLI
 from .daily_comparison import REVENUE_GATE_VERSION, MIN_NET_SAVINGS_YUAN
 from .pv_correction import read_correction, POLICY as PV_CORRECTION_POLICY
 from .frozen_baseline import planning_controls
+from .night_charging import configured_window, read_window as night_window, build_payload as build_night_payload, validate_freshness, POLICY as NIGHT_POLICY
 
 ZONE = ZoneInfo('Asia/Shanghai')
 POLICY = 'remaining-day-fixed-baseline-v4'
@@ -158,10 +159,11 @@ class RollingPlanService:
                     or payload['configuration_version'] != self.daily.store.get(station).version):
                 return dict(station_id=station, status='stale', result=None,
                     message='滚动建议已过期，等待更新。')
-            daily = self.daily.latest(station)
-            if daily.get('run_id') != payload['daily_run_id']:
-                return dict(station_id=station, status='stale', result=None,
-                    message='日计划已更新，等待新的滚动建议。')
+            if payload.get('request', {}).get('source_versions', {}).get('night_charging_policy') != NIGHT_POLICY:
+                daily = self.daily.latest(station)
+                if daily.get('run_id') != payload['daily_run_id']:
+                    return dict(station_id=station, status='stale', result=None,
+                        message='日计划已更新，等待新的滚动建议。')
         elif result['status'] == 'running' and station not in self.running:
             return dict(station_id=station, status='failed', result=None,
                 message='滚动任务已中断，等待更新。')
@@ -202,83 +204,96 @@ class RollingPlanService:
         try:
             now = datetime.now(ZONE)
             day = now.date().isoformat()
-            daily = self.daily.latest(station)
-            if daily.get('status') != 'completed' or daily['result']['record']['daily_comparison']['date'] != day:
-                raise ValueError('当日日计划尚未生成，等待全天收益判断。')
-            gate = daily['result']['record']['daily_comparison']
-            configuration = self.daily.store.get(station)
-            if daily['request']['source_versions']['configuration'] != configuration.version:
-                raise ValueError('参数已变化，请先重新生成日计划。')
-            inputs = self.daily.inputs.fetch(configuration, now.date())
-            try:
-                inputs['sources']['pv_correction'] = read_correction(
-                    self.daily.inputs.live.client, station, inputs, datetime.now(ZONE))
-            except Exception:
-                # Optional calibration never turns unreadable telemetry into zero PV.
-                inputs['sources']['pv_correction'] = dict(policy=PV_CORRECTION_POLICY,
-                    status='read_failed', points=[], reason='近期光伏实测不可用，沿用原预测。')
-            # Use the post-fetch clock for measurement freshness and effective time.
-            now = datetime.now(ZONE)
-            if now.date().isoformat() != day:
-                raise ValueError('已跨日，等待次日日计划。')
-            request, baseline, simulation, anchor, terminal = prepare_remaining_request(configuration, inputs, now)
-            base_metrics = calculate_metrics(request, baseline)
-            startup = request.source_versions.get('startup_policy') == STARTUP_POLICY
-            if not startup and daily['request']['source_versions'].get('startup_policy'):
-                raise ValueError('预测质量已恢复，等待正常日计划生成。')
-            admitted = (not startup and gate.get('revenue_gate_version') == REVENUE_GATE_VERSION
-                and gate['status'] == 'optimized'
-                and gate.get('net_savings_yuan', 0) >= MIN_NET_SAVINGS_YUAN)
-            chosen, candidates = None, []
-            reason = ('凌晨谷电保底充电，仅覆盖当前充电窗口。' if startup
-                else '当日日计划未通过收益门禁，后续沿用EMS。')
-            if admitted:
-                result = M4Optimizer(model_version=POLICY).optimize(request, terminal_soc_target_pct=terminal)
-                candidates = result.candidates
-                viable = []
-                for candidate in candidates:
-                    if candidate.status not in ('optimal', 'feasible'):
-                        continue
-                    if request.peak_reserve_policy and 'PEAK_RESERVE_PREFERENCE_INCOMPLETE' in candidate.risk_codes:
-                        continue
-                    validate_candidate(request, candidate, terminal_soc_target_pct=terminal)
-                    metrics = calculate_metrics(request, candidate.plan)
-                    net = (base_metrics.energy_cost+base_metrics.cycle_cost
-                        -metrics.energy_cost-metrics.cycle_cost)
-                    if net > 1e-6:
-                        viable.append((net, candidate.profile_id, candidate, metrics))
-                if viable:
-                    _, _, chosen, metrics = max(viable, key=lambda item: (item[0], item[1]))
-                    reason = '后续建议已按最新实测状态更新。'
-                else:
-                    reason = '暂无更经济且可行的后续优化方案，沿用EMS。'
-            points = chosen.plan if chosen else baseline
-            metrics = calculate_metrics(request, points)
-            current_configuration = self.daily.store.get(station)
-            current_daily = self.daily.latest(station)
-            current_controls = planning_controls(self.daily.inputs.live._controls(station, validate_schedule=False))
-            finished = datetime.now(ZONE)
-            if (finished >= request.plan_start_at
-                    or (finished-datetime.fromisoformat(anchor['observed_at'])).total_seconds() > min(configuration.parameters.max_input_age_seconds, 900)
-                    or current_daily.get('run_id') != daily['run_id']
-                    or current_configuration.version != configuration.version
-                    or current_controls['version'] != request.source_versions['controls']):
-                raise ValueError('生效窗口或配置已变化，本轮建议作废。')
-            payload = dict(schema_version='m4-rolling-plan-v1', station_id=station, date=day, run_id=run_id,
-                configuration_version=configuration.version, daily_run_id=daily['run_id'],
-                daily_gate_passed=admitted, daily_net_savings_yuan=gate.get('net_savings_yuan'),
-                effective_at=request.plan_start_at.isoformat(),
-                valid_until=(request.plan_start_at+timedelta(minutes=15)).isoformat(),
-                end_at=(request.plan_start_at+timedelta(minutes=15*len(points))).isoformat(),
-                finished_at=finished.isoformat(), anchor=anchor, reason=reason,
-                source='optimized' if chosen else 'ems', request=request.model_dump(mode='json'),
-                plan=[p.model_dump(mode='json') for p in points],
-                baseline=[p.model_dump(mode='json') for p in baseline], simulation=simulation,
-                metrics=metrics.model_dump(mode='json'), baseline_metrics=base_metrics.model_dump(mode='json'),
-                candidates=[c.model_dump(mode='json') for c in candidates],
-                actual_load=inputs['sources'].get('actual_load'),
-                pv_correction=inputs['sources'].get('pv_correction'),
-                dispatch_status='not_dispatched', usage='remaining_day_advice_only')
+            night_tariff = (night_window(self.daily.inputs.live, station, now)
+                if configured_window(station, now) else None)
+            if night_tariff is not None:
+                configuration = self.daily.store.get(station)
+                payload = build_night_payload(self.daily.inputs.live, configuration, run_id, tariff=night_tariff)
+                reason = payload['reason']
+                controls = planning_controls(self.daily.inputs.live._controls(station, validate_schedule=False))
+                validate_freshness(payload, configuration, datetime.now(ZONE))
+                if (self.daily.store.get(station).version != configuration.version
+                        or controls['version'] != payload['request']['source_versions']['controls']
+                        or datetime.now(ZONE) >= datetime.fromisoformat(payload['effective_at'])):
+                    raise ValueError('凌晨充电窗口或配置已变化，等待下一轮。')
+            else:
+                daily = self.daily.latest(station)
+                if daily.get('status') != 'completed' or daily['result']['record']['daily_comparison']['date'] != day:
+                    raise ValueError('当日日计划尚未生成，等待全天收益判断。')
+                gate = daily['result']['record']['daily_comparison']
+                configuration = self.daily.store.get(station)
+                if daily['request']['source_versions']['configuration'] != configuration.version:
+                    raise ValueError('参数已变化，请先重新生成日计划。')
+                inputs = self.daily.inputs.fetch(configuration, now.date())
+                try:
+                    inputs['sources']['pv_correction'] = read_correction(
+                        self.daily.inputs.live.client, station, inputs, datetime.now(ZONE))
+                except Exception:
+                    # Optional calibration never turns unreadable telemetry into zero PV.
+                    inputs['sources']['pv_correction'] = dict(policy=PV_CORRECTION_POLICY,
+                        status='read_failed', points=[], reason='近期光伏实测不可用，沿用原预测。')
+                # Use the post-fetch clock for measurement freshness and effective time.
+                now = datetime.now(ZONE)
+                if now.date().isoformat() != day:
+                    raise ValueError('已跨日，等待次日日计划。')
+                request, baseline, simulation, anchor, terminal = prepare_remaining_request(configuration, inputs, now)
+                base_metrics = calculate_metrics(request, baseline)
+                startup = request.source_versions.get('startup_policy') == STARTUP_POLICY
+                if not startup and daily['request']['source_versions'].get('startup_policy'):
+                    raise ValueError('预测质量已恢复，等待正常日计划生成。')
+                admitted = (not startup and gate.get('revenue_gate_version') == REVENUE_GATE_VERSION
+                    and gate['status'] == 'optimized'
+                    and gate.get('net_savings_yuan', 0) >= MIN_NET_SAVINGS_YUAN)
+                chosen, candidates = None, []
+                reason = ('凌晨谷电保底充电，仅覆盖当前充电窗口。' if startup
+                    else '当日日计划未通过收益门禁，后续沿用EMS。')
+                if admitted:
+                    result = M4Optimizer(model_version=POLICY).optimize(request, terminal_soc_target_pct=terminal)
+                    candidates = result.candidates
+                    viable = []
+                    for candidate in candidates:
+                        if candidate.status not in ('optimal', 'feasible'):
+                            continue
+                        if request.peak_reserve_policy and 'PEAK_RESERVE_PREFERENCE_INCOMPLETE' in candidate.risk_codes:
+                            continue
+                        validate_candidate(request, candidate, terminal_soc_target_pct=terminal)
+                        metrics = calculate_metrics(request, candidate.plan)
+                        net = (base_metrics.energy_cost+base_metrics.cycle_cost
+                            -metrics.energy_cost-metrics.cycle_cost)
+                        if net > 1e-6:
+                            viable.append((net, candidate.profile_id, candidate, metrics))
+                    if viable:
+                        _, _, chosen, metrics = max(viable, key=lambda item: (item[0], item[1]))
+                        reason = '后续建议已按最新实测状态更新。'
+                    else:
+                        reason = '暂无更经济且可行的后续优化方案，沿用EMS。'
+                points = chosen.plan if chosen else baseline
+                metrics = calculate_metrics(request, points)
+                current_configuration = self.daily.store.get(station)
+                current_daily = self.daily.latest(station)
+                current_controls = planning_controls(self.daily.inputs.live._controls(station, validate_schedule=False))
+                finished = datetime.now(ZONE)
+                if (finished >= request.plan_start_at
+                        or (finished-datetime.fromisoformat(anchor['observed_at'])).total_seconds() > min(configuration.parameters.max_input_age_seconds, 900)
+                        or current_daily.get('run_id') != daily['run_id']
+                        or current_configuration.version != configuration.version
+                        or current_controls['version'] != request.source_versions['controls']):
+                    raise ValueError('生效窗口或配置已变化，本轮建议作废。')
+                payload = dict(schema_version='m4-rolling-plan-v1', station_id=station, date=day, run_id=run_id,
+                    configuration_version=configuration.version, daily_run_id=daily['run_id'],
+                    daily_gate_passed=admitted, daily_net_savings_yuan=gate.get('net_savings_yuan'),
+                    effective_at=request.plan_start_at.isoformat(),
+                    valid_until=(request.plan_start_at+timedelta(minutes=15)).isoformat(),
+                    end_at=(request.plan_start_at+timedelta(minutes=15*len(points))).isoformat(),
+                    finished_at=finished.isoformat(), anchor=anchor, reason=reason,
+                    source='optimized' if chosen else 'ems', request=request.model_dump(mode='json'),
+                    plan=[p.model_dump(mode='json') for p in points],
+                    baseline=[p.model_dump(mode='json') for p in baseline], simulation=simulation,
+                    metrics=metrics.model_dump(mode='json'), baseline_metrics=base_metrics.model_dump(mode='json'),
+                    candidates=[c.model_dump(mode='json') for c in candidates],
+                    actual_load=inputs['sources'].get('actual_load'),
+                    pv_correction=inputs['sources'].get('pv_correction'),
+                    dispatch_status='not_dispatched', usage='remaining_day_advice_only')
             if self.ems_remaining_adapter is None and self.ems_model_adapter is not None and get_project().station(station).ems_model_record_id is not None:
                 from .ems_model_update import ModelUpdateError
                 try:
@@ -299,6 +314,8 @@ class RollingPlanService:
                         reason=str(error) if isinstance(error, ModelUpdateError) else '剩余计划预览暂不可用。')
             if self.ems_table_writer is not None:
                 try:
+                    if payload['request']['source_versions'].get('night_charging_policy') == NIGHT_POLICY:
+                        validate_freshness(payload, configuration, datetime.now(ZONE))
                     payload['ems_table_write'] = self.ems_table_writer.submit(station, payload, configuration)
                 except Exception as error:
                     payload['ems_table_write'] = dict(status='table_write_unconfirmed', network_write_performed=None,
@@ -345,6 +362,9 @@ class PlanningCoordinator:
         return self.daily.running | self.rolling.running
 
     def start(self, station):
+        if (configured_window(station, datetime.now(ZONE))
+                and night_window(self.daily.inputs.live, station, datetime.now(ZONE)) is not None):
+            return self.rolling.start(station)
         latest = self.daily.latest(station)
         comparison = (latest.get('result') or {}).get('record', {}).get('daily_comparison', {})
         if latest.get('status') != 'completed' or comparison.get('date') != datetime.now(ZONE).date().isoformat():
@@ -359,6 +379,9 @@ class PlanningCoordinator:
         return self.rolling.start(station)
 
     def latest(self, station):
+        if (configured_window(station, datetime.now(ZONE))
+                and night_window(self.daily.inputs.live, station, datetime.now(ZONE)) is not None):
+            return self.rolling.latest(station)
         daily = self.daily.latest(station)
         if daily.get('status') != 'completed':
             return daily
