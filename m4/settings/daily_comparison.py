@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 
 from m4.optimizer.contracts import CandidateResult, PlanPoint
 from m4.optimizer.metrics import calculate_metrics
-from m4.optimizer.validation import validate_candidate
+from m4.optimizer.validation import validate_candidate, validate_peak_grid_charging
 from .ems_simulation import EMS_BASELINE_POLICY, simulate_ems_day
 
 
@@ -89,12 +89,29 @@ def _baseline_plan(request, baseline, controls_version):
         plan_version='ems/'+baseline['controller_version']+'/'+baseline['input_sha256'], status='feasible',
         solver_message='EMS demand/SOC forecast replay', solve_seconds=0.0,
         plan=plan, metrics=metrics, layers=[], risk_codes=[], risk_messages=[])
-    validate_candidate(validation_request, checked, tolerance=POWER_TOLERANCE_KW)
+    validate_candidate(validation_request, checked, tolerance=POWER_TOLERANCE_KW,
+                       historical_baseline=True)
     return checked
 
 
 def compare_daily_plan(request, candidate, *, baseline=None, controls_version=None,
                        terminal_soc_target_pct=None):
+    """Keep EMS comparison evidence but never recommend prohibited peak charging."""
+    output = _compare_daily_plan(request, candidate, baseline=baseline,
+        controls_version=controls_version, terminal_soc_target_pct=terminal_soc_target_pct)
+    recommended = output.get('recommended')
+    if recommended is not None:
+        plan = [PlanPoint.model_validate_json(json.dumps(point)) for point in recommended['plan']]
+        try:
+            validate_peak_grid_charging(request, plan, POWER_TOLERANCE_KW)
+        except ValueError:
+            output.update(status='blocked', recommended_source=None, recommended=None,
+                reason='当前方案包含尖、峰段电网充电，暂停推荐，请重新生成合规方案。')
+    return output
+
+
+def _compare_daily_plan(request, candidate, *, baseline=None, controls_version=None,
+                        terminal_soc_target_pct=None):
     """Choose one complete day, never an assortment of cheaper quarter hours.
 
     Called only after the saved request and candidate evidence is verified.

@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_serializer, model_valid
 
 HORIZON_POINTS = 96
 INTERVAL_MINUTES = 15
+GRID_CHARGING_POLICY = "peak-grid-charging-v1"
 ProfileId = Literal["balanced", "cost", "pv"]
 ObjectiveName = Literal[
     "demand_peak",
@@ -77,7 +78,7 @@ class ObjectiveProfile(StrictModel):
 
 
 class PeakReservePolicy(StrictModel):
-    version: Literal["peak-reserve-v1", "peak-reserve-v2", "peak-reserve-v3"] = "peak-reserve-v1"
+    version: Literal["peak-reserve-v1", "peak-reserve-v2", "peak-reserve-v3", "peak-reserve-v4"] = "peak-reserve-v1"
     terminal_soc_min_pct: Annotated[float, Field(ge=0, le=100, allow_inf_nan=False)]
 
 
@@ -218,7 +219,7 @@ class OptimizationRequest(StrictModel):
                 raise ValueError("demand objectives must be the first two layers")
             flattened = [name for layer in profile.objective_order for name in layer.terms]
             if self.peak_reserve_policy is not None:
-                if self.peak_reserve_policy.version == "peak-reserve-v3":
+                if self.peak_reserve_policy.version in ("peak-reserve-v3", "peak-reserve-v4"):
                     if (flattened.count("peak_reserve_shortfall") != 1
                             or {"peak_reserve_shortfall"} not in term_sets):
                         raise ValueError("economic reserve requires one separate reserve layer")
@@ -235,14 +236,14 @@ class OptimizationRequest(StrictModel):
             early_valley_before_smoothing = (
                 station is not None and station.policy == 'peak_reserve'
                 and self.peak_reserve_policy is not None
-                and self.peak_reserve_policy.version == 'peak-reserve-v3'
+                and self.peak_reserve_policy.version in ('peak-reserve-v3', 'peak-reserve-v4')
                 and profile.profile_version.endswith('/station-2-continuity-v3'))
             if "discharge_starts" in flattened:
                 starts_tail = ([{'discharge_starts'}, {'valley_charge_delay'}, {'power_variation'}]
                                if early_valley_before_smoothing else
                                [{'discharge_starts'}, {'power_variation'}, {'valley_charge_delay'}])
                 if (station is None or station.policy != 'peak_reserve' or self.peak_reserve_policy is None
-                        or self.peak_reserve_policy.version != 'peak-reserve-v3'
+                        or self.peak_reserve_policy.version not in ('peak-reserve-v3', 'peak-reserve-v4')
                         or flattened.count('discharge_starts') != 1
                         or term_sets[-3:] != starts_tail
                         or 'throughput' not in flattened[:flattened.index('discharge_starts')]):
@@ -251,7 +252,7 @@ class OptimizationRequest(StrictModel):
             if "power_variation" in flattened:
                 continuity_scope = cost_first or (
                     station is not None and station.policy == 'peak_reserve' and self.peak_reserve_policy is not None
-                    and self.peak_reserve_policy.version == 'peak-reserve-v3')
+                    and self.peak_reserve_policy.version in ('peak-reserve-v3', 'peak-reserve-v4'))
                 continuity_before_soc = (cost_first and
                     profile.profile_version.endswith('/station-1-continuity-v2'))
                 expected_tail = ([{'power_variation'}, {'soc_preferred_deviation'},

@@ -32,6 +32,7 @@ class VariableIndex:
     pv_storage_full: slice
     size: int
     peak_reserve_shortfall: int | None = None
+    late_peak_reserve_shortfall: slice | None = None
     power_variation: slice | None = None
     discharge_active: slice | None = None
     discharge_start: slice | None = None
@@ -51,12 +52,14 @@ def build_model(request: OptimizationRequest, *, terminal_soc_target_pct: float 
     load_first = any(policy != "legacy" for policy in policies)
     horizon = request.horizon_points
     peak_reserve = request.peak_reserve_policy
+    soft_reserve = peak_reserve is not None and peak_reserve.version == 'peak-reserve-v4'
     continuity = any("power_variation" in layer.terms for profile in request.profiles
                      for layer in profile.objective_order)
     discharge_starts = any("discharge_starts" in layer.terms for profile in request.profiles
                            for layer in profile.objective_order)
     index = _build_variable_index(load_first=load_first, horizon=horizon,
                                   peak_reserve=peak_reserve is not None, continuity=continuity,
+                                  soft_peak_reserve=soft_reserve,
                                   discharge_starts=discharge_starts)
     capability, constraints = request.capability, request.constraints
     charge_max = capability.max_charge_kw if capability.available else 0.0
@@ -116,7 +119,7 @@ def build_model(request: OptimizationRequest, *, terminal_soc_target_pct: float 
         point = request.points[t]
         net_load = max(point.load_forecast_kw - point.pv_forecast_kw, 0.0)
         maximum = min(discharge_max, net_load) if policies[t] != "legacy" or peak_reserve is not None else discharge_max
-        if peak_reserve is not None and peak_reserve.version != 'peak-reserve-v3' and point.tariff_period not in ('feng', 'jian'):
+        if peak_reserve is not None and peak_reserve.version not in ('peak-reserve-v3', 'peak-reserve-v4') and point.tariff_period not in ('feng', 'jian'):
             grid_boundary = min(constraints.demand_limit_kw, import_max)
             maximum = min(maximum, max(net_load - grid_boundary, 0.0))
         return 0.0, maximum
@@ -170,17 +173,23 @@ def build_model(request: OptimizationRequest, *, terminal_soc_target_pct: float 
             model.peak_reserve_preparation = pyo.Constraint(expr=
                 model.peak_reserve_energy_shortfall + model.energy[first_peak]
                 >= capacity * constraints.preferred_soc_max_pct / 100.0)
-        if peak_reserve.version in ('peak-reserve-v2', 'peak-reserve-v3'):
-            # Preserve the terminal reserve from the final contiguous peak block,
-            # including its starting energy state and every later state.
+        if peak_reserve.version in ('peak-reserve-v2', 'peak-reserve-v3', 'peak-reserve-v4'):
+            # The last peak block and remaining tail share the reserve target.
+            # V4 allows running deficits; the terminal energy bound stays hard.
             last_peak_start = max((t for t, point in enumerate(request.points)
                                   if point.tariff_period in ('feng', 'jian')), default=0)
             while last_peak_start > 0 and request.points[last_peak_start - 1].tariff_period in ('feng', 'jian'):
                 last_peak_start -= 1
             model.terminal_reserve_states = pyo.RangeSet(last_peak_start, horizon)
+            if soft_reserve:
+                model.late_peak_reserve_energy_shortfall = pyo.Var(model.energy_states,
+                    domain=pyo.NonNegativeReals,
+                    bounds=lambda m, t: (0.0, 0.0 if t < last_peak_start
+                        else capacity * peak_reserve.terminal_soc_min_pct / 100.0))
             model.late_peak_terminal_reserve = pyo.Constraint(
                 model.terminal_reserve_states,
-                rule=lambda m, t: m.energy[t] >= capacity * peak_reserve.terminal_soc_min_pct / 100.0)
+                rule=lambda m, t: m.energy[t] + (m.late_peak_reserve_energy_shortfall[t]
+                    if soft_reserve else 0.0) >= capacity * peak_reserve.terminal_soc_min_pct / 100.0)
 
     model.power_balance = pyo.Constraint(model.periods, rule=lambda m, t:
         m.grid_import[t] + m.discharge[t] + request.points[t].pv_forecast_kw
@@ -245,7 +254,10 @@ def build_model(request: OptimizationRequest, *, terminal_soc_target_pct: float 
         elapsed * INTERVAL_HOURS * INTERVAL_HOURS * model.charge[t]
         for window in windows for elapsed, t in enumerate(window)))
     if peak_reserve is not None:
-        model.peak_reserve_shortfall = pyo.Expression(expr=model.peak_reserve_energy_shortfall)
+        # Minimize preparation and cumulative running deficits in the existing
+        # reserve layer, after higher-priority economic/demand objectives.
+        model.peak_reserve_shortfall = pyo.Expression(expr=model.peak_reserve_energy_shortfall
+            + (pyo.quicksum(model.late_peak_reserve_energy_shortfall.values()) if soft_reserve else 0.0))
 
     if discharge_starts:
         # Classify effective discharge at 0.01 kW without imposing a new physical
@@ -339,6 +351,7 @@ def _overnight_valley_windows(
 
 def _build_variable_index(*, load_first: bool = False, horizon: int = HORIZON_POINTS,
                           peak_reserve: bool = False, continuity: bool = False,
+                          soft_peak_reserve: bool = False,
                           discharge_starts: bool = False) -> VariableIndex:
     cursor = 0
 
@@ -367,6 +380,7 @@ def _build_variable_index(*, load_first: bool = False, horizon: int = HORIZON_PO
     peak_reserve_shortfall = cursor if peak_reserve else None
     if peak_reserve:
         cursor += 1
+    late_peak_reserve_shortfall = allocate(horizon + 1) if soft_peak_reserve else None
     discharge_active = allocate(horizon) if discharge_starts else None
     discharge_start = allocate(horizon) if discharge_starts else None
     power_variation = allocate(horizon + 1) if continuity else None
@@ -388,6 +402,7 @@ def _build_variable_index(*, load_first: bool = False, horizon: int = HORIZON_PO
         pv_storage_full=pv_storage_full,
         size=cursor,
         peak_reserve_shortfall=peak_reserve_shortfall,
+        late_peak_reserve_shortfall=late_peak_reserve_shortfall,
         power_variation=power_variation,
         discharge_active=discharge_active,
         discharge_start=discharge_start,

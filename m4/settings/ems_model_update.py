@@ -48,6 +48,8 @@ def validate_dispatch_safety(request, points):
         for source, point in zip(sources, points, strict=True):
             if _stamp(source['timestamp']) != _stamp(point['timestamp']):
                 raise ValueError
+            if source.get('tariff_period') not in ('gu', 'ping', 'feng', 'jian'):
+                raise ModelUpdateError('电价时段不完整，不能生成下发预览。')
             load, pv, power = source['load_forecast_kw'], source['pv_forecast_kw'], point['target_power_kw']
             if any(type(v) not in (int, float) or not math.isfinite(v) or v < 0 for v in (load, pv, power)):
                 raise ValueError
@@ -56,6 +58,8 @@ def validate_dispatch_safety(request, points):
                 raise ValueError
             charge = power if mode == 'charge' else 0.0
             discharge = power if mode == 'discharge' else 0.0
+            if source.get('tariff_period') in ('jian', 'feng') and charge > max(pv-load, 0.0)+1e-6:
+                raise ModelUpdateError('尖、峰段不允许电网充电，不能生成下发预览。')
             if charge > cap.max_charge_kw+1e-6 or discharge > min(cap.max_discharge_kw, max(load-pv, 0.0))+1e-6:
                 raise ValueError
             grid = max(load-pv+charge-discharge, 0.0)
@@ -114,6 +118,9 @@ class EMSModelUpdateAdapter:
                 or _stamp(payload.get('finished_at')) > now):
             raise ModelUpdateError('滚动时段已过期或不是下一刻钟。')
         request = payload.get('request') or {}
+        from m4.optimizer.contracts import GRID_CHARGING_POLICY
+        if request.get('source_versions', {}).get('grid_charging_policy') != GRID_CHARGING_POLICY:
+            raise ModelUpdateError('尖、峰段充电规则已更新，请重新生成计划。')
         if (request.get('station_id') != station_id
                 or request.get('capability', {}).get('available') is not True
                 or request.get('source_versions', {}).get('configuration') != configuration.version

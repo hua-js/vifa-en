@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 
 from m4.settings.ems_model_update import EMSModelUpdateAdapter, ModelUpdateError
 from shared.project import get_project
+from m4.optimizer.contracts import GRID_CHARGING_POLICY
 
 
 class ModelUpdateTests(unittest.TestCase):
@@ -45,8 +46,9 @@ class ModelUpdateTests(unittest.TestCase):
                 constraints=dict(soc_min_pct=2, soc_max_pct=98, preferred_soc_min_pct=5, preferred_soc_max_pct=95,
                     terminal_soc_tolerance_pct=100, demand_limit_kw=2000, grid_import_limit_kw=2000,
                     grid_export_enabled=False, grid_export_limit_kw=0, cycle_cost_per_kwh=0),
-                points=[dict(timestamp=self.start.isoformat(), load_forecast_kw=800, pv_forecast_kw=0)],
-                source_versions=dict(configuration='v1', project_configuration=get_project().fingerprint)),
+                points=[dict(timestamp=self.start.isoformat(), load_forecast_kw=800, pv_forecast_kw=0, tariff_period='ping')],
+                source_versions=dict(configuration='v1', project_configuration=get_project().fingerprint,
+                    grid_charging_policy=GRID_CHARGING_POLICY)),
             plan=[dict(timestamp=self.start.isoformat(), mode='discharge', target_power_kw=540)])
 
     def preview(self):

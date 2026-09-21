@@ -4,7 +4,7 @@ import json
 import math
 
 from shared.project import get_project
-from m4.optimizer.contracts import CapabilitySnapshot, OptimizationConstraints
+from m4.optimizer.contracts import CapabilitySnapshot, OptimizationConstraints, GRID_CHARGING_POLICY
 from .ems_simulation import _slot
 from .frozen_baseline import baseline_configuration, baseline_version, planning_controls
 from .realtime import build_realtime_snapshot, SOURCE_FIELDS
@@ -144,6 +144,7 @@ def build_payload(live, configuration, run_id, *, now=None, tariff=None):
     request = dict(station_id=station, plan_start_at=start.isoformat(), points=inputs,
         capability=capability.model_dump(mode='json'), constraints=constraints.model_dump(mode='json'),
         source_versions=dict(configuration=configuration.version, project_configuration=get_project().fingerprint,
+            grid_charging_policy=GRID_CHARGING_POLICY,
             ems_baseline=baseline_version(station), controls=controls['version'], tariff=tariff['version'],
             startup_policy=WINDOW_POLICY, startup_window_end=end.isoformat(),
             startup_tariff_periods=json.dumps(periods), night_charging_policy=POLICY,

@@ -22,7 +22,7 @@ test('full script startup waits for metadata before any business reads', async (
  let release;
  f.ctx.fetch=async(url)=>{f.calls.push(String(url));if(String(url).endsWith('/project'))return new Promise(resolve=>{release=()=>resolve({ok:true,json:async()=>project()});});return {ok:true,status:200,json:async()=>({station_id:'station-3',status:'empty'})};};
  const startup=f.run('initializeCurrent()');
- await f.run('loadCurrent()');await f.run('loadRecords()');await f.run('loadRecentLogs()');await f.run('startPlan()');
+ await f.run('loadCurrent()');await f.run('loadRecords()');await f.run('loadRecentLogs()');await f.run('recalculatePlan()');
  assert.deepEqual(f.calls,['http://localhost/m4-api/project']);
  release();await startup;
  assert.equal(f.calls.length,5);
@@ -101,9 +101,9 @@ function planFixture(station) {
  const date='2026-09-16',start=Date.parse(date+'T00:00:00+08:00');
  const points=Array.from({length:96},(_,i)=>({timestamp:new Date(start+i*900000).toISOString(),mode:'idle',target_power_kw:0,grid_import_kw:100,expected_soc_pct:50,load_forecast_kw:100,pv_forecast_kw:0,buy_price_per_kwh:1,tariff_period:'flat'}));
  const candidate={plan:points,plan_version:'v1',metrics:{energy_cost:100,cycle_cost:0}};
- const request={station_id:station,plan_start_at:points[0].timestamp,points,source_versions:{controls:'controls'},capability:{energy_capacity_kwh:100,max_charge_kw:10,max_discharge_kw:10,initial_soc_pct:50},constraints:{soc_min_pct:10,soc_max_pct:90,grid_import_limit_kw:720,demand_limit_kw:500}};
+ const request={station_id:station,plan_start_at:points[0].timestamp,points,source_versions:{controls:'controls',baseline_policy:'ems-demand-soc-duration-v7-pv-export-idle'},capability:{energy_capacity_kwh:100,max_charge_kw:10,max_discharge_kw:10,initial_soc_pct:50},constraints:{soc_min_pct:10,soc_max_pct:90,grid_import_limit_kw:720,demand_limit_kw:500}};
  const comparison={schema_version:'m4-daily-comparison-v1',station_id:station,usage:'preview_only',dispatch_status:'not_dispatched',status:'ems',date,start_at:points[0].timestamp,end_at:new Date(start+86400000).toISOString(),controls_version:'controls',baseline_policy_version:'ems-demand-soc-duration-v7-pv-export-idle',recommended:candidate,baseline:candidate,baseline_cost_yuan:100,recommended_source:'ems'};
- return [{station_id:station,input_summary:{configuration_version:'settings'},daily_comparison:comparison},request,station,date,{version:'settings'},{version:'controls'},{station_id:station,controls_version:'controls',basis:'ems_rule_simulation',schedule:[{start_time:'00:00',end_time:'24:00',repeat:'daily',mode:'charge',power_kw:0}]}];
+ return [{station_id:station,input_summary:{configuration_version:'settings'},daily_comparison:comparison},request,station,date,{version:'settings'},{version:'controls'},{station_id:station,controls_version:'controls',controller_version:'ems-demand-soc-duration-v7-pv-export-idle',basis:'ems_rule_simulation',schedule:[{start_time:'00:00',end_time:'24:00',repeat:'daily',mode:'charge',power_kw:0}]}];
 }
 test('PV validation and reserve policy follow metadata independently of station IDs', async () => {
  const f=fixture('',true),p=project();p.stations[0].has_pv=false;f.ctx.response=p;await f.run('loadProject()');
@@ -113,6 +113,17 @@ test('PV validation and reserve policy follow metadata independently of station 
  p.stations[0].has_pv=false;p.stations[0].policy='peak_reserve';await f.run('loadProject()');assert.throws(()=>f.run('mapPlan(...args)'),/策略/);
  f.ctx.args[0].daily_comparison.daily_policy_version='m4-daily-peak-reserve-v3';f.ctx.args[0].daily_comparison.terminal_energy_rule='not_less_than_baseline';f.ctx.args[1].source_versions.daily_policy='m4-daily-peak-reserve-v3';f.ctx.args[1].peak_reserve_policy={version:'peak-reserve-v3'};
  assert.equal(f.run('mapPlan(...args).station'),'station-3');
+});
+test('soft reserve v4 is accepted only with matching daily and request versions', async () => {
+ const f=fixture('',true),p=project();p.stations[0].has_pv=false;p.stations[0].policy='peak_reserve';f.ctx.response=p;await f.run('loadProject()');
+ f.ctx.args=planFixture('station-3');
+ f.ctx.args[0].daily_comparison.daily_policy_version='m4-daily-peak-reserve-v4';
+ f.ctx.args[0].daily_comparison.terminal_energy_rule='not_less_than_baseline';
+ f.ctx.args[1].source_versions.daily_policy='m4-daily-peak-reserve-v4';
+ f.ctx.args[1].peak_reserve_policy={version:'peak-reserve-v4'};
+ assert.equal(f.run('mapPlan(...args).station'),'station-3');
+ f.ctx.args[1].peak_reserve_policy.version='peak-reserve-v3';
+ assert.throws(()=>f.run('mapPlan(...args)'),/策略/);
 });
 test('cached views cannot cross project/configuration boundaries and query wins over saved station', async () => {
  const f=fixture('',true);f.ctx.response=project();await f.run('loadProject()');

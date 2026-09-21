@@ -5,7 +5,7 @@ import json
 
 from m4.optimizer.contracts import (
     CapabilitySnapshot, ForecastPoint, ObjectiveProfile,
-    OptimizationConstraints, OptimizationRequest,
+    OptimizationConstraints, OptimizationRequest, GRID_CHARGING_POLICY,
 )
 from .models import LiveStationState, ResolvedControlLimits, StationConfiguration
 from .roster import CABINET_ISOLATION_POLICY, STATION_CABINETS
@@ -98,6 +98,7 @@ def build_request(
         capability=capability,constraints=constraints,profiles=profiles,
         pv_dispatch_policy=parameters.pv_dispatch_policy, pv_midday_economic=True,
         source_versions={**source_versions,
+            'grid_charging_policy': GRID_CHARGING_POLICY,
             'constraints':f'{configuration.version}/{control_limits.source_version}',
             'capability':f'manual-limits/{configuration.version}/live/{live_state.source_version}/scope/{scope_version}',
             'cabinet_policy':CABINET_ISOLATION_POLICY,

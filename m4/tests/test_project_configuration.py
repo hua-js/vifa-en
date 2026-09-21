@@ -30,7 +30,7 @@ assert STATIONS['warehouse'] == 'WH09'
 assert StationConfiguration(station_id='warehouse').station_id == 'warehouse'
 assert runtime_parameters('warehouse')['grid_import_limit_kw'] == 800.0
 assert get_daily_profiles('warehouse')[0].objective_order[0].terms == {'energy_cost': 1.0}
-assert daily_policy_version('solar-yard') == 'm4-daily-peak-reserve-v3'
+assert daily_policy_version('solar-yard') == 'm4-daily-peak-reserve-v4'
 validate_identity('warehouse', str(uuid4()))
 for invalid in ['station-1', '../warehouse', 'WH09']:
     try: StationConfiguration(station_id=invalid)

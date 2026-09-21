@@ -2,7 +2,7 @@
 import unittest
 from shared.project import get_project
 
-from m4.optimizer.contracts import OptimizationRequest, PeakReservePolicy
+from m4.optimizer.contracts import OptimizationRequest, PeakReservePolicy, GRID_CHARGING_POLICY
 from m4.optimizer.model import build_model
 from m4.optimizer.service import M4Optimizer
 from m4.optimizer.solver import solve_milp
@@ -18,6 +18,9 @@ def reserve_request(version='peak-reserve-v2', peaks=((40, 48), (56, 76))):
                    peak_reserve_policy={'version': version, 'terminal_soc_min_pct': 2})
     payload['source_versions']['project_configuration'] = get_project().fingerprint
     payload['source_versions']['daily_policy'] = 'm4-daily-peak-reserve-' + version.rsplit('-', 1)[-1]
+    for profile in payload['profiles']:
+        profile['profile_version'] = profile['profile_version'].replace(
+            PEAK_RESERVE_DAILY_POLICY, payload['source_versions']['daily_policy'])
     payload['capability'].update(initial_soc_pct=2, charge_efficiency=.98, discharge_efficiency=.98)
     payload['constraints'].update(soc_min_pct=1, soc_max_pct=98, preferred_soc_min_pct=2,
                                   preferred_soc_max_pct=98, demand_limit_kw=300, grid_import_limit_kw=300,
@@ -27,7 +30,7 @@ def reserve_request(version='peak-reserve-v2', peaks=((40, 48), (56, 76))):
         point.update(load_forecast_kw=100, pv_forecast_kw=0,
                      tariff_period='feng' if peak else 'gu' if i < 28 else 'ping',
                      buy_price_per_kwh=1.1 if peak else .27 if i < 28 else .66)
-    if version != 'peak-reserve-v3':
+    if version not in ('peak-reserve-v3', 'peak-reserve-v4'):
         for profile in payload['profiles']:
             # Archived v1/v2 fixtures must not inherit v3-only objective layers.
             profile['objective_order'] = [layer for layer in profile['objective_order']
@@ -83,14 +86,18 @@ class LatePeakReserveTests(unittest.TestCase):
                          {'version': 'peak-reserve-v1', 'terminal_soc_min_pct': 2.0})
 
     def test_new_daily_policy_rejects_old_saved_request(self):
-        self.assertEqual(PEAK_RESERVE_DAILY_POLICY, 'm4-daily-peak-reserve-v3')
-        current=reserve_request('peak-reserve-v3').model_dump(mode='json')
+        self.assertEqual(PEAK_RESERVE_DAILY_POLICY, 'm4-daily-peak-reserve-v4')
+        current=reserve_request('peak-reserve-v4').model_dump(mode='json')
         current['pv_midday_economic'] = True
         current['source_versions'].update(pv_export_policy='pv-export-flat-tariff-v1',
+            grid_charging_policy=GRID_CHARGING_POLICY,
             pv_export_price=format(0.6, '.17g'))
         for point in current['points']:
             point['sell_price_per_kwh'] = 0.6
         self.assertTrue(matches_current_daily_policy('station-2', current))
+        old_reserve = {**current, 'peak_reserve_policy': {
+            **current['peak_reserve_policy'], 'version': 'peak-reserve-v3'}}
+        self.assertFalse(matches_current_daily_policy('station-2', old_reserve))
         self.assertFalse(matches_current_daily_policy('station-2',
             {**current, 'pv_midday_economic': False}))
         old_price = {**current, 'points': [{**p, 'sell_price_per_kwh': 0.0} for p in current['points']]}

@@ -1,6 +1,6 @@
 """Independent validation for public optimization candidates."""
 
-from m4.optimizer.contracts import CandidateMetrics, CandidateResult, OptimizationRequest
+from m4.optimizer.contracts import CandidateMetrics, CandidateResult, OptimizationRequest, GRID_CHARGING_POLICY
 from m4.optimizer.metrics import INTERVAL_HOURS, calculate_metrics
 
 
@@ -8,11 +8,30 @@ class ResultValidationError(ValueError):
     """Raised when a candidate cannot be reproduced from its public plan."""
 
 
+def validate_peak_grid_charging(request, plan, tolerance=1e-6):
+    """Check current recommendations, including EMS fallback, against peak charging rules."""
+    if len(plan) != len(request.points):
+        raise ResultValidationError("plan length must match request points")
+    for index, (source, point) in enumerate(zip(request.points, plan, strict=True)):
+        if point.timestamp != source.timestamp:
+            _raise(f"point {index}", "timestamp")
+        if (request.source_versions.get('grid_charging_policy') == GRID_CHARGING_POLICY
+                and source.tariff_period not in ('gu', 'ping', 'feng', 'jian')):
+            _raise(f"point {index}", "tariff period")
+        if source.tariff_period not in ("jian", "feng"):
+            continue
+        surplus = max(source.pv_forecast_kw - source.load_forecast_kw, 0.0)
+        charge = point.target_power_kw if point.mode == "charge" else 0.0
+        if charge > surplus + tolerance or (surplus > 0 and point.grid_import_kw > tolerance):
+            _raise(f"point {index} ({source.timestamp.isoformat()})", "peak grid charging")
+
+
 def validate_candidate(
     request: OptimizationRequest,
     candidate: CandidateResult,
     tolerance: float = 1e-6,
     *, terminal_soc_target_pct: float | None = None,
+    historical_baseline: bool = False,
 ) -> None:
     """Validate all public feasibility rules and independently recalculated metrics."""
     if tolerance < 0:
@@ -27,6 +46,10 @@ def validate_candidate(
         raise ResultValidationError("plan length must match request points")
     if candidate.metrics is None:
         raise ResultValidationError("successful candidate must include metrics")
+    # Original EMS schedules remain auditable comparison baselines. They must
+    # pass the current charging check separately before being recommended.
+    if not historical_baseline:
+        validate_peak_grid_charging(request, candidate.plan, tolerance)
 
     capability = request.capability
     constraints = request.constraints
@@ -67,7 +90,7 @@ def validate_candidate(
         if peak_reserve is not None:
             net_load = max(source.load_forecast_kw - source.pv_forecast_kw, 0.0)
             maximum_discharge = min(capability.max_discharge_kw, net_load)
-            if peak_reserve.version != 'peak-reserve-v3' and source.tariff_period not in ('feng', 'jian'):
+            if peak_reserve.version not in ('peak-reserve-v3', 'peak-reserve-v4') and source.tariff_period not in ('feng', 'jian'):
                 grid_boundary = constraints.demand_limit_kw
                 if constraints.grid_import_limit_kw is not None:
                     grid_boundary = min(grid_boundary, constraints.grid_import_limit_kw)

@@ -129,7 +129,7 @@ class DailyPlanService:
                 raise ValueError('计算期间 EMS 原计划或日期变化，请重新计算。')
             finished = datetime.now(timezone.utc).isoformat()
             record = dict(station_id=station, run_id=run_id,
-                status='completed' if chosen or startup else 'blocked_model_solver',
+                status='completed' if comparison.get('recommended') is not None and (chosen or startup) else 'blocked_model_solver',
                 started_at=self.jobs[station]['started_at'], finished_at=finished,
                 checked_at=finished, expires_at=inputs['plan_end_at'],
                 plan_start_at=request.plan_start_at.isoformat(),

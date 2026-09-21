@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 import hashlib
 import json
 
-from m4.optimizer.contracts import (CapabilitySnapshot, ForecastPoint, PeakReservePolicy,
+from m4.optimizer.contracts import (CapabilitySnapshot, ForecastPoint, PeakReservePolicy, GRID_CHARGING_POLICY,
     OptimizationConstraints, OptimizationRequest)
 from m4.optimizer.metrics import calculate_metrics
 from .daily_comparison import comparison_input_sha256, compare_daily_plan
@@ -65,10 +65,11 @@ def prepare_ems_day(configuration, bundle):
     plan, simulation = simulate_ems_day(capability, constraints, points, schedule, pv_dispatch_policy=parameters.pv_dispatch_policy)
     terminal = plan[-1].expected_soc_pct
     policy_version = daily_policy_version(configuration.station_id)
-    reserve_policy = (PeakReservePolicy(version='peak-reserve-v3', terminal_soc_min_pct=max(
+    reserve_policy = (PeakReservePolicy(version='peak-reserve-v4', terminal_soc_min_pct=max(
         terminal, constraints.preferred_soc_min_pct)) if policy_version else None)
     profiles = get_daily_profiles(configuration.station_id)
-    content = {'configuration': configuration.model_dump(mode='json'), 'points': bundle['points'],
+    content = {'grid_charging_policy': GRID_CHARGING_POLICY,
+               'configuration': configuration.model_dump(mode='json'), 'points': bundle['points'],
                'controls_version': control['version'], 'initial': initial, 'terminal': terminal,
                'baseline_policy': EMS_BASELINE_POLICY, 'pv_midday_economic': True,
                'profiles': [profile.model_dump(mode='json') for profile in profiles]}
@@ -92,6 +93,7 @@ def prepare_ems_day(configuration, bundle):
             'controls': control['version'], 'configuration': configuration.version,
             **({'ems_baseline': control['baseline_version']} if control.get('baseline_version') else {}),
             'project_configuration': get_project().fingerprint,
+            'grid_charging_policy': GRID_CHARGING_POLICY,
             'capability': initial['version'], 'planning_basis': 'whole-station-retrospective-v1',
             **({'pv_gap_policy': DAILY_PV_POLICY,
                 'pv_zero_filled_points': str(sources['pv'].get('zero_filled_points', 0))}

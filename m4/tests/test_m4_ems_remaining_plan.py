@@ -18,7 +18,34 @@ class RemainingPlanTests(unittest.TestCase):
         self.payload['plan'] = [dict(timestamp=(self.start+timedelta(minutes=15*i)).isoformat(),
             mode='idle', target_power_kw=0) for i in range(count)]
         self.payload['request']['points'] = [dict(timestamp=p['timestamp'], load_forecast_kw=800,
-            pv_forecast_kw=0) for p in self.payload['plan']]
+            pv_forecast_kw=0, tariff_period='ping') for p in self.payload['plan']]
+
+    def test_old_charging_version_is_rejected_before_table_read(self):
+        self.full_day()
+        self.payload['request']['source_versions'].pop('grid_charging_policy')
+        with self.assertRaisesRegex(ModelUpdateError, '规则已更新'):
+            self.remaining()
+        self.reader._read_table.assert_not_called()
+
+    def test_peak_pv_surplus_can_be_previewed_but_grid_charging_cannot(self):
+        self.full_day()
+        self.payload['request']['points'][0].update(tariff_period='feng', pv_forecast_kw=840)
+        self.payload['plan'][0].update(mode='charge', target_power_kw=30)
+        result = self.remaining()
+        self.assertEqual(len(result['schedule']), 1)
+        self.assertEqual(result['schedule'][0]['type'], 'charge')
+        self.reader.reset_mock()
+        self.payload['plan'][0]['target_power_kw'] = 41
+        with self.assertRaisesRegex(ModelUpdateError, '尖、峰'):
+            self.remaining()
+        self.reader._read_table.assert_not_called()
+
+    def test_missing_tariff_is_rejected_before_table_read(self):
+        self.full_day()
+        self.payload['request']['points'][0].pop('tariff_period')
+        with self.assertRaisesRegex(ModelUpdateError, '电价时段'):
+            self.remaining()
+        self.reader._read_table.assert_not_called()
 
     def test_merge_contiguous_equal_power_and_keep_idle_gap(self):
         self.full_day()

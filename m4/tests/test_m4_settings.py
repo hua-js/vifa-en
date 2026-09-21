@@ -80,6 +80,8 @@ class SettingsTests(unittest.TestCase):
     def test_config_adapter_uses_live_soc_and_service_owned_runtime_limits(self):
         config=self.store.save('station-1', parameters(), expected_revision=0)
         fixture=make_request(station_id='station-1')
+        for point in fixture.points:
+            point.tariff_period = 'ping'
         live=LiveStationState(station_id='station-1',participating_cabinet_ids=['emu11','emu12'], initial_soc_pct=61.0,
             available=True, observed_at=fixture.input_observed_at, source_version='ems-observation-1')
         request=build_request(config, live, request_id='real-request',plan_start_at=fixture.plan_start_at,
@@ -150,6 +152,7 @@ class SettingsTests(unittest.TestCase):
             point.model_copy(update={
                 'load_forecast_kw':190.0 if index in (48,49) else 100.0,
                 'pv_forecast_kw':0.0,
+                'tariff_period':'ping',
                 'buy_price_per_kwh':.01 if index==0 else 1.0,
             }) for index,point in enumerate(fixture.points)
         ]})

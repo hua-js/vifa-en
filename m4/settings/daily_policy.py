@@ -1,9 +1,10 @@
 """Versioned daily planning rules; never inferred when replaying old requests."""
 from shared.project import get_project
+from m4.optimizer.contracts import GRID_CHARGING_POLICY
 import math
 
-PEAK_RESERVE_DAILY_POLICY = 'm4-daily-peak-reserve-v3'
-PEAK_RESERVE_SELECTOR = 'daily-peak-reserve-cost-gate-v3'
+PEAK_RESERVE_DAILY_POLICY = 'm4-daily-peak-reserve-v4'
+PEAK_RESERVE_SELECTOR = 'daily-peak-reserve-cost-gate-v4'
 
 
 def physical_grid_policy(station_id):
@@ -25,9 +26,12 @@ def matches_current_daily_policy(station_id, request):
     versions = request.get('source_versions')
     if not isinstance(versions, dict) or versions.get('pv_export_policy') != PV_EXPORT_POLICY:
         return False
+    if versions.get('grid_charging_policy') != GRID_CHARGING_POLICY:
+        return False
     if (request.get('pv_midday_economic') is not True
             or not isinstance(points, list) or len(points) != 96
             or any(not isinstance(point, dict)
+                   or point.get('tariff_period') not in ('gu', 'ping', 'feng', 'jian')
                    or type(point.get('sell_price_per_kwh')) not in (int, float)
                    or not math.isfinite(point['sell_price_per_kwh'])
                    or point['sell_price_per_kwh'] < 0
@@ -48,7 +52,7 @@ def matches_current_daily_policy(station_id, request):
                 and request.get('constraints', {}).get('grid_import_limit_kw') == get_project().station(station_id).grid_import_limit_kw
                 and versions.get('economic_policy') == 'station-1-cost-first-v1'
                 and request.get('profiles') == [p.model_dump(mode='json') for p in get_daily_profiles(station_id)])
-    if not isinstance(policy, dict) or policy.get('version') != 'peak-reserve-v3':
+    if not isinstance(policy, dict) or policy.get('version') != 'peak-reserve-v4':
         return False
     return request.get('profiles') == [
         profile.model_dump(mode='json') for profile in get_daily_profiles(station_id)

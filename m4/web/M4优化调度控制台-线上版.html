@@ -249,7 +249,7 @@ function mapPlan(record,request,station,date,settings,controls,emsBaseline){
  assert(finite(bounds?.soc_min_pct)&&finite(bounds?.soc_max_pct),'SOC 约束不可用');
  if(requireStation(station).has_pv)assert(request.source_versions?.pv_gap_policy==='pv-night-zero-20-07-v1','旧日计划的光伏预测完整性未校验，请等待重新生成');
  if(requireStation(station).policy==='peak_reserve'){
-  const reserveVersions={'m4-daily-peak-reserve-v1':'peak-reserve-v1','m4-daily-peak-reserve-v2':'peak-reserve-v2','m4-daily-peak-reserve-v3':'peak-reserve-v3'};
+  const reserveVersions={'m4-daily-peak-reserve-v1':'peak-reserve-v1','m4-daily-peak-reserve-v2':'peak-reserve-v2','m4-daily-peak-reserve-v3':'peak-reserve-v3','m4-daily-peak-reserve-v4':'peak-reserve-v4'};
   assert(reserveVersions[c.daily_policy_version]&&request.peak_reserve_policy?.version===reserveVersions[c.daily_policy_version]&&request.source_versions.daily_policy===c.daily_policy_version&&c.terminal_energy_rule==='not_less_than_baseline','本站日优化策略已变化，请重新生成');
  }
  assert(Math.abs(bm.energy_cost-c.baseline_cost_yuan)<1e-5,'基线费用无法校验');

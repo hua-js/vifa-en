@@ -9,10 +9,10 @@ from threading import Lock, Thread
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
-from m4.optimizer.contracts import OptimizationRequest
+from m4.optimizer.contracts import OptimizationRequest, GRID_CHARGING_POLICY
 from m4.optimizer.metrics import calculate_metrics
 from m4.optimizer.service import M4Optimizer
-from m4.optimizer.validation import validate_candidate
+from m4.optimizer.validation import validate_candidate, validate_peak_grid_charging
 from .ems_simulation import simulate_ems_day
 from .load_accuracy import read_gate, require_gate
 from .startup_admission import require_admission, window as startup_window, POLICY as STARTUP_POLICY
@@ -115,7 +115,8 @@ def prepare_remaining_request(configuration, inputs, now):
         raw['source_versions'].update(startup_policy=STARTUP_POLICY,
             startup_window_end=startup['end_at'],
             startup_tariff_periods=json.dumps(source['tariff']['period_types']))
-    raw['source_versions'].update(planning_basis=STARTUP_POLICY if startup else POLICY, capability=soc['observed_at'],
+    raw['source_versions'].update(grid_charging_policy=GRID_CHARGING_POLICY,
+        planning_basis=STARTUP_POLICY if startup else POLICY, capability=soc['observed_at'],
         terminal_target=format(terminal, '.17g'))
     if correction:
         raw['source_versions']['pv_correction'] = correction.get('version', PV_CORRECTION_POLICY+'-unavailable')
@@ -155,6 +156,9 @@ class RollingPlanService:
         now = datetime.now(ZONE)
         if result['status'] == 'completed':
             payload = result['result']
+            if payload.get('request', {}).get('source_versions', {}).get('grid_charging_policy') != GRID_CHARGING_POLICY:
+                return dict(station_id=station, status='stale', result=None,
+                    message='尖、峰段充电规则已更新，等待新的建议。')
             if (now >= datetime.fromisoformat(payload['valid_until'])
                     or payload['configuration_version'] != self.daily.store.get(station).version):
                 return dict(station_id=station, status='stale', result=None,
@@ -268,6 +272,10 @@ class RollingPlanService:
                     else:
                         reason = '暂无更经济且可行的后续优化方案，沿用EMS。'
                 points = chosen.plan if chosen else baseline
+                try:
+                    validate_peak_grid_charging(request, points)
+                except ValueError:
+                    raise ValueError('后续方案包含尖、峰段电网充电，暂停推荐及写表。') from None
                 metrics = calculate_metrics(request, points)
                 current_configuration = self.daily.store.get(station)
                 current_daily = self.daily.latest(station)

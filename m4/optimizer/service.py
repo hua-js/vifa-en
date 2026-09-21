@@ -3,7 +3,7 @@
 from datetime import datetime, timezone
 from importlib.metadata import version
 
-from m4.optimizer.contracts import CandidateResult, OptimizationRequest, OptimizationResult
+from m4.optimizer.contracts import CandidateResult, OptimizationRequest, OptimizationResult, GRID_CHARGING_POLICY
 from m4.optimizer.lexicographic import solve_profile
 from m4.optimizer.metrics import calculate_metrics, materialize_plan
 from m4.optimizer.model import build_model
@@ -17,6 +17,9 @@ RISK_MESSAGES = {
     ),
     "PEAK_RESERVE_PREFERENCE_INCOMPLETE": (
         "候选保留可行计划，首个峰段开始前的储能准备目标尚未确认最优。"
+    ),
+    "PEAK_RESERVE_SHORTFALL": (
+        "部分时段保留电量未达到目标，已优先满足安全和期末电量要求。"
     ),
     "PV_UNABSORBED": (
         "存在未吸收光伏余量；该值仅用于风险提示，不是光伏限发指令。"
@@ -78,6 +81,14 @@ class M4Optimizer:
                     stage = "calculate_metrics"
                     metrics = calculate_metrics(request, plan)
                     risk_codes = []
+                    if request.peak_reserve_policy is not None and request.peak_reserve_policy.version == 'peak-reserve-v4':
+                        last_peak_start = max((i for i, p in enumerate(request.points)
+                            if p.tariff_period in ('jian', 'feng') and
+                            (i == 0 or request.points[i-1].tariff_period not in ('jian', 'feng'))), default=0)
+                        states = [request.capability.initial_soc_pct, *(p.expected_soc_pct for p in plan)]
+                        if any(soc < request.peak_reserve_policy.terminal_soc_min_pct - 1e-6
+                               for soc in states[last_peak_start:]):
+                            risk_codes.append('PEAK_RESERVE_SHORTFALL')
                     if metrics.pv_unabsorbed_energy_kwh > 1e-6:
                         risk_codes.append("PV_CURTAILMENT_REQUIRED" if request.pv_dispatch_policy != "legacy" else "PV_UNABSORBED")
                     if (any("valley_charge_delay" in item.terms
@@ -149,7 +160,7 @@ class M4Optimizer:
         )
 
     def _effective_model_version(self, request: OptimizationRequest) -> str:
-        model_version = f"{self.model_version}/pyomo-v1"
+        model_version = f"{self.model_version}/pyomo-v1/{GRID_CHARGING_POLICY}"
         if request.pv_midday_economic:
             model_version += "/pv-midday-economic-v1"
         if request.ems_schedule_modes is not None:

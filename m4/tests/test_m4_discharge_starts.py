@@ -4,7 +4,7 @@ import json
 from m4.tests.test_m4_late_peak_reserve import reserve_request
 from m4.optimizer.model import build_model
 from m4.optimizer.solver import solve_milp
-from m4.optimizer.contracts import OptimizationRequest
+from m4.optimizer.contracts import OptimizationRequest, GRID_CHARGING_POLICY
 from m4.settings.daily_policy import matches_current_daily_policy
 
 
@@ -13,7 +13,7 @@ class DischargeStartTests(unittest.TestCase):
         from m4.optimizer.service import M4Optimizer
         from m4.optimizer.validation import validate_candidate
         from m4.optimizer.lexicographic import build_layer_objective
-        request = reserve_request('peak-reserve-v3')
+        request = reserve_request('peak-reserve-v4')
         request.pv_dispatch_policy = 'load_first_export_priority'
         for point in request.points:
             point.load_forecast_kw = 0
@@ -77,9 +77,10 @@ class DischargeStartTests(unittest.TestCase):
             OptimizationRequest.model_validate(payload)
 
     def test_old_continuity_plan_is_not_current(self):
-        payload = reserve_request('peak-reserve-v3').model_dump(mode='json')
+        payload = reserve_request('peak-reserve-v4').model_dump(mode='json')
         payload['pv_midday_economic'] = True
         payload['source_versions'].update(pv_export_policy='pv-export-flat-tariff-v1',
+            grid_charging_policy=GRID_CHARGING_POLICY,
             pv_export_price=format(0.6, '.17g'))
         for point in payload['points']:
             point['sell_price_per_kwh'] = 0.6
