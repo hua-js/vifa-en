@@ -98,7 +98,12 @@ def build_model(request: OptimizationRequest, *, terminal_soc_target_pct: float 
     model.pv_surplus_periods = pyo.Set(initialize=[t for t in model.periods if policies[t] != "legacy" and surplus[t] > 0], ordered=True)
 
     def allowed_charge(t):
-        return charge_max if request.ems_schedule_modes is None or request.ems_schedule_modes[t] == "charge" else 0.0
+        if request.ems_schedule_modes is not None and request.ems_schedule_modes[t] != "charge":
+            return 0.0
+        # Peak and sharp-peak charging may only use PV surplus after serving load.
+        if request.points[t].tariff_period in ("jian", "feng"):
+            return min(charge_max, surplus[t])
+        return charge_max
 
     def charge_bound(m, t):
         if policies[t] == "load_first_export_priority" and surplus[t] > 0:
@@ -116,6 +121,14 @@ def build_model(request: OptimizationRequest, *, terminal_soc_target_pct: float 
             maximum = min(maximum, max(net_load - grid_boundary, 0.0))
         return 0.0, maximum
 
+    def grid_import_bound(m, t):
+        # Also prevent legacy PV policies from importing while curtailing surplus.
+        if surplus[t] > 0 and (
+            policies[t] != "legacy" or request.points[t].tariff_period in ("jian", "feng")
+        ):
+            return 0.0, 0.0
+        return 0.0, import_max
+
     def energy_bound(m, t):
         if t == 0:
             return initial_energy, initial_energy
@@ -131,7 +144,7 @@ def build_model(request: OptimizationRequest, *, terminal_soc_target_pct: float 
     model.charge = pyo.Var(model.periods, domain=pyo.NonNegativeReals, bounds=charge_bound)
     model.discharge = pyo.Var(model.periods, domain=pyo.NonNegativeReals, bounds=discharge_bound)
     model.grid_import = pyo.Var(model.periods, domain=pyo.NonNegativeReals,
-                                bounds=lambda m, t: (0.0, 0.0 if policies[t] != "legacy" and surplus[t] > 0 else import_max))
+                                bounds=grid_import_bound)
     model.grid_export = pyo.Var(model.periods, domain=pyo.NonNegativeReals, bounds=(0.0, export_max))
     model.pv_unabsorbed = pyo.Var(model.periods, domain=pyo.NonNegativeReals,
                                  bounds=lambda m, t: (0.0, request.points[t].pv_forecast_kw))

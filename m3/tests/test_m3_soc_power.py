@@ -12,6 +12,30 @@ from m3.worker.errors import M3Error
 
 
 class SocPowerTests(unittest.TestCase):
+    def test_recent_weekday_power_wins_over_similar_soc_overtime_sunday(self):
+        dataset = soc_dataset_with_weekly_pattern()
+        dataset.frame['y'] = 50.
+        dataset = replace(dataset, energy_capacity_kwh=100.)
+        def calibrated(frame, real, **kwargs):
+            # Old weekdays discharge slowly, recent weekdays faster; the most
+            # recent overtime Sunday is idle. All have the same starting SOC.
+            return {t: (-10. if t >= FORECAST_START - timedelta(days=7) else -1.)
+                    if t.weekday() < 5 and t.hour == 8 else 0.
+                    for t in real}
+        with patch('m3.worker.domain.soc_power.calibrated_power_deltas', side_effect=calibrated), \
+             patch('m3.worker.domain.custom_forecasting.schedule_day', return_value=True), \
+             patch('m3.worker.domain.custom_forecasting.schedule_slot', return_value=(True, 0)):
+            values = _soc_power_values(dataset, origin=FORECAST_START, periods=12)
+        self.assertEqual(values[7:10], [50., 40., 40.])
+
+    def test_old_power_does_not_substitute_for_missing_recent_measurements(self):
+        dataset = replace(soc_dataset_with_weekly_pattern(), energy_capacity_kwh=100.)
+        def calibrated(frame, real, **kwargs):
+            return {t: -1. for t in real if t < FORECAST_START - timedelta(days=7)}
+        with patch('m3.worker.domain.soc_power.calibrated_power_deltas', side_effect=calibrated):
+            with self.assertRaises(M3Error):
+                _soc_power_values(dataset, origin=FORECAST_START, periods=24)
+
     def history(self):
         dataset = soc_dataset_with_weekly_pattern()
         # 100 kWh; one-hour AC charge at 10 kW gives +9 points;

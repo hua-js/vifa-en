@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 SOC_WEEKLY_DELTA_MODEL = "SOCWeeklyDelta"
 SOC_SCHEDULE_DELTA_MODEL = "SOCScheduleDelta"
 SOC_POWER_MODEL = "SOCSchedulePower"
-SOC_SCHEDULE_POLICY = "soc-schedule-power-v1"
+SOC_SCHEDULE_POLICY = "soc-schedule-power-v2"
 # Percentage points, not a charge target. Weekly increments are transferable
 # only between similar initial states; saturation otherwise hides charging.
 SOC_WEEKLY_START_TOLERANCE = 10.0
@@ -481,7 +481,7 @@ def _soc_delta_values(
     first_day_end = origin_day_start + timedelta(days=1)
     recent_plateau = (
         _recent_soc_plateau(source_values, origin_day_start, interval)
-        if _soc_day_context(origin) == (True, False) else None
+        if not power and _soc_day_context(origin) == (True, False) else None
     )
     day_starts = {}
     day_peaks = {}
@@ -499,6 +499,7 @@ def _soc_delta_values(
             previous_day = target.date()
         deltas = []
         ranked_deltas = []
+        recent_power_deltas = []
         # Weekly candidate preserves same-weekday behavior. The baseline uses
         # closest matching day context and starting SOC, never predicted donors.
         for days in ((7, 14, 21) if weekly else range(1, 29)):
@@ -506,15 +507,25 @@ def _soc_delta_values(
             previous_time = source_time - interval
             if source_time not in source_values or previous_time not in source_values:
                 continue
-            if (_soc_day_context(source_time) != _soc_day_context(target)
+            if ((schedule_day(source_time) != schedule_day(target) if power
+                 else _soc_day_context(source_time) != _soc_day_context(target))
                     or schedule_slot(source_time)[0] != schedule_slot(target)[0]
                     or schedule_slot(previous_time)[0] != schedule_slot(target - interval)[0]):
                 continue
             delta = source_values[source_time] - source_values[previous_time]
             if power:
-                if source_time not in power_deltas:
+                # Physical SOC integration already carries the current state.
+                # Do not choose the power waveform by historical initial SOC:
+                # an overtime Sunday may start similarly but dispatch later.
+                # Keep Mon-Fri, Saturday and Sunday behavior separate even when
+                # the production API marks all of them WORK.
+                source_kind = 0 if source_time.weekday() < 5 else source_time.weekday()
+                target_kind = 0 if target.weekday() < 5 else target.weekday()
+                if (source_time not in power_deltas or source_kind != target_kind
+                        or source_time < origin - timedelta(days=7)):
                     continue
-                delta = power_deltas[source_time]
+                recent_power_deltas.append(power_deltas[source_time])
+                continue
             if weekly:
                 if target.date() != origin.date():
                     # Later days enter with the previous day's final state,
@@ -542,7 +553,9 @@ def _soc_delta_values(
                 if recent_plateau is not None and target < first_day_end:
                     distance += abs(day_peaks[source_time.date()] - recent_plateau)
                 ranked_deltas.append((distance, days, delta))
-        if not weekly and ranked_deltas:
+        if power:
+            deltas = recent_power_deltas
+        elif not weekly and ranked_deltas:
             deltas = [min(ranked_deltas)[2]]
         if not deltas:
             raise M3Error("insufficient_history", "Missing matching SOC change history")
