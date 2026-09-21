@@ -302,45 +302,49 @@ def _select_soc_champion(
         (dataset.frame["ds"] >= holdout_start)
         & (dataset.frame["ds"] < config.history_end)
     ].copy()
-    expected_times = list(
-        pd.date_range(
-            holdout_start,
-            periods=config.weekly_season_length,
-            freq=config.pandas_frequency,
-        )
-    )
-    observed_times = [pd.Timestamp(value) for value in holdout["ds"]]
-    if (
-        len(holdout) != config.weekly_season_length
-        or observed_times != expected_times
-        or holdout["y"].isna().any()
-    ):
-        raise M3Error(
-            "model_selection_failed", "SOC holdout week is incomplete"
-        )
-    training_frame = dataset.frame[dataset.frame["ds"] < holdout_start].copy()
-    if training_frame.empty:
-        raise M3Error("model_selection_failed", "SOC holdout training is empty")
-    training = replace(
-        dataset,
-        frame=training_frame,
-        end=pd.Timestamp(training_frame["ds"].iloc[-1]).to_pydatetime(),
-    )
     unique_id = dataset.frame["unique_id"].iloc[0]
     excluded_times = frozenset(
-        timestamp
-        for key_unique_id, timestamp in dataset.imputed_keys
+        timestamp for key_unique_id, timestamp in dataset.imputed_keys
         if key_unique_id == unique_id
     )
 
-    # Evaluate the weekdays that this request will actually predict. A Sunday
-    # holdout must not choose the winner for a Monday-only request.
-    target_weekdays = {
-        (config.forecast_start + timedelta(days=day)).weekday()
-        for day in range(config.forecast_days)
-    }
-    matching = holdout["ds"].dt.weekday.isin(target_weekdays).to_numpy()
-    scored_holdout = holdout.loc[matching]
+    def day_signature(origin):
+        return (
+            schedule_day(origin), schedule_day(origin - timedelta(days=1)),
+            tuple(schedule_slot(origin + step * config.interval)[0]
+                  for step in range(config.points_per_day)),
+        )
+
+    # Prefer the same weekday when its actual schedule still matches. Otherwise
+    # evaluate matching day types, never an unrelated exceptional day merely
+    # because it falls inside the holdout week.
+    history_days = [holdout_start + timedelta(days=day) for day in range(7)]
+    signatures = {day: day_signature(day) for day in history_days}
+    selected_days = set()
+    for offset in range(config.forecast_days):
+        target = config.forecast_start + timedelta(days=offset)
+        target_signature = day_signature(target)
+        matching_days = [day for day in history_days if signatures[day] == target_signature]
+        preferred = [day for day in matching_days if day.weekday() == target.weekday()]
+        if not matching_days:
+            raise M3Error("model_selection_failed", "No matching SOC holdout day")
+        selected_days.update(preferred or matching_days)
+
+    folds = []
+    for day in sorted(selected_days):
+        actual = holdout[(holdout["ds"] >= day) & (holdout["ds"] < day + timedelta(days=1))].copy()
+        expected = list(pd.date_range(day, periods=config.points_per_day, freq=config.pandas_frequency))
+        if list(actual["ds"]) != expected or actual["y"].isna().any():
+            raise M3Error("model_selection_failed", "SOC holdout day is incomplete")
+        # Each day starts from real observations strictly before that day's
+        # origin. No actual value from the scored day is a training donor.
+        training_frame = dataset.frame[dataset.frame["ds"] < day].copy()
+        if training_frame.empty:
+            raise M3Error("model_selection_failed", "SOC holdout training is empty")
+        training = replace(dataset, frame=training_frame,
+            end=pd.Timestamp(training_frame["ds"].iloc[-1]).to_pydatetime())
+        folds.append((day, actual, training))
+    scored_holdout = pd.concat([actual for _, actual, _ in folds], ignore_index=True)
 
     scores: list[LoadCandidateScore] = []
     for model_name, predictor in (
@@ -348,10 +352,14 @@ def _select_soc_champion(
         (SOC_SCHEDULE_DELTA_MODEL, _soc_schedule_delta_values),
     ):
         try:
-            values = predictor(training, origin=holdout_start, periods=len(holdout))
+            values = []
+            for day, actual, training in folds:
+                predicted = predictor(training, origin=day, periods=len(actual))
+                if len(predicted) != len(actual):
+                    raise ValueError("SOC holdout prediction length mismatch")
+                values.extend(_clip(unique_id, value)[1] for value in predicted)
             scores.append(load_candidate_score(
-                model_name, scored_holdout,
-                [_clip(unique_id, value)[1] for value, keep in zip(values, matching, strict=True) if keep], excluded_times,
+                model_name, scored_holdout, values, excluded_times,
             ))
         except Exception as error:
             scores.append(LoadCandidateScore(

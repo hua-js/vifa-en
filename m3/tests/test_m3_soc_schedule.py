@@ -102,3 +102,39 @@ class SocScheduleRegressionTests(unittest.TestCase):
         dataset=replace(dataset,frame=pd.DataFrame({'unique_id':'storage_soc','ds':times,'y':values}))
         result=_soc_schedule_delta_values(dataset,origin=FORECAST_START,periods=8)
         self.assertEqual(result[-1],73.)
+
+    def test_selection_does_not_predict_unrequested_weekend(self):
+        from datetime import timedelta
+        from m3.tests.test_m3_custom_forecasting import soc_dataset_with_weekly_pattern, make_selection_config
+        dataset = soc_dataset_with_weekly_pattern()
+        config = make_selection_config(28, forecast_days=1)
+        calls = []
+
+        def predict(training, *, origin, periods):
+            self.assertEqual(origin.weekday(), config.forecast_start.weekday())
+            self.assertEqual(periods, config.points_per_day)
+            self.assertTrue((training.frame['ds'] < origin).all())
+            calls.append(origin)
+            return [50.] * periods
+
+        # An unrelated missing Saturday must not prevent Monday selection.
+        saturday = config.history_end - timedelta(days=2)
+        dataset = replace(dataset, frame=dataset.frame.loc[
+            ~((dataset.frame['ds'] >= saturday) &
+              (dataset.frame['ds'] < saturday + timedelta(days=1)))].copy())
+        with patch('m3.worker.domain.custom_forecasting._soc_weekly_delta_values', side_effect=predict), \
+             patch('m3.worker.domain.custom_forecasting._soc_schedule_delta_values', side_effect=predict):
+            champion = select_custom_champion(dataset, config)
+        self.assertEqual(len(calls), 2)
+        self.assertTrue(all(score.scorable_point_count == config.points_per_day
+                            for score in champion.candidate_scores))
+
+    def test_requested_day_missing_donors_still_fails_selection(self):
+        from m3.tests.test_m3_custom_forecasting import soc_dataset_with_weekly_pattern, make_selection_config
+        from m3.worker.errors import M3Error
+        error = M3Error('insufficient_history', 'Missing matching SOC change history')
+        with patch('m3.worker.domain.custom_forecasting._soc_weekly_delta_values', side_effect=error), \
+             patch('m3.worker.domain.custom_forecasting._soc_schedule_delta_values', side_effect=error):
+            with self.assertRaises(M3Error) as raised:
+                select_custom_champion(soc_dataset_with_weekly_pattern(), make_selection_config(28, forecast_days=1))
+        self.assertEqual(raised.exception.code, 'model_selection_failed')
