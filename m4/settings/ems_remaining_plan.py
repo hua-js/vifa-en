@@ -63,8 +63,19 @@ class EMSRemainingPlanAdapter:
         station, observed, start, _, run_id, points, request = self.single._context(
             station_id, payload, configuration, now=now)
         midnight = datetime.combine(observed.date()+timedelta(days=1), datetime.min.time(), ZONE)
-        if len(points) != int((midnight-start).total_seconds()/900):
-            raise ModelUpdateError('剩余日计划未完整覆盖至当天结束。')
+        replacement_end = midnight
+        startup = request.get('source_versions', {}).get('startup_policy')
+        if startup:
+            from .startup_admission import request_window
+            try:
+                replacement_end = request_window(request, observed)
+            except (ValueError, KeyError, TypeError):
+                raise ModelUpdateError('凌晨谷电保底窗口校验失败。') from None
+            if (payload.get('source') != 'ems' or payload.get('end_at') != replacement_end.isoformat()
+                    or any(p.get('mode') not in ('charge', 'idle') for p in points)):
+                raise ModelUpdateError('凌晨保底只允许当前谷段充电或待机。')
+        if len(points) != int((replacement_end-start).total_seconds()/900):
+            raise ModelUpdateError('计划未完整覆盖本轮允许的替换窗口。')
         validate_dispatch_safety(request, points)
         points = dispatch_points(points)
         validate_dispatch_safety(request, points)
@@ -118,9 +129,11 @@ class EMSRemainingPlanAdapter:
                 if row['end_time'] != '00:00:00':
                     raise ModelUpdateError('现有跨日计划需先明确当天替换范围。')
                 end = midnight
-            if end <= start:
+            if end <= start or begin >= replacement_end:
                 preserved.append(identifier)
                 continue
+            if startup and end > replacement_end:
+                raise ModelUpdateError('现有计划跨越凌晨保底边界，保留原计划并暂停本轮写入。')
             windows.append((identifier, begin, end))
             if begin < start:
                 first = segments[0] if segments else None
@@ -179,7 +192,7 @@ class EMSRemainingPlanAdapter:
         if now is None and datetime.now(ZONE) >= start:
             raise ModelUpdateError('读取期间已错过方案生效时刻，不生成旧计划变更。')
         return dict(policy_version=POLICY, status='preview', station_id=station_id, run_id=run_id,
-            effective_at=start.isoformat(), end_at=midnight.isoformat(), power_scope='cabinet',
+            effective_at=start.isoformat(), end_at=replacement_end.isoformat(), power_scope='cabinet',
             configuration_version=configuration.version, schedule=schedule, operations=operations,
             preserved_record_ids=preserved, unchanged_record_ids=unchanged,
             carried_record_ids=list(carried),

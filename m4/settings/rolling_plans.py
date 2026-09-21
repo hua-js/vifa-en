@@ -14,7 +14,8 @@ from m4.optimizer.metrics import calculate_metrics
 from m4.optimizer.service import M4Optimizer
 from m4.optimizer.validation import validate_candidate
 from .ems_simulation import simulate_ems_day
-from .load_accuracy import require_gate
+from .load_accuracy import read_gate, require_gate
+from .startup_admission import require_admission, window as startup_window, POLICY as STARTUP_POLICY
 from .daily_comparison import REVENUE_GATE_VERSION, MIN_NET_SAVINGS_YUAN
 from .pv_correction import read_correction, POLICY as PV_CORRECTION_POLICY
 from .frozen_baseline import planning_controls
@@ -43,7 +44,12 @@ def prepare_remaining_request(configuration, inputs, now):
     power_at = datetime.fromisoformat(power['observed_at']).astimezone(ZONE)
     if abs((observed-power_at).total_seconds()) > min(max_age, 900):
         raise ValueError('SOC与功率采样时间不一致，暂停滚动建议。')
-    require_gate(source['load'].get('accuracy_gate'), station, now)
+    startup = None
+    try:
+        require_gate(source['load'].get('accuracy_gate'), station, now)
+    except ValueError:
+        startup = require_admission(source['load'].get('accuracy_gate'), station,
+            source.get('tariff', {}).get('period_types', []), now)
     start = now.replace(second=0, microsecond=0, minute=now.minute//15*15)+timedelta(minutes=15)
     if start.date() != now.date():
         raise ValueError('当日已无完整的后续时段，等待次日日计划。')
@@ -66,7 +72,8 @@ def prepare_remaining_request(configuration, inputs, now):
         raise ValueError('生效时刻预计SOC超出安全范围，暂停滚动建议。')
     cap.initial_soc_pct = projected
     cap.derating_reason = '站级建议能力；尚未接入设备下发。'
-    points = [p for p in base.points if p.timestamp >= start]
+    points = [p for p in base.points if p.timestamp >= start
+        and (not startup or p.timestamp < datetime.fromisoformat(startup['end_at']))]
     if not points or points[0].timestamp != start:
         raise ValueError('后续预测时段不完整，暂停滚动建议。')
     correction = source.get('pv_correction')
@@ -89,6 +96,8 @@ def prepare_remaining_request(configuration, inputs, now):
         points = adjusted
     replay, simulation = simulate_ems_day(cap, base.constraints, points,
         inputs['baseline']['schedule'], pv_dispatch_policy=base.pv_dispatch_policy, remaining_day=True)
+    if startup and any(p.mode not in ('charge', 'idle') for p in replay):
+        raise ValueError('凌晨保底充电无法满足需量约束，暂停下发。')
     terminal = replay[-1].expected_soc_pct
     policy = base.peak_reserve_policy.model_copy(deep=True) if base.peak_reserve_policy else None
     if policy:
@@ -99,7 +108,13 @@ def prepare_remaining_request(configuration, inputs, now):
         points=[p.model_dump(mode='json') for p in points], capability=cap.model_dump(mode='json'))
     if policy:
         raw['peak_reserve_policy'] = policy.model_dump(mode='json')
-    raw['source_versions'].update(planning_basis=POLICY, capability=soc['observed_at'],
+    for key in ('startup_policy', 'startup_window_end', 'startup_tariff_periods'):
+        raw['source_versions'].pop(key, None)
+    if startup:
+        raw['source_versions'].update(startup_policy=STARTUP_POLICY,
+            startup_window_end=startup['end_at'],
+            startup_tariff_periods=json.dumps(source['tariff']['period_types']))
+    raw['source_versions'].update(planning_basis=STARTUP_POLICY if startup else POLICY, capability=soc['observed_at'],
         terminal_target=format(terminal, '.17g'))
     if correction:
         raw['source_versions']['pv_correction'] = correction.get('version', PV_CORRECTION_POLICY+'-unavailable')
@@ -208,11 +223,15 @@ class RollingPlanService:
                 raise ValueError('已跨日，等待次日日计划。')
             request, baseline, simulation, anchor, terminal = prepare_remaining_request(configuration, inputs, now)
             base_metrics = calculate_metrics(request, baseline)
-            admitted = (gate.get('revenue_gate_version') == REVENUE_GATE_VERSION
+            startup = request.source_versions.get('startup_policy') == STARTUP_POLICY
+            if not startup and daily['request']['source_versions'].get('startup_policy'):
+                raise ValueError('预测质量已恢复，等待正常日计划生成。')
+            admitted = (not startup and gate.get('revenue_gate_version') == REVENUE_GATE_VERSION
                 and gate['status'] == 'optimized'
                 and gate.get('net_savings_yuan', 0) >= MIN_NET_SAVINGS_YUAN)
             chosen, candidates = None, []
-            reason = '当日日计划未通过收益门禁，后续沿用EMS。'
+            reason = ('凌晨谷电保底充电，仅覆盖当前充电窗口。' if startup
+                else '当日日计划未通过收益门禁，后续沿用EMS。')
             if admitted:
                 result = M4Optimizer(model_version=POLICY).optimize(request, terminal_soc_target_pct=terminal)
                 candidates = result.candidates
@@ -330,6 +349,13 @@ class PlanningCoordinator:
         comparison = (latest.get('result') or {}).get('record', {}).get('daily_comparison', {})
         if latest.get('status') != 'completed' or comparison.get('date') != datetime.now(ZONE).date().isoformat():
             return self.daily.start(station)
+        versions = latest.get('request', {}).get('source_versions', {})
+        if versions.get('startup_policy'):
+            now = datetime.now(ZONE)
+            periods = json.loads(versions.get('startup_tariff_periods', '[]'))
+            quality = read_gate(self.daily.inputs.live.client, station, now)
+            if quality['status'] == 'ready' or not startup_window(station, periods, now):
+                return self.daily.start(station)
         return self.rolling.start(station)
 
     def latest(self, station):

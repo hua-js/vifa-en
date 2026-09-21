@@ -13,6 +13,7 @@ from .daily_baseline import prepare_ems_day
 from .frozen_baseline import planning_controls, baseline_version
 from .daily_comparison import compare_daily_plan, REVENUE_GATE_VERSION
 from .ems_simulation import EMS_BASELINE_POLICY
+from .startup_admission import POLICY as STARTUP_POLICY, require_admission
 from .forecast_source import LOAD_POLICY
 from .daily_pv_policy import POLICY as DAILY_PV_POLICY
 from .daily_policy import matches_current_daily_policy, PEAK_RESERVE_SELECTOR
@@ -100,15 +101,23 @@ class DailyPlanService:
             if not inputs['can_compare']:
                 raise ValueError('；'.join(c['detail'] for c in inputs['checks'] if c['status'] != 'ready'))
             request, baseline, _ = prepare_ems_day(configuration, inputs)
-            from .load_accuracy import require_gate
-            require_gate(inputs['sources']['load'].get('accuracy_gate'), station, datetime.now(timezone.utc))
-            result = M4Optimizer(model_version='m4-daily-ems-baseline-v1').optimize(
-                request, terminal_soc_target_pct=baseline['terminal_soc_pct'])
-            usable = [c for c in result.candidates if c.status in ('optimal', 'feasible')
-                and (request.peak_reserve_policy is None
-                     or ('PEAK_RESERVE_PREFERENCE_INCOMPLETE' not in c.risk_codes
-                         and any(layer.name == 'peak-reserve-shortfall' for layer in c.layers)))]
-            chosen = min(usable, key=lambda c: (c.metrics.energy_cost, c.profile_id)) if usable else None
+            startup = request.source_versions.get('startup_policy') == STARTUP_POLICY
+            if startup:
+                allowed = require_admission(inputs['sources']['load'].get('accuracy_gate'), station,
+                    inputs['sources']['tariff']['period_types'], datetime.now(timezone.utc))
+                if not allowed or allowed['end_at'] != request.source_versions['startup_window_end']:
+                    raise ValueError('凌晨保底窗口已变化，等待下一轮更新。')
+            result, chosen = None, None
+            if not startup:
+                from .load_accuracy import require_gate
+                require_gate(inputs['sources']['load'].get('accuracy_gate'), station, datetime.now(timezone.utc))
+                result = M4Optimizer(model_version='m4-daily-ems-baseline-v1').optimize(
+                    request, terminal_soc_target_pct=baseline['terminal_soc_pct'])
+                usable = [c for c in result.candidates if c.status in ('optimal', 'feasible')
+                    and (request.peak_reserve_policy is None
+                         or ('PEAK_RESERVE_PREFERENCE_INCOMPLETE' not in c.risk_codes
+                             and any(layer.name == 'peak-reserve-shortfall' for layer in c.layers)))]
+                chosen = min(usable, key=lambda c: (c.metrics.energy_cost, c.profile_id)) if usable else None
             comparison = compare_daily_plan(request, chosen, baseline=baseline,
                 controls_version=request.source_versions['controls'], terminal_soc_target_pct=baseline['terminal_soc_pct'])
             if self.store.get(station).version != configuration.version:
@@ -120,7 +129,7 @@ class DailyPlanService:
                 raise ValueError('计算期间 EMS 原计划或日期变化，请重新计算。')
             finished = datetime.now(timezone.utc).isoformat()
             record = dict(station_id=station, run_id=run_id,
-                status='completed' if chosen else 'blocked_model_solver',
+                status='completed' if chosen or startup else 'blocked_model_solver',
                 started_at=self.jobs[station]['started_at'], finished_at=finished,
                 checked_at=finished, expires_at=inputs['plan_end_at'],
                 plan_start_at=request.plan_start_at.isoformat(),
@@ -128,19 +137,20 @@ class DailyPlanService:
                 selected=dict(profile_id=chosen.profile_id, plan_version=chosen.plan_version) if chosen else None,
                 reason=comparison['reason'], comparison=[], issues=[], stages=[],
                 policy=None, peak_preparation=None,
-                solver_name=result.solver_name, solver_version=result.solver_version,
-                model_version=result.model_version,
+                solver_name=result.solver_name if result else 'ems-baseline',
+                solver_version=result.solver_version if result else EMS_BASELINE_POLICY,
+                model_version=result.model_version if result else STARTUP_POLICY,
                 selector_version=PEAK_RESERVE_SELECTOR if request.peak_reserve_policy is not None else 'daily-cost-gate-v1',
-                solve_seconds=sum(c.solve_seconds for c in result.candidates),
+                solve_seconds=sum(c.solve_seconds for c in result.candidates) if result else 0.0,
                 input_summary=dict(configuration_version=configuration.version, horizon_points=96,
                     source_versions=request.source_versions, input_observed_at=request.input_observed_at.isoformat(),
                     **{k: getattr(request.capability, k) for k in ('initial_soc_pct','energy_capacity_kwh','max_charge_kw','max_discharge_kw')},
                     demand_limit_kw=request.constraints.demand_limit_kw),
                 candidates=[dict(profile_id=c.profile_id, status=c.status, plan_version=c.plan_version,
                     metrics=c.metrics.model_dump(mode='json') if c.metrics else None,
-                    plan=[p.model_dump(mode='json') for p in c.plan]) for c in result.candidates],
+                    plan=[p.model_dump(mode='json') for p in c.plan]) for c in (result.candidates if result else [])],
                 daily_comparison=comparison, daily_points=[p.model_dump(mode='json') for p in request.points])
-            output = dict(station_id=station, run_id=run_id, status='completed', message=comparison['reason'],
+            output = dict(station_id=station, run_id=run_id, status='completed', message='凌晨谷电保底充电，等待预测质量恢复。' if startup else comparison['reason'],
                 request=request.model_dump(mode='json'), baseline=baseline,
                 selected_candidate=chosen.model_dump(mode='json') if chosen else None,
                 result=dict(schema_version='m4-decision-results-v1', station_id=station,

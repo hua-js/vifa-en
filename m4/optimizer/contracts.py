@@ -122,18 +122,27 @@ class OptimizationRequest(StrictModel):
     def is_remaining_day(self) -> bool:
         return self.source_versions.get('planning_basis') in (
             'remaining-day-v1', 'remaining-day-pv-correction-v2',
-            'remaining-day-pv-correction-v3', 'remaining-day-fixed-baseline-v4')
+            'remaining-day-pv-correction-v3', 'remaining-day-fixed-baseline-v4',
+            'night-valley-ems-startup-v1')
 
     @model_validator(mode="after")
     def validate_cross_fields(self) -> "OptimizationRequest":
         if self.is_remaining_day:
             start = self.plan_start_at
             end = start + timedelta(minutes=15*self.horizon_points)
+            startup = self.source_versions.get('planning_basis') == 'night-valley-ems-startup-v1'
+            if startup:
+                valid_end = (self.station_id == 'station-2' and end.date() == start.date()
+                    and end <= start.replace(hour=12, minute=0, second=0, microsecond=0)
+                    and self.source_versions.get('startup_window_end') == end.isoformat()
+                    and self.source_versions.get('startup_policy') == 'night-valley-ems-startup-v1'
+                    and all(p.tariff_period == 'gu' for p in self.points))
+            else:
+                valid_end = ((end.hour, end.minute, end.second, end.microsecond) == (0, 0, 0, 0)
+                    and end.date() == start.date() + timedelta(days=1))
             if (start.utcoffset() != timedelta(hours=8) or start.minute % 15
-                    or start.second or start.microsecond
-                    or (end.hour, end.minute, end.second, end.microsecond) != (0, 0, 0, 0)
-                    or end.date() != start.date() + timedelta(days=1)):
-                raise ValueError('rolling window must end at the next Beijing midnight')
+                    or start.second or start.microsecond or not valid_end):
+                raise ValueError('rolling window must match its authorized planning horizon')
         elif self.horizon_points not in (95, 96):
             raise ValueError('non-rolling requests require 95 or 96 points')
         if self.ems_schedule_modes is not None and len(self.ems_schedule_modes) != self.horizon_points:

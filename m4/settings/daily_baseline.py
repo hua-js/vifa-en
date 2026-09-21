@@ -10,7 +10,7 @@ from m4.optimizer.metrics import calculate_metrics
 from .daily_comparison import comparison_input_sha256, compare_daily_plan
 from .objectives import get_daily_profiles
 from .daily_policy import daily_policy_version, physical_grid_policy
-from .load_accuracy import require_gate
+from .startup_admission import require_admission, POLICY as STARTUP_POLICY
 from .forecast_source import validate_forecast_values
 from .daily_pv_policy import POLICY as DAILY_PV_POLICY
 from .timeseries import tariff_export_price
@@ -34,8 +34,8 @@ def prepare_ems_day(configuration, bundle):
         raise ValueError('全天预测、电价、零点 SOC 或 EMS 时段尚未就绪。')
     if get_project().station(configuration.station_id).has_pv and sources['pv'].get('gap_policy') != DAILY_PV_POLICY:
         raise ValueError('光伏预测完整性规则已更新，请重新读取输入。')
-    require_gate(sources['load'].get('accuracy_gate'), configuration.station_id,
-                 datetime.fromisoformat(bundle['fetched_at']))
+    startup = require_admission(sources['load'].get('accuracy_gate'), configuration.station_id,
+        sources['tariff'].get('period_types', []), datetime.fromisoformat(bundle['fetched_at']))
     control, initial = sources['controls'], sources['initial_soc']
     if control.get('power_scope') not in ('station', 'cabinet') or control.get('source_health', {}).get('schedule') != 'ready' or not control.get('schedule'):
         raise ValueError('尚未读取到完整的站级 EMS 原计划。')
@@ -83,7 +83,9 @@ def prepare_ems_day(configuration, bundle):
         profiles=profiles, pv_dispatch_policy=parameters.pv_dispatch_policy, pv_midday_economic=True,
         peak_reserve_policy=reserve_policy,
         solver_time_limit_seconds=30.0, solver_mip_rel_gap=0.01,
-        source_versions={**{k: sources[k]['version'] for k in ('load', 'pv', 'tariff')},
+        source_versions={**(dict(startup_policy=STARTUP_POLICY, startup_window_end=startup['end_at'],
+                startup_tariff_periods=json.dumps(sources['tariff']['period_types'])) if startup else {}),
+            **{k: sources[k]['version'] for k in ('load', 'pv', 'tariff')},
             'pv_export_policy': sources['tariff']['export_price_policy'],
             'pv_export_price': format(tariff_export_price(sources['tariff']), '.17g'),
             'load_policy': sources['load']['policy'], 'load_run_id': sources['load']['run_id'],

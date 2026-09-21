@@ -167,6 +167,17 @@ class DailyInputService:
         sources['execution_controls'] = sources['controls']
         if sources['controls'].get('status') == 'ready':
             sources['controls'] = planning_controls(sources['controls'])
+        # Only quality rejection may enter the bounded startup path. Missing
+        # forecasts, broken evidence and every other source remain blocking.
+        if day == now.date() and _complete(load.get('values'), 96):
+            from .startup_admission import require_admission
+            try:
+                startup = require_admission(load.get('accuracy_gate'), station_id,
+                    sources.get('tariff', {}).get('period_types', []), now)
+                if startup and load.get('issues') == load.get('accuracy_gate', {}).get('issues'):
+                    load.update(status='ready', issues=[], startup_admission=startup)
+            except ValueError:
+                pass
         actual_values = load.get('actual_values', [None] * 96)
         sources['actual_load'] = dict(station_id=station_id,
             source='M3 station_total_load', run_id=load.get('run_id'),
@@ -184,7 +195,9 @@ class DailyInputService:
                 detail = '96 / 96 点' if ready else '；'.join(source.get('issues', [])) or '完整96点尚未就绪'
             else:
                 detail = '已读取' if ready else '；'.join(source.get('issues', [])) or '尚未读取到有效时段'
-            if key == 'load' and ready:
+            if key == 'load' and ready and source.get('startup_admission'):
+                detail = '凌晨谷电保底充电可用'
+            elif key == 'load' and ready:
                 detail += ' · MAPE ' + str(source['accuracy_gate']['mape_percent']) + '%（门槛30%）'
             checks.append(dict(key=key, label=label, status='ready' if ready else 'missing', detail=detail))
         capacity = sources.get('controls', {}).get('storage_capacity', {}).get('energy_capacity_kwh')

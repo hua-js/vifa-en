@@ -35,7 +35,7 @@ def _number(value):
 
 def assess(evidence, station_id, now):
     result = {'policy': POLICY, 'threshold_percent': str(MAX_MAPE), 'status': 'unavailable',
-              'mape_percent': None, 'issues': [], 'evidence': evidence}
+              'mape_percent': None, 'issues': [], 'evidence': evidence, 'startup_fallback_eligible': False}
     message = 'M3当前负荷预测MAPE无法评估，未允许求解'
     try:
         run, points = evidence['run'], evidence['points']
@@ -79,9 +79,6 @@ def assess(evidence, station_id, now):
         result.update(run_id=run['run_id'], window_start=start.isoformat(), window_end=end.isoformat(),
             valid_count=valid_count, actual_count=actual_count, zero_actual_count=zero_count, expected_count=count,
             provisional=actual_count<count)
-        if not valid_count:
-            message = 'M3当前负荷预测尚无有效非零实测对比点，无法计算MAPE，未允许求解'
-            raise ValueError
         score = evidence.get('current_score')
         message = 'M3当前负荷评分不可用，请更新M3服务并刷新输入，未允许求解'
         if (not isinstance(score, dict) or score.get('policy') != SCORE_POLICY
@@ -92,11 +89,16 @@ def assess(evidence, station_id, now):
                 or score['actual_count'] != actual_count or score['valid_count'] != valid_count
                 or not _time(run['completed_at']) <= _time(score['calculated_at']) <= now + timedelta(minutes=1)):
             raise ValueError
+        if not valid_count:
+            result['startup_fallback_eligible'] = True
+            message = 'M3当前负荷预测尚无有效非零实测对比点，无法计算MAPE，未允许求解'
+            raise ValueError
         number = _number(score.get('mape_percent'))
         if number < 0:
             raise ValueError
         result.update(mape_percent=str(number), status='ready' if number <= MAX_MAPE else 'blocked')
         if number > MAX_MAPE:
+            result['startup_fallback_eligible'] = True
             result['issues'] = [f'M3当前负荷预测MAPE {number:.4f}% 大于{MAX_MAPE}%，未允许求解']
     except (ValueError, TypeError, KeyError, AttributeError, InvalidOperation, OverflowError):
         result['issues'] = [message]
