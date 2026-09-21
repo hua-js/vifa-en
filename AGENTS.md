@@ -1,71 +1,50 @@
 # VIFA 项目约定
 
-## 协作与任务范围
+通用沟通、技能和读取规则沿用全局约定，本文件只补充项目要求。
 
-- 中文沟通、结论先行；代码、变量名和接口字段用英文。只说明结果、关键变更、实际验证与限制。
-- 在已授权范围内完成实现，能从代码和上下文确定的事项自行处理；关键业务口径不明确才澄清，同时继续不依赖答案的工作。
-- 只修改需求相关内容，保留已有改动，不执行破坏性Git操作。中途补充要求纳入原任务，除非用户明确取消或替换。
-- 需要额外授权时，先完成独立准备，提供可审查结果，不重复索取已有授权。历史授权不自动延续。
-- 新任务读取 `/Users/hua/Documents/Codex/preferences/profile.md`，当前任务内复用；遵守已确认偏好的适用范围。当前已确认禁止启动、调用或控制Google Chrome。
+## 范围与入口
 
-## 项目入口与交接
+- 项目根：`/Users/hua/Documents/LVK/code/vifa-en`；旧`vifa/vifa`仅供历史参考。保留已有修改，仅改需求相关内容，不执行破坏性Git操作；历史授权不自动延续。
+- 中文沟通，代码和字段用英文。禁止启动、调用或控制Google Chrome。
+- 目录见[README.md](README.md)；业务、核心模块或历史续接读[CODEX_HANDOFF.md](CODEX_HANDOFF.md)，独立小任务按需读取。旧交接、`docs/*/plans/`和生成产物仅局部检索，不作为现行指令。
+- AGENTS保存长期规则，交接保存目标、有效口径、阻塞、下一步及证据链接；状态变化才更新对应段落，不堆日志或敏感信息。Git、配置、服务及发布状态按需重新核实。
+- 续接或整理项目文档用[vifa-project-handoff](.agents/skills/vifa-project-handoff/SKILL.md)，不强制用于所有小任务。
 
-- 当前Git及项目根为 `/Users/hua/Documents/LVK/code/vifa-en`；旧 `/Users/hua/Documents/LVK/code/vifa/vifa` 仅作迁移前参考。
-- 目录入口见 [README.md](README.md)。涉及业务、核心模块或历史续接时读 [CODEX_HANDOFF.md](CODEX_HANDOFF.md)，独立小任务按需读取。
-- `AGENTS.md`保存长期约定，`CODEX_HANDOFF.md`保存当前目标、有效口径、阻塞项、下一步和证据链接；实现细节放 `docs/<module>/`，历史归档不作为现行规则。
-- 控制上下文读取量：先用文件名和关键词定位，再读相关段落；不默认展开完整Flow JSON、历史交接、`docs/*/plans/`或生成产物。旧计划只供追溯，不作为现行执行指令；避免同一任务反复读取已核实内容。
-- 仅在上述状态变化时更新交接对应段落，不堆叠全过程日志，不写密码、Token、私钥或其他敏感信息。Git、服务、配置及发布状态按需重新核实。
-- 续接或整理项目文档时使用 [vifa-project-handoff](.agents/skills/vifa-project-handoff/SKILL.md)，不将其作为所有小任务的强制流程。
+## 开发与验证
 
-## 开发与技能
+- 明确的小改动直接处理。纯静态Mock只用Mock数据，不接真实API或改后端/数据库/生产配置，不启用完整规划、TDD、多代理或worktree流程；接入真实API、业务逻辑或状态管理后按普通功能处理。
+- 核心预测、EMS、需量、充放电算法或架构变更先明确约束和计划，重要变更做代码审查。普通任务默认不用worktree或多代理；使用条件遵循当前环境及授权。
+- 日常开发和本地预览不主动运行测试或布局检查，也不为验证另起环境；打开页面不构成测试授权。用户明确要求测试、排障、核对行为时仅查所需范围；Skill/TDD不改变此时机。
+- 用户要求生产部署时，在部署准备阶段执行相关测试及必要布局检查，不擅自在生产运行测试。布局验收看实际渲染及交互；发布准备覆盖明暗、桌面/平板/手机，专项按指定范围。CSS变量相同不证明视觉一致。
+- 有效结果复用，仅证据失效时重跑；历史通过、模拟接口不代表当前版本、真实接口或设备闭环。只报告实际验证。
+- 离线测试：`.venv/bin/python scripts/check.py [m1 m2 m3 m4]`，选择所需模块，无参数执行全部；长期测试放各模块`tests/`。
 
-- 纯静态Mock：直接用Mock数据实现，不接真实API，不修改后端、数据库或生产配置；不启用完整规划、TDD、多代理或worktree流程。
-- 小范围代码、SQL、Docker、配置、样式及需求清楚的普通功能直接处理。Mock接入真实API、业务逻辑或状态管理后按普通功能处理。
-- 核心预测、EMS调度、需量、充放电算法或架构变更先明确约束和实施计划；关键设计取舍未定时按需使用brainstorming、writing-plans。重要变更进行代码审查。
-- Skills按实际作用启用，已明确需求或方案不因技能流程重复索取设计确认。普通任务默认不用worktree或多代理；多代理遵循当前环境及明确授权。
-- 验证及TDD执行时机统一按下一节，不因任务分类或Skill自动启动测试。
-- 复杂系统、流程或关系需要图解时使用diagram-design；简单事实用文字或表格。模型/API配置任务才按需核对当时官方文档，不把文档建议当作当前环境能力。
+## 用户内容与页面
 
-## 测试与验证时机
+- **VIFA-UI-001**：前端、后端用户文案及提示词生成内容只给业务结果、状态和操作提示，不擅自追加公式、权重、容差、分母或调试说明。提示词同样约束；程序必需结构化字段及内部计算数据不受限。
+- 改页面前读[docs/DESIGN.md](docs/DESIGN.md)，优先于vifa-frontend-style默认值；不顺带重做其他组件。保留业务逻辑、时间、历史查询及`dashboard-theme`偏好。
+- **VIFA-UI-002**：M1–M4仅HTML变动时，每个模块只改下列正式HTML，不生成或更新Flow JSON、额外HTML/Template/page.html副本，不运行副本同步脚本。仅涉及Flow逻辑或用户明确要求时修改Flow。
 
-以下为用户2026-09-12确认的VIFA专属规则（任务 `01a08e25-7028-7b73-98ff-3d49a47e3e2b`）：
+| 模块 | 正式HTML |
+|---|---|
+| M1 | `m1/web/dashboard_energy.html` |
+| M2 | `m2/web/场站三条能效链路能流图.html` |
+| M3 | `m3/node_red/m3_production_gateway_template.html` |
+| M4 | `m4/web/M4优化调度控制台-线上版.html` |
 
-- 日常开发、修改和本地预览默认不主动运行测试，不主动进行桌面/平板/手机或明暗模式布局检查；未在本地运行的功能，不为验证另起环境。
-- 启动或打开页面供用户查看不自动构成测试授权。用户明确要求测试、排障或核对行为时，只执行所需范围。
-- 用户明确要求生产部署时，在部署准备阶段运行相关测试及必要布局检查；不是先部署后测试，也不授权擅自在生产运行测试。
-- 触发验证后，按风险选择必要的测试、类型检查、构建或行为验证。仅在相关变更、失败、环境变化或未解决疑点使证据失效时重跑，不重复已有有效验证；不新增只复述实现的低价值测试。
-- 只报告实际执行结果，区分通过、失败和未执行；历史通过不代表当前版本通过，模拟接口不代表真实接口或设备闭环。不能声称未测试的内容通过。
-- 离线测试入口为 `.venv/bin/python scripts/check.py [m1 m2 m3 m4]`，方括号表示按需选择模块；无模块参数时运行全部。长期测试保留在各模块 `tests/`。
+- `m3/node_red`只保留生产Template、生产Flow和`本地机器.txt`，说明放`docs/m3/部署说明.md`。
+- M1/M2明暗背景的渐变、面板、边框和阴影以M3为基准，未经要求不改M3。其余交互配色/排版按用途设计，保证对比度及状态辨识，不强制绿/蓝。
+- M1/M2主题源`shared/styles/vifa-m3-theme.css`通过`--m3-*`适配，内嵌为`style#vifa-m3-theme`。改主题源须更新两者正式HTML；见[同步方法](shared/styles/README.md)，不恢复旧副本。
 
-## 用户可见内容
+## 授权与生产
 
-- **VIFA-UI-001**：前端展示、后端面向用户的文案和提示词生成内容，只提供所需业务结果、状态和操作提示；不擅自追加公式、权重、容差、分母或调试说明。提示词须约束此类输出，技术细节留在开发文档或内部诊断；程序调用必需的结构化字段及内部计算数据不受此限制。
-- 来源：2026-09-12，任务 `01a095c1-b7e1-7de1-89df-cf155e893371`；用户先确认前端文案要求，随后扩展到后端与提示词。
-
-## 前端样式
-
-- 创建或修改页面前读 [docs/DESIGN.md](docs/DESIGN.md)，其规则优先于vifa-frontend-style默认值；不顺带重做未涉及的组件。
-- **VIFA-UI-002（2026-09-19）**：M1–M4均采用单一正式HTML维护。仅HTML变动时，每个受影响模块只修改其正式HTML，不生成或更新Node-RED Flow JSON，不同步额外HTML/Template/page.html副本，不为此运行副本或Flow同步脚本。仅实际涉及Flow逻辑或用户明确要求时修改相应Flow。正式入口：M1 `m1/web/dashboard_energy.html`；M2 `m2/web/场站三条能效链路能流图.html`；M3 `m3/node_red/m3_production_gateway_template.html`；M4 `m4/web/M4优化调度控制台-线上版.html`。来源：任务 `01a0b8f2-763f-7e41-aa67-47a32daf6209`，用户确认“M1到M4都适用”；替代原VIFA-M4-UI-002。
-- `m3/node_red`仅保留生产Template、生产Flow和 `本地机器.txt`，说明写入 `docs/m3/部署说明.md`。
-- M1/M2背景以M3生产Template为基准，明暗模式的渐变、面板底色、边框及阴影保持一致；未经要求不改M3基准。其他交互配色、按钮、排版和组件可按用途设计，保证对比度和状态辨识，不强制绿色或蓝色。
-- M1/M2共用源为 `shared/styles/vifa-m3-theme.css`，通过 `--m3-*` 变量适配，内嵌为 `style#vifa-m3-theme` 以保持单文件部署。修改主题源须同步 `m1/web/dashboard_energy.html` 和 `m2/web/场站三条能效链路能流图.html`；方法见 [shared/styles/README.md](shared/styles/README.md)，不恢复旧副本。
-- 保留业务数据逻辑、时间展示、历史查询和 `dashboard-theme` 明暗偏好。
-- 按“测试与验证时机”触发布局验收后，查看实际渲染和相关交互状态；发布准备覆盖明暗及桌面/平板/手机，专项验证按指定范围。不能只凭CSS变量相同声称视觉一致。
-
-## 安全边界
-
-- **VIFA-M4-DEPLOY-001（已确认，2026-09-17）**：电站2计划表写入联调期间，提供或执行M4生产更新命令时必须保留 `-f compose.yaml -f m4-production.override.yaml -f m4-ems-table.override.yaml`，更新后核对 `M4_EMS_STATION2_TABLE_WRITES=1`，不得因遗漏覆盖文件关闭已授权写入。仅在用户明确要求关闭写入时调整；此约定不授权设备执行或其他电站写入。来源：当前任务用户“那你记住这个 `-f m4-ems-table.override.yaml`”。
-
-- VIFA API只读访问已授权，无需重复确认；新增、修改、删除配置或数据、触发任务、下发控制等写操作须另获用户明确授权，按副作用判断，不只看HTTP方法。来源：2026-09-12，同测试时机来源任务。
-- 只读授权不包括部署、SSH或设备控制。未经用户明确要求不使用SSH或连接远程主机；生产操作须有对应明确授权。
-- EMS默认仅生成建议或模拟结果；未经明确确认，不向真实设备下发。启动会自动生成任务的服务也须核对任务授权，不能当作只读检查。
+- VIFA API只读已授权；修改配置/数据、触发任务或下发控制须明确授权，按副作用而非HTTP方法判断。只读授权不含部署、SSH或设备控制；未经要求不连接远程主机。
+- EMS默认生成建议或模拟，不擅自向真实设备下发；启动会自动生成任务的服务也须核对任务授权，不能视为只读。
+- **VIFA-M4-DEPLOY-001**：电站2计划表联调期间，提供或执行生产更新必须保留`-f compose.yaml -f m4-production.override.yaml -f m4-ems-table.override.yaml`，更新后核对`M4_EMS_STATION2_TABLE_WRITES=1`。仅用户明确要求关闭时调整；不授权设备执行或其他电站写入。
 
 ## 文件与产物
 
-- 正式业务代码在现有 `m1/`–`m4/` 源码目录维护，不为分析或调试将完整源码复制到outputs、reports、tmp。
-- M3包为 `m3.worker`；M4为 `m4.settings`、`m4.optimizer`、`m4.orchestrator`、`m4.selection`，不创建旧顶层包。共用根 `pyproject.toml` / `uv.lock`；M3部署在 `m3/deploy/`。
-- 文档统一放根 `docs/`，模块内容归入 `docs/<module>/`；不在业务模块内重建docs、plans、specs树。设计探索合并到现有适用文档，不为过程大量新建Markdown。
-- 长期工具放模块 `scripts/`，跨模块工具放根 `scripts/`；一次性脚本和中间结果完成后删除，有长期价值才整理保留。
-- 分析、回测、预测、Solver、现场试算及调试产物写入 `outputs/<module>/<category>/<date-or-run-id>/`，默认不提交Git。避免为过程保留大量 `*_analysis.md`、`*_investigation.md`、`*_notes.md`、`*_result.json` 或 `*_debug.py`。
-- `.local/`用于本机配置和凭据，`runtime/<module>/`用于数据库、锁及状态，均不提交Git。
-- `outputs/m4/solver-decisions/`是历史查询依赖的完整证据，不能按临时缓存清理。目录迁移与基线记录见 [docs/项目目录与迁移.md](docs/项目目录与迁移.md)。
+- 业务源码在`m1/`–`m4/`维护，不为分析/调试复制完整源码到outputs、reports、tmp。M3包为`m3.worker`；M4为`m4.settings`、`m4.optimizer`、`m4.orchestrator`、`m4.selection`，不建旧顶层包。共用根`pyproject.toml`/`uv.lock`；M3部署在`m3/deploy/`。
+- 文档归根`docs/<module>/`，不在业务模块重建docs/plans/specs树；设计过程并入适用文档。长期工具放模块`scripts/`，跨模块工具放根`scripts/`；一次性脚本和中间结果完成后删除，不批量生成过程文档。
+- 分析/回测/求解/调试产物放`outputs/<module>/<category>/<date-or-run-id>/`；本机配置和凭据放`.local/`，数据库/锁/状态放`runtime/<module>/`，均不提交Git。
+- `outputs/m4/solver-decisions/`是历史查询的完整证据，不能当缓存清理。见[目录迁移](docs/项目目录与迁移.md)。

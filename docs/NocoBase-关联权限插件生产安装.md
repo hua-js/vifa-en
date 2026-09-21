@@ -1,6 +1,6 @@
 # NocoBase 关联权限插件生产安装步骤
 
-版本：`@vifa/plugin-association-read-guard@0.1.1`。本文件是供运维执行的安装说明，本次未执行生产安装。
+版本：`@vifa/plugin-association-read-guard@0.1.2`。本文件是供运维执行的安装说明，本次未执行生产安装。
 
 用户已暂停测试，并指出此前测试数据库不符合预期。2.2.2 最小模拟库的后端和资源检查通过，仅证明已覆盖的兼容性；正确业务数据库、实际页面和真实模型对话尚未完成验收。不能将下面步骤视为生产验收通过。
 
@@ -35,18 +35,18 @@ docker exec "$NB_APP" node -e 'for (const k of ["DB_DIALECT","DB_HOST","DB_PORT"
 
 安排低峰维护窗口。测试机完整重启恢复约 3 分钟，生产时间不能据此保证。应用重载时原有工作流会按既有配置恢复，需纳入维护安排。本次安装不需要同时升级 NocoBase。
 
-## 3. 上传并校验 0.1.1 安装包
+## 3. 上传并校验 0.1.2 安装包
 
-本机文件：`outputs/ai-employee/test-host/20260919/vifa-association-read-guard-0.1.1.tgz`。
+本机文件：`outputs/ai-employee/test-host/20260919/vifa-association-read-guard-0.1.2.tgz`。
 
 用既有上传方式将其放到生产服务器：
-`/tmp/vifa-association-read-guard-0.1.1.tgz`。
+`/tmp/vifa-association-read-guard-0.1.2.tgz`。
 
-不要使用 0.1.0，它缺少动态前端入口。
+不要使用 0.1.0（缺少动态前端入口）或 0.1.1（缺少兼容检查元数据）。0.1.2 已补齐 dist/externalVersion.js；本地复现和检查通过，生产上传验收待完成。
 
 ```bash
-NB_PKG=/tmp/vifa-association-read-guard-0.1.1.tgz
-NB_SHA=ac540004e49bd6264de81451b56224e921febda4a85cb84d93d4a61cb6e33ee2
+NB_PKG=/tmp/vifa-association-read-guard-0.1.2.tgz
+NB_SHA=1744d6eead0d5ca64b3325d19058197f7a92b79c91ce7cc66c9ec34a7b666558
 printf '%s  %s\n' "$NB_SHA" "$NB_PKG" | sha256sum -c -
 tar -tzf "$NB_PKG"
 ```
@@ -54,22 +54,25 @@ tar -tzf "$NB_PKG"
 校验必须显示 OK；包中应有 `package.json`、三个 server 文件、`client.js`、`client-v2.js`，以及 `dist/client/index.js`、`dist/client-v2/index.js`。失败时不要继续。
 
 ```bash
-docker cp "$NB_PKG" "$NB_APP":/app/nocobase/storage/vifa-association-read-guard-0.1.1.tgz
+docker cp "$NB_PKG" "$NB_APP":/app/nocobase/storage/vifa-association-read-guard-0.1.2.tgz
 ```
 
 ## 4. 安装并启用
 
+界面上传：在插件管理中对现有插件使用更新入口上传 0.1.2 tgz，不要先卸载。确认版本为 0.1.2，依赖兼容检查列出 @nocobase/server 和 @nocobase/client 且通过，再核对启用状态。失败时保留错误信息，不强制绕过。下面命令行方式为替代方案。
+
+
 先在插件管理界面确认该插件是否已安装。首次安装执行：
 
 ```bash
-docker exec "$NB_APP" yarn nocobase pm add /app/nocobase/storage/vifa-association-read-guard-0.1.1.tgz &&
+docker exec "$NB_APP" yarn nocobase pm add /app/nocobase/storage/vifa-association-read-guard-0.1.2.tgz &&
 docker exec "$NB_APP" yarn nocobase pm enable @vifa/plugin-association-read-guard
 ```
 
 若已经安装该插件，使用更新命令，不能再次按首次安装处理：
 
 ```bash
-docker exec "$NB_APP" yarn nocobase pm update /app/nocobase/storage/vifa-association-read-guard-0.1.1.tgz
+docker exec "$NB_APP" yarn nocobase pm update /app/nocobase/storage/vifa-association-read-guard-0.1.2.tgz
 ```
 
 更新后在插件管理界面核对启用状态；若原来停用且本次要启用，再执行 `pm enable`。记录命令退出状态，失败时先查看日志，不要反复安装或重启。
@@ -81,7 +84,7 @@ curl --max-time 10 -fsS https://vifa.hlszh.com/api/app:getInfo
 docker exec "$NB_APP" node -p 'require("@vifa/plugin-association-read-guard/package.json").version'
 ```
 
-重载期间可能出现 502 或 503 / APP_COMMANDING。等 API 恢复并返回预期核心版本后继续，不能把维护错误当作权限拦截。插件版本应为 0.1.1，管理界面应显示已安装、已启用。
+重载期间可能出现 502 或 503 / APP_COMMANDING。等 API 恢复并返回预期核心版本后继续，不能把维护错误当作权限拦截。插件版本应为 0.1.2，管理界面应显示已安装、已启用。
 
 检查两套动态入口，均应为 200 且为 JavaScript：
 
