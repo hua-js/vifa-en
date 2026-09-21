@@ -431,6 +431,7 @@ class DeploymentArtifactTests(unittest.TestCase):
             "M3_NOCOBASE_API_KEY",
             "M3_ADMIN_API_TOKEN",
             "M3_ACCEPTANCE_ENABLED",
+            "M3_PRODUCTION_SCHEDULE_ENABLED",
             "M3_TIMEZONE",
         })
         self.assertEqual(dashboard_keys, {

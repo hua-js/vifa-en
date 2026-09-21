@@ -23,7 +23,8 @@ from m3.worker.domain.forecasting import (
     seasonal_naive_champion,
     select_champion,
 )
-from m3.worker.domain.work_schedule import WORK_SCHEDULE_POLICY
+from m3.worker.domain.work_schedule import WORK_SCHEDULE_POLICY, schedule_policy, schedule_manifest
+from m3.worker.domain.production_schedule import use_schedule
 from m3.worker.domain.training_data import (
     OPERATIONAL_HISTORY_DAYS,
     READY_HISTORY_DAYS,
@@ -326,7 +327,7 @@ def build_latest_snapshot(
 
     manifest = {
         "statsforecast_version": required_version,
-        "work_schedule_policy": WORK_SCHEDULE_POLICY,
+        "work_schedule_policy": schedule_policy(),
         "series": {
             unique_id: _champion_manifest(champions[unique_id])
             for unique_id in SERIES_IDS
@@ -334,6 +335,8 @@ def build_latest_snapshot(
     }
     if readiness is not None:
         manifest["readiness"] = readiness
+    if (calendar_manifest := schedule_manifest()) is not None:
+        manifest["production_schedule"] = calendar_manifest
     body = {
         "station_id": station_id,
         "as_of": as_of,
@@ -356,7 +359,7 @@ def build_latest_snapshot(
 
 
 class ForecastService:
-    def __init__(self, source, sink, caches, forecast_one, now):
+    def __init__(self, source, sink, caches, forecast_one, now, schedule_provider=None):
         if not isinstance(caches, dict) or any(
             not isinstance(key, str)
             or not isinstance(cache, StationCache)
@@ -364,6 +367,7 @@ class ForecastService:
             for key, cache in caches.items()
         ):
             raise ValueError("caches must map station IDs to matching StationCache objects")
+        self._schedule_provider = schedule_provider
         self._source = source
         self._sink = sink
         self._caches: dict[str, StationCache] = dict(caches)
@@ -449,6 +453,9 @@ class ForecastService:
         return datasets
 
     def restore_models(self, station_id: str) -> bool:
+        if self._schedule_provider is not None:
+            # Re-select with a fresh calendar; old manifests are not current inputs.
+            return False
         cache = self._cache(station_id)
         required_version = self._require_runtime(cache)
         loader = getattr(self._sink, "load_latest_model_manifest", None)
@@ -487,6 +494,33 @@ class ForecastService:
         return True
 
     def select_models(self, station_id: str) -> None:
+        if self._schedule_provider is None:
+            return self._select_models(station_id)
+        now = self._now()
+        calendar = self._calendar(station_id, now, selection=True)
+        with use_schedule(calendar):
+            return self._select_models(station_id)
+
+    def _calendar(self, station_id, at, *, selection=False):
+        self._cache(station_id)
+        if self._schedule_provider is None:
+            return None
+        try:
+            return self._schedule_provider.load(
+                station_id, (at - timedelta(days=91)).date(),
+                at.date() if selection else (
+                    at.replace(minute=(at.minute // 15) * 15, second=0, microsecond=0)
+                    + timedelta(minutes=95 * 15)
+                ).date(),
+                forecast_start=at.date() + timedelta(days=1) if selection else at.date(),
+            )
+        except M3Error as error:
+            cache = self._cache(station_id)
+            with cache.exclusive():
+                self._record_failure(cache, error)
+            raise
+
+    def _select_models(self, station_id: str) -> None:
         cache = self._cache(station_id)
         with cache.selection_exclusive():
             required_version = self._require_runtime(cache)
@@ -562,6 +596,12 @@ class ForecastService:
                     cache.state.last_error_code = None
 
     def run_forecast(self, station_id: str, as_of: datetime) -> LatestSnapshot:
+        _safe_time(as_of, "as_of", quarter_hour=False)
+        calendar = self._calendar(station_id, as_of)
+        with use_schedule(calendar):
+            return self._run_forecast(station_id, as_of)
+
+    def _run_forecast(self, station_id: str, as_of: datetime) -> LatestSnapshot:
         cache = self._cache(station_id)
         _safe_time(as_of, "as_of", quarter_hour=False)
         required_version = self._require_runtime(cache)

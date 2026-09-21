@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 
 from m3.worker.errors import M3Error
+from m3.worker.domain.production_schedule import ACTIVE_SCHEDULE, PRODUCTION_SCHEDULE_POLICY
 
 
 WORK_SCHEDULE_POLICY = "mon-sat-work-sun-rest-v1"
@@ -18,7 +19,29 @@ def schedule_slot(value: object) -> tuple[bool, int]:
     if pd.isna(timestamp) or timestamp.tzinfo is None:
         raise ValueError("work schedule requires a timezone-aware timestamp")
     local = timestamp.tz_convert("Asia/Shanghai")
-    return local.weekday() < 6, local.hour * 3600 + local.minute * 60 + local.second
+    second = local.hour * 3600 + local.minute * 60 + local.second
+    calendar = ACTIVE_SCHEDULE.get()
+    working = calendar.slot_is_working(local.date(), second) if calendar else local.weekday() < 6
+    return working, second
+
+
+def schedule_day(value: object) -> bool:
+    """Whole-day context for SOC, distinct from whether a shift is active now."""
+    timestamp = pd.Timestamp(value)
+    if pd.isna(timestamp) or timestamp.tzinfo is None:
+        raise ValueError("work schedule requires a timezone-aware timestamp")
+    local = timestamp.tz_convert("Asia/Shanghai")
+    calendar = ACTIVE_SCHEDULE.get()
+    return calendar.day_is_working(local.date()) if calendar else local.weekday() < 6
+
+
+def schedule_policy() -> str:
+    return PRODUCTION_SCHEDULE_POLICY if ACTIVE_SCHEDULE.get() else WORK_SCHEDULE_POLICY
+
+
+def schedule_manifest() -> dict | None:
+    calendar = ACTIVE_SCHEDULE.get()
+    return calendar.manifest() if calendar else None
 
 
 def schedule_interpolate(values: pd.Series, *, limit: int) -> pd.Series:

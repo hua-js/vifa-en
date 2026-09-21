@@ -26,7 +26,7 @@ from m3.worker.domain.custom_load_profiles import (
     weekly_profile_values,
 )
 from m3.worker.domain.custom_training_data import CustomTrainingDataset
-from m3.worker.domain.work_schedule import schedule_forecast, schedule_slot
+from m3.worker.domain.work_schedule import schedule_forecast, schedule_slot, schedule_day
 from m3.worker.errors import M3Error
 
 
@@ -381,12 +381,17 @@ def _soc_weekly_delta_values(dataset, *, origin: datetime, periods: int) -> list
     return _soc_delta_values(dataset, origin=origin, periods=periods, weekly=True)
 
 
+def soc_schedule_values(dataset, *, origin: datetime, periods: int) -> list[float]:
+    """Shared schedule-aware SOC entry for custom and regular forecasts."""
+    return _soc_schedule_delta_values(dataset, origin=origin, periods=periods)
+
+
 def _soc_schedule_delta_values(dataset, *, origin: datetime, periods: int) -> list[float]:
     return _soc_delta_values(dataset, origin=origin, periods=periods, weekly=False)
 
 
 def _soc_day_context(timestamp: datetime) -> tuple[bool, bool]:
-    return schedule_slot(timestamp)[0], schedule_slot(timestamp - timedelta(days=1))[0]
+    return schedule_day(timestamp), schedule_day(timestamp - timedelta(days=1))
 
 
 def _recent_soc_plateau(source_values, origin, interval):
@@ -434,13 +439,16 @@ def _soc_delta_values(
     if not source_values:
         raise M3Error("training_data_invalid", "No real SOC history")
     interval = timedelta(seconds=dataset.interval_seconds)
-    current = source_values[max(source_values)]
+    anchor_time = max(source_values)
+    current = source_values[anchor_time]
     values = [current]
     current = _clip(unique_id, current)[1]
     # A rest-day plateau is evidence for the following workday, not a
     # persistent charging target for ordinary workdays after discharging.
+    origin_day_start = origin.replace(hour=0, minute=0, second=0, microsecond=0)
+    first_day_end = origin_day_start + timedelta(days=1)
     recent_plateau = (
-        _recent_soc_plateau(source_values, origin, interval)
+        _recent_soc_plateau(source_values, origin_day_start, interval)
         if _soc_day_context(origin) == (True, False) else None
     )
     day_starts = {}
@@ -467,14 +475,23 @@ def _soc_delta_values(
             if source_time not in source_values or previous_time not in source_values:
                 continue
             if (_soc_day_context(source_time) != _soc_day_context(target)
+                    or schedule_slot(source_time)[0] != schedule_slot(target)[0]
                     or schedule_slot(previous_time)[0] != schedule_slot(target - interval)[0]):
                 continue
             delta = source_values[source_time] - source_values[previous_time]
             if weekly:
                 deltas.append(delta)
-            elif source_time.date() in day_starts:
-                distance = abs(day_starts[source_time.date()] - forecast_day_start)
-                if recent_plateau is not None and target < origin + timedelta(days=1):
+            else:
+                if target.date() == origin.date() and origin != origin_day_start:
+                    # A live run may start in the afternoon: compare historical
+                    # SOC at the same real anchor time, never with midnight SOC.
+                    reference = source_values.get(anchor_time - timedelta(days=days))
+                else:
+                    reference = day_starts.get(source_time.date())
+                if reference is None:
+                    continue
+                distance = abs(reference - forecast_day_start)
+                if recent_plateau is not None and target < first_day_end:
                     distance += abs(day_peaks[source_time.date()] - recent_plateau)
                 ranked_deltas.append((distance, days, delta))
         if not weekly and ranked_deltas:
@@ -483,7 +500,7 @@ def _soc_delta_values(
             raise M3Error("insufficient_history", "Missing matching SOC change history")
         raw = current + float(median(deltas))
         if (not weekly and recent_plateau is not None
-                and target < origin + timedelta(days=1) and raw > current):
+                and target < first_day_end and raw > current):
             raw = min(raw, max(current, recent_plateau))
         values.append(raw)
         current = _clip(unique_id, raw)[1]

@@ -7,6 +7,8 @@ from typing import Literal, cast
 
 from pydantic import HttpUrl, SecretStr, TypeAdapter
 
+from m3.worker.production_schedule_credentials import DEFAULT_PRODUCTION_SCHEDULE_API_KEY
+
 
 @dataclass(frozen=True)
 class StationBinding:
@@ -82,6 +84,28 @@ def _read_raw_source_token(environ: Mapping[str, str] | None = None) -> str:
     return non_empty[0]
 
 
+def _production_schedule_key() -> SecretStr | None:
+    enabled = os.environ.get("M3_PRODUCTION_SCHEDULE_ENABLED", "true")
+    if enabled not in {"true", "false"}:
+        raise ValueError("M3_PRODUCTION_SCHEDULE_ENABLED must be true or false")
+    if enabled == "false":
+        return None
+    direct = os.environ.get("M3_PRODUCTION_SCHEDULE_API_KEY", "").strip()
+    filename = os.environ.get("M3_PRODUCTION_SCHEDULE_API_KEY_FILE", "").strip()
+    if direct and filename:
+        raise ValueError("configure at most one production schedule API key override")
+    if filename:
+        try:
+            direct = Path(filename).read_text(encoding="utf-8").strip()
+        except OSError:
+            raise ValueError("production schedule API key file cannot be read") from None
+    elif not direct:
+        direct = DEFAULT_PRODUCTION_SCHEDULE_API_KEY.get_secret_value()
+    if not direct or any(c.isspace() for c in direct):
+        raise ValueError("invalid production schedule API key")
+    return SecretStr(direct)
+
+
 @dataclass(frozen=True)
 class Settings:
     stations: tuple[StationBinding, StationBinding]
@@ -92,6 +116,7 @@ class Settings:
     nocobase_base_url: HttpUrl
     nocobase_api_key: SecretStr
     admin_api_token: SecretStr
+    production_schedule_api_key: SecretStr | None = None
     acceptance_enabled: bool = True
     timezone: str = "Asia/Shanghai"
 
@@ -125,6 +150,7 @@ class Settings:
             nocobase_base_url=url_adapter.validate_python(os.environ["M3_NOCOBASE_BASE_URL"]),
             nocobase_api_key=SecretStr(os.environ["M3_NOCOBASE_API_KEY"]),
             admin_api_token=SecretStr(os.environ["M3_ADMIN_API_TOKEN"]),
+            production_schedule_api_key=_production_schedule_key(),
             acceptance_enabled=acceptance_value == "true",
             timezone=timezone,
         )

@@ -97,6 +97,7 @@ class M3ContractTests(unittest.TestCase):
             "M3_NOCOBASE_BASE_URL": "https://nocobase.example.test",
             "M3_NOCOBASE_API_KEY": "nocobase-secret",
             "M3_ADMIN_API_TOKEN": "admin-secret",
+            "M3_PRODUCTION_SCHEDULE_API_KEY": "schedule-secret",
             "M3_ACCEPTANCE_ENABLED": "false",
         }
         with patch.dict(os.environ, environment, clear=True):
@@ -123,6 +124,7 @@ class M3ContractTests(unittest.TestCase):
             "M3_NOCOBASE_BASE_URL": "https://nocobase.example.test",
             "M3_NOCOBASE_API_KEY": "nocobase-secret",
             "M3_ADMIN_API_TOKEN": "admin-secret",
+            "M3_PRODUCTION_SCHEDULE_API_KEY": "schedule-secret",
             "M3_ACCEPTANCE_ENABLED": "false",
         }
         with patch.dict(os.environ, environment, clear=True):
@@ -130,6 +132,7 @@ class M3ContractTests(unittest.TestCase):
 
         self.assertEqual(str(settings.source_api_token), "**********")
         self.assertEqual(str(settings.raw_source_api_token), "**********")
+        self.assertEqual(str(settings.production_schedule_api_key), "**********")
 
     def test_settings_require_an_explicit_strict_acceptance_switch(self):
         environment = {
@@ -144,6 +147,7 @@ class M3ContractTests(unittest.TestCase):
             "M3_NOCOBASE_BASE_URL": "https://nocobase.example.test",
             "M3_NOCOBASE_API_KEY": "nocobase-secret",
             "M3_ADMIN_API_TOKEN": "admin-secret",
+            "M3_PRODUCTION_SCHEDULE_API_KEY": "schedule-secret",
         }
         for invalid in (None, "", "0", "False", "yes", " true "):
             candidate = dict(environment)

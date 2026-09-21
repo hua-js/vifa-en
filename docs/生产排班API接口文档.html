@@ -1,0 +1,850 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>生产排班 API · 接口文档</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#F4F1EA;
+  --paper-2:#EDE9DF;
+  --ink:#14202E;
+  --ink-2:#3C4C5E;
+  --ink-3:#6B7A8B;
+  --rule:#D8D1C3;
+  --rule-2:#C4BCAA;
+  --accent:#B8431C;
+  --accent-soft:#F0E0D6;
+  --green:#1F5C45;
+  --green-soft:#DDE8E1;
+  --amber:#8A6510;
+  --amber-soft:#F3E8CE;
+  --code-bg:#121C27;
+  --code-fg:#D7E1EC;
+  --code-dim:#6B8199;
+  --code-str:#B8D5A8;
+  --code-key:#8FC0E8;
+  --code-num:#E8C07D;
+  --mono:"IBM Plex Mono","PingFang SC","Microsoft YaHei",monospace;
+  --sans:"IBM Plex Sans","PingFang SC","Microsoft YaHei","Source Han Sans SC",sans-serif;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --paper:#141A20;--paper-2:#1B232B;--ink:#E8E4DA;--ink-2:#B9C2CC;--ink-3:#8A96A3;
+    --rule:#2B353F;--rule-2:#3A4651;--accent:#E8794D;--accent-soft:#3A241B;
+    --green:#7FC0A3;--green-soft:#1C2F28;--amber:#D8B05C;--amber-soft:#2E2718;
+    --code-bg:#0C141C;
+  }
+}
+*{box-sizing:border-box;}
+html{scroll-behavior:smooth;scroll-padding-top:24px;}
+body{
+  margin:0;background:var(--paper);color:var(--ink);
+  font-family:var(--sans);font-size:15px;line-height:1.75;
+  -webkit-font-smoothing:antialiased;
+  background-image:
+    linear-gradient(var(--rule) 1px,transparent 1px),
+    linear-gradient(90deg,var(--rule) 1px,transparent 1px);
+  background-size:32px 32px;
+  background-position:-1px -1px;
+}
+body::before{
+  content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  background:radial-gradient(ellipse at 20% 0%,transparent 0%,var(--paper) 72%);
+}
+.wrap{position:relative;z-index:1;max-width:1180px;margin:0 auto;padding:0 24px 120px;}
+
+/* ---------- header ---------- */
+header{padding:64px 0 40px;border-bottom:2px solid var(--ink);margin-bottom:0;}
+.eyebrow{
+  font-family:var(--mono);font-size:11px;letter-spacing:.22em;text-transform:uppercase;
+  color:var(--accent);margin-bottom:20px;display:flex;gap:14px;align-items:center;flex-wrap:wrap;
+}
+.eyebrow span:not(:last-child)::after{content:"/";margin-left:14px;color:var(--rule-2);}
+h1{
+  font-family:var(--mono);font-weight:600;font-size:clamp(30px,5.2vw,52px);
+  line-height:1.12;letter-spacing:-.02em;margin:0 0 18px;
+}
+h1 .slash{color:var(--accent);}
+.lede{font-size:17px;line-height:1.7;color:var(--ink-2);max-width:62ch;margin:0 0 28px;}
+.meta{display:flex;gap:32px;flex-wrap:wrap;font-family:var(--mono);font-size:12px;color:var(--ink-3);}
+.meta b{display:block;font-weight:500;color:var(--ink);font-size:13px;margin-top:3px;}
+.badge{
+  display:inline-block;font-family:var(--mono);font-size:11px;letter-spacing:.08em;
+  padding:3px 9px;border:1px solid currentColor;border-radius:2px;text-transform:uppercase;
+}
+.badge.warn{color:var(--amber);background:var(--amber-soft);}
+.badge.ok{color:var(--green);background:var(--green-soft);}
+.badge.hot{color:var(--accent);background:var(--accent-soft);}
+
+/* ---------- layout ---------- */
+.cols{display:grid;grid-template-columns:200px 1fr;gap:56px;align-items:start;}
+nav{position:sticky;top:24px;padding-top:44px;}
+nav ol{list-style:none;margin:0;padding:0;font-family:var(--mono);font-size:12px;}
+nav li{margin-bottom:2px;}
+nav a{
+  display:block;padding:5px 10px;color:var(--ink-3);text-decoration:none;
+  border-left:2px solid var(--rule);transition:all .18s ease;
+}
+nav a:hover{color:var(--ink);border-left-color:var(--ink-3);background:var(--paper-2);}
+nav a.on{color:var(--accent);border-left-color:var(--accent);font-weight:500;}
+nav .num{display:inline-block;width:22px;color:var(--rule-2);}
+nav a.on .num{color:var(--accent);}
+main{min-width:0;padding-top:44px;}
+
+/* ---------- sections ---------- */
+section{margin-bottom:76px;scroll-margin-top:24px;}
+h2{
+  font-family:var(--mono);font-weight:600;font-size:22px;letter-spacing:-.01em;
+  margin:0 0 6px;padding-bottom:14px;border-bottom:1px solid var(--rule-2);
+  display:flex;align-items:baseline;gap:14px;
+}
+h2 .n{font-size:12px;color:var(--accent);letter-spacing:.1em;}
+.sub{color:var(--ink-3);font-size:13px;margin:14px 0 26px;font-family:var(--mono);}
+h3{
+  font-family:var(--mono);font-weight:600;font-size:15px;margin:38px 0 12px;
+  letter-spacing:.01em;
+}
+h3::before{content:"▸ ";color:var(--accent);}
+p{margin:0 0 16px;}
+a{color:var(--accent);}
+code:not(pre code){
+  font-family:var(--mono);font-size:.88em;background:var(--paper-2);
+  padding:1px 5px;border:1px solid var(--rule);border-radius:2px;white-space:nowrap;
+}
+
+/* ---------- endpoint chip ---------- */
+.ep{
+  display:flex;align-items:center;gap:0;font-family:var(--mono);font-size:14px;
+  border:1.5px solid var(--ink);border-radius:3px;overflow:hidden;margin:0 0 22px;
+  background:var(--paper-2);flex-wrap:wrap;
+}
+.ep .verb{background:var(--ink);color:var(--paper);padding:8px 13px;font-weight:600;font-size:12px;letter-spacing:.1em;}
+.ep .path{padding:8px 14px;font-weight:500;word-break:break-all;}
+
+/* ---------- code ---------- */
+.code{margin:0 0 22px;border-radius:4px;overflow:hidden;border:1px solid var(--code-bg);}
+.code-bar{
+  background:var(--code-bg);border-bottom:1px solid rgba(255,255,255,.09);
+  padding:8px 14px;display:flex;justify-content:space-between;align-items:center;gap:12px;
+}
+.code-bar .label{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--code-dim);}
+.copy{
+  font-family:var(--mono);font-size:11px;letter-spacing:.08em;background:transparent;
+  border:1px solid rgba(255,255,255,.18);color:var(--code-dim);padding:3px 10px;
+  border-radius:2px;cursor:pointer;transition:all .18s ease;text-transform:uppercase;
+}
+.copy:hover{color:#fff;border-color:rgba(255,255,255,.45);}
+.copy.done{color:var(--code-str);border-color:var(--code-str);}
+pre{
+  margin:0;background:var(--code-bg);color:var(--code-fg);padding:16px 18px;
+  overflow-x:auto;font-family:var(--mono);font-size:12.5px;line-height:1.65;
+}
+pre .c{color:var(--code-dim);}
+pre .s{color:var(--code-str);}
+pre .k{color:var(--code-key);}
+pre .n{color:var(--code-num);}
+
+/* ---------- tables ---------- */
+.tbl{width:100%;border-collapse:collapse;margin:0 0 24px;font-size:13.5px;}
+.tbl th{
+  text-align:left;font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--ink-3);font-weight:500;
+  padding:0 14px 9px 0;border-bottom:1.5px solid var(--ink);
+}
+.tbl td{padding:11px 14px 11px 0;border-bottom:1px solid var(--rule);vertical-align:top;line-height:1.6;}
+.tbl tr:last-child td{border-bottom:none;}
+.tbl td:first-child{font-family:var(--mono);font-size:12.5px;white-space:nowrap;font-weight:500;}
+.tbl .t{font-family:var(--mono);font-size:11px;color:var(--ink-3);white-space:nowrap;}
+.req{color:var(--accent);font-family:var(--mono);font-size:10px;letter-spacing:.08em;}
+.opt{color:var(--ink-3);font-family:var(--mono);font-size:10px;letter-spacing:.08em;}
+.tbl-scroll{overflow-x:auto;margin-bottom:24px;}
+.tbl-scroll .tbl{margin-bottom:0;min-width:560px;}
+
+/* ---------- callouts ---------- */
+.note{
+  border-left:3px solid var(--accent);background:var(--accent-soft);
+  padding:16px 20px;margin:0 0 24px;border-radius:0 3px 3px 0;
+}
+.note.amber{border-left-color:var(--amber);background:var(--amber-soft);}
+.note.green{border-left-color:var(--green);background:var(--green-soft);}
+.note .tag{
+  font-family:var(--mono);font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--accent);display:block;margin-bottom:7px;font-weight:600;
+}
+.note.amber .tag{color:var(--amber);}
+.note.green .tag{color:var(--green);}
+.note p:last-child{margin-bottom:0;}
+
+/* ---------- status cards ---------- */
+.states{display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));gap:1px;background:var(--rule-2);border:1px solid var(--rule-2);margin:0 0 24px;}
+.state{background:var(--paper);padding:17px 18px;}
+.state .code-name{font-family:var(--mono);font-size:14px;font-weight:600;letter-spacing:.02em;}
+.state .cn{font-size:12px;color:var(--ink-3);margin-left:7px;}
+.state .rule{font-size:12.5px;color:var(--ink-2);margin-top:8px;line-height:1.55;}
+.state.w .code-name{color:var(--green);}
+.state.r .code-name{color:var(--ink-2);}
+.state.h .code-name{color:var(--amber);}
+.state.s .code-name{color:var(--accent);}
+
+/* ---------- worked example ---------- */
+.walk{border:1px solid var(--rule-2);background:var(--paper-2);padding:22px 24px;margin:0 0 24px;border-radius:3px;}
+.walk pre{background:transparent;color:var(--ink);padding:0;font-size:12.5px;}
+.walk pre .hl{color:var(--accent);font-weight:600;}
+.walk .verdict{
+  margin-top:16px;padding-top:15px;border-top:1px dashed var(--rule-2);
+  font-size:14px;line-height:1.7;
+}
+
+/* ---------- footer ---------- */
+footer{
+  margin-top:80px;padding-top:26px;border-top:2px solid var(--ink);
+  font-family:var(--mono);font-size:11.5px;color:var(--ink-3);
+  display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap;
+}
+
+/* ---------- entrance ---------- */
+@media (prefers-reduced-motion:no-preference){
+  header,nav,section{animation:rise .6s cubic-bezier(.2,.7,.3,1) backwards;}
+  header{animation-delay:.02s;}
+  nav{animation-delay:.1s;}
+  section:nth-of-type(1){animation-delay:.14s;}
+  section:nth-of-type(2){animation-delay:.18s;}
+  section:nth-of-type(3){animation-delay:.22s;}
+  @keyframes rise{from{opacity:0;transform:translateY(14px);}to{opacity:1;transform:none;}}
+}
+
+@media (max-width:900px){
+  .cols{grid-template-columns:1fr;gap:0;}
+  nav{position:static;padding:28px 0 0;border-bottom:1px solid var(--rule-2);padding-bottom:20px;}
+  nav ol{display:flex;flex-wrap:wrap;gap:4px;}
+  nav a{border-left:none;border:1px solid var(--rule);border-radius:2px;padding:4px 9px;}
+  nav .num{display:none;}
+  main{padding-top:32px;}
+  header{padding:40px 0 30px;}
+  .wrap{padding:0 18px 80px;}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="eyebrow">
+    <span>威法管理系统 VF</span>
+    <span>对外接口规格书</span>
+    <span>v1.0</span>
+  </div>
+  <h1>生产排班<span class="slash"> / </span>SCHEDULE API</h1>
+  <p class="lede">
+    按「日期 × 部门」提供生产排班日历：哪天上班、哪天休息、哪天放假、哪天停产，
+    以及当天的计划出勤人数、计划工时与加班工时。供负荷预测等外部系统取数使用。
+  </p>
+  <div class="meta">
+    <div>接口版本<b>v1.0</b></div>
+    <div>文档日期<b>2026-09-21</b></div>
+    <div>服务地址<b>https://yun.vifa.cn</b></div>
+    <div>协议<b>HTTPS / JSON</b></div>
+    <div>当前状态<b><span class="badge ok">已上线</span></b></div>
+  </div>
+</header>
+
+<div class="cols">
+<nav>
+  <ol>
+    <li><a href="#s1"><span class="num">01</span>接口说明</a></li>
+    <li><a href="#s2"><span class="num">02</span>快速开始</a></li>
+    <li><a href="#s3"><span class="num">03</span>鉴权</a></li>
+    <li><a href="#s4"><span class="num">04</span>查询排班日历</a></li>
+    <li><a href="#s5"><span class="num">05</span>查询部门列表</a></li>
+    <li><a href="#s6"><span class="num">06</span>状态判定</a></li>
+    <li><a href="#s7"><span class="num">07</span>错误码</a></li>
+  </ol>
+</nav>
+
+<main>
+
+<!-- ============ 01 ============ -->
+<section id="s1">
+  <h2><span class="n">01</span>接口说明</h2>
+  <p class="sub">能取到什么，以及边界在哪</p>
+
+  <p>
+    一次请求返回一个日期区间内、<strong>每个生产部门每一天</strong>的排班情况，
+    即一张按「日期 × 部门」展开的日历事实表。
+  </p>
+
+  <h3>返回内容</h3>
+  <table class="tbl">
+    <tr><td>日历状态</td><td>当天是上班、休息、法定节假日还是停产</td></tr>
+    <tr><td>计划出勤</td><td>在册人数，以及其中排上班 / 休息 / 法定假各多少人</td></tr>
+    <tr><td>计划工时</td><td>当天该部门排定的班次时长合计，已扣除休息时段</td></tr>
+    <tr><td>加班工时</td><td>加班单的小时数与张数。<strong>仅历史日期有值</strong>，当天及未来恒为 0</td></tr>
+  </table>
+
+  <h3>不在范围内</h3>
+  <div class="note amber">
+    <span class="tag">数据粒度边界</span>
+    <p>
+      数据是<strong>排班口径</strong>，最细只到「部门 + 班次」，
+      <strong>没有产线、工序、机台维度</strong>，也没有产量、工单、节拍。
+      对接前请先确认这个粒度能否支撑你的模型。
+    </p>
+  </div>
+  <p>
+    接口只如实返回排班事实，<strong>不做任何预测、平滑或插值</strong>，
+    也不对缺失日期补零。相关加工逻辑由调用方自行实现。
+  </p>
+
+  <h3>覆盖范围</h3>
+  <div class="tbl-scroll">
+  <table class="tbl">
+    <thead><tr><th>部门编码</th><th>部门名称</th><th>在职人数</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td>86</td><td>中山生产一部</td><td class="t">220</td><td>主装配与综合车间</td></tr>
+      <tr><td>113</td><td>中山智造部</td><td class="t">142</td><td>智能制造产线</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p style="font-size:13.5px;color:var(--ink-2);">
+    接口仅返回上表所列部门。如需扩大到其他部门（如仓储、工艺、品质），
+    请联系我方开通，开通为配置项调整，不涉及接口变更，调用方无需改代码。
+  </p>
+</section>
+
+<!-- ============ 02 ============ -->
+<section id="s2">
+  <h2><span class="n">02</span>快速开始</h2>
+  <p class="sub">环境地址与第一条请求</p>
+
+  <h3>环境地址</h3>
+  <div class="tbl-scroll">
+  <table class="tbl">
+    <thead><tr><th>环境</th><th>Base URL</th><th>状态</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>生产</td>
+        <td><code>https://yun.vifa.cn</code></td>
+        <td><span class="badge ok">已上线</span></td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+  <p style="font-size:13.5px;color:var(--ink-2);margin-top:-8px;">
+    完整地址 = Base URL + 端点路径，例如
+    <code>https://yun.vifa.cn/api/production/schedule</code>。
+  </p>
+
+  <h3>第一条请求</h3>
+
+  <div class="code">
+    <div class="code-bar"><span class="label">curl</span><button class="copy">复制</button></div>
+<pre><span class="c"># 查 2026-09-19 ~ 09-27 两个生产部门的排班</span>
+curl -G <span class="s">'https://yun.vifa.cn/api/production/schedule'</span> \
+  -H <span class="s">'X-Api-Key: vf_ps_9oidIoATCJkbrFywSGHihI5bYOuUG2t_EFlEylKIBCf3gDYgfivb7S48ThYZA7W9'</span> \
+  --data-urlencode <span class="s">'startDate=2026-09-19'</span> \
+  --data-urlencode <span class="s">'endDate=2026-09-27'</span></pre>
+  </div>
+
+  <div class="code">
+    <div class="code-bar"><span class="label">python</span><button class="copy">复制</button></div>
+<pre><span class="k">import</span> requests
+
+r = requests.get(
+    <span class="s">"https://yun.vifa.cn/api/production/schedule"</span>,
+    headers={<span class="s">"X-Api-Key"</span>: <span class="s">"vf_ps_9oidIoATCJkbrFywSGHihI5bYOuUG2t_EFlEylKIBCf3gDYgfivb7S48ThYZA7W9"</span>},
+    params={<span class="s">"startDate"</span>: <span class="s">"2026-09-19"</span>, <span class="s">"endDate"</span>: <span class="s">"2026-09-27"</span>},
+    timeout=<span class="n">30</span>,
+)
+data = r.json()[<span class="s">"data"</span>]
+
+<span class="c"># 先看排班排到哪天，超过这天没有数据是正常的</span>
+<span class="k">print</span>(data[<span class="s">"scheduleHorizonEnd"</span>])
+
+<span class="k">for</span> row <span class="k">in</span> data[<span class="s">"rows"</span>]:
+    <span class="k">print</span>(row[<span class="s">"date"</span>], row[<span class="s">"deptName"</span>], row[<span class="s">"status"</span>], row[<span class="s">"plannedHours"</span>])</pre>
+  </div>
+
+  <div class="note">
+    <span class="tag">必读</span>
+    <p>
+      生产环境走 <strong>HTTPS</strong>。用 <code>http://</code> 会收到 301 重定向，
+      部分 HTTP 客户端默认不跟随重定向、且跟随时会丢掉自定义请求头，导致鉴权失败。
+      请直接用 <code>https://</code>。
+    </p>
+  </div>
+</section>
+
+<!-- ============ 03 ============ -->
+<section id="s3">
+  <h2><span class="n">03</span>鉴权</h2>
+  <p class="sub">共享密钥，免登录</p>
+
+  <p>
+    本接口<strong>不需要登录、不需要换取 token</strong>。
+    下面这把密钥是分配给你的，请求时原样放进请求头即可，本文档所有示例都已填入这把密钥。
+  </p>
+
+  <div class="code">
+    <div class="code-bar"><span class="label">http header</span><button class="copy">复制</button></div>
+<pre>X-Api-Key: vf_ps_9oidIoATCJkbrFywSGHihI5bYOuUG2t_EFlEylKIBCf3gDYgfivb7S48ThYZA7W9</pre>
+  </div>
+
+  <table class="tbl">
+    <thead><tr><th>项目</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td>请求头名</td><td><code>X-Api-Key</code>，大小写不敏感（HTTP 头规范）</td></tr>
+      <tr><td>密钥格式</td><td><code>vf_ps_</code> 前缀 + 64 位 base64url 字符（大小写字母、数字、<code>-</code>、<code>_</code>）</td></tr>
+      <tr><td>获取方式</td><td>已随本文档提供，见上方代码块。一个调用方一把，请勿转借</td></tr>
+      <tr><td>有效期</td><td>长期有效，不会过期，无需刷新</td></tr>
+      <tr><td>吊销</td><td>联系我方吊销即时生效，仅影响这一把，其他调用方不受影响</td></tr>
+    </tbody>
+  </table>
+
+  <div class="note amber">
+    <span class="tag">安全须知</span>
+    <p>
+      <strong>本文档内含一把有效密钥，请按机密材料保管、不要对外转发。</strong>
+      密钥是访问本接口的唯一凭证，泄露即等同于数据泄露。
+    </p>
+    <p>
+      接入时请勿把密钥硬编码提交到代码仓库，也勿贴在工单、邮件正文或群聊里，
+      建议放进环境变量或配置中心。如怀疑密钥外泄，请立即联系我方吊销并换发，
+      吊销是即时生效的，不影响其他调用方。
+    </p>
+    <p>
+      密钥本身<strong>不含逗号</strong>。如果你拿到的字符串里出现逗号，
+      说明被误拼接了，请联系我方重发。
+    </p>
+  </div>
+</section>
+
+<!-- ============ 04 ============ -->
+<section id="s4">
+  <h2><span class="n">04</span>查询排班日历</h2>
+  <p class="sub">主接口</p>
+
+  <div class="ep"><span class="verb">GET</span><span class="path">/api/production/schedule</span></div>
+
+  <h3>请求参数</h3>
+  <div class="tbl-scroll">
+  <table class="tbl">
+    <thead><tr><th>参数</th><th>类型</th><th>必填</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>startDate</td><td class="t">string</td><td><span class="req">必填</span></td>
+        <td>起始日期，格式 <code>yyyy-MM-dd</code>，含当天。例：<code>2026-09-19</code></td>
+      </tr>
+      <tr>
+        <td>endDate</td><td class="t">string</td><td><span class="req">必填</span></td>
+        <td>结束日期，格式同上，含当天。与起始日期的跨度默认最多 <strong>186 天</strong></td>
+      </tr>
+      <tr>
+        <td>deptCodes</td><td class="t">string</td><td><span class="opt">可选</span></td>
+        <td>
+          部门编码，多个用英文逗号隔开，例 <code>86,113</code>。
+          不传或传空＝返回全部已开放的生产部门。
+          传入白名单之外的编码会被拒绝（见 07 节）
+        </td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>返回结构 · 外层</h3>
+  <div class="tbl-scroll">
+  <table class="tbl">
+    <thead><tr><th>字段</th><th>类型</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td>code</td><td class="t">int</td><td><code>200</code> 成功；<code>401</code> 鉴权失败；<code>500</code> 参数错误</td></tr>
+      <tr><td>msg</td><td class="t">string</td><td>提示信息，失败时是具体原因</td></tr>
+      <tr><td>data.startDate</td><td class="t">string</td><td>回显本次查询的起始日期</td></tr>
+      <tr><td>data.endDate</td><td class="t">string</td><td>回显本次查询的结束日期</td></tr>
+      <tr>
+        <td>data.scheduleHorizonEnd</td><td class="t">string</td>
+        <td><strong>排班已排到的最后一天</strong>（全库口径，与查询区间无关）。超过这一天一律没有数据，返回空 rows 而非报错。排班按月滚动维护，此值会随时间前移，<strong>每次请求都应以它为准判断可见边界</strong></td>
+      </tr>
+      <tr>
+        <td>data.overtimeDataThrough</td><td class="t">string</td>
+        <td>加班数据的可信截止日，等于服务器当天。这天之后的加班字段都是 0</td>
+      </tr>
+      <tr><td>data.total</td><td class="t">int</td><td>本次返回的行数</td></tr>
+      <tr><td>data.rows</td><td class="t">array</td><td>日历明细，按「日期升序 → 部门编码升序」排列</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>返回结构 · rows 每行</h3>
+  <p style="font-size:13.5px;color:var(--ink-2);margin-top:-6px;">
+    一行代表「某一天 + 某个部门」。9 天 × 2 个部门 = 18 行。
+  </p>
+  <div class="tbl-scroll">
+  <table class="tbl">
+    <thead><tr><th>字段</th><th>类型</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td>date</td><td class="t">string</td><td>日期 <code>yyyy-MM-dd</code></td></tr>
+      <tr><td>weekday</td><td class="t">int</td><td>星期几，<code>1</code>=周一 … <code>7</code>=周日</td></tr>
+      <tr><td>deptCode</td><td class="t">string</td><td>部门编码，如 <code>86</code></td></tr>
+      <tr><td>deptName</td><td class="t">string</td><td>部门名称，如 中山生产一部</td></tr>
+      <tr><td>status</td><td class="t">string</td><td>状态码：<code>WORK</code> / <code>REST</code> / <code>HOLIDAY</code> / <code>SHUTDOWN</code>，见 06 节</td></tr>
+      <tr><td>statusName</td><td class="t">string</td><td>状态中文名：上班 / 休息 / 法定节假日 / 停产</td></tr>
+      <tr><td>scheduledHeadcount</td><td class="t">int</td><td><strong>在册人数</strong>：当天该部门有排班记录的总人数，不论排的是上班还是休息</td></tr>
+      <tr><td>workHeadcount</td><td class="t">int</td><td>其中<strong>排上班</strong>的人数</td></tr>
+      <tr><td>restHeadcount</td><td class="t">int</td><td>其中<strong>排休息</strong>的人数，含周末与调休</td></tr>
+      <tr><td>holidayHeadcount</td><td class="t">int</td><td>其中<strong>排法定节假日</strong>的人数</td></tr>
+      <tr><td>workRatio</td><td class="t">decimal</td><td>上班人数占比，0~1，四位小数。<code>status</code> 就是按它归类的</td></tr>
+      <tr><td>plannedHours</td><td class="t">decimal</td><td><strong>计划工时</strong>合计（小时），已扣除休息时段。是计划值，不是实际完工工时</td></tr>
+      <tr><td>overtimeHours</td><td class="t">decimal</td><td>加班工时合计（小时）。<strong>未来日期恒为 0</strong></td></tr>
+      <tr><td>overtimeForms</td><td class="t">int</td><td>加班单张数，口径同上</td></tr>
+      <tr><td>overtimeSettled</td><td class="t">boolean</td><td>加班数据是否已成型。<code>false</code> 表示这个数还会继续涨，不代表当天不加班</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="note green">
+    <span class="tag">设计取向</span>
+    <p>
+      三个人数字段是<strong>原始计数</strong>，<code>status</code> 只是按阈值归的类。
+      如果你不认同服务端的阈值划法，可以完全忽略 <code>status</code>，
+      直接用 <code>workHeadcount / scheduledHeadcount</code> 自行判定，数据是够的。
+    </p>
+  </div>
+
+  <h3>完整返回示例</h3>
+  <p style="font-size:13.5px;color:var(--ink-2);margin-top:-6px;">
+    以下是 2026-09-21 从<strong>生产接口</strong>真实返回的报文，节选 7 行（完整 18 行）。
+    覆盖了周六满负荷加班、工作日停产、周六休息、周日调休补班四种情况。
+  </p>
+  <div class="code">
+    <div class="code-bar"><span class="label">200 OK · application/json</span><button class="copy">复制</button></div>
+<pre>{
+  <span class="k">"code"</span>: <span class="n">200</span>,
+  <span class="k">"msg"</span>: <span class="s">"查询成功"</span>,
+  <span class="k">"data"</span>: {
+    <span class="k">"startDate"</span>: <span class="s">"2026-09-19"</span>,
+    <span class="k">"endDate"</span>: <span class="s">"2026-09-27"</span>,
+    <span class="k">"scheduleHorizonEnd"</span>: <span class="s">"2026-09-29"</span>,
+    <span class="k">"overtimeDataThrough"</span>: <span class="s">"2026-09-21"</span>,
+    <span class="k">"total"</span>: <span class="n">18</span>,
+    <span class="k">"rows"</span>: [
+      {
+        <span class="k">"date"</span>: <span class="s">"2026-09-19"</span>, <span class="k">"weekday"</span>: <span class="n">6</span>,
+        <span class="k">"deptCode"</span>: <span class="s">"113"</span>, <span class="k">"deptName"</span>: <span class="s">"中山智造部"</span>,
+        <span class="k">"status"</span>: <span class="s">"WORK"</span>, <span class="k">"statusName"</span>: <span class="s">"上班"</span>,
+        <span class="k">"scheduledHeadcount"</span>: <span class="n">142</span>, <span class="k">"workHeadcount"</span>: <span class="n">141</span>,
+        <span class="k">"restHeadcount"</span>: <span class="n">1</span>, <span class="k">"holidayHeadcount"</span>: <span class="n">0</span>,
+        <span class="k">"workRatio"</span>: <span class="n">0.9930</span>,
+        <span class="k">"plannedHours"</span>: <span class="n">1128.00</span>,
+        <span class="k">"overtimeHours"</span>: <span class="n">0.00</span>, <span class="k">"overtimeForms"</span>: <span class="n">0</span>,
+        <span class="k">"overtimeSettled"</span>: <span class="k">true</span>
+      },
+      {
+        <span class="k">"date"</span>: <span class="s">"2026-09-19"</span>, <span class="k">"weekday"</span>: <span class="n">6</span>,
+        <span class="k">"deptCode"</span>: <span class="s">"86"</span>, <span class="k">"deptName"</span>: <span class="s">"中山生产一部"</span>,
+        <span class="k">"status"</span>: <span class="s">"WORK"</span>, <span class="k">"statusName"</span>: <span class="s">"上班"</span>,
+        <span class="k">"scheduledHeadcount"</span>: <span class="n">220</span>, <span class="k">"workHeadcount"</span>: <span class="n">220</span>,
+        <span class="k">"restHeadcount"</span>: <span class="n">0</span>, <span class="k">"holidayHeadcount"</span>: <span class="n">0</span>,
+        <span class="k">"workRatio"</span>: <span class="n">1.0000</span>,
+        <span class="k">"plannedHours"</span>: <span class="n">1760.00</span>,
+        <span class="k">"overtimeHours"</span>: <span class="n">1303.00</span>, <span class="k">"overtimeForms"</span>: <span class="n">400</span>,
+        <span class="k">"overtimeSettled"</span>: <span class="k">true</span>
+      },
+      <span class="c">// 注意这一行：加班为事后补报，同一日期隔天再查数值会变大</span>
+      {
+        <span class="k">"date"</span>: <span class="s">"2026-09-20"</span>, <span class="k">"weekday"</span>: <span class="n">7</span>,
+        <span class="k">"deptCode"</span>: <span class="s">"113"</span>, <span class="k">"deptName"</span>: <span class="s">"中山智造部"</span>,
+        <span class="k">"status"</span>: <span class="s">"WORK"</span>, <span class="k">"statusName"</span>: <span class="s">"上班"</span>,
+        <span class="k">"scheduledHeadcount"</span>: <span class="n">142</span>, <span class="k">"workHeadcount"</span>: <span class="n">142</span>,
+        <span class="k">"restHeadcount"</span>: <span class="n">0</span>, <span class="k">"holidayHeadcount"</span>: <span class="n">0</span>,
+        <span class="k">"workRatio"</span>: <span class="n">1.0000</span>,
+        <span class="k">"plannedHours"</span>: <span class="n">1136.00</span>,
+        <span class="k">"overtimeHours"</span>: <span class="n">8.00</span>, <span class="k">"overtimeForms"</span>: <span class="n">2</span>,
+        <span class="k">"overtimeSettled"</span>: <span class="k">true</span>
+      },
+      {
+        <span class="k">"date"</span>: <span class="s">"2026-09-24"</span>, <span class="k">"weekday"</span>: <span class="n">4</span>,
+        <span class="k">"deptCode"</span>: <span class="s">"113"</span>, <span class="k">"deptName"</span>: <span class="s">"中山智造部"</span>,
+        <span class="k">"status"</span>: <span class="s">"SHUTDOWN"</span>, <span class="k">"statusName"</span>: <span class="s">"停产"</span>,
+        <span class="k">"scheduledHeadcount"</span>: <span class="n">142</span>, <span class="k">"workHeadcount"</span>: <span class="n">1</span>,
+        <span class="k">"restHeadcount"</span>: <span class="n">141</span>, <span class="k">"holidayHeadcount"</span>: <span class="n">0</span>,
+        <span class="k">"workRatio"</span>: <span class="n">0.0070</span>,
+        <span class="k">"plannedHours"</span>: <span class="n">8.00</span>,
+        <span class="k">"overtimeHours"</span>: <span class="n">0.00</span>, <span class="k">"overtimeForms"</span>: <span class="n">0</span>,
+        <span class="k">"overtimeSettled"</span>: <span class="k">false</span>
+      },
+      {
+        <span class="k">"date"</span>: <span class="s">"2026-09-24"</span>, <span class="k">"weekday"</span>: <span class="n">4</span>,
+        <span class="k">"deptCode"</span>: <span class="s">"86"</span>, <span class="k">"deptName"</span>: <span class="s">"中山生产一部"</span>,
+        <span class="k">"status"</span>: <span class="s">"SHUTDOWN"</span>, <span class="k">"statusName"</span>: <span class="s">"停产"</span>,
+        <span class="k">"scheduledHeadcount"</span>: <span class="n">220</span>, <span class="k">"workHeadcount"</span>: <span class="n">13</span>,
+        <span class="k">"restHeadcount"</span>: <span class="n">207</span>, <span class="k">"holidayHeadcount"</span>: <span class="n">0</span>,
+        <span class="k">"workRatio"</span>: <span class="n">0.0591</span>,
+        <span class="k">"plannedHours"</span>: <span class="n">104.00</span>,
+        <span class="k">"overtimeHours"</span>: <span class="n">0.00</span>, <span class="k">"overtimeForms"</span>: <span class="n">0</span>,
+        <span class="k">"overtimeSettled"</span>: <span class="k">false</span>
+      },
+      {
+        <span class="k">"date"</span>: <span class="s">"2026-09-26"</span>, <span class="k">"weekday"</span>: <span class="n">6</span>,
+        <span class="k">"deptCode"</span>: <span class="s">"86"</span>, <span class="k">"deptName"</span>: <span class="s">"中山生产一部"</span>,
+        <span class="k">"status"</span>: <span class="s">"REST"</span>, <span class="k">"statusName"</span>: <span class="s">"休息"</span>,
+        <span class="k">"scheduledHeadcount"</span>: <span class="n">220</span>, <span class="k">"workHeadcount"</span>: <span class="n">5</span>,
+        <span class="k">"restHeadcount"</span>: <span class="n">215</span>, <span class="k">"holidayHeadcount"</span>: <span class="n">0</span>,
+        <span class="k">"workRatio"</span>: <span class="n">0.0227</span>,
+        <span class="k">"plannedHours"</span>: <span class="n">40.00</span>,
+        <span class="k">"overtimeHours"</span>: <span class="n">0.00</span>, <span class="k">"overtimeForms"</span>: <span class="n">0</span>,
+        <span class="k">"overtimeSettled"</span>: <span class="k">false</span>
+      },
+      {
+        <span class="k">"date"</span>: <span class="s">"2026-09-27"</span>, <span class="k">"weekday"</span>: <span class="n">7</span>,
+        <span class="k">"deptCode"</span>: <span class="s">"86"</span>, <span class="k">"deptName"</span>: <span class="s">"中山生产一部"</span>,
+        <span class="k">"status"</span>: <span class="s">"WORK"</span>, <span class="k">"statusName"</span>: <span class="s">"上班"</span>,
+        <span class="k">"scheduledHeadcount"</span>: <span class="n">220</span>, <span class="k">"workHeadcount"</span>: <span class="n">220</span>,
+        <span class="k">"restHeadcount"</span>: <span class="n">0</span>, <span class="k">"holidayHeadcount"</span>: <span class="n">0</span>,
+        <span class="k">"workRatio"</span>: <span class="n">1.0000</span>,
+        <span class="k">"plannedHours"</span>: <span class="n">1760.00</span>,
+        <span class="k">"overtimeHours"</span>: <span class="n">0.00</span>, <span class="k">"overtimeForms"</span>: <span class="n">0</span>,
+        <span class="k">"overtimeSettled"</span>: <span class="k">false</span>
+      }
+    ]
+  }
+}</pre>
+  </div>
+
+  <div class="note amber">
+    <span class="tag">排序说明</span>
+    <p>
+      <code>deptCode</code> 是字符串，按字符串升序排列，所以 <code>"113"</code> 排在 <code>"86"</code> 前面
+      （字符 <code>1</code> &lt; <code>8</code>）。这不是乱序，按编码分组时请以字段值为准，不要依赖出现顺序。
+    </p>
+  </div>
+</section>
+
+<!-- ============ 05 ============ -->
+<section id="s5">
+  <h2><span class="n">05</span>查询部门列表</h2>
+  <p class="sub">辅助接口 · 用来对编码</p>
+
+  <div class="ep"><span class="verb">GET</span><span class="path">/api/production/schedule/departments</span></div>
+
+  <p>无查询参数，只需带鉴权头。返回当前已开放查询的生产部门。</p>
+
+  <div class="code">
+    <div class="code-bar"><span class="label">200 OK · application/json</span><button class="copy">复制</button></div>
+<pre>{
+  <span class="k">"code"</span>: <span class="n">200</span>,
+  <span class="k">"msg"</span>: <span class="s">"查询成功"</span>,
+  <span class="k">"data"</span>: [
+    { <span class="k">"deptCode"</span>: <span class="s">"113"</span>, <span class="k">"deptName"</span>: <span class="s">"中山智造部"</span>,   <span class="k">"activeMemberCount"</span>: <span class="n">142</span> },
+    { <span class="k">"deptCode"</span>: <span class="s">"86"</span>,  <span class="k">"deptName"</span>: <span class="s">"中山生产一部"</span>, <span class="k">"activeMemberCount"</span>: <span class="n">220</span> }
+  ]
+}</pre>
+  </div>
+
+  <table class="tbl">
+    <thead><tr><th>字段</th><th>类型</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td>deptCode</td><td class="t">string</td><td>部门编码，用于主接口的 <code>deptCodes</code> 参数</td></tr>
+      <tr><td>deptName</td><td class="t">string</td><td>部门名称</td></tr>
+      <tr><td>activeMemberCount</td><td class="t">int</td><td>该部门当前<strong>在职</strong>人数</td></tr>
+    </tbody>
+  </table>
+
+  <div class="note">
+    <span class="tag">口径差异</span>
+    <p>
+      <code>activeMemberCount</code> 是<strong>当前</strong>在职人数；
+      主接口 <code>rows</code> 里的 <code>scheduledHeadcount</code> 是<strong>当天实际有排班记录的人数</strong>，
+      含当时在岗、现已离职的人员。查历史月份时两者对不上属于正常——
+      历史出勤按当时的实际在岗人数统计，不会用当前花名册回溯裁剪。
+    </p>
+  </div>
+</section>
+
+<!-- ============ 06 ============ -->
+<section id="s6">
+  <h2><span class="n">06</span>状态判定</h2>
+  <p class="sub">status 字段是怎么算出来的</p>
+
+  <p>
+    源数据只标到<strong>人</strong>（这个人今天上班、那个人今天休息），
+    没有「这个部门今天算不算开工」的现成结论——车间总有值班的人，不是非黑即白。
+    服务端按上班人数占比归成四档：
+  </p>
+
+  <div class="states">
+    <div class="state w">
+      <div><span class="code-name">WORK</span><span class="cn">上班</span></div>
+      <div class="rule">上班占比 ≥ <strong>50%</strong></div>
+    </div>
+    <div class="state h">
+      <div><span class="code-name">HOLIDAY</span><span class="cn">法定节假日</span></div>
+      <div class="rule">排法定假的人数<strong>过半</strong>（优先级最高）</div>
+    </div>
+    <div class="state s">
+      <div><span class="code-name">SHUTDOWN</span><span class="cn">停产</span></div>
+      <div class="rule">上班占比 ≤ <strong>10%</strong>，<strong>且当天不是周六周日</strong></div>
+    </div>
+    <div class="state r">
+      <div><span class="code-name">REST</span><span class="cn">休息</span></div>
+      <div class="rule">其余情况，含周末大面积休息</div>
+    </div>
+  </div>
+
+  <p style="font-size:13.5px;color:var(--ink-2);">
+    判定顺序：先看 HOLIDAY，再看 WORK，再看 SHUTDOWN，都不满足则 REST。
+    「非周末」那条限制是为了不把正常的周六周日误报成停产。
+    两条阈值（50% / 10%）可由管理员在线调整，调整后立即生效。
+  </p>
+
+  <h3>实例走读</h3>
+  <div class="walk">
+<pre>2026-09-24（星期四）· 中山生产一部
+
+  在册 <span class="hl">220</span> 人
+    ├─ 排上班   <span class="hl">13</span> 人   → workHeadcount
+    └─ 排休息  <span class="hl">207</span> 人   → restHeadcount
+
+  上班占比 13 ÷ 220 = <span class="hl">5.9%</span>   → workRatio 0.0591
+    ≤ 10%，且 09-24 是周四不是周末
+    → status = <span class="hl">SHUTDOWN</span>
+
+  计划工时 13 人 × 8 小时 = <span class="hl">104</span> 小时   → plannedHours</pre>
+    <div class="verdict">
+      翻译成人话：<strong>9 月 24 日星期四，生产一部 220 人里只留了 13 个人上班，
+      计划工时 104 小时，判定为停产。</strong>
+      对照同期的 9 月 19 日星期六——220 人全部上班、计划工时 1760 小时、还加了 1303 小时班，
+      判定为正常开工。同一个部门，周四停产、周六满负荷，这就是排班数据的价值所在。
+    </div>
+  </div>
+</section>
+
+<!-- ============ 07 ============ -->
+<section id="s7">
+  <h2><span class="n">07</span>错误码</h2>
+  <p class="sub">失败时 HTTP 状态码仍是 200，判断业务码 code</p>
+
+  <div class="tbl-scroll">
+  <table class="tbl">
+    <thead><tr><th>code</th><th>msg 示例</th><th>原因与处理</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>200</td><td class="t">查询成功</td><td>正常返回</td>
+      </tr>
+      <tr>
+        <td>401</td><td class="t">缺少请求头 X-Api-Key</td>
+        <td>没带鉴权头。检查客户端是否在重定向后丢掉了自定义头</td>
+      </tr>
+      <tr>
+        <td>401</td><td class="t">密钥无效</td>
+        <td>密钥不对或已被吊销。注意首尾空格、换行符</td>
+      </tr>
+      <tr>
+        <td>401</td><td class="t">接口未配置调用密钥，请联系系统管理员</td>
+        <td>服务端还没配密钥。<strong>这是服务端配置问题，不是你的请求问题</strong>，联系管理员</td>
+      </tr>
+      <tr>
+        <td>500</td><td class="t">startDate 不能为空，格式 yyyy-MM-dd</td>
+        <td>必填参数缺失</td>
+      </tr>
+      <tr>
+        <td>500</td><td class="t">startDate 格式不对，应为 yyyy-MM-dd，当前传入：2026/09/19</td>
+        <td>日期格式错误，注意是横杠不是斜杠</td>
+      </tr>
+      <tr>
+        <td>500</td><td class="t">endDate 不能早于 startDate</td>
+        <td>起止日期颠倒</td>
+      </tr>
+      <tr>
+        <td>500</td><td class="t">单次最多查询 186 天，当前跨度 200 天</td>
+        <td>区间过大，拆成多次请求</td>
+      </tr>
+      <tr>
+        <td>500</td><td class="t">deptCodes 不在可查范围内</td>
+        <td>传了白名单之外的部门编码。先调 05 节的接口拿可用编码</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="note">
+    <span class="tag">重试建议</span>
+    <p>
+      <code>401</code> 与 <code>500</code> 都是确定性错误，<strong>重试不会成功</strong>，
+      请勿做自动重试，直接告警。只有网络超时、5xx HTTP 状态码才值得重试。
+    </p>
+  </div>
+</section>
+
+
+
+
+
+
+
+
+
+
+
+<footer>
+  <div>广东威法定制家居 · 生产排班 API v1.0 · 2026-09-21</div>
+  <div>对接问题请联系系统管理员</div>
+</footer>
+
+</main>
+</div>
+</div>
+
+<script>
+// 代码块复制
+document.querySelectorAll('.copy').forEach(function(btn){
+  btn.addEventListener('click', function(){
+    var pre = btn.closest('.code').querySelector('pre');
+    var text = pre.innerText;
+    var done = function(){
+      btn.textContent = '已复制';
+      btn.classList.add('done');
+      setTimeout(function(){ btn.textContent = '复制'; btn.classList.remove('done'); }, 1800);
+    };
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text).then(done, fallback);
+    } else { fallback(); }
+    function fallback(){
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); done(); } catch(e) {}
+      document.body.removeChild(ta);
+    }
+  });
+});
+
+// 目录高亮
+var links = Array.prototype.slice.call(document.querySelectorAll('nav a'));
+var secs = links.map(function(a){ return document.querySelector(a.getAttribute('href')); });
+if ('IntersectionObserver' in window) {
+  var seen = {};
+  var io = new IntersectionObserver(function(entries){
+    entries.forEach(function(e){ seen[e.target.id] = e.isIntersecting ? e.intersectionRatio : 0; });
+    var best = null, bestV = 0;
+    secs.forEach(function(s){
+      if (!s) return;
+      var v = seen[s.id] || 0;
+      if (v > bestV) { bestV = v; best = s.id; }
+    });
+    if (best) {
+      links.forEach(function(a){
+        a.classList.toggle('on', a.getAttribute('href') === '#' + best);
+      });
+    }
+  }, { rootMargin: '-10% 0px -70% 0px', threshold: [0, .25, .5, 1] });
+  secs.forEach(function(s){ if (s) io.observe(s); });
+}
+</script>
+</body>
+</html>

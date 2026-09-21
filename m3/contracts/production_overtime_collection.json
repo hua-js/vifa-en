@@ -1,0 +1,217 @@
+{
+  "name": "production_overtime",
+  "title": "临时加班",
+  "template": "general",
+  "autoGenId": true,
+  "timestamps": true,
+  "createdAt": true,
+  "updatedAt": true,
+  "createdBy": true,
+  "updatedBy": true,
+  "sortable": false,
+  "filterTargetKey": "id",
+  "fields": [
+    {
+      "name": "id",
+      "type": "bigInt",
+      "interface": "integer",
+      "autoIncrement": true,
+      "primaryKey": true,
+      "allowNull": false,
+      "uiSchema": {
+        "type": "number",
+        "title": "{{t(\"ID\")}}",
+        "x-component": "InputNumber",
+        "x-read-pretty": true
+      }
+    },
+    {
+      "name": "createdAt",
+      "type": "date",
+      "interface": "createdAt",
+      "field": "createdAt",
+      "uiSchema": {
+        "type": "datetime",
+        "title": "{{t(\"Created at\")}}",
+        "x-component": "DatePicker",
+        "x-component-props": {},
+        "x-read-pretty": true
+      }
+    },
+    {
+      "name": "createdBy",
+      "type": "belongsTo",
+      "interface": "createdBy",
+      "target": "users",
+      "foreignKey": "createdById",
+      "uiSchema": {
+        "type": "object",
+        "title": "{{t(\"Created by\")}}",
+        "x-component": "AssociationField",
+        "x-component-props": {
+          "fieldNames": {
+            "value": "id",
+            "label": "nickname"
+          }
+        },
+        "x-read-pretty": true
+      },
+      "targetKey": "id"
+    },
+    {
+      "name": "updatedAt",
+      "type": "date",
+      "interface": "updatedAt",
+      "field": "updatedAt",
+      "uiSchema": {
+        "type": "string",
+        "title": "{{t(\"Last updated at\")}}",
+        "x-component": "DatePicker",
+        "x-component-props": {},
+        "x-read-pretty": true
+      }
+    },
+    {
+      "name": "updatedBy",
+      "type": "belongsTo",
+      "interface": "updatedBy",
+      "target": "users",
+      "foreignKey": "updatedById",
+      "uiSchema": {
+        "type": "object",
+        "title": "{{t(\"Last updated by\")}}",
+        "x-component": "AssociationField",
+        "x-component-props": {
+          "fieldNames": {
+            "value": "id",
+            "label": "nickname"
+          }
+        },
+        "x-read-pretty": true
+      },
+      "targetKey": "id"
+    },
+    {
+      "name": "production_date",
+      "type": "dateOnly",
+      "interface": "datetime",
+      "allowNull": false,
+      "uiSchema": {
+        "title": "加班日期",
+        "type": "string",
+        "required": true,
+        "x-component": "DatePicker",
+        "x-component-props": {
+          "dateOnly": true,
+          "showTime": false,
+          "dateFormat": "YYYY-MM-DD"
+        }
+      }
+    },
+    {
+      "name": "stations",
+      "type": "array",
+      "interface": "multipleSelect",
+      "allowNull": false,
+      "uiSchema": {
+        "title": "适用电站",
+        "type": "array",
+        "required": true,
+        "x-component": "Select",
+        "enum": [
+          {
+            "value": "ES01",
+            "label": "电站1"
+          },
+          {
+            "value": "ES02",
+            "label": "电站2"
+          }
+        ],
+        "x-component-props": {
+          "mode": "multiple"
+        },
+        "minItems": 1
+      }
+    },
+    {
+      "name": "period",
+      "type": "string",
+      "interface": "select",
+      "allowNull": false,
+      "uiSchema": {
+        "title": "加班时段",
+        "type": "string",
+        "required": true,
+        "x-component": "Select",
+        "enum": [
+          {
+            "value": "all_day",
+            "label": "全天"
+          },
+          {
+            "value": "morning",
+            "label": "上午"
+          },
+          {
+            "value": "afternoon",
+            "label": "下午"
+          },
+          {
+            "value": "evening",
+            "label": "晚上"
+          }
+        ]
+      }
+    },
+    {
+      "name": "status",
+      "type": "string",
+      "interface": "select",
+      "allowNull": false,
+      "uiSchema": {
+        "title": "状态",
+        "type": "string",
+        "required": true,
+        "x-component": "Select",
+        "enum": [
+          {
+            "value": "draft",
+            "label": "草稿"
+          },
+          {
+            "value": "confirmed",
+            "label": "已确认"
+          },
+          {
+            "value": "cancelled",
+            "label": "已取消"
+          }
+        ],
+        "default": "draft"
+      },
+      "defaultValue": "draft"
+    },
+    {
+      "name": "remark",
+      "type": "text",
+      "interface": "textarea",
+      "allowNull": true,
+      "uiSchema": {
+        "title": "备注",
+        "type": "string",
+        "x-component": "Input.TextArea"
+      }
+    }
+  ],
+  "indexes": [
+    {
+      "name": "production_overtime_date_status",
+      "fields": [
+        "production_date",
+        "status"
+      ],
+      "unique": false
+    }
+  ]
+}

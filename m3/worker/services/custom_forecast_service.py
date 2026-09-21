@@ -1,5 +1,6 @@
 """Bounded execution and recovery for persistent custom M3 forecasts."""
 
+from contextlib import ExitStack
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 import logging
@@ -29,7 +30,8 @@ from m3.worker.domain.custom_load_profiles import (
     LOAD_SELECTION_POLICY,
     LoadCandidateScore,
 )
-from m3.worker.domain.work_schedule import WORK_SCHEDULE_POLICY
+from m3.worker.domain.work_schedule import schedule_policy, schedule_manifest
+from m3.worker.domain.production_schedule import use_schedule
 from m3.worker.domain.custom_training_data import (
     CustomWeekSummary,
     build_custom_training_dataset,
@@ -110,6 +112,7 @@ class CustomForecastService:
         station_ids: tuple[str, ...],
         max_workers: int = 1,
         max_pending: int = 16,
+        schedule_provider=None,
     ) -> None:
         if (
             type(station_ids) is not tuple
@@ -120,6 +123,7 @@ class CustomForecastService:
             raise ValueError("station_ids must be unique non-empty strings")
         if max_workers < 1 or max_pending < max_workers:
             raise ValueError("custom forecast executor bounds are invalid")
+        self._schedule_provider = schedule_provider
         self._repository = repository
         self._source = source
         self._now = now
@@ -382,11 +386,20 @@ class CustomForecastService:
     def _execute(self, run_id: str) -> None:
         run: StoredCustomRun | None = None
         points_persisted = False
+        schedule_scope = ExitStack()
         try:
             run = self._repository.get_by_run_id(run_id)
             if run is None or run.status not in {"queued", "running"}:
                 return
             run = self._repository.transition(run, "running", at=self._now())
+            calendar = None
+            if self._schedule_provider is not None:
+                calendar = self._schedule_provider.load(
+                    run.station_id, (run.config.history_start - timedelta(days=1)).date(),
+                    (run.config.forecast_end - timedelta(microseconds=1)).date(),
+                    forecast_start=run.config.forecast_start.date(),
+                )
+            schedule_scope.enter_context(use_schedule(calendar))
             observations = self._history(run)
             model_configs = {
                 "station_total_load": run.config,
@@ -521,7 +534,7 @@ class CustomForecastService:
             }
             model_manifest = {
                 "selection_policy": LOAD_SELECTION_POLICY,
-                "work_schedule_policy": WORK_SCHEDULE_POLICY,
+                "work_schedule_policy": schedule_policy(),
                 "soc_schedule_policy": SOC_SCHEDULE_POLICY,
                 "model_policy": run.config.model_policy,
                 "interval_seconds": run.config.interval_seconds,
@@ -540,6 +553,8 @@ class CustomForecastService:
                     ),
                 },
             }
+            if (calendar_manifest := schedule_manifest()) is not None:
+                source_manifest["production_schedule"] = calendar_manifest
             digest = self._repository.store_points(run, series, baseline_series)
             points_persisted = True
             self._repository.transition(
@@ -584,6 +599,7 @@ class CustomForecastService:
                 except Exception:
                     pass
         finally:
+            schedule_scope.close()
             with self._lock:
                 self._active.discard(run_id)
                 self._capacity.release()

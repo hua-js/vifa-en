@@ -166,6 +166,8 @@ def build_custom_training_dataset(
     for value in frame.index[frame["y"].isna()]:
         for lag in seasonal_lags:
             donor = value - lag * config.interval
+            if donor not in seasonal_donors.index or pd.isna(seasonal_donors.loc[donor]):
+                continue
             if is_load_series(unique_id) and schedule_slot(value)[0] != schedule_slot(donor)[0]:
                 continue
             if donor in seasonal_donors.index and pd.notna(seasonal_donors.loc[donor]):

@@ -1,0 +1,31 @@
+{
+  "collection": "production_overtime",
+  "role": "m3/worker",
+  "allowed_actions": [
+    "list"
+  ],
+  "fields_by_action": {
+    "list": {
+      "read": [
+        "id",
+        "production_date",
+        "stations",
+        "period",
+        "status",
+        "createdAt",
+        "updatedAt"
+      ],
+      "filter": [
+        "production_date",
+        "status"
+      ],
+      "sort": [
+        "id"
+      ],
+      "write": [],
+      "record_key": []
+    }
+  },
+  "unlisted_actions": "deny",
+  "unlisted_fields": "deny"
+}

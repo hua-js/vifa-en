@@ -116,6 +116,12 @@ def weekly_profile_values(
         if math.isfinite(value):
             source_values[timestamp] = value
 
+    # Donors remain strictly before origin and must share the target's shift type.
+    matching_slots: dict[tuple[bool, int], list[tuple[datetime, float]]] = {}
+    for timestamp, value in source_values.items():
+        matching_slots.setdefault(schedule_slot(timestamp), []).append((timestamp, value))
+    for candidates in matching_slots.values():
+        candidates.sort(reverse=True)
     interval = timedelta(seconds=dataset.interval_seconds)
     values: list[float] = []
     for period in range(periods):
@@ -125,6 +131,12 @@ def weekly_profile_values(
             source_time = target - timedelta(days=7 * lag)
             if source_time >= origin:
                 raise ValueError("weekly profile source must be before origin")
+            if schedule_slot(source_time) != schedule_slot(target):
+                candidates = matching_slots.get(schedule_slot(target), [])
+                # A changed Sunday/holiday must not copy the previous rest day.
+                if not candidates:
+                    raise ValueError("missing matching production schedule history")
+                source_time = min(candidates, key=lambda item: (abs(item[0] - source_time), -item[0].timestamp()))[0]
             try:
                 lag_values.append(source_values[source_time])
             except KeyError as exc:

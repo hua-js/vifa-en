@@ -1,6 +1,7 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from importlib.metadata import version
+from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
@@ -15,6 +16,8 @@ from m3.worker.domain.soc_anchoring import (
 from m3.worker.domain.training_data import TrainingDataset
 from m3.worker.domain.work_schedule import schedule_cross_validation, schedule_forecast
 from m3.worker.errors import M3Error
+from m3.worker.domain.production_schedule import ACTIVE_SCHEDULE
+from m3.worker.domain.custom_forecasting import soc_schedule_values
 
 
 MODEL_NAMES = ("SeasonalNaive", "AutoETS", "AutoARIMA", "MSTL")
@@ -107,6 +110,10 @@ def select_champion(dataset: TrainingDataset) -> Champion:
         raise M3Error(
             "insufficient_history", "fewer than seven complete training days"
         )
+    if ACTIVE_SCHEDULE.get() is not None and not is_load_series(dataset.frame["unique_id"].iloc[0]):
+        # Share the existing SOC donor selection rather than fitting a second
+        # schedule model. No cross-validation score is fabricated for this policy.
+        return replace(seasonal_naive_champion(dataset), model_name="SOCScheduleDelta")
     if dataset.mode == "warming_up":
         return seasonal_naive_champion(dataset)
 
@@ -171,6 +178,14 @@ def forecast_frame(
     dataset: TrainingDataset, model_name: str
 ) -> tuple[pd.DataFrame, pd.DataFrame | None, str, str | None]:
     unique_id = dataset.frame["unique_id"].iloc[0]
+    if not is_load_series(unique_id) and ACTIVE_SCHEDULE.get() is not None:
+        origin = dataset.end + timedelta(minutes=15)
+        # The common SOC routine only needs these three dataset attributes.
+        adapter = SimpleNamespace(frame=dataset.frame, imputed_keys=dataset.imputed_keys, interval_seconds=900)
+        values = soc_schedule_values(adapter, origin=origin, periods=96)
+        frame = pd.DataFrame({"unique_id": unique_id,
+            "ds": pd.date_range(origin, periods=96, freq="15min"), "SOCScheduleDelta": values})
+        return frame, None, "SOCScheduleDelta", None
     needs_soc_anchor = not is_load_series(unique_id)
     try:
         engine = StatsForecast(

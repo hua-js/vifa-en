@@ -17,6 +17,7 @@ import httpx
 
 from m3.worker.api.routes import health_router, router
 from m3.worker.clients.alert_api import NodeRedAlertClient
+from m3.worker.clients.production_schedule import ProductionScheduleClient
 from m3.worker.clients.http import RetryPolicy
 from m3.worker.clients.nocobase_api import NocoBaseApiClient
 from m3.worker.clients.raw_energy_api import RawEnergySourceClient
@@ -318,6 +319,11 @@ def build_resources(
             nocobase_http,
             retry,
         )
+        schedule_provider = (
+            ProductionScheduleClient(settings.production_schedule_api_key.get_secret_value(),
+                source_http, api, settings.stations, clock, retry)
+            if settings.production_schedule_api_key is not None else None
+        )
         run_service = AcceptanceRunService(api)
         custom_repository = CustomForecastRepository(api)
         sink = ForecastSink(api)
@@ -327,7 +333,7 @@ def build_resources(
         }
         locked_version = verify_statsforecast_runtime()
         forecast_service = ForecastService(
-            observation_source, sink, caches, forecast_one_safe, clock
+            observation_source, sink, caches, forecast_one_safe, clock, schedule_provider=schedule_provider
         )
         acceptance_service = AcceptanceService(
             run_service=run_service,
@@ -344,6 +350,7 @@ def build_resources(
             station_ids=settings.station_ids,
             max_workers=1,
             max_pending=16,
+            schedule_provider=schedule_provider,
         )
         custom_evaluations = CustomForecastEvaluationService(
             custom_repository,
