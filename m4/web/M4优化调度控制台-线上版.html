@@ -149,7 +149,7 @@ function projectCacheKey(){assert(projectMetadata,'项目配置不可用');retur
 function selectedStationKey(){return 'm4-selected-station:'+projectCacheKey();}
 function resolveStation(registry,explicit,saved){
  if(explicit!==null){const alias={s1:'station-1',s2:'station-2'},id=registry.has(explicit)?explicit:alias[explicit];assert(registry.has(id),'所选电站不存在');return id;}
- return registry.has(saved)?saved:registry.keys().next().value;
+ return registry.has('station-2')?'station-2':registry.has(saved)?saved:registry.keys().next().value;
 }
 function renderStationControls(selectedStation){
  const select=$('station'),history=$('record-station'),toggle=document.querySelector('.station-toggle');
@@ -158,7 +158,7 @@ function renderStationControls(selectedStation){
  for(const station of projectMetadata.stations){
   for(const target of [select,history]){const option=document.createElement('option');option.value=station.id;option.textContent=station.name;target.append(option);}
   const button=document.createElement('button');button.dataset.stationId=station.id;button.textContent=station.name;button.setAttribute('aria-pressed',String(station.id===selectedStation));
-  button.onclick=()=>{if(!projectReady||select.value===station.id)return;select.value=station.id;previewDaily=false;document.querySelectorAll('[data-station-id]').forEach(b=>b.setAttribute('aria-pressed',String(b===button)));loadCurrent();refreshReferenceSources();};toggle.append(button);
+  button.onclick=()=>{if(!projectReady||select.value===station.id)return;if(station.id==='station-1'&&!window.confirm('目前电站1没有更优解，是否继续切换？'))return;select.value=station.id;previewDaily=false;document.querySelectorAll('[data-station-id]').forEach(b=>b.setAttribute('aria-pressed',String(b===button)));loadCurrent();refreshReferenceSources();};toggle.append(button);
  }
  select.value=selectedStation;history.value='*';$('project-label').textContent=projectMetadata.project_id+' / 策略控制台';
  for(const id of ['station','plan-date','record-station','tab-records','all-logs'])$(id).disabled=false;
@@ -475,7 +475,7 @@ for(const n of ['decision','records']){$('tab-'+n).onclick=()=>selectTab(n);$('t
 let toastTimer;function notify(text){$('toast').textContent=text;$('toast').hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').hidden=true,6000);}
 $('time').oninput=()=>{if(plan){selected=Number($('time').value);renderInspector();}};$('chart').onclick=e=>{if(!plan)return;const r=$('chart').getBoundingClientRect();selected=Math.max(0,Math.min(95,Math.floor(((e.clientX-r.left)/r.width*1100-60)/1020*96)));$('time').value=selected;renderInspector();};
 $('recalculate').onclick=recalculatePlan;
-$('station').onchange=loadCurrent;$('plan-date').value=today();$('plan-date').onchange=loadCurrent;
+$('station').onchange=()=>{const select=$('station'),previous=document.querySelector('[data-station-id][aria-pressed="true"]')?.dataset.stationId;if(select.value==='station-1'&&!window.confirm('目前电站1没有更优解，是否继续切换？')){select.value=previous||'station-2';return;}previewDaily=false;document.querySelectorAll('[data-station-id]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.stationId===select.value)));loadCurrent();refreshReferenceSources();};$('plan-date').value=today();$('plan-date').onchange=loadCurrent;
 for(const id of ['record-station','record-date','record-status','record-search'])$(id).addEventListener('input',()=>renderRecords());$('reset').onclick=()=>{$('record-station').value='*';$('record-date').value='';$('record-status').value='all';$('record-search').value='';renderRecords();};$('records').onclick=e=>{const b=e.target.closest('[data-record]');if(b)showDetail(b.dataset.record);};$('close-detail').onclick=()=>{detailGeneration++;$('detail').close();};$('detail').addEventListener('close',()=>detailGeneration++);
 function applyTheme(t){document.documentElement.dataset.theme=t;$('theme').setAttribute('aria-label',t==='light'?'切换到深色模式':'切换到浅色模式');try{localStorage.setItem('dashboard-theme',t);}catch{}}let saved='light';try{saved=localStorage.getItem('dashboard-theme')||'light';}catch{}applyTheme(saved==='dark'?'dark':'light');$('theme').onclick=()=>applyTheme(document.documentElement.dataset.theme==='light'?'dark':'light');
 setInterval(()=>{if(context&&context.date!==today()){generation++;context=null;clearPlan('计划已跨日','等待自动生成新一天的计划。');}},30000);
