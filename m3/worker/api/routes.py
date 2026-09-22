@@ -5,7 +5,7 @@ import math
 import re
 from typing import Annotated
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, Request
+from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, Request, Response
 from pydantic import ValidationError
 
 from m3.worker.api.dependencies import StationDep, require_admin
@@ -156,7 +156,7 @@ def health(request: Request) -> HealthResponse:
             )
         except Exception:
             current_ready = False
-    if not attempted:
+    if not attempted or not getattr(request.app.state, "recovery_finished", False):
         dependencies = "initializing"
     elif current_ready and version is not None:
         dependencies = "ready"
@@ -190,6 +190,22 @@ def health(request: Request) -> HealthResponse:
         dependencies=dependencies,
         statsforecast_version=version,
     )
+
+
+@health_router.get("/ready")
+def readiness(request: Request, response: Response) -> HealthResponse:
+    result = health(request)
+    if result.status != "ok" or request.app.state.shutting_down:
+        response.status_code = 503
+    return result
+
+
+def require_prediction_ready(request: Request) -> None:
+    # Explicit scheduler-disabled mode is retained for offline tools and tests.
+    if request.app.state.shutting_down or (
+        request.app.state.scheduler_enabled and health(request).status != "ok"
+    ):
+        raise HTTPException(status_code=503, detail="job_service_unavailable")
 
 
 @router.get("/stations/{station_id}/state")
@@ -264,7 +280,8 @@ def _submit(request: Request, station_id: str, task: str) -> JobResponse:
         raise HTTPException(status_code=500, detail="internal_error") from error
 
 
-@router.post("/stations/{station_id}/runs/forecast", status_code=202)
+@router.post("/stations/{station_id}/runs/forecast", status_code=202,
+             dependencies=[Depends(require_prediction_ready)])
 def run_forecast(
     request: Request,
     station_id: StationDep,
@@ -273,7 +290,8 @@ def run_forecast(
     return _submit(request, station_id, "forecast")
 
 
-@router.post("/stations/{station_id}/runs/model-selection", status_code=202)
+@router.post("/stations/{station_id}/runs/model-selection", status_code=202,
+             dependencies=[Depends(require_prediction_ready)])
 def run_model_selection(
     request: Request,
     station_id: StationDep,
@@ -285,6 +303,7 @@ def run_model_selection(
 @router.post(
     "/stations/{station_id}/runs/custom-forecast",
     status_code=202,
+    dependencies=[Depends(require_prediction_ready)],
 )
 def run_custom_forecast(
     request: Request,

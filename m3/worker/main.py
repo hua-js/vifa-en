@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 import logging
 import re
-from threading import Lock
+from threading import Event, Lock
 from typing import Callable
 from zoneinfo import ZoneInfo
 
@@ -129,6 +129,7 @@ class WorkerResources:
     rolling_soc: object | None = None
     alert_client: object | None = None
     recovery_ready: bool = False
+    recovery_stop_event: Event = field(default_factory=Event, init=False, repr=False)
     _startup_statsforecast_version: str = field(init=False, repr=False)
     _close_lock: Lock = field(default_factory=Lock, init=False, repr=False)
     _closed: bool = field(default=False, init=False, repr=False)
@@ -176,7 +177,11 @@ class WorkerResources:
         else:
             for station_id in self.settings.station_ids:
                 try:
+                    if self.recovery_stop_event.is_set():
+                        return False
                     self.forecast_service.bootstrap(station_id, recovery_at)
+                    if self.recovery_stop_event.is_set():
+                        return False
                     restore_models = getattr(
                         self.forecast_service, "restore_models", None
                     )
@@ -200,6 +205,19 @@ class WorkerResources:
                     self._alert(
                         station_id, "acceptance_reconcile", error, recovery_at
                     )
+        # Do not resume queued jobs or create daily jobs against incomplete inputs.
+        if not failed:
+            try:
+                failed = any(
+                    self.forecast_service.state(station_id).state
+                    not in {"ready", "degraded"}
+                    for station_id in self.settings.station_ids
+                )
+            except Exception:
+                failed = True
+        if failed or self.recovery_stop_event.is_set():
+            self.recovery_ready = False
+            return False
         try:
             self.custom_forecasts.recover()
         except Exception as error:
@@ -208,8 +226,13 @@ class WorkerResources:
                 self._alert(
                     station_id, "custom_forecast_recovery", error, recovery_at
                 )
+        if failed or self.recovery_stop_event.is_set():
+            self.recovery_ready = False
+            return False
         for station_id in self.settings.station_ids:
             try:
+                if self.recovery_stop_event.is_set():
+                    return False
                 self.daily_custom_forecasts.run_station(station_id, raw_now)
             except Exception as error:
                 failed = True
@@ -447,18 +470,45 @@ def create_app(
         application.state.scheduler_enabled = start_scheduler
         application.state.recovery_attempted = False
         application.state.recovery_ready = False
+        application.state.recovery_finished = False
+        application.state.shutting_down = False
+        recovery_task = None
+
+        async def recover_in_background():
+            application.state.recovery_attempted = True
+            LOGGER.info("m3_startup_recovery_started")
+            try:
+                recovered = await asyncio.to_thread(owned_resources.recover)
+                if recovered and not application.state.shutting_down:
+                    owned_resources.scheduler.start()
+                    application.state.recovery_ready = True
+                LOGGER.info("m3_startup_recovery_finished ready=%s", application.state.recovery_ready)
+            except Exception:
+                LOGGER.error("m3_startup_recovery_failed error_code=startup_recovery_failed")
+            finally:
+                application.state.recovery_finished = True
+
         primary_error: BaseException | None = None
         try:
             if start_scheduler:
-                application.state.recovery_attempted = True
-                recovered = await asyncio.to_thread(owned_resources.recover)
-                application.state.recovery_ready = bool(recovered)
-                owned_resources.scheduler.start()
+                recovery_task = asyncio.create_task(recover_in_background())
+            application.state.recovery_task = recovery_task
             yield
         except BaseException as error:
             primary_error = error
             raise
         finally:
+            application.state.shutting_down = True
+            application.state.recovery_ready = False
+            recovery_stop = getattr(owned_resources, "recovery_stop_event", None)
+            if recovery_stop is not None:
+                recovery_stop.set()
+            recovery_live = False
+            if recovery_task is not None:
+                try:
+                    await asyncio.wait_for(asyncio.shield(recovery_task), timeout=30)
+                except asyncio.TimeoutError:
+                    recovery_live = True
             stop_error: BaseException | None = None
             close_error: BaseException | None = None
             if start_scheduler:
@@ -475,12 +525,14 @@ def create_app(
                 scheduler_live = True
                 if stop_error is None:
                     stop_error = error
-            if not scheduler_live:
+            if not scheduler_live and not recovery_live:
                 try:
                     owned_resources.close()
                 except BaseException as error:
                     close_error = error
             if primary_error is None:
+                if recovery_live:
+                    raise M3Error("recovery_stop_timeout", "Startup recovery remains active")
                 if stop_error is not None:
                     if isinstance(stop_error, M3Error):
                         raise stop_error

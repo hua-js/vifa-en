@@ -2,6 +2,8 @@
 
 from datetime import datetime, timedelta
 import importlib
+import asyncio
+import threading
 import logging
 import os
 from types import SimpleNamespace
@@ -121,6 +123,12 @@ class FakeResources:
 AUTH = {"Authorization": "Bearer admin-secret"}
 
 
+def wait_recovery(client, app):
+    async def wait():
+        await asyncio.shield(app.state.recovery_task)
+    client.portal.call(wait)
+
+
 class WorkerApiTests(unittest.TestCase):
     def test_rolling_soc_get_is_authenticated_read_only(self):
         resources = FakeResources()
@@ -198,7 +206,7 @@ class WorkerApiTests(unittest.TestCase):
             worker_main.logging,
             "getLogger",
             side_effect=lambda name: {
-                "m3/worker": m3_logger,
+                "m3.worker": m3_logger,
                 "uvicorn": uvicorn_logger,
             }[name],
         ):
@@ -227,6 +235,7 @@ class WorkerApiTests(unittest.TestCase):
             sorted(schema["paths"]),
             [
                 "/health",
+                "/ready",
                 "/v1/custom-forecast-runs/{run_id}",
                 "/v1/custom-forecast-runs/{run_id}/result",
                 "/v1/jobs/{job_id}",
@@ -370,6 +379,7 @@ class WorkerApiTests(unittest.TestCase):
         resources = FakeResources()
         app = create_app(settings(), resources)
         with TestClient(app) as client:
+            wait_recovery(client, app)
             health = client.get("/health").json()
             self.assertEqual(health["status"], "ok")
             self.assertEqual(resources.events, ["recover", "start"])
@@ -380,6 +390,7 @@ class WorkerApiTests(unittest.TestCase):
         resources = FakeResources(recovery_ready=False)
         app = create_app(settings(), resources)
         with TestClient(app) as client:
+            wait_recovery(client, app)
             health = client.get("/health").json()
             self.assertEqual(health["status"], "initializing")
             self.assertEqual(health["dependencies"], "failed")
@@ -391,6 +402,7 @@ class WorkerApiTests(unittest.TestCase):
         resources.scheduler.last_error_code = "internal_error"
         app = create_app(settings(), resources)
         with TestClient(app) as client:
+            wait_recovery(client, app)
             health = client.get("/health").json()
         self.assertEqual(health["status"], "initializing")
         self.assertEqual(health["scheduler"], "unhealthy")
@@ -401,6 +413,7 @@ class WorkerApiTests(unittest.TestCase):
         resources = FakeResources()
         app = create_app(settings(), resources)
         with TestClient(app) as client:
+            wait_recovery(client, app)
             resources.scheduler.running = True
             resources.scheduler.healthy = True
             resources.scheduler.lifecycle_state = "stopping"
@@ -414,6 +427,7 @@ class WorkerApiTests(unittest.TestCase):
         resources = FakeResources()
         app = create_app(settings(), resources)
         with TestClient(app) as client:
+            wait_recovery(client, app)
             self.assertEqual(client.get("/health").json()["status"], "ok")
             resources.current_ready = lambda: False
             resources.statsforecast_version = "9.9.9"
@@ -430,7 +444,7 @@ class WorkerApiTests(unittest.TestCase):
         self.assertEqual(resources.events, ["close"])
 
     def test_startup_failure_still_stops_and_closes_owned_resources(self):
-        """A recovery exception before yield must not leak the pool or HTTP clients."""
+        """Background recovery failures stay observable and do not leak resources."""
         resources = FakeResources()
 
         def fail_recovery():
@@ -440,9 +454,10 @@ class WorkerApiTests(unittest.TestCase):
         resources.recover = fail_recovery
         app = create_app(settings(), resources)
 
-        with self.assertRaises(RuntimeError):
-            with TestClient(app):
-                pass
+        with TestClient(app) as client:
+            wait_recovery(client, app)
+            self.assertEqual(client.get("/ready").status_code, 503)
+            self.assertEqual(client.get("/health").json()["dependencies"], "failed")
         self.assertEqual(resources.events, ["recover", "stop", "close"])
 
     def test_raising_stop_still_attempts_close_and_preserves_stop_error(self):
@@ -462,8 +477,8 @@ class WorkerApiTests(unittest.TestCase):
         resources.close = fail_close
         app = create_app(settings(), resources)
         with self.assertRaises(M3Error) as caught:
-            with TestClient(app):
-                pass
+            with TestClient(app) as client:
+                wait_recovery(client, app)
         self.assertEqual(caught.exception.code, "scheduler_stop_failed")
         self.assertEqual(resources.events, ["recover", "start", "stop", "close"])
 
@@ -479,10 +494,80 @@ class WorkerApiTests(unittest.TestCase):
         resources.scheduler.stop = timeout_stop
         app = create_app(settings(), resources)
         with self.assertRaises(M3Error) as caught:
-            with TestClient(app):
-                pass
+            with TestClient(app) as client:
+                wait_recovery(client, app)
         self.assertEqual(caught.exception.code, "scheduler_stop_timeout")
         self.assertEqual(resources.events, ["recover", "start", "stop"])
+
+
+class BackgroundRecoveryTests(unittest.TestCase):
+    def test_reads_available_while_all_prediction_posts_are_blocked(self):
+        entered, release = threading.Event(), threading.Event()
+        resources = FakeResources()
+        resources.custom_forecasts = SimpleNamespace(get=lambda _: None, submit=Mock())
+        def recover():
+            entered.set()
+            if not release.wait(5):
+                return False
+            return True
+        resources.recover = recover
+        app = create_app(settings(), resources)
+        with TestClient(app) as client:
+            try:
+                self.assertTrue(entered.wait(1))
+                self.assertFalse(release.is_set())
+                self.assertEqual(client.get("/health").json()["dependencies"], "initializing")
+                self.assertEqual(client.get("/ready").status_code, 503)
+                self.assertEqual(client.get("/v1/custom-forecast-runs/missing", headers=AUTH).status_code, 404)
+                for kind in ("forecast", "model-selection", "custom-forecast"):
+                    result = client.post(f"/v1/stations/{ES01}/runs/{kind}", headers=AUTH, json={})
+                    self.assertEqual(result.status_code, 503, kind)
+                self.assertEqual(resources.jobs.submissions, [])
+                resources.custom_forecasts.submit.assert_not_called()
+                self.assertNotIn("start", resources.events)
+            finally:
+                release.set()
+            wait_recovery(client, app)
+            self.assertEqual(client.get("/ready").status_code, 200)
+            self.assertEqual(client.post(f"/v1/stations/{ES01}/runs/forecast", headers=AUTH, json={}).status_code, 202)
+            resources.current_ready = lambda: False
+            self.assertEqual(client.post(f"/v1/stations/{ES01}/runs/forecast", headers=AUTH, json={}).status_code, 503)
+
+    def test_recovery_failure_keeps_scheduler_and_submission_disabled(self):
+        resources = FakeResources(recovery_ready=False)
+        app = create_app(settings(), resources)
+        with TestClient(app) as client:
+            wait_recovery(client, app)
+            self.assertEqual(client.get("/health").status_code, 200)
+            self.assertEqual(client.get("/ready").status_code, 503)
+            self.assertEqual(client.post(f"/v1/stations/{ES01}/runs/forecast", headers=AUTH, json={}).status_code, 503)
+            self.assertNotIn("start", resources.events)
+            self.assertEqual(resources.jobs.submissions, [])
+
+
+class RecoveryShutdownTests(unittest.IsolatedAsyncioTestCase):
+    async def test_shutdown_during_recovery_never_starts_scheduler_or_closes_live_clients(self):
+        entered, release = threading.Event(), threading.Event()
+        resources = FakeResources()
+        def recover():
+            entered.set()
+            release.wait(5)
+            resources.events.append("recovery_finished")
+            return True
+        resources.recover = recover
+        app = create_app(settings(), resources)
+        context = app.router.lifespan_context(app)
+        await context.__aenter__()
+        self.assertTrue(await asyncio.to_thread(entered.wait, 1))
+        closing = asyncio.create_task(context.__aexit__(None, None, None))
+        await asyncio.sleep(0)
+        try:
+            self.assertTrue(app.state.shutting_down)
+            self.assertNotIn("close", resources.events)
+        finally:
+            release.set()
+        await closing
+        self.assertEqual(resources.events, ["recovery_finished", "stop", "close"])
 
 
 class ResourceTests(unittest.TestCase):
@@ -726,9 +811,6 @@ class ResourceTests(unittest.TestCase):
                 ("reconcile_summary", "station-1"),
                 ("reconcile_batches", "station-2"),
                 ("reconcile_summary", "station-2"),
-                ("custom_recover",),
-                ("daily", "station-1", NOW.replace(minute=7, second=19)),
-                ("daily", "station-2", NOW.replace(minute=7, second=19)),
             ],
         )
         self.assertEqual(
@@ -1140,7 +1222,7 @@ class ResourceTests(unittest.TestCase):
         alert_client.send = lambda *_args: (_ for _ in ()).throw(
             RuntimeError("sink-secret")
         )
-        with self.assertLogs("m3/worker", level="WARNING") as logged:
+        with self.assertLogs("m3.worker", level="WARNING") as logged:
             resources.alert_sink(
                 "station-1\nsink-secret",
                 "https://attacker.invalid",
