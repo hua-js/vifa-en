@@ -641,12 +641,15 @@
       let authNonce = null;
       let authTimeout = null;
       let refreshTimer = null;
+      let lastRefreshSlot = null;
       let inFlight = null;
       let hasRenderedDashboard = false;
       let lastDashboard = null;
       let customBusy = false;
       let customPollTimer = null;
       let selectedPollRunId = null;
+      let customPollDelay = 2_000;
+      let customPollInFlight = false;
       let customRefreshInFlight = null;
       let latestLookupToken = 0;
       let displayedConfigurationRunKey = null;
@@ -706,6 +709,7 @@
         if (!matchingCached && loadLatest) text(taskState, outputConfiguration === null ? "请检查任务参数" : "正在加载预测任务…");
         updateTaskConfiguration();
         if (loadLatest) {
+          startRefreshTimer(true);
           void loadLatestMatchingRun(stationKey, outputConfiguration, lookupToken, !matchingCached);
           void refreshSelectedPerformance();
         }
@@ -1816,18 +1820,31 @@
 
       function stopCustomPolling() {
         selectedPollRunId = null;
+        customPollDelay = 2_000;
         if (customPollTimer !== null) window.clearTimeout(customPollTimer);
         customPollTimer = null;
       }
 
       function scheduleCustomPoll(stationKey, runId) {
-        stopCustomPolling();
+        if (selectedPollRunId !== runId) customPollDelay = 2_000;
+        if (customPollTimer !== null) window.clearTimeout(customPollTimer);
+        customPollTimer = null;
         selectedPollRunId = runId;
-        customPollTimer = window.setTimeout(() => { void pollCustomRun(stationKey, runId); }, 2_000);
+        if (disposed || document.visibilityState !== "visible") return;
+        customPollTimer = window.setTimeout(() => {
+          customPollTimer = null;
+          void pollCustomRun(stationKey, runId);
+        }, customPollDelay);
+        customPollDelay = Math.min(customPollDelay * 2, 15_000);
       }
 
       async function pollCustomRun(stationKey, runId) {
-        if (disposed || stationPicker.value !== stationKey || selectedPollRunId !== runId) return;
+        if (disposed || document.visibilityState !== "visible" || stationPicker.value !== stationKey || selectedPollRunId !== runId) return;
+        if (customPollInFlight) {
+          scheduleCustomPoll(stationKey, runId);
+          return;
+        }
+        customPollInFlight = true;
         const lookupToken = latestLookupToken;
         try {
           const run = validateCustomRun(await customRequest(`${CUSTOM_RUN_PATH}/${encodeURIComponent(runId)}`));
@@ -1837,6 +1854,8 @@
           if (lookupToken !== latestLookupToken || stationPicker.value !== stationKey) return;
           setCustomBusy(false, error instanceof Error ? error.message : "预测任务查询失败");
           renderRefreshError(error instanceof Error ? error.message : "预测任务查询失败");
+        } finally {
+          customPollInFlight = false;
         }
       }
 
@@ -2299,6 +2318,7 @@
         }
         forecastDays.value = String(run.forecast_days);
         granularity.value = String(run.interval_seconds);
+        startRefreshTimer(true);
         updateTaskConfiguration();
         rememberHistoryStart();
         void refreshSelectedPerformance();
@@ -2413,7 +2433,8 @@
         if (userTokenAuth) requestHeaders.Authorization = `Bearer ${requestToken}`;
         inFlight = (async () => {
           const controller = new AbortController();
-          const timeout = window.setTimeout(() => controller.abort(), 10_000);
+          // Auth may take 10s, followed by the gateway's 30s dashboard read.
+          const timeout = window.setTimeout(() => controller.abort(), 45_000);
           try {
             const response = await fetch(API_PATH, {
               method: "GET",
@@ -2449,13 +2470,43 @@
         return inFlight;
       }
 
-      function startRefreshTimer() {
-        if (refreshTimer !== null) return;
-        refreshTimer = window.setInterval(refreshVisiblePage, 60_000);
+      function refreshIntervalMs() {
+        const seconds = Number(granularity.value);
+        return (ALLOWED_INTERVALS.includes(seconds) ? seconds : 900) * 1000;
+      }
+
+      function currentRefreshSlot() {
+        return `${stationPicker.value}:${forecastDays.value}:${refreshIntervalMs()}:${Math.floor(Date.now() / refreshIntervalMs())}`;
+      }
+
+      function startRefreshTimer(resetSlot = false) {
+        if (refreshTimer !== null) window.clearTimeout(refreshTimer);
+        refreshTimer = null;
+        if (resetSlot || lastRefreshSlot === null) lastRefreshSlot = currentRefreshSlot();
+        if (disposed || document.visibilityState !== "visible" || (userTokenAuth && apiToken === null)) return;
+        const interval = refreshIntervalMs();
+        refreshTimer = window.setTimeout(() => {
+          refreshTimer = null;
+          refreshVisiblePage();
+        }, interval - (Date.now() % interval));
       }
 
       function refreshVisiblePage() {
-        if (disposed || document.visibilityState !== "visible") return;
+        if (disposed) return;
+        if (document.visibilityState !== "visible") {
+          if (refreshTimer !== null) window.clearTimeout(refreshTimer);
+          refreshTimer = null;
+          if (customPollTimer !== null) window.clearTimeout(customPollTimer);
+          customPollTimer = null;
+          return;
+        }
+        if (selectedPollRunId !== null && customPollTimer === null && !customPollInFlight) {
+          scheduleCustomPoll(stationPicker.value, selectedPollRunId);
+        }
+        const slot = currentRefreshSlot();
+        startRefreshTimer();
+        if (slot === lastRefreshSlot || (userTokenAuth && apiToken === null)) return;
+        lastRefreshSlot = slot;
         rollTaskDates();
         void loadDashboard();
         void refreshSelectedCustomResult();
@@ -2466,7 +2517,7 @@
         if (authMode === "query_token") {
           apiToken = null;
           updateTaskConfiguration();
-          if (refreshTimer !== null) window.clearInterval(refreshTimer);
+          if (refreshTimer !== null) window.clearTimeout(refreshTimer);
           refreshTimer = null;
           stopCustomPolling();
           renderRefreshError("登录状态已失效，请从 NocoBase 重新打开页面");
@@ -2514,7 +2565,7 @@
         apiToken = null;
         authNonce = null;
         if (authTimeout !== null) window.clearTimeout(authTimeout);
-        if (refreshTimer !== null) window.clearInterval(refreshTimer);
+        if (refreshTimer !== null) window.clearTimeout(refreshTimer);
         stopCustomPolling();
         themeToggle.removeEventListener("click", toggleTheme);
         stationPicker.removeEventListener("change", changeStation);

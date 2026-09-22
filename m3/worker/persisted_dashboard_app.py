@@ -2,6 +2,8 @@
 
 from collections.abc import Callable
 from contextlib import asynccontextmanager
+import asyncio
+import time
 from typing import Any
 
 from fastapi import FastAPI, Request
@@ -17,6 +19,42 @@ from m3.worker.errors import M3Error
 
 SettingsFactory = Callable[[], DashboardSettings]
 DashboardBuilder = Callable[[DashboardSettings], DashboardEnvelope]
+
+
+class DashboardReadCache:
+    """One in-process read shared by callers; never serve an expired snapshot."""
+
+    def __init__(self, settings, builder, *, clock=time.monotonic, ttl=60.0):
+        self.settings = settings
+        self.builder = builder
+        self.clock = clock
+        self.ttl = ttl
+        self.value = None
+        self.expires_at = 0.0
+        self.pending = None
+
+    async def _build(self):
+        result = DashboardEnvelope.model_validate(
+            await run_in_threadpool(self.builder, self.settings)
+        )
+        self.value = result
+        self.expires_at = self.clock() + self.ttl
+        return result
+
+    async def get(self):
+        if self.value is not None and self.clock() < self.expires_at:
+            return self.value
+        if self.pending is None or self.pending.done():
+            self.pending = asyncio.create_task(self._build())
+            # Retrieve failures even if every HTTP caller disconnects.
+            self.pending.add_done_callback(
+                lambda task: None if task.cancelled() else task.exception()
+            )
+        return await asyncio.shield(self.pending)
+
+    async def close(self):
+        if self.pending is not None:
+            await asyncio.gather(self.pending, return_exceptions=True)
 
 
 def _error_response(status_code: int, code: str, message: str) -> JSONResponse:
@@ -51,7 +89,12 @@ def create_persisted_dashboard_app(
     @asynccontextmanager
     async def lifespan(application: FastAPI):
         application.state.dashboard_settings = settings_factory()
-        yield
+        cache = DashboardReadCache(application.state.dashboard_settings, builder)
+        application.state.dashboard_read_cache = cache
+        try:
+            yield
+        finally:
+            await cache.close()
 
     application = FastAPI(
         title="VIFA M3 Persisted Dashboard",
@@ -70,10 +113,7 @@ def create_persisted_dashboard_app(
         if request.query_params or await request.body():
             return _error_response(400, "invalid_request", "请求不正确")
         try:
-            result = await run_in_threadpool(
-                builder, request.app.state.dashboard_settings
-            )
-            return DashboardEnvelope.model_validate(result)
+            return await request.app.state.dashboard_read_cache.get()
         except Exception as error:
             return _map_error(error)
 

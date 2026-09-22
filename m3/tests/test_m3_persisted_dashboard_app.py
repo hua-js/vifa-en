@@ -1,12 +1,14 @@
 """HTTP contract for the read-only persisted M3 Dashboard container."""
 
 import anyio
+import asyncio
+import threading
 from fastapi.testclient import TestClient
 import unittest
 
 from m3.worker.config import StationBinding
 from m3.worker.errors import M3Error
-from m3.worker.persisted_dashboard_app import create_persisted_dashboard_app
+from m3.worker.persisted_dashboard_app import DashboardReadCache, create_persisted_dashboard_app
 from m3.worker.services.live_dashboard_service import DashboardCache
 
 
@@ -119,6 +121,64 @@ class PersistedDashboardAppTests(unittest.TestCase):
         self.assertEqual(response.status_code, 502)
         self.assertEqual(response.json()["error"]["code"], "contract_error")
         self.assertNotIn("secret", response.text)
+
+
+class DashboardReadCacheTests(unittest.IsolatedAsyncioTestCase):
+    async def test_expiry_refreshes_without_rewriting_generation_time(self):
+        now = [0.0]
+        calls = []
+        def build(_):
+            calls.append(1)
+            return envelope()
+        cache = DashboardReadCache(None, build, clock=lambda: now[0])
+        first = await cache.get()
+        now[0] = 59.9
+        self.assertIs(await cache.get(), first)
+        self.assertEqual(len(calls), 1)
+        now[0] = 60.0
+        refreshed = await cache.get()
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(first.data.system.generated_at, refreshed.data.system.generated_at)
+
+    async def test_concurrent_callers_share_read_even_when_one_disconnects(self):
+        entered = threading.Event()
+        release = threading.Event()
+        calls = []
+        def build(_):
+            calls.append(1)
+            entered.set()
+            if not release.wait(5):
+                raise RuntimeError("test release timed out")
+            return envelope()
+        cache = DashboardReadCache(None, build)
+        callers = [asyncio.create_task(cache.get()) for _ in range(10)]
+        try:
+            self.assertTrue(await asyncio.to_thread(entered.wait, 5))
+            callers[0].cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await callers[0]
+        finally:
+            release.set()
+        results = await asyncio.gather(*callers[1:])
+        self.assertEqual(len(calls), 1)
+        self.assertTrue(all(result is results[0] for result in results))
+        await cache.close()
+
+    async def test_failed_refresh_does_not_serve_expired_data_or_cache_error(self):
+        now = [0.0]
+        calls = []
+        def build(_):
+            calls.append(1)
+            if len(calls) == 2:
+                raise M3Error("source_http_failed", "unavailable")
+            return envelope()
+        cache = DashboardReadCache(None, build, clock=lambda: now[0])
+        await cache.get()
+        now[0] = 61.0
+        with self.assertRaises(M3Error):
+            await cache.get()
+        self.assertIsNotNone(await cache.get())
+        self.assertEqual(len(calls), 3)
 
 
 if __name__ == "__main__":
