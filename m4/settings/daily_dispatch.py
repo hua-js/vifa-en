@@ -136,7 +136,7 @@ class DailyScheduleAdapter(EMSRemainingPlanAdapter):
                 raise ModelUpdateError('旧计划记录归属或标识无效。')
             identifiers.add(row['id'])
             _stamp(row.get('updatedAt'))
-            if row.get('repeat') not in ('每天重复', '今日有效') or row.get('type') not in ('charge', 'discharge'):
+            if row.get('repeat') not in ('每天重复', '今日有效') or row.get('type') not in ('charge', 'discharge', 'pv_surplus_export'):
                 raise ModelUpdateError('旧计划动作或有效期规则无法解释。')
             if not row.get('m4_run_id'):
                 if row.get('repeat') == '每天重复':

@@ -105,6 +105,9 @@ def _schedule(rows):
                 and isinstance(end, str) and _TIME.fullmatch(end)):
             raise ControlSourceError('每日充放电计划时间须为有效的 HH:MM:SS')
         mode = row.get('type')
+        if mode == 'pv_surplus_export':
+            # Export permission does not define a storage power baseline.
+            continue
         if mode not in ('charge', 'discharge'):
             raise ControlSourceError('每日充放电计划含未知充放电模式')
         if row.get('repeat') not in ('每天重复', '今日有效'):

@@ -41,6 +41,27 @@ def _clock(value, day, *, end=False):
         raise ModelUpdateError('现有计划的时间格式无效。') from None
 
 
+def _explanation(point, source, request, *, startup=False):
+    """Business purpose from the exact forecast used for this dispatched plan."""
+    if startup:
+        return '凌晨谷价时段充电，补充储能电量'
+    load, pv = source['load_forecast_kw'], source['pv_forecast_kw']
+    if point['mode'] == 'charge':
+        if pv-load >= point['target_power_kw']-1e-6:
+            return '利用预计光伏余电充电，供后续用电'
+        if source['tariff_period'] == 'gu':
+            return '谷价时段充电，补充后续用电所需电量'
+        return '补充储能电量，供后续用电'
+    limits = [request.get('constraints', {}).get(k)
+              for k in ('demand_limit_kw', 'grid_import_limit_kw')]
+    limits = [v for v in limits if type(v) in (int, float) and math.isfinite(v)]
+    if limits and load-pv > min(limits)+1e-6:
+        return '放电补充负荷供电，降低预计购电高峰'
+    if source['tariff_period'] in ('feng', 'jian'):
+        return '高价时段放电供负荷，减少高价购电'
+    return '储能供应部分负荷，减少本时段电网购电'
+
+
 def _mutation(action, row, station, *, body=None):
     # Array equality on es_sn does not match this NocoBase collection. Ownership
     # is checked before each POST; id + updatedAt guard the checked row remotely.
@@ -106,11 +127,35 @@ class EMSRemainingPlanAdapter:
             if fixed_cabinet_power and station_id == 'station-2':
                 # Station-2 commissioning explicitly requires literal kw=600 in both modes.
                 kw = 600
+            reason = _explanation(point, request['points'][index], request, startup=bool(startup))
             if segments and segments[-1]['end'] == at and segments[-1]['mode'] == mode and segments[-1]['kw'] == kw:
                 segments[-1]['end'] = end
+                if reason not in segments[-1]['reasons']:
+                    segments[-1]['reasons'].append(reason)
             else:
-                segments.append(dict(start=at, end=end, mode=mode, kw=kw))
+                segments.append(dict(start=at, end=end, mode=mode, kw=kw, reasons=[reason]))
 
+        # Export control is independent of storage and uses the agreed 540 kW setpoint.
+        exports = []
+        for index, point in enumerate(points):
+            export = point.get('grid_export_kw', 0)
+            if type(export) not in (int, float) or not math.isfinite(export) or export < 0:
+                raise ModelUpdateError('预计上网功率无效。')
+            if export <= .01 or startup:
+                continue
+            at = start+timedelta(minutes=15*index)
+            reason = ('光伏发电满足负荷及储能充电后，剩余电量上网'
+                      if point['mode'] == 'charge' else '光伏发电超过负荷需求，余电上网')
+            if exports and exports[-1]['end'] == at:
+                exports[-1]['end'] = at+timedelta(minutes=15)
+                if reason not in exports[-1]['reasons']:
+                    exports[-1]['reasons'].append(reason)
+            else:
+                exports.append(dict(start=at, end=at+timedelta(minutes=15),
+                    mode='pv_surplus_export', kw=540,
+                    reasons=[reason]))
+        segments.extend(exports)
+        lane = lambda mode: 'export' if mode == 'pv_surplus_export' else 'storage'
         rows = self.reader._read_table('t_model')
         future, preserved, identifiers = {}, [], set()
         carried, cutovers, windows = {}, {}, []
@@ -124,7 +169,7 @@ class EMSRemainingPlanAdapter:
             if owners != [station.source_code] or type(identifier) is not int or identifier <= 0 or identifier in identifiers:
                 raise ModelUpdateError('现有计划存在共享电站、重复或无效记录。')
             identifiers.add(identifier)
-            if row.get('repeat') not in ('每天重复', '今日有效') or row.get('type') not in ('charge', 'discharge'):
+            if row.get('repeat') not in ('每天重复', '今日有效') or row.get('type') not in ('charge', 'discharge', 'pv_surplus_export'):
                 raise ModelUpdateError('现有计划动作或重复规则无法解释。')
             _stamp(row.get('updatedAt'))
             begin, end = _clock(row.get('start_time'), observed.date()), _clock(row.get('end_time'), observed.date(), end=True)
@@ -139,9 +184,9 @@ class EMSRemainingPlanAdapter:
                 continue
             if startup and end > replacement_end:
                 raise ModelUpdateError('现有计划跨越凌晨保底边界，保留原计划并暂停本轮写入。')
-            windows.append((identifier, begin, end))
+            windows.append((identifier, begin, end, lane(row['type'])))
             if begin < start:
-                first = segments[0] if segments else None
+                first = next((s for s in segments if lane(s['mode']) == lane(row['type'])), None)
                 try:
                     kw = float(row.get('kw'))
                 except (ValueError, TypeError):
@@ -157,13 +202,13 @@ class EMSRemainingPlanAdapter:
                 # Match only the remaining portion while preserving the actual
                 # running record's original boundaries and power.
                 begin = start
-            if (begin, end) in future:
+            if (begin, end, lane(row['type'])) in future:
                 raise ModelUpdateError('现有未来计划时段重复。')
-            future[begin, end] = row
+            future[begin, end, lane(row['type'])] = row
 
-        for identifier, begin, end in windows:
-            if identifier in (carried.keys() | cutovers.keys()) and any(other != identifier and b < end and e > begin
-                                              for other, b, e in windows):
+        for identifier, begin, end, category in windows:
+            if identifier in (carried.keys() | cutovers.keys()) and any(other != identifier and other_category == category and b < end and e > begin
+                                              for other, b, e, other_category in windows):
                 raise ModelUpdateError('承接中的计划与其他时段重叠，需先确认连续切换方式。')
 
         operations = dict(create=[], update=[], destroy=[])
@@ -178,16 +223,15 @@ class EMSRemainingPlanAdapter:
             body = dict(start_time=begin.strftime('%H:%M:%S'), end_time=end.strftime('%H:%M:%S'),
                 type=segment['mode'], kw=segment['kw'], repeat='今日有效', es_sn=[station.source_code],
                 m4_run_id=run_id, m4_plan_date=start.date().isoformat(),
-                explain=(('凌晨谷电保底充电，补充储能电量。' if startup else
-                    '日计划安排充电，补充储能电量。') if segment['mode'] == 'charge' else
-                    '日计划安排放电，减少电网购电。') +
-                    ('设定功率 600 kW，实际充放功率由 EMS 控制。'
-                     if fixed_cabinet_power and station_id == 'station-2' else '') + '今日有效。')
-            row = future.pop((begin, end), None)
+                explain='；'.join(segment['reasons'])+'。')
+            row = future.pop((begin, end, lane(segment['mode'])), None)
             carrying = row is not None and row['id'] in carried
             if carrying:
-                body.update(start_time=row['start_time'], end_time=row['end_time'], kw=row['kw'])
-            schedule.append(dict(start_at=begin.isoformat(), end_at=end.isoformat(), **body))
+                body.update(start_time=row['start_time'], end_time=row['end_time'])
+                body['kw'] = row['kw']
+            schedule.append(dict(record_id=row['id'] if row else None,
+                start_at=_clock(body['start_time'], start.date()).isoformat(),
+                end_at=end.isoformat(), **body))
             if row is None:
                 operations['create'].append(dict(method='POST', path='t_model:create', query={}, body=body))
             elif matches_body(row, body):

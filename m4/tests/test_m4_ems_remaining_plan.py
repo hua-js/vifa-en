@@ -40,6 +40,36 @@ class RemainingPlanTests(unittest.TestCase):
             self.remaining()
         self.reader._read_table.assert_not_called()
 
+    def test_export_permission_uses_540_kw_and_can_overlap_charging(self):
+        self.full_day()
+        for i in (0, 1):
+            self.payload['request']['points'][i].update(pv_forecast_kw=900)
+            self.payload['plan'][i].update(mode='charge', target_power_kw=30, grid_export_kw=70)
+        result = self.remaining()
+        records = result['schedule']
+        self.assertEqual({row['type'] for row in records}, {'charge', 'pv_surplus_export'})
+        export = next(row for row in records if row['type'] == 'pv_surplus_export')
+        charge = next(row for row in records if row['type'] == 'charge')
+        self.assertEqual(export['kw'], 540)
+        self.assertEqual(export['start_at'], charge['start_at'])
+        self.assertEqual(export['end_at'], charge['end_at'])
+        body = next(op['body'] for op in result['operations']['create']
+                    if op['body']['type'] == 'pv_surplus_export')
+        self.assertEqual(body['kw'], 540)
+        self.assertEqual(body['explain'], '光伏发电满足负荷及储能充电后，剩余电量上网。')
+        self.assertEqual(body['repeat'], '今日有效')
+
+    def test_written_reason_uses_tariff_and_keeps_one_continuous_record(self):
+        self.full_day()
+        for i, period in enumerate(('feng', 'feng', 'ping')):
+            self.payload['request']['points'][i]['tariff_period'] = period
+            self.payload['plan'][i].update(mode='discharge', target_power_kw=40)
+        result = self.remaining()
+        self.assertEqual(len(result['schedule']), 1)
+        body = result['operations']['create'][0]['body']
+        self.assertEqual(body['explain'], '高价时段放电供负荷，减少高价购电；储能供应部分负荷，减少本时段电网购电。')
+        self.assertEqual(result['schedule'][0]['explain'], body['explain'])
+
     def test_missing_tariff_is_rejected_before_table_read(self):
         self.full_day()
         self.payload['request']['points'][0].pop('tariff_period')
@@ -136,7 +166,7 @@ class RemainingPlanTests(unittest.TestCase):
         self.assertFalse(result['operations']['destroy'])
         body = result['operations']['update'][0]['body']
         self.assertEqual(body, dict(m4_run_id=self.payload['run_id'], m4_plan_date=self.payload['date'], repeat='今日有效',
-            explain='日计划安排放电，减少电网购电。设定功率 600 kW，实际充放功率由 EMS 控制。今日有效。'))
+            explain='储能供应部分负荷，减少本时段电网购电。'))
         row.update(body)
         result = adapter.preview('station-2', self.payload, self.config, now=self.now)
         self.assertFalse(any(result['operations'].values()))
@@ -187,7 +217,7 @@ class RemainingPlanTests(unittest.TestCase):
         self.reader._read_table.return_value = [dict(self.row, id=8,
             start_time='14:15:00', end_time='14:30:00', type='discharge', kw=90, repeat='今日有效',
             m4_run_id=self.payload['run_id'], m4_plan_date=self.payload['date'],
-            explain='日计划安排放电，减少电网购电。今日有效。')]
+            explain='储能供应部分负荷，减少本时段电网购电。')]
         result = self.remaining()
         self.assertEqual(result['unchanged_record_ids'], [8])
         self.assertFalse(any(result['operations'].values()))

@@ -175,7 +175,9 @@ class TableWriterTests(unittest.TestCase):
             created = next(row for row in self.rows if row['id'] == 10)
             self.assertEqual(created['m4_run_id'], self.payload['run_id'])
             self.assertEqual(created['m4_plan_date'], self.payload['date'])
-            self.assertIn('实际充放功率由 EMS 控制', created['explain'])
+            self.assertEqual(created['explain'], '储能供应部分负荷，减少本时段电网购电。')
+            self.assertEqual(result['confirmed_schedule'][0]['record_id'], created['id'])
+            self.assertEqual(result['confirmed_schedule'][0]['explain'], created['explain'])
             self.assertEqual(result['execution_basis'], 'ems_plan_table_readback_v1')
             self.assertEqual(len(result['confirmed_plan']), len(self.payload['plan']))
 
