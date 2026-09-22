@@ -47,7 +47,7 @@ from m3.worker.services.station_cache import StationCache
 from m3.worker.sinks.forecast_sink import ForecastSink
 
 
-LOGGER = logging.getLogger("m3/worker")
+LOGGER = logging.getLogger("m3.worker")
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 SAFE_ALERT_NAME = re.compile(r"[a-z][a-z0-9_]{0,63}\Z")
 
@@ -55,7 +55,7 @@ SAFE_ALERT_NAME = re.compile(r"[a-z][a-z0-9_]{0,63}\Z")
 def _configure_worker_logging() -> None:
     """Route M3 INFO progress records through Uvicorn's configured handler."""
 
-    m3_logger = logging.getLogger("m3/worker")
+    m3_logger = logging.getLogger("m3.worker")
     m3_logger.setLevel(logging.INFO)
     uvicorn_handlers = logging.getLogger("uvicorn").handlers
     for handler in uvicorn_handlers:

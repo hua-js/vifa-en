@@ -42,6 +42,11 @@ def validate_dispatch_safety(request, points):
         sources = request['points']
         if len(sources) != len(points) or not cap.available:
             raise ValueError
+        from .terminal_policy import POLICY as TERMINAL_POLICY, near_operating_floor
+        floor = (request.get('peak_reserve_policy') or {}).get('terminal_soc_min_pct')
+        protect_floor = (request.get('source_versions', {}).get('terminal_policy') == TERMINAL_POLICY
+            and type(floor) in (int, float) and math.isfinite(floor)
+            and near_operating_floor(cap.initial_soc_pct, floor))
         soc = cap.initial_soc_pct
         if not bounds.soc_min_pct <= soc <= bounds.soc_max_pct:
             raise ValueError
@@ -71,10 +76,17 @@ def validate_dispatch_safety(request, points):
             soc += (charge*cap.charge_efficiency-discharge/cap.discharge_efficiency)*0.25/cap.energy_capacity_kwh*100
             if not bounds.soc_min_pct-1e-6 <= soc <= bounds.soc_max_pct+1e-6:
                 raise ModelUpdateError('计划超出SOC安全范围，不能生成下发预览。')
+            if protect_floor and (soc < min(cap.initial_soc_pct, floor)-1e-6
+                    or (discharge > 0 and soc < floor-1e-6)):
+                raise ModelUpdateError('已到最低运行电量，不能继续放电。')
         from .terminal_policy import POLICY as TERMINAL_POLICY
         if request.get('source_versions', {}).get('terminal_policy') == TERMINAL_POLICY:
             floor = request['peak_reserve_policy']['terminal_soc_min_pct']
-            if type(floor) not in (int, float) or not math.isfinite(floor) or soc < floor-1e-6:
+            idle_tolerance = (protect_floor
+                and all(p['mode'] == 'idle' and p['target_power_kw'] == 0 for p in points)
+                and soc >= cap.initial_soc_pct-1e-6)
+            if (type(floor) not in (int, float) or not math.isfinite(floor)
+                    or (soc < floor-1e-6 and not idle_tolerance)):
                 raise ModelUpdateError('计划未满足日末最低电量，不能生成下发预览。')
     except ModelUpdateError:
         raise
@@ -93,7 +105,7 @@ class EMSModelUpdateAdapter:
         if len(rows) != 1 or rows[0].get('es_sn') != [station.source_code]:
             raise ModelUpdateError('指定计划记录缺失、重复或不属于本站。')
         row = rows[0]
-        if row.get('type') not in ('charge', 'discharge') or row.get('repeat') != '每天重复':
+        if row.get('type') not in ('charge', 'discharge') or row.get('repeat') not in ('每天重复', '今日有效'):
             raise ModelUpdateError('现有记录的动作或重复规则无法解释。')
         _stamp(row.get('updatedAt'))
         return row
@@ -126,12 +138,13 @@ class EMSModelUpdateAdapter:
         from m4.optimizer.contracts import GRID_CHARGING_POLICY
         if request.get('source_versions', {}).get('grid_charging_policy') != GRID_CHARGING_POLICY:
             raise ModelUpdateError('尖、峰段充电规则已更新，请重新生成计划。')
-        from .terminal_policy import POLICY as TERMINAL_POLICY
+        from .terminal_policy import POLICY as TERMINAL_POLICY, ROLLING_REFERENCE_POLICY
         from .night_charging import POLICY as NIGHT_POLICY
         versions = request.get('source_versions', {})
         if (get_project().station(station_id).policy == 'peak_reserve'
                 and versions.get('night_charging_policy') != NIGHT_POLICY
-                and versions.get('terminal_policy') != TERMINAL_POLICY):
+                and (versions.get('terminal_policy') != TERMINAL_POLICY
+                     or versions.get('rolling_reference_policy') != ROLLING_REFERENCE_POLICY)):
             raise ModelUpdateError('日末电量规则已更新，请重新生成计划。')
         if (request.get('station_id') != station_id
                 or request.get('capability', {}).get('available') is not True
@@ -178,7 +191,7 @@ class EMSModelUpdateAdapter:
         # Current t_model contract is per cabinet; never write station total as kw.
         body = dict(start_time=start.strftime('%H:%M:%S'), end_time=end.strftime('%H:%M:%S'),
                     type=mode,
-                    kw=power/len(station.cabinet_sns), repeat='每天重复', es_sn=[station.source_code])
+                    kw=power/len(station.cabinet_sns), repeat='今日有效', es_sn=[station.source_code])
         predicate = {'$and': [
             {'id': {'$eq': station.ems_model_record_id}},
             {'es_sn': {'$eq': [station.source_code]}},

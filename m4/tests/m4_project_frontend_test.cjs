@@ -144,3 +144,44 @@ test('cost-first import hard limit uses metadata and rejects mismatched request 
  assert.equal(f.run("validatedImportLimit('station-3',{grid_import_limit_kw:720,demand_limit_kw:500})"),720);
  assert.throws(()=>f.run("validatedImportLimit('station-3',{grid_import_limit_kw:550,demand_limit_kw:500})"));
 });
+
+test('operating-floor plans validate inventory-adjusted savings without requiring EMS terminal SOC', async () => {
+ const f=fixture('',true),p=project();p.stations[0].has_pv=false;p.stations[0].policy='peak_reserve';f.ctx.response=p;await f.run('loadProject()');
+ const args=planFixture('station-3'),[record,request]=args,c=record.daily_comparison;
+ request.constraints.soc_min_pct=1;request.constraints.preferred_soc_min_pct=2;
+ request.capability.charge_efficiency=1;
+ request.points.forEach(x=>{x.tariff_period='gu';x.buy_price_per_kwh=.3;});
+ request.source_versions.daily_policy='m4-daily-operating-floor-v1';request.source_versions.terminal_policy='daily-operating-floor-v1';request.source_versions.terminal_inventory_price='0.3';
+ request.peak_reserve_policy={version:'peak-reserve-v4',terminal_soc_min_pct:2};
+ c.baseline=structuredClone(c.baseline);c.baseline.metrics.energy_cost=300;
+ c.recommended=structuredClone(c.recommended);c.recommended.plan.at(-1).expected_soc_pct=2;c.recommended.profile_id='cost';
+ record.selected={profile_id:'cost',plan_version:'v1'};
+ Object.assign(c,{status:'optimized',recommended_source:'optimized',candidate_plan_version:'v1',daily_policy_version:'m4-daily-operating-floor-v1',terminal_energy_rule:'operating_floor_inventory_adjusted',revenue_gate_version:'daily-net-savings-100-v1',baseline_cost_yuan:300,optimized_cost_yuan:100,terminal_inventory_adjustment_yuan:14.4,savings_yuan:185.6,net_savings_yuan:185.6});
+ f.ctx.args=args;
+ assert.ok(Math.abs(f.run('mapPlan(...args).saving')-185.6)<1e-5);
+ c.net_savings_yuan=200;assert.throws(()=>f.run('mapPlan(...args)'),/净节省/);c.net_savings_yuan=185.6;
+ c.terminal_inventory_adjustment_yuan=0;assert.throws(()=>f.run('mapPlan(...args)'),/库存/);c.terminal_inventory_adjustment_yuan=14.4;
+ request.peak_reserve_policy.terminal_soc_min_pct=1;assert.throws(()=>f.run('mapPlan(...args)'),/目标/);request.peak_reserve_policy.terminal_soc_min_pct=2;
+ c.terminal_energy_rule='not_less_than_baseline';assert.throws(()=>f.run('mapPlan(...args)'),/策略/);
+});
+
+test('daily-only chart never overlays saved rolling points', () => {
+ const f=fixture('',true);
+ f.run("plan={points:[{power:50,soc:40}]};rollingAdvice={status:'completed',result:{plan:[{target_power_kw:600}]}};");
+ assert.equal(f.run('displayedPlanPoints()[0].power'),50);
+ assert.equal(f.run('currentRollingPayload()'),null);
+});
+
+test('confirmed daily snapshot remains readable when live inputs fail', async () => {
+ const f=fixture('',true);f.ctx.response=project();await f.run('loadProject()');
+ const saved={request:{source_versions:{configuration:'saved-config',controls:'saved-controls'}}};
+ f.ctx.fetch=async(url)=>{
+  if(String(url).endsWith('/daily-plan'))return {ok:true,status:200,json:async()=>({station_id:'station-3',active_daily:saved})};
+  throw Error('offline');
+ };
+ const bundle=await f.run("readCurrent('station-3','2026-09-22')");
+ assert.equal(bundle[1].active_daily,saved);
+ assert.equal(bundle[0].can_compare,false);
+ assert.equal(bundle[2].version,'saved-config');
+ assert.equal(bundle[3].version,'saved-controls');
+});

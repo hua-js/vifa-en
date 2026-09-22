@@ -13,8 +13,7 @@ from m4.optimizer.contracts import OptimizationRequest, GRID_CHARGING_POLICY
 from m4.optimizer.metrics import calculate_metrics
 from m4.optimizer.service import M4Optimizer
 from m4.optimizer.validation import validate_candidate, validate_peak_grid_charging
-from .terminal_policy import POLICY as TERMINAL_POLICY, enabled as operating_floor, target as terminal_target, inventory_cost
-from .ems_simulation import simulate_ems_day
+from .terminal_policy import POLICY as TERMINAL_POLICY, enabled as operating_floor, target as terminal_target, inventory_cost, remaining_reference, ROLLING_REFERENCE_POLICY, spends_floor_from_empty, idle_floor_tolerance
 from .load_accuracy import read_gate, require_gate
 from .startup_admission import require_admission, window as startup_window, POLICY as STARTUP_POLICY
 from .daily_comparison import REVENUE_GATE_VERSION, MIN_NET_SAVINGS_YUAN
@@ -96,8 +95,7 @@ def prepare_remaining_request(configuration, inputs, now):
                 raise ValueError('光伏校正时段无效，暂停滚动建议。')
             adjusted.append(point.model_copy(update={'pv_forecast_kw': value['solver_kw']}))
         points = adjusted
-    replay, simulation = simulate_ems_day(cap, base.constraints, points,
-        inputs['baseline']['schedule'], pv_dispatch_policy=base.pv_dispatch_policy, remaining_day=True)
+    replay, simulation = remaining_reference(base, cap, points, inputs['baseline']['schedule'])
     if startup and any(p.mode not in ('charge', 'idle') for p in replay):
         raise ValueError('凌晨保底充电无法满足需量约束，暂停下发。')
     terminal = terminal_target(base, replay[-1].expected_soc_pct)
@@ -116,6 +114,8 @@ def prepare_remaining_request(configuration, inputs, now):
         raw['source_versions'].update(startup_policy=STARTUP_POLICY,
             startup_window_end=startup['end_at'],
             startup_tariff_periods=json.dumps(source['tariff']['period_types']))
+    if operating_floor(base):
+        raw['source_versions']['rolling_reference_policy'] = ROLLING_REFERENCE_POLICY
     raw['source_versions'].update(grid_charging_policy=GRID_CHARGING_POLICY,
         planning_basis=STARTUP_POLICY if startup else POLICY, capability=soc['observed_at'],
         terminal_target=format(terminal, '.17g'))
@@ -166,7 +166,8 @@ class RollingPlanService:
                     message='滚动建议已过期，等待更新。')
             if payload.get('request', {}).get('source_versions', {}).get('night_charging_policy') != NIGHT_POLICY:
                 if (get_project().station(station).policy == 'peak_reserve'
-                        and payload.get('request', {}).get('source_versions', {}).get('terminal_policy') != TERMINAL_POLICY):
+                        and (payload.get('request', {}).get('source_versions', {}).get('terminal_policy') != TERMINAL_POLICY
+                             or payload.get('request', {}).get('source_versions', {}).get('rolling_reference_policy') != ROLLING_REFERENCE_POLICY)):
                     return dict(station_id=station, status='stale', result=None,
                         message='日末电量规则已更新，等待新的建议。')
                 daily = self.daily.latest(station)
@@ -262,12 +263,14 @@ class RollingPlanService:
                 chosen, candidates = None, []
                 reason = ('凌晨谷电保底充电，仅覆盖当前充电窗口。' if startup
                     else '当日日计划未通过收益门禁，后续沿用EMS。')
-                if admitted:
+                if admitted and not idle_floor_tolerance(request, baseline):
                     result = M4Optimizer(model_version=POLICY).optimize(request, terminal_soc_target_pct=terminal)
                     candidates = result.candidates
                     viable = []
                     for candidate in candidates:
                         if candidate.status not in ('optimal', 'feasible'):
+                            continue
+                        if spends_floor_from_empty(request, candidate.plan):
                             continue
                         if request.peak_reserve_policy and 'PEAK_RESERVE_PREFERENCE_INCOMPLETE' in candidate.risk_codes:
                             continue
@@ -284,12 +287,22 @@ class RollingPlanService:
                     else:
                         reason = '暂无更经济且可行的后续优化方案，沿用EMS。'
                 points = chosen.plan if chosen else baseline
-                if operating_floor(request) and points[-1].expected_soc_pct < terminal-1e-6:
+                if (operating_floor(request) and points[-1].expected_soc_pct < terminal-1e-6
+                        and not idle_floor_tolerance(request, points)):
                     raise ValueError('后续方案未满足日末最低电量，暂停推荐及写表。')
                 try:
                     validate_peak_grid_charging(request, points)
                 except ValueError:
                     raise ValueError('后续方案包含尖、峰段电网充电，暂停推荐及写表。') from None
+                if operating_floor(request):
+                    from .ems_model_update import validate_dispatch_safety
+                    validate_dispatch_safety(request.model_dump(mode='json'),
+                        [point.model_dump(mode='json') for point in points])
+                    if chosen is None:
+                        reason = '暂无更经济的方案，沿用安全回退安排。'
+                        if (all(point.mode == 'idle' for point in points)
+                                and request.capability.initial_soc_pct <= terminal+1e-6):
+                            reason = '接近最低运行电量，待机等待谷段。'
                 metrics = calculate_metrics(request, points)
                 current_configuration = self.daily.store.get(station)
                 current_daily = self.daily.latest(station)

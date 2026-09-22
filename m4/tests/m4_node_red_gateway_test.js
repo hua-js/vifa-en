@@ -456,3 +456,13 @@ test('manual recalculation sends a JSON object accepted by the gateway', async (
     assert.equal(notices.length,1);assert.match(notices[0],/^已提交重算/);
     assert.equal(context.submittingPlans.size,0);
 });
+
+test('daily dispatch uses the explicit authenticated POST resource', () => {
+ const msg=request({method:'POST',station:'station-2',resource:'daily-dispatch',payload:{request_id:runId}});
+ const result=run('prepare_proxy',msg);
+ assert.equal(result[1],null);
+ assert.equal(msg.requestPath,'/m4-api/stations/station-2/daily-dispatch');
+ assert.equal(JSON.parse(msg.payload).request_id,runId);
+ const read=run('prepare_proxy',request({resource:'daily-dispatch'}));
+ assert.equal(read[0],null);
+});

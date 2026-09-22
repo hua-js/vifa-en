@@ -77,7 +77,8 @@ class DischargeStartTests(unittest.TestCase):
             OptimizationRequest.model_validate(payload)
 
     def test_old_continuity_plan_is_not_current(self):
-        payload = reserve_request('peak-reserve-v4').model_dump(mode='json')
+        from m4.tests.test_m4_late_peak_reserve import current_reserve_request
+        payload = current_reserve_request().model_dump(mode='json')
         payload['pv_midday_economic'] = True
         payload['source_versions'].update(pv_export_policy='pv-export-flat-tariff-v1',
             grid_charging_policy=GRID_CHARGING_POLICY,

@@ -21,7 +21,7 @@ class TableWriterTests(unittest.TestCase):
     def prepare(self, root):
         self.full_day()
         self.payload['plan'][0].update(mode='discharge', target_power_kw=540)
-        self.rows = [dict(self.row), dict(self.row, id=8, start_time='16:00:00', end_time='17:00:00')]
+        self.rows = [dict(self.row), dict(self.row, id=8, start_time='16:00:00', end_time='17:00:00', m4_run_id=self.payload['run_id'])]
         self.reader._read_table.side_effect = lambda _: [dict(row) for row in self.rows]
         self.transport = Mock()
         def post(request, **kwargs):
@@ -36,7 +36,7 @@ class TableWriterTests(unittest.TestCase):
                     response = io.BytesIO(b'{"data": []}')
                     response.status = 200
                     return response
-                self.assertEqual({key for clause in predicate for key in clause}, {'id', 'updatedAt'})
+                self.assertEqual({key for clause in predicate for key in clause}, ({'id', 'updatedAt', 'm4_run_id'} if action == 'destroy' else {'id', 'updatedAt'}))
             if action == 'destroy':
                 self.rows[:] = [r for r in self.rows if r['id'] != identifier]
                 data = {}
@@ -116,7 +116,7 @@ class TableWriterTests(unittest.TestCase):
 
     def test_changed_station_or_version_before_post_blocks_write(self):
         for changed in ({'es_sn': ['ES01']}, {'es_sn': ['ES02', 'ES01']},
-                        {'updatedAt': '2026-09-18T00:00:00Z'}):
+                        {'updatedAt': '2026-09-18T00:00:00Z'}, {'m4_run_id': ''}):
             with self.subTest(changed=changed), tempfile.TemporaryDirectory() as root:
                 writer = self.prepare(root)
                 prepared = writer.adapter.preview('station-2', self.payload, self.config, now=self.now)
@@ -175,6 +175,7 @@ class TableWriterTests(unittest.TestCase):
             created = next(row for row in self.rows if row['id'] == 10)
             self.assertEqual(created['m4_run_id'], self.payload['run_id'])
             self.assertEqual(created['m4_plan_date'], self.payload['date'])
+            self.assertIn('实际充放功率由 EMS 控制', created['explain'])
             self.assertEqual(result['execution_basis'], 'ems_plan_table_readback_v1')
             self.assertEqual(len(result['confirmed_plan']), len(self.payload['plan']))
 
@@ -187,7 +188,7 @@ class TableWriterTests(unittest.TestCase):
             self.assertEqual(result['completed_operations'], 1)
             request = self.transport.open.call_args.args[0]
             self.assertTrue(urlsplit(request.full_url).path.endswith(':update'))
-            self.assertEqual(set(json.loads(request.data)), {'m4_run_id', 'm4_plan_date'})
+            self.assertEqual(set(json.loads(request.data)), {'m4_run_id', 'm4_plan_date', 'repeat', 'explain'})
             self.assertEqual((self.rows[1]['start_time'], self.rows[1]['end_time'], self.rows[1]['kw']),
                              ('14:00:00', '14:30:00', 600))
 
@@ -202,7 +203,7 @@ class TableWriterTests(unittest.TestCase):
                     self.assertEqual(self.rows[1]['end_time'], '16:00:00')
                 if action == 'update':
                     self.assertTrue(any(r['id'] == 10 for r in self.rows))
-                    self.assertEqual(json.loads(request.data), {'end_time': '14:15:00'})
+                    self.assertEqual(json.loads(request.data), {'end_time': '14:15:00', 'repeat': '今日有效'})
                 return original(request, **kwargs)
             self.transport.open.side_effect = check_order
             result = writer.submit('station-2', self.payload, self.config, now=self.now)
@@ -224,17 +225,18 @@ class TableWriterTests(unittest.TestCase):
             self.assertTrue((Path(root)/'station-2.hold').exists())
 
     def test_missing_new_field_in_readback_keeps_hold(self):
-        with tempfile.TemporaryDirectory() as root:
-            writer = self.prepare(root)
-            original = self.transport.open.side_effect
-            def strip_date(request, **kwargs):
-                response = original(request, **kwargs)
-                for row in self.rows:
-                    row.pop('m4_plan_date', None)
-                return response
-            self.transport.open.side_effect = strip_date
-            result = writer.submit('station-2', self.payload, self.config, now=self.now)
-            self.assertEqual(result['status'], 'table_write_unconfirmed')
-            self.assertEqual(result['failure_stage'], 'readback')
-            self.assertNotIn('confirmed_plan', result)
-            self.assertTrue((Path(root)/'station-2.hold').exists())
+        for field in ('m4_plan_date', 'explain'):
+            with self.subTest(field=field), tempfile.TemporaryDirectory() as root:
+                writer = self.prepare(root)
+                original = self.transport.open.side_effect
+                def strip_date(request, **kwargs):
+                    response = original(request, **kwargs)
+                    for row in self.rows:
+                        row.pop(field, None)
+                    return response
+                self.transport.open.side_effect = strip_date
+                result = writer.submit('station-2', self.payload, self.config, now=self.now)
+                self.assertEqual(result['status'], 'table_write_unconfirmed')
+                self.assertEqual(result['failure_stage'], 'readback')
+                self.assertNotIn('confirmed_plan', result)
+                self.assertTrue((Path(root)/'station-2.hold').exists())

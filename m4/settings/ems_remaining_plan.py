@@ -46,6 +46,11 @@ def _mutation(action, row, station, *, body=None):
     # is checked before each POST; id + updatedAt guard the checked row remotely.
     predicate = {'$and': [{'id': {'$eq': row['id']}},
         {'updatedAt': {'$eq': row['updatedAt']}}]}
+    if action == 'destroy':
+        plan_id = row.get('m4_run_id')
+        if not isinstance(plan_id, str) or not plan_id.strip():
+            raise ModelUpdateError('现有计划没有计划 ID，保留该记录并暂停写入。')
+        predicate['$and'].append({'m4_run_id': {'$eq': plan_id}})
     result = dict(method='POST', path='t_model:'+action,
         query=dict(filterByTk=row['id'], filter=json.dumps(predicate, ensure_ascii=False, separators=(',', ':'))))
     if body is not None:
@@ -119,7 +124,7 @@ class EMSRemainingPlanAdapter:
             if owners != [station.source_code] or type(identifier) is not int or identifier <= 0 or identifier in identifiers:
                 raise ModelUpdateError('现有计划存在共享电站、重复或无效记录。')
             identifiers.add(identifier)
-            if row.get('repeat') != '每天重复' or row.get('type') not in ('charge', 'discharge'):
+            if row.get('repeat') not in ('每天重复', '今日有效') or row.get('type') not in ('charge', 'discharge'):
                 raise ModelUpdateError('现有计划动作或重复规则无法解释。')
             _stamp(row.get('updatedAt'))
             begin, end = _clock(row.get('start_time'), observed.date()), _clock(row.get('end_time'), observed.date(), end=True)
@@ -166,13 +171,18 @@ class EMSRemainingPlanAdapter:
         # Leave the elapsed portion and its original version ownership intact.
         for row in cutovers.values():
             operations['update'].append(_mutation('update', row, station,
-                body={'end_time': start.strftime('%H:%M:%S')}))
+                body={'end_time': start.strftime('%H:%M:%S'), 'repeat': '今日有效'}))
         unchanged, schedule = [], []
         for segment in segments:
             begin, end = segment['start'], segment['end']
             body = dict(start_time=begin.strftime('%H:%M:%S'), end_time=end.strftime('%H:%M:%S'),
-                type=segment['mode'], kw=segment['kw'], repeat='每天重复', es_sn=[station.source_code],
-                m4_run_id=run_id, m4_plan_date=start.date().isoformat())
+                type=segment['mode'], kw=segment['kw'], repeat='今日有效', es_sn=[station.source_code],
+                m4_run_id=run_id, m4_plan_date=start.date().isoformat(),
+                explain=(('凌晨谷电保底充电，补充储能电量。' if startup else
+                    '日计划安排充电，补充储能电量。') if segment['mode'] == 'charge' else
+                    '日计划安排放电，减少电网购电。') +
+                    ('设定功率 600 kW，实际充放功率由 EMS 控制。'
+                     if fixed_cabinet_power and station_id == 'station-2' else '') + '今日有效。')
             row = future.pop((begin, end), None)
             carrying = row is not None and row['id'] in carried
             if carrying:
@@ -183,7 +193,7 @@ class EMSRemainingPlanAdapter:
             elif matches_body(row, body):
                 unchanged.append(row['id'])
             else:
-                update = {k: body[k] for k in ('m4_run_id', 'm4_plan_date')} if carrying else body
+                update = {k: body[k] for k in ('m4_run_id', 'm4_plan_date', 'repeat', 'explain')} if carrying else body
                 operations['update'].append(_mutation('update', row, station, body=update))
         # Includes old future charge/discharge rows in newly idle gaps. Omitting
         # idle creates must not leave an old conflicting instruction in place.
@@ -198,5 +208,5 @@ class EMSRemainingPlanAdapter:
             carried_record_ids=list(carried),
             cutover_record_ids=list(cutovers),
             dispatch_status='not_dispatched', network_write_performed=False, execution_ready=False,
-            activation_requirements=['atomic_plan_activation_unverified', 'daily_repeat_expiry_unverified'],
+            activation_requirements=['atomic_plan_activation_unverified', 'ems_today_valid_expiry_unverified'],
             execution_order=None)

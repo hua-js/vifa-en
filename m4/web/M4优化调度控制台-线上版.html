@@ -41,7 +41,7 @@ button:disabled{cursor:not-allowed;opacity:.5}.decision-side[hidden]{display:non
 
 
 .reference-overview{grid-template-columns:repeat(6,minmax(0,1fr));row-gap:18px}.reference-overview>.decision{grid-column:1/-1}.overview-item{min-width:0}.overview-item .note{overflow-wrap:anywhere}@media(max-width:1100px){.reference-overview{grid-template-columns:repeat(3,minmax(0,1fr))}}@media(max-width:720px){.reference-overview{grid-template-columns:repeat(2,minmax(0,1fr))}}
-.schedule-table{max-height:460px;overflow:auto;border:1px solid var(--line);border-radius:10px}.schedule-table table{table-layout:fixed;min-width:580px}.schedule-table th{position:sticky;top:0;z-index:1;font-weight:550}.schedule-table th,.schedule-table td{padding:11px 20px;vertical-align:middle}.schedule-table th:first-child{width:30%}.schedule-table th:nth-child(2){width:18%}.schedule-table th:nth-child(3){width:26%}.schedule-table th:nth-child(4){width:26%}.schedule-table th:not(:first-child),.schedule-table td:not(:first-child){text-align:center}.schedule-table td{font-variant-numeric:tabular-nums}.schedule-table td:first-child{font-weight:550}.schedule-table .schedule-power{display:inline-block;min-width:7ch;text-align:right;font-weight:600}.schedule-table .badge{border:0;background:var(--panel-raised);padding:4px 10px;border-radius:5px;font-size:12px}.schedule-table tbody tr:last-child td{border-bottom:0}.schedule-table tbody tr:hover{background:var(--panel-soft)}
+.schedule-table{max-height:460px;overflow:auto;border:1px solid var(--line);border-radius:10px}.schedule-table table{table-layout:fixed;min-width:680px;border-collapse:separate;border-spacing:0;background:var(--panel)}.schedule-table th{position:sticky;top:0;z-index:2;font-weight:550;background:var(--panel-raised);box-shadow:0 1px 0 var(--line)}.schedule-table th,.schedule-table td{padding:11px 20px;vertical-align:middle}.schedule-table th:first-child{width:23%}.schedule-table th:nth-child(2){width:12%}.schedule-table th:nth-child(3){width:23%}.schedule-table th:nth-child(4){width:23%}.schedule-table th:nth-child(5){width:19%}.schedule-table th:not(:first-child),.schedule-table td:not(:first-child){text-align:center}.schedule-table td{font-variant-numeric:tabular-nums}.schedule-table td:first-child{font-weight:550}.schedule-table .schedule-power{display:inline-block;min-width:7ch;text-align:right;font-weight:600}.schedule-table .badge{border:0;background:var(--panel-raised);padding:4px 10px;border-radius:5px;font-size:12px}.schedule-table tbody tr:last-child td{border-bottom:0}.schedule-table tbody tr:hover{background:var(--panel-soft)}
 
 .reference-grid>.schedule-reference{grid-column:span 8}.reference-grid>.strategy-log-panel{grid-column:span 4}
 .strategy-log-panel .section-head{align-items:flex-start}.strategy-log-panel .section-head>.badge{flex-shrink:0}
@@ -94,13 +94,13 @@ button:disabled{cursor:not-allowed;opacity:.5}.decision-side[hidden]{display:non
 .forecast-summary{display:flex;flex-direction:column;justify-content:center;gap:16px}.forecast-summary-row{display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:4px 12px;font-size:12px}.forecast-summary-row>span,.forecast-unit{color:var(--muted)}.forecast-summary-row>div{display:flex;align-items:baseline;gap:6px}.forecast-summary-row strong{font-size:18px;font-variant-numeric:tabular-nums}.forecast-unit{font-size:12px}@media(max-width:520px){.compact-plan-stats{grid-template-columns:minmax(0,1fr)}}
 </style>
 </head>
-<body><div id="loading-mask" class="loading-mask" role="status" aria-live="polite"><div class="loading-card"><span class="loading-spinner" aria-hidden="true"></span><strong>加载中</strong><p id="loading-message">正在读取电站数据，请稍候…</p></div></div><main class="shell reference-shell"><header class="reference-top"><div class="brand"><div class="mark">M4</div><div><strong>能源优化调度</strong><p class="small muted" id="project-label">项目加载中 / 策略控制台</p></div></div><div class="top-actions"><div class="station-toggle"></div><input id="plan-date" disabled type="date" ><span class="badge" id="auto-plan-status">正在读取生成模式</span><button class="btn" id="recalculate" type="button" disabled title="等待电站数据就绪">立即重算</button><button class="btn iconbtn" id="theme" aria-label="切换到深色模式" title="切换明暗模式"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 15.5A8.5 8.5 0 0 1 8.5 4 8.5 8.5 0 1 0 20 15.5Z"/></svg></button></div></header><div hidden><select id="station" disabled></select></div><div class="runtime-strip"><span id="runtime-station">电站</span><i aria-hidden="true"></i><span>调度粒度 15 分钟</span><i aria-hidden="true"></i><span>全天计划</span></div>
+<body><div id="loading-mask" class="loading-mask" role="status" aria-live="polite"><div class="loading-card"><span class="loading-spinner" aria-hidden="true"></span><strong>加载中</strong><p id="loading-message">正在读取电站数据，请稍候…</p></div></div><main class="shell reference-shell"><header class="reference-top"><div class="brand"><div class="mark">M4</div><div><strong>能源优化调度</strong><p class="small muted" id="project-label">项目加载中 / 策略控制台</p></div></div><div class="top-actions"><div class="station-toggle"></div><input id="plan-date" disabled type="date" ><span class="badge" id="auto-plan-status">正在读取生成模式</span><button class="btn" id="recalculate" type="button" disabled title="等待电站数据就绪">立即重算</button><button class="btn" id="preview-daily" type="button" hidden>查看新计划</button><button class="btn" id="dispatch-daily" type="button" hidden>下发日计划</button><button class="btn iconbtn" id="theme" aria-label="切换到深色模式" title="切换明暗模式"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 15.5A8.5 8.5 0 0 1 8.5 4 8.5 8.5 0 1 0 20 15.5Z"/></svg></button></div></header><div hidden><select id="station" disabled></select></div><div class="runtime-strip"><span id="runtime-station">电站</span><i aria-hidden="true"></i><span>调度粒度 15 分钟</span><i aria-hidden="true"></i><span>全天计划</span></div>
 <section id="panel-decision"><div class="reference-grid"><section class="panel reference-overview"><article class="panel decision"><div><span class="badge good">正在读取计划</span><h2>正在读取当天数据</h2><p id="decision-copy" role="status" aria-live="polite"></p><div class="row" id="plan-tags" hidden style="margin-top:17px"><span class="badge">全天 96 个时段</span><span class="badge">光储协同</span><span class="badge">电价策略</span></div></div></article><div class="overview-item"><span class="label" id="ref-price-label">当前电价</span><strong id="ref-price">—</strong><p class="note" id="ref-price-next"></p></div><div class="overview-item"><span class="label">当前 SOC</span><strong id="ref-actual-soc">—</strong><p class="note" id="ref-soc-time">暂无有效数据</p></div><div class="overview-item"><span class="label">当前实际功率</span><strong id="ref-actual-power">—</strong><p class="note" id="ref-power-time">暂无有效数据</p></div><div class="overview-item"><span class="label">日计划下一动作</span><strong id="ref-next">—</strong><p class="note" id="ref-next-action"></p></div></section>
-<section class="panel log-reference" aria-labelledby="rolling-title" hidden><div class="section-head"><div><h2 id="rolling-title">后续滚动建议</h2><p id="rolling-context">等待实测状态与当日日计划</p></div><span class="badge" id="rolling-status">等待计划</span></div><p class="note" id="rolling-anchor"></p><div class="table-wrap schedule-table"><table><thead><tr><th>时段</th><th>建议动作</th><th>储能功率（kW）</th><th>预计SOC（时段末）</th></tr></thead><tbody id="rolling-rows"><tr><td colspan="4" class="empty">暂无后续建议</td></tr></tbody></table></div></section><section class="panel compact-plan"><section class="forecast-reference" id="chart-panel" hidden><div class="section-head"><div><h2>24 小时调度安排</h2><p id="chart-context"></p></div><div class="legend"><span><i class="swatch" style="--swatch:var(--purple)"></i>负载预测(kW)</span><span><i class="swatch" style="--swatch:var(--orange)"></i>光伏预测(kW)</span><span><i class="swatch" style="--swatch:var(--green)"></i><span id="storage-power-label">储能计划(kW)</span></span><span><i class="swatch dashed" style="--swatch:var(--red)"></i>当前时刻</span></div></div><div class="chart-wrap"><div class="chart-stage"><svg id="chart" class="chart" preserveAspectRatio="none" viewBox="0 0 1140 480" role="img" aria-label="当天负载预测、光伏预测与储能计划功率图"></svg><div class="chart-time-axis" aria-label="时间轴"><span style="left:5.26315789%">00:00</span><span style="left:20.17543860%">04:00</span><span style="left:35.08771930%">08:00</span><span style="left:50.00000000%">12:00</span><span style="left:64.91228070%">16:00</span><span style="left:79.82456140%">20:00</span><span style="left:94.73684211%">24:00</span></div><span id="current-chart-time" class="chart-current-time" hidden></span></div></div><div class="compact-plan-stats"><div class="overview-item cost-comparison"><span class="label">日计划费用对比</span><div class="cost-comparison-row"><span id="ref-baseline-label">原计划预计</span><strong id="ref-baseline-cost">—</strong></div><div class="cost-comparison-row"><span>当前计划预计</span><strong id="ref-plan-cost">—</strong></div><div class="cost-comparison-row cost-comparison-result"><span id="ref-saving-label">预计减少</span><strong id="ref-saving">—</strong></div></div><div class="overview-item forecast-summary"><div class="forecast-summary-row" id="compact-pv-metric"><span>预测光伏发电</span><div><strong id="compact-pv-energy">—</strong><span class="forecast-unit">kWh</span></div></div><div class="forecast-summary-row"><span>预测峰值负载</span><div><strong id="compact-load-peak">—</strong><span class="forecast-unit">kW</span></div></div></div></div><div class="time-select"><label for="time">查看时段</label><input id="time" type="range" min="0" max="95" value="72" step="1"><output id="time-label" for="time">18:00</output></div><div class="inspector" id="inspector" aria-live="polite"></div><p class="period-explanation" id="period-reason"></p></section>
-<section class="timeline-reference"><div class="section-head"><div><h2>日 24 小时安排策略</h2><p class="small muted">日计划衔接后续滚动建议 · 相邻同动作时段已合并</p></div><button class="text-btn" id="show-parameters">查看策略参数 →</button></div><div class="track-label">电价 · 元/kWh</div><div id="price-timeline" class="price-timeline"></div><div class="track-label" id="storage-track-label">储能计划</div><div id="action-timeline" class="action-timeline" aria-label="全天充放电安排"></div><p id="timeline-selection" class="note" aria-live="polite"></p><div class="timeline-hours"><span>00:00</span><span>04:00</span><span>08:00</span><span>12:00</span><span>16:00</span><span>20:00</span><span>24:00</span></div></section>
+<section class="panel log-reference" aria-labelledby="rolling-title" hidden><div class="section-head"><div><h2 id="rolling-title">后续滚动建议</h2><p id="rolling-context">等待实测状态与当日日计划</p></div><span class="badge" id="rolling-status">等待计划</span></div><p class="note" id="rolling-anchor"></p><div class="table-wrap schedule-table"><table><thead><tr><th>时段</th><th>建议动作</th><th>储能功率（kW）</th><th>预计SOC（时段末）</th></tr></thead><tbody id="rolling-rows"><tr><td colspan="4" class="empty">暂无后续建议</td></tr></tbody></table></div></section><section class="panel compact-plan"><section class="forecast-reference" id="chart-panel" hidden><div class="section-head"><div><h2>24 小时调度安排</h2><p id="chart-context"></p><p id="daily-dispatch-status" role="status" aria-live="polite"></p></div><div class="legend"><span><i class="swatch" style="--swatch:var(--purple)"></i>负载预测(kW)</span><span><i class="swatch" style="--swatch:var(--orange)"></i>光伏预测(kW)</span><span><i class="swatch" style="--swatch:var(--green)"></i><span id="storage-power-label">储能计划(kW)</span></span><span><i class="swatch dashed" style="--swatch:var(--red)"></i>当前时刻</span></div></div><div class="chart-wrap"><div class="chart-stage"><svg id="chart" class="chart" preserveAspectRatio="none" viewBox="0 0 1140 480" role="img" aria-label="当天负载预测、光伏预测与储能计划功率图"></svg><div class="chart-time-axis" aria-label="时间轴"><span style="left:5.26315789%">00:00</span><span style="left:20.17543860%">04:00</span><span style="left:35.08771930%">08:00</span><span style="left:50.00000000%">12:00</span><span style="left:64.91228070%">16:00</span><span style="left:79.82456140%">20:00</span><span style="left:94.73684211%">24:00</span></div><span id="current-chart-time" class="chart-current-time" hidden></span></div></div><p class="note" id="daily-plan-summary"></p><div class="compact-plan-stats"><div class="overview-item cost-comparison"><span class="label">日计划费用对比</span><div class="cost-comparison-row"><span id="ref-baseline-label">原计划预计</span><strong id="ref-baseline-cost">—</strong></div><div class="cost-comparison-row"><span>当前计划预计</span><strong id="ref-plan-cost">—</strong></div><div class="cost-comparison-row cost-comparison-result"><span id="ref-saving-label">预计减少</span><strong id="ref-saving">—</strong></div></div><div class="overview-item forecast-summary"><div class="forecast-summary-row" id="compact-pv-metric"><span>预测光伏发电</span><div><strong id="compact-pv-energy">—</strong><span class="forecast-unit">kWh</span></div></div><div class="forecast-summary-row"><span>预测峰值负载</span><div><strong id="compact-load-peak">—</strong><span class="forecast-unit">kW</span></div></div></div></div><div class="time-select"><label for="time">查看时段</label><input id="time" type="range" min="0" max="95" value="72" step="1"><output id="time-label" for="time">18:00</output></div><div class="inspector" id="inspector" aria-live="polite"></div><p class="period-explanation" id="period-reason"></p></section>
+<section class="timeline-reference"><div class="section-head"><div><h2>日 24 小时安排策略</h2><p class="small muted">日计划安排 · 实际充放功率由 EMS 控制</p></div><button class="text-btn" id="show-parameters">查看策略参数 →</button></div><div class="track-label">电价 · 元/kWh</div><div id="price-timeline" class="price-timeline"></div><div class="track-label" id="storage-track-label">储能计划</div><div id="action-timeline" class="action-timeline" aria-label="全天充放电安排"></div><p id="timeline-selection" class="note" aria-live="polite"></p><div class="timeline-hours"><span>00:00</span><span>04:00</span><span>08:00</span><span>12:00</span><span>16:00</span><span>20:00</span><span>24:00</span></div></section>
 
 
-</section><section class="panel log-reference schedule-reference"><div class="section-head"><div><h2>滚动建议时段记录</h2><p id="schedule-context">正在读取计划…</p></div><button class="text-btn" id="all-logs" hidden>全部日志 →</button></div><div class="table-wrap schedule-table" tabindex="0" role="region" aria-label="滚动建议时段列表"><table><thead><tr><th>时段</th><th>动作</th><th class="number">站级参考功率（kW）</th><th>时段状态</th></tr></thead><tbody id="schedule-rows"><tr><td colspan="4" class="empty">暂无计划</td></tr></tbody></table></div><div id="recent-logs" hidden></div></section><section class="panel log-reference strategy-log-panel" aria-labelledby="strategy-log-title"><div class="section-head"><div><h2 id="strategy-log-title">调度日志</h2><p id="strategy-log-context">等待调度记录</p></div></div><div id="strategy-execution-logs" tabindex="0" role="region" aria-label="调度日志列表"><p class="empty">暂无调度日志</p></div></section><section class="panel log-reference" aria-labelledby="rolling-version-title" hidden><details style="margin:0;padding:0;border:0"><summary id="rolling-version-title">滚动计划历史</summary><p class="note" id="rolling-version-context"></p><div id="rolling-version-logs"></div></details></section></div></section><section id="panel-records" role="tabpanel" aria-labelledby="tab-records" hidden><button class="btn" id="back-console" hidden>返回调度控制台</button><div class="section-head"><div><h2>日计划生成记录</h2><p>查看历次日计划与预计收益</p></div></div><div class="records-summary" id="record-summary"></div><article class="panel record-panel"><div class="filters"><label>电站<select id="record-station" disabled><option value="*">全部电站</option></select></label><label>计划日期<input type="date" id="record-date"></label><label>状态<select id="record-status"><option value="all">全部状态</option><option value="ready">已生成</option><option value="blocked">未生成</option></select></label><label class="search">记录编号<input id="record-search" type="search" placeholder="搜索记录编号"></label><button class="btn" id="reset">清除筛选</button></div><div class="table-wrap"><table><thead><tr><th>记录 / 生成时间</th><th>电站 / 计划日期</th><th>策略结果</th><th class="number">预计净节省</th><th class="number">峰价时段峰值降低</th><th>记录类型</th><th>详情</th></tr></thead><tbody id="records"></tbody></table></div><p class="empty" id="empty" hidden>没有匹配记录，请调整筛选条件。</p><p class="note" style="margin-top:16px">执行情况请查看「调度日志」。</p></article></section><footer><span id="reference-updated">正在读取计划</span><span>费用与收益为预计值</span></footer></main><dialog id="parameters-dialog"><div class="section-head"><h2>策略参数</h2><button class="btn" id="close-parameters">关闭</button></div><div class="constraints" id="constraints"></div><p class="note" id="basis-note"></p></dialog><dialog id="detail" aria-labelledby="detail-title"><div class="section-head"><div><div class="eyebrow" id="detail-id"></div><h2 id="detail-title">调度记录详情</h2></div><button class="btn" id="close-detail">关闭</button></div><div id="detail-content"></div></dialog><div class="toast" id="toast" role="status" hidden></div><div hidden id="legacy-render-targets">
+</section><section class="panel log-reference schedule-reference"><div class="section-head"><div><h2>日计划下发安排</h2><p id="schedule-context">正在读取计划…</p></div><button class="text-btn" id="all-logs" hidden>全部日志 →</button></div><div class="table-wrap schedule-table" tabindex="0" role="region" aria-label="日计划下发安排列表"><table><thead><tr><th>时段</th><th>动作</th><th class="number">建议功率（kW）</th><th class="number">EMS 设定（kW）</th><th>写表状态</th></tr></thead><tbody id="schedule-rows"><tr><td colspan="5" class="empty">暂无计划</td></tr></tbody></table></div><div id="recent-logs" hidden></div></section><section class="panel log-reference strategy-log-panel" aria-labelledby="strategy-log-title"><div class="section-head"><div><h2 id="strategy-log-title">调度日志</h2><p id="strategy-log-context">等待调度记录</p></div></div><div id="strategy-execution-logs" tabindex="0" role="region" aria-label="调度日志列表"><p class="empty">暂无调度日志</p></div></section></div></section><section id="panel-records" role="tabpanel" aria-labelledby="tab-records" hidden><button class="btn" id="back-console" hidden>返回调度控制台</button><div class="section-head"><div><h2>日计划生成记录</h2><p>查看历次日计划与预计收益</p></div></div><div class="records-summary" id="record-summary"></div><article class="panel record-panel"><div class="filters"><label>电站<select id="record-station" disabled><option value="*">全部电站</option></select></label><label>计划日期<input type="date" id="record-date"></label><label>状态<select id="record-status"><option value="all">全部状态</option><option value="ready">已生成</option><option value="blocked">未生成</option></select></label><label class="search">记录编号<input id="record-search" type="search" placeholder="搜索记录编号"></label><button class="btn" id="reset">清除筛选</button></div><div class="table-wrap"><table><thead><tr><th>记录 / 生成时间</th><th>电站 / 计划日期</th><th>策略结果</th><th class="number">预计净节省</th><th class="number">峰价时段峰值降低</th><th>记录类型</th><th>详情</th></tr></thead><tbody id="records"></tbody></table></div><p class="empty" id="empty" hidden>没有匹配记录，请调整筛选条件。</p><p class="note" style="margin-top:16px">执行情况请查看「调度日志」。</p></article></section><footer><span id="reference-updated">正在读取计划</span><span>费用与收益为预计值</span></footer></main><dialog id="parameters-dialog"><div class="section-head"><h2>策略参数</h2><button class="btn" id="close-parameters">关闭</button></div><div class="constraints" id="constraints"></div><p class="note" id="basis-note"></p></dialog><dialog id="detail" aria-labelledby="detail-title"><div class="section-head"><div><div class="eyebrow" id="detail-id"></div><h2 id="detail-title">调度记录详情</h2></div><button class="btn" id="close-detail">关闭</button></div><div id="detail-content"></div></dialog><div class="toast" id="toast" role="status" hidden></div><div hidden id="legacy-render-targets">
 <header class="top"><div class="brand"><div class="mark"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m13 2-8 12h6l-1 8 9-13h-7Z"/></svg></div><div><h1>M4 / 优化调度</h1></div></div><div class="top-actions"><span class="badge" id="header-station">电站</span><span class="badge">全天计划</span></div></header>
 <nav class="tabs" role="tablist" aria-label="调度工作区"><button id="tab-decision" class="tab" role="tab" aria-selected="true" aria-controls="panel-decision">今日调度</button><button id="tab-records" class="tab" role="tab" aria-selected="false" aria-controls="panel-records" tabindex="-1">运行记录</button></nav>
 <section id="legacy-decision" role="tabpanel" aria-labelledby="tab-decision">
@@ -121,7 +121,7 @@ const stationName=id=>stationRegistry.get(id)?.name||'未知电站', today=()=>n
 const timeText=v=>Number.isFinite(Date.parse(v))?new Date(v).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false}):'时间不可用';
 const query=new URLSearchParams(location.search), token=query.get('token');
 const submittingPlans=new Set();
-let autoPlanEnabled=false,lastAutoDate=today(),rollingAdvice=null,rollingHistory=null;
+let autoPlanEnabled=false,lastAutoDate=today(),rollingAdvice=null,rollingHistory=null,dailyDispatch=null,previewDaily=false,dispatchSubmitting=false;
 let plan=null,selected=72,activeTab='decision',generation=0,historyGeneration=0,detailGeneration=0,pollTimer=null,records=[],latestJobs=new Map(),context=null;
 let projectMetadata=null,stationRegistry=new Map(),projectReady=false;
 function validateProject(data){
@@ -159,7 +159,7 @@ function renderStationControls(selectedStation){
  for(const station of projectMetadata.stations){
   for(const target of [select,history]){const option=document.createElement('option');option.value=station.id;option.textContent=station.name;target.append(option);}
   const button=document.createElement('button');button.dataset.stationId=station.id;button.textContent=station.name;button.setAttribute('aria-pressed',String(station.id===selectedStation));
-  button.onclick=()=>{if(!projectReady||select.value===station.id)return;select.value=station.id;document.querySelectorAll('[data-station-id]').forEach(b=>b.setAttribute('aria-pressed',String(b===button)));loadCurrent();refreshReferenceSources();};toggle.append(button);
+  button.onclick=()=>{if(!projectReady||select.value===station.id)return;select.value=station.id;previewDaily=false;document.querySelectorAll('[data-station-id]').forEach(b=>b.setAttribute('aria-pressed',String(b===button)));loadCurrent();refreshReferenceSources();};toggle.append(button);
  }
  select.value=selectedStation;history.value='*';$('project-label').textContent=projectMetadata.project_id+' / 策略控制台';
  for(const id of ['station','plan-date','record-station','tab-records','all-logs'])$(id).disabled=false;
@@ -248,31 +248,43 @@ function mapPlan(record,request,station,date,settings,controls,emsBaseline){
  assert(finite(m?.energy_cost)&&finite(bm?.energy_cost)&&finite(cap?.energy_capacity_kwh)&&cap.energy_capacity_kwh>0&&finite(cap.max_charge_kw)&&finite(cap.max_discharge_kw)&&finite(cap.initial_soc_pct),'费用或储能参数不可用');
  assert(finite(bounds?.soc_min_pct)&&finite(bounds?.soc_max_pct),'SOC 约束不可用');
  if(requireStation(station).has_pv)assert(request.source_versions?.pv_gap_policy==='pv-night-zero-20-07-v1','旧日计划的光伏预测完整性未校验，请等待重新生成');
+ const operatingFloor=c.daily_policy_version==='m4-daily-operating-floor-v1';
+ let inventoryAdjustment=0;
  if(requireStation(station).policy==='peak_reserve'){
-  const reserveVersions={'m4-daily-peak-reserve-v1':'peak-reserve-v1','m4-daily-peak-reserve-v2':'peak-reserve-v2','m4-daily-peak-reserve-v3':'peak-reserve-v3','m4-daily-peak-reserve-v4':'peak-reserve-v4'};
-  assert(reserveVersions[c.daily_policy_version]&&request.peak_reserve_policy?.version===reserveVersions[c.daily_policy_version]&&request.source_versions.daily_policy===c.daily_policy_version&&c.terminal_energy_rule==='not_less_than_baseline','本站日优化策略已变化，请重新生成');
+  const reserveVersions={'m4-daily-peak-reserve-v1':'peak-reserve-v1','m4-daily-peak-reserve-v2':'peak-reserve-v2','m4-daily-peak-reserve-v3':'peak-reserve-v3','m4-daily-peak-reserve-v4':'peak-reserve-v4','m4-daily-operating-floor-v1':'peak-reserve-v4'};
+  assert(reserveVersions[c.daily_policy_version]&&request.peak_reserve_policy?.version===reserveVersions[c.daily_policy_version]&&request.source_versions.daily_policy===c.daily_policy_version&&c.terminal_energy_rule===(operatingFloor?'operating_floor_inventory_adjusted':'not_less_than_baseline'),'本站日优化策略已变化，请重新生成');
+  if(operatingFloor){
+   assert(request.source_versions.terminal_policy==='daily-operating-floor-v1'&&finite(bounds.preferred_soc_min_pct)&&request.peak_reserve_policy.terminal_soc_min_pct===Math.max(bounds.soc_min_pct,bounds.preferred_soc_min_pct),'日末电量目标无法校验');
+   assert(chosen.plan.at(-1).expected_soc_pct>=request.peak_reserve_policy.terminal_soc_min_pct-1e-5,'日末电量不足');
+   if(c.status==='optimized'){
+    const valley=inputs.filter(p=>p.tariff_period==='gu').map(p=>p.buy_price_per_kwh),price=Number(request.source_versions.terminal_inventory_price);
+    assert(valley.length>0&&valley.every(v=>finite(v)&&v>=0)&&finite(price)&&price===Math.max(...valley)&&finite(cap.charge_efficiency)&&cap.charge_efficiency>0&&cap.charge_efficiency<=1,'日末库存费用无法校验');
+    inventoryAdjustment=Math.max(0,base.plan.at(-1).expected_soc_pct-chosen.plan.at(-1).expected_soc_pct)*cap.energy_capacity_kwh/100*price/cap.charge_efficiency;
+    assert(finite(c.terminal_inventory_adjustment_yuan)&&Math.abs(inventoryAdjustment-c.terminal_inventory_adjustment_yuan)<1e-5,'日末库存费用不一致');
+   }
+  }
  }
  assert(Math.abs(bm.energy_cost-c.baseline_cost_yuan)<1e-5,'基线费用无法校验');
  if(c.status==='optimized'){
-  assert(c.revenue_gate_version==='daily-net-savings-100-v1'&&finite(m.cycle_cost)&&finite(bm.cycle_cost)&&bm.energy_cost+bm.cycle_cost-m.energy_cost-m.cycle_cost>=100,'预计净节省未达到100元，请重新生成计划');
+  assert(c.revenue_gate_version==='daily-net-savings-100-v1'&&finite(m.cycle_cost)&&finite(bm.cycle_cost)&&bm.energy_cost+bm.cycle_cost-m.energy_cost-m.cycle_cost-inventoryAdjustment>=100,'预计净节省未达到100元，请重新生成计划');
   assert(c.recommended_source==='optimized'&&chosen.profile_id===record.selected?.profile_id&&chosen.plan_version===record.selected?.plan_version&&c.candidate_plan_version===chosen.plan_version,'推荐方案版本不匹配');
-  assert(finite(c.savings_yuan)&&c.savings_yuan>0&&Math.abs(m.energy_cost-c.optimized_cost_yuan)<1e-5&&Math.abs(bm.energy_cost-m.energy_cost-c.savings_yuan)<1e-5,'费用比较无法校验');
+  assert(finite(c.savings_yuan)&&c.savings_yuan>0&&Math.abs(m.energy_cost-c.optimized_cost_yuan)<1e-5&&Math.abs(bm.energy_cost-m.energy_cost-inventoryAdjustment-c.savings_yuan)<1e-5,'费用比较无法校验');
+  if(operatingFloor)assert(finite(c.net_savings_yuan)&&Math.abs(bm.energy_cost+bm.cycle_cost-m.energy_cost-m.cycle_cost-inventoryAdjustment-c.net_savings_yuan)<1e-5,'预计净节省无法校验');
   const importLimit=validatedImportLimit(station,bounds);
   assert(finite(importLimit)&&Math.max(...chosen.plan.map(p=>p.grid_import_kw))<=importLimit+1e-5,'优化计划超出购电硬约束');
   const delta=(chosen.plan.at(-1).expected_soc_pct-base.plan.at(-1).expected_soc_pct)*cap.energy_capacity_kwh/100;
-  if(requireStation(station).policy==='peak_reserve')assert(request.source_versions.daily_policy===c.daily_policy_version&&c.terminal_energy_rule==='not_less_than_baseline'&&delta>=-1e-5,'日末保电约束无法校验');
+  if(requireStation(station).policy==='peak_reserve')assert(request.source_versions.daily_policy===c.daily_policy_version&&(operatingFloor?chosen.plan.at(-1).expected_soc_pct>=request.peak_reserve_policy.terminal_soc_min_pct-1e-5:c.terminal_energy_rule==='not_less_than_baseline'&&delta>=-1e-5),'日末保电约束无法校验');
   else assert(Math.abs(delta)<=1e-5,'基线与优化方案日末电量不同，不能比较节省');
  }else assert(c.recommended_source==='ems'&&chosen.plan_version===base.plan_version&&Math.abs(m.energy_cost-bm.energy_cost)<1e-5,'EMS 推荐方案不匹配');
  const emsOriginal=c.status==='ems',configuredPowers=emsOriginal?emsSchedulePowers(emsBaseline,station,controls.version):null;
  const periods={gu:'谷',valley:'谷',ping:'平',flat:'平',feng:'峰',peak:'峰',jian:'尖',sharp:'尖'};
- const points=chosen.plan.map((v,i)=>{const input=inputs[i],simulatedPower=v.mode==='charge'?-v.target_power_kw:v.mode==='discharge'?v.target_power_kw:0,power=emsOriginal?configuredPowers[i]:optimizedDisplayPower(simulatedPower,i?chosen.plan[i-1].expected_soc_pct:cap.initial_soc_pct,v.expected_soc_pct,bounds.soc_min_pct);return {i,simulatedPower,time:clock(i),price:input.buy_price_per_kwh,tariff:periods[input.tariff_period]||'电价',load:input.load_forecast_kw,pv:input.pv_forecast_kw,base:base.plan[i].grid_import_kw,grid:v.grid_import_kw,power,soc:v.expected_soc_pct,action:power<0?'储能充电':power>0?'储能放电':'保持待机'};});
+ const points=chosen.plan.map((v,i)=>{const input=inputs[i],simulatedPower=v.mode==='charge'?-v.target_power_kw:v.mode==='discharge'?v.target_power_kw:0,power=simulatedPower;return {i,simulatedPower,time:clock(i),price:input.buy_price_per_kwh,tariff:periods[input.tariff_period]||'电价',load:input.load_forecast_kw,pv:input.pv_forecast_kw,base:base.plan[i].grid_import_kw,grid:v.grid_import_kw,power,soc:v.expected_soc_pct,action:power<0?'储能充电':power>0?'储能放电':'保持待机'};});
  const tariffs=[];points.forEach((v,i)=>{const last=tariffs.at(-1);if(last&&last.name===v.tariff&&last.price===v.price)last.end=(i+1)/4;else tariffs.push({start:i/4,end:(i+1)/4,name:v.tariff,price:v.price,color:v.tariff==='谷'?'var(--green)':v.tariff==='峰'?'var(--orange)':v.tariff==='尖'?'var(--red)':'var(--muted)'});});
  const sum=fn=>points.reduce((v,p)=>v+fn(p)*.25,0),{peakBase,peakPlan,cut}=peakWindowStats(inputs,base.plan,chosen.plan);
- return {station,date,emsOriginal,points,tariffs,cap:cap.energy_capacity_kwh,maxPower:Math.max(cap.max_charge_kw,cap.max_discharge_kw,1),limit:bounds.demand_limit_kw,baseline:bm.energy_cost,cost:m.energy_cost,wear:m.cycle_cost,baseWear:bm.cycle_cost,saving:finite(m.cycle_cost)&&finite(bm.cycle_cost)?bm.energy_cost+bm.cycle_cost-m.energy_cost-m.cycle_cost:null,charged:sum(p=>Math.max(0,-p.simulatedPower)),discharged:sum(p=>Math.max(0,p.simulatedPower)),pvRate:sum(p=>p.pv)>0?m.pv_self_use_rate:null,pvExtra:finite(m.pv_self_use_kwh)&&finite(bm.pv_self_use_kwh)?m.pv_self_use_kwh-bm.pv_self_use_kwh:null,peakBase,peakPlan,cut,initialSoc:cap.initial_soc_pct,endSoc:points.at(-1).soc,minSoc:Math.min(...points.map(p=>p.soc)),maxSoc:Math.max(...points.map(p=>p.soc)),bounds,comparison:c,record,request};
+ return {station,date,emsOriginal,points,tariffs,cap:cap.energy_capacity_kwh,maxPower:Math.max(cap.max_charge_kw,cap.max_discharge_kw,1),limit:bounds.demand_limit_kw,baseline:bm.energy_cost,cost:m.energy_cost,inventoryAdjustment,wear:m.cycle_cost,baseWear:bm.cycle_cost,saving:finite(m.cycle_cost)&&finite(bm.cycle_cost)?bm.energy_cost+bm.cycle_cost-m.energy_cost-m.cycle_cost-inventoryAdjustment:null,charged:sum(p=>Math.max(0,-p.simulatedPower)),discharged:sum(p=>Math.max(0,p.simulatedPower)),pvRate:sum(p=>p.pv)>0?m.pv_self_use_rate:null,pvExtra:finite(m.pv_self_use_kwh)&&finite(bm.pv_self_use_kwh)?m.pv_self_use_kwh-bm.pv_self_use_kwh:null,peakBase,peakPlan,cut,initialSoc:cap.initial_soc_pct,endSoc:points.at(-1).soc,minSoc:Math.min(...points.map(p=>p.soc)),maxSoc:Math.max(...points.map(p=>p.soc)),bounds,comparison:c,record,request};
 }
 function dailySnapshotNote(p){
- const gaps=Number(p.request?.source_versions?.pv_zero_filled_points||0);
- return '生成于 '+timeText(p.record.finished_at)+' · '+p.date+' 日计划。'+(gaps>0?'该计划含光伏缺测估算，暂无有效滚动建议，当前显示日计划。':'暂无有效滚动建议，当前显示日计划。');
+ return '生成于 '+timeText(p.record.finished_at)+' · '+p.date+' 整日预测，非实际执行曲线；下发安排见下方记录。';
 }
 function renderPlan(p){
  plan=p;for(const id of ['decision-side','metrics','chart-panel','plan-tags','period-hero','plan-layout'])$(id).hidden=false;
@@ -285,9 +297,12 @@ function renderPlan(p){
  $('pv-rate').closest('article').hidden=!finite(p.pvRate);metric('pv-rate',fmt(p.pvRate*100,1)+'%');metric('pv-extra',finite(p.pvExtra)?'较 EMS 基准消纳变化 '+fmt(p.pvExtra)+' kWh':'');
  metric('battery-energy',fmt(p.charged)+' / '+fmt(p.discharged)+' kWh');metric('soc-range','SOC '+fmt(p.minSoc)+'%–'+fmt(p.maxSoc)+'% · 日终 '+fmt(p.endSoc)+'%');
  metric('chart-context',dailySnapshotNote(p));
- metric('storage-power-label',p.emsOriginal?'EMS 配置功率(kW)':'储能计划(kW)');metric('storage-track-label','储能安排');
+ const spans=mode=>{const groups=[];p.points.forEach((v,i)=>{const applies=mode==='charge'?v.simulatedPower < -10:v.simulatedPower > 10;if(!applies)return;const last=groups.at(-1);if(last&&last.end===i)last.end=i+1;else groups.push({start:i,end:i+1});});return groups.map(g=>clock(g.start)+'–'+clock(g.end)).join('、');};
+ const charges=spans('charge'),discharges=spans('discharge');
+ $('daily-plan-summary').textContent=(charges?'充电安排：'+charges+'。':'当天无充电安排。')+(discharges?'放电安排：'+discharges+'。':'当天无放电安排。')+'日计划预计日末电量 '+fmt(p.endSoc,1)+'%。';
+ metric('storage-power-label','日计划建议功率(kW)');metric('storage-track-label','储能安排');
  $('constraints').innerHTML=[['储能容量',fmt(p.cap)+' kWh'],['最大充 / 放电功率',fmt(p.request.capability.max_charge_kw)+' / '+fmt(p.request.capability.max_discharge_kw)+' kW'],['SOC 安全范围',fmt(p.bounds.soc_min_pct)+'%–'+fmt(p.bounds.soc_max_pct)+'%'],['初始 / 日终 SOC',fmt(p.initialSoc)+'% / '+fmt(p.endSoc)+'%'],['需量目标',fmt(p.limit)+' kW'],['生成时间',timeText(p.record.finished_at)]].map(([k,v])=>'<div class="label">'+esc(k)+'<b style="color:var(--ink)">'+esc(v)+'</b></div>').join('');
- metric('basis-note','预计费用和节省按相同条件与原计划比较，不代表实际收益。'+(p.comparison.terminal_energy_rule==='not_less_than_baseline'?'日末电量不低于原计划。':'日末电量与原计划一致。'));
+ metric('basis-note','预计费用和节省按相同条件与原计划比较，不代表实际收益。'+(p.comparison.terminal_energy_rule==='not_less_than_baseline'?'日末电量不低于原计划。':p.comparison.terminal_energy_rule==='operating_floor_inventory_adjusted'?'日末电量按最低运行要求安排。':'日末电量与原计划一致。'));
  $('price-timeline').innerHTML=p.tariffs.map(t=>`<div class="price-segment" style="flex:${t.end-t.start};background:color-mix(in srgb,${t.color} 12%,var(--panel));color:${t.color}">${esc(t.name)} ${t.price.toFixed(2)}</div>`).join('');renderChart();renderInspector();
 }
 function validateJob(job,station){assert(job?.station_id===station&&['empty','running','completed','failed'].includes(job.status),'全天任务格式不匹配');if(job.result)assert(job.result.schema_version==='m4-decision-results-v1'&&job.result.station_id===station&&job.result.dispatch_status==='not_dispatched','计划结果格式不匹配');}
@@ -318,7 +333,14 @@ function restoreView(station,date){
 function readCurrent(station,date){
  const key=viewKey(station,date);
  if(!pendingReads.has(key)){
-  const request=Promise.all([api(station,'daily-inputs'),api(station,'daily-plan'),api(station,'settings'),api(station,'control-sources')]);
+  const request=Promise.allSettled([api(station,'daily-inputs'),api(station,'daily-plan'),api(station,'settings'),api(station,'control-sources')]).then(results=>{
+   const job=results[1].status==='fulfilled'?results[1].value:null;
+   if(!job?.active_daily){const failed=results.find(v=>v.status==='rejected');if(failed)throw failed.reason;return results.map(v=>v.value);}
+   const frozen=job.active_daily;
+   return [results[0].status==='fulfilled'?results[0].value:{sources:{},can_compare:false},job,
+    results[2].status==='fulfilled'?results[2].value:{version:frozen.request.source_versions.configuration},
+    results[3].status==='fulfilled'?results[3].value:{version:frozen.request.source_versions.controls}];
+  });
   pendingReads.set(key,request);request.finally(()=>{if(pendingReads.get(key)===request)pendingReads.delete(key);}).catch(()=>{});
  }
  return pendingReads.get(key);
@@ -346,7 +368,7 @@ async function recalculatePlan(){
   const job=await api(station,'daily-plan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})});
   validateJob(job,station);latestJobs.set(station,job);forgetView(station,date);
   pendingReads.delete(viewKey(station,date));
-  if(isCurrent()){notify('已提交重算，正在更新计划。');await loadCurrent();}
+  if(isCurrent()){previewDaily=false;notify('已提交重算，已下发安排保持不变。');await loadCurrent();}
  }catch(error){
   if(isCurrent()){
    notify('重算请求未确认：'+error.message);
@@ -384,15 +406,25 @@ async function loadCurrent(){
  if(date!==today()){setLoading(false);clearPlan('请选择当天查看策略','此处仅展示当天计划；历史日期请在「调度记录」中筛选。');return;}
  try{
   const [inputs,job,settings,liveControls]=await readCurrent(station,date);
-  if(id!==generation)return;validateJob(job,station);rollingAdvice=job.rolling||null;rollingHistory=job.rolling_history||null;renderRollingAdvice();
+  if(id!==generation)return;validateJob(job,station);rollingAdvice=null;rollingHistory=job.rolling_history||null;dailyDispatch=job.daily_dispatch||null;latestJobs.set(station,job);renderDailyDispatch();renderRollingAdvice();
   autoPlanEnabled=job.automation?.enabled===true;
-  $('auto-plan-status').textContent=autoPlanEnabled?'日计划 + 每15分钟滚动':'自动计算未开启';
-  $('auto-plan-status').title=autoPlanEnabled?'自动计算，关闭页面后仍继续；下次更新 '+timeText(job.automation.next_check_at):'自动计算未开启';
+  $('auto-plan-status').textContent=autoPlanEnabled?'日计划自动生成':'自动计算未开启';
+  $('auto-plan-status').title=autoPlanEnabled?'关闭页面后仍继续检查日计划；下次检查 '+timeText(job.automation.next_check_at):'自动计算未开启';
+  const frozen=job.active_daily;
+  if(frozen&&!previewDaily){
+   const savedControls={version:frozen.request.source_versions.controls};
+   const savedSettings={version:frozen.request.source_versions.configuration};
+   context={station,date,inputs,settings,controls:savedControls,executionControls:liveControls};cacheable=true;
+   renderPlan(mapPlan(frozen.result.record,frozen.request,station,date,savedSettings,savedControls,frozen.baseline));
+   renderDailyDispatch();
+   if(job.status==='running')schedulePlanStatusPoll(station,date,id);
+   return;
+  }
   assert(inputs.schema_version==='m4-daily-inputs-v1'&&inputs.date===date&&inputs.usage==='retrospective_comparison_only'&&inputs.dispatch_status==='not_dispatched'&&inputs.configuration_version===settings.version,'全天输入日期或配置不匹配');
   const controls=inputs.can_compare?comparisonControls(inputs,liveControls,station):liveControls;
   context={station,date,inputs,settings,controls,executionControls:liveControls};latestJobs.set(station,job);cacheable=true;
   if(job.status==='running'){if(plan?.station===station&&plan.date===date){badge.textContent='新计划计算中 · 保留上次计划';}else{clearPlan('计划计算中',job.message||'正在读取输入并计算…');}schedulePlanStatusPoll(station,date,id);return;}
-  if(!inputs.can_compare){const night=currentRollingPayload()?.request?.source_versions?.night_charging_policy==='night-valley-direct-v1';clearPlan(night?'凌晨谷电充电':'等待完整数据',night?'充电安排已生成，下发状态请查看调度记录。':inputs.checks?.filter(c=>c.status!=='ready').map(c=>c.detail).join('；')||'当天数据尚未就绪。');return;}
+  if(!inputs.can_compare){const night=currentDailyDispatch()?.active_plan?.kind==='night_fallback';clearPlan(night?'凌晨谷电充电':'等待完整数据',night?'充电安排已生成，下发状态请查看调度记录。':inputs.checks?.filter(c=>c.status!=='ready').map(c=>c.detail).join('；')||'当天数据尚未就绪。');return;}
   if(job.status==='failed')clearPlan('计划未生成',job.message||'请检查数据后重新生成');
   else if(job.status==='completed'&&job.result?.record){try{renderPlan(mapPlan(job.result.record,job.request,station,date,settings,controls,job.baseline));}catch(error){if(inputs.comparison?.status==='ems')renderBaseline(context,error.message);else throw error;}}
   else if(inputs.can_compare&&inputs.comparison?.status==='ems'){
@@ -400,10 +432,10 @@ async function loadCurrent(){
   }else clearPlan('等待完整数据',inputs.checks?.filter(c=>c.status!=='ready').map(c=>c.detail).join('；')||'暂无可用全天计划。');
 
  }catch(error){cacheable=false;if(id===generation){forgetView(station,date);clearPlan('数据暂不可用',error.message);}}
- finally{if(id===generation){setLoading(false);updateRecalculateButton();}if(id===generation&&cacheable)rememberView(station,date);}
+ finally{if(id===generation){setLoading(false);updateRecalculateButton();renderDailyDispatch();}if(id===generation&&cacheable)rememberView(station,date);}
 }
 function renderBaseline({station,date,inputs,settings,controls},reason){const record={station_id:station,run_id:inputs.request?.request_id,finished_at:inputs.fetched_at,input_summary:{configuration_version:inputs.configuration_version},daily_comparison:inputs.comparison};const preview=mapPlan(record,inputs.request,station,date,settings,controls,inputs.baseline);preview.pendingOptimizationReason=reason||(autoPlanEnabled?'当天优化计划将自动生成。':'自动计算未开启，可点击“立即重算”生成当天计划。');renderPlan(preview);}
-function recordRow(record,station,job=null){const c=record.daily_comparison,m=c?.recommended?.metrics,b=c?.baseline?.metrics;const saving=m&&b&&[m.energy_cost,m.cycle_cost,b.energy_cost,b.cycle_cost].every(finite)?b.energy_cost+b.cycle_cost-m.energy_cost-m.cycle_cost:null,cut=peakWindowStats(job?.request?.points||record.daily_points,c?.baseline?.plan,c?.recommended?.plan).cut;return {saving,cut,id:record.run_id,station,date:dateOf(record.plan_start_at||job?.request?.plan_start_at),created:record.finished_at||record.started_at,state:record.status==='completed'?'ready':'blocked',status:record.status,job,record:job?record:null};}
+function recordRow(record,station,job=null){const c=record.daily_comparison,m=c?.recommended?.metrics,b=c?.baseline?.metrics;const saving=m&&b&&[m.energy_cost,m.cycle_cost,b.energy_cost,b.cycle_cost].every(finite)?b.energy_cost+b.cycle_cost-m.energy_cost-m.cycle_cost-(c.status==='optimized'&&c.terminal_energy_rule==='operating_floor_inventory_adjusted'?c.terminal_inventory_adjustment_yuan:0):null,cut=peakWindowStats(job?.request?.points||record.daily_points,c?.baseline?.plan,c?.recommended?.plan).cut;return {saving,cut,id:record.run_id,station,date:dateOf(record.plan_start_at||job?.request?.plan_start_at),created:record.finished_at||record.started_at,state:record.status==='completed'?'ready':'blocked',status:record.status,job,record:job?record:null};}
 function filtered(){return records.filter(r=>($('record-station').value==='*'||r.station===$('record-station').value)&&(!$('record-date').value||r.date===$('record-date').value)&&($('record-status').value==='all'||r.state===$('record-status').value)&&String(r.id||'').toLowerCase().includes($('record-search').value.trim().toLowerCase()));}
 function renderRecords(message=''){
  const rows=filtered();$('record-summary').textContent=message||rows.length+' 条日计划记录';$('empty').hidden=rows.length>0||message.includes('正在读取');
@@ -472,7 +504,9 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden)renderCurr
 function renderDailyLayout(){
  const p=plan,v=displayedPlanPoints()[selected],rows=items=>items.map(([k,val])=>'<div class="summary-row"><span>'+esc(k)+'</span><strong>'+esc(val)+'</strong></div>').join('');
  renderCurrentStrategy();
- $('period-reason').textContent='本时段为'+v.tariff+'段，电价 '+fmt(v.price,2)+' 元/kWh。'+(v.rolling?(v.historical?'历史建议：':'滚动建议：')+v.action+' '+fmt(Math.abs(v.power),2)+' kW，预计购电 '+fmt(v.grid)+' kW。':p.emsOriginal?'EMS 原配置：'+v.action+' '+fmt(Math.abs(v.power))+' kW；考虑 SOC 与需量约束后，模拟平均储能功率 '+fmt(v.simulatedPower)+' kW，模拟购电 '+fmt(v.grid)+' kW。':'采用方案安排'+v.action+'，计划购电 '+fmt(v.grid)+' kW；原计划预计购电为 '+fmt(v.base)+' kW。');
+ const advice=Math.abs(v.simulatedPower),mode=v.simulatedPower<0?'charge':v.simulatedPower>0?'discharge':'idle';
+ const reason=advice<=10?'本时段不形成充放电下发安排。':mode==='charge'?(v.tariff==='谷'?'谷段安排充电，为后续供电补充电量。':v.pv>=v.load+advice?'利用预计光伏余电充电。':'本时段按日计划补充电量。'):(['峰','尖'].includes(v.tariff)?'高价时段安排放电，减少预计电网购电。':'本时段按日计划安排放电，供应负荷。');
+ $('period-reason').textContent=reason+'时段末预计 SOC '+fmt(v.soc,1)+'%，实际充放功率由 EMS 控制。';
  $('plan-summary').innerHTML=rows([['采用方案净电费',money(p.cost)],['全天最大购电',fmt(Math.max(...p.points.map(q=>q.grid)))+' kW'],['计划 SOC 范围',fmt(p.minSoc,1)+'%–'+fmt(p.maxSoc,1)+'%']]);
  $('input-summary').innerHTML=rows([['负荷预测','96 时段已校验'],['光伏预测',Number(p.request.source_versions?.pv_zero_filled_points)>0?'含 '+p.request.source_versions.pv_zero_filled_points+' 时段补零估算':'96 时段已校验'],['分时电价','已载入计划'],['功率 / SOC 约束','已载入计划'],['执行情况','查看调度日志']]);
  const groups=[];p.points.forEach(q=>{const last=groups.at(-1);if(last&&last.sign===Math.sign(q.power)){last.end=q.i+1;last.values.push(q.power);}else groups.push({start:q.i,end:q.i+1,sign:Math.sign(q.power),values:[q.power],action:q.action});});
@@ -482,10 +516,10 @@ function renderDailyLayout(){
 
 $('chart').onclick=event=>{if(!plan)return;const point=$('chart').createSVGPoint();point.x=event.clientX;point.y=event.clientY;const local=point.matrixTransform($('chart').getScreenCTM().inverse());selected=Math.max(0,Math.min(95,Math.floor((local.x-60)/1020*96)));$('time').value=selected;renderInspector();};
 function renderInspector(){rollingSelectedSlot=selected;renderDailyLayout();renderActualOverview();renderScheduleTable();const p=displayedPlanPoints()[selected];
-$('time-label').textContent=p.time+'–'+clock(selected+1);$('time').setAttribute('aria-valuetext',p.time+' '+p.action);$('inspector').innerHTML=`<div><div class="label">${p.time}–${clock(selected+1)} · ${p.tariff}段 ${p.price.toFixed(2)} 元/kWh</div><strong>${p.action}</strong></div><div><span class="label">负荷 / 光伏</span><strong>${fmt(p.load)} / ${fmt(p.pv)} <small>kW</small></strong></div><div><span class="label">${p.rolling?'滚动建议功率':plan.emsOriginal?'EMS 配置功率':'计划参考功率'}</span><strong>${fmt(Math.abs(p.power))} <small>kW</small></strong></div><div><span class="label">${p.rolling?'建议购电(kW)':plan.emsOriginal?'模拟购电(kW)':'计划购电(kW)'}</span><strong>${fmt(p.grid)} <small>kW</small></strong></div><div class="soc-reading"><span class="label">${p.historical?'历史建议 SOC':p.rolling?'滚动预计 SOC':'日计划 SOC'}</span><strong>${finite(p.soc)?fmt(p.soc,1)+'%':'—'}</strong><div class="label soc-timing">计划 ${esc(plan.date)} ${clock(selected+1)}（时段末）</div></div>`;const line=$('chart-cursor'),x=60+(selected+.5)*1020/96;line.setAttribute('x1',x);line.setAttribute('x2',x);}
+$('time-label').textContent=p.time+'–'+clock(selected+1);$('time').setAttribute('aria-valuetext',p.time+' '+p.action);$('inspector').innerHTML=`<div><div class="label">${p.time}–${clock(selected+1)} · ${p.tariff}段 ${p.price.toFixed(2)} 元/kWh</div><strong>${p.action}</strong></div><div><span class="label">负荷 / 光伏</span><strong>${fmt(p.load)} / ${fmt(p.pv)} <small>kW</small></strong></div><div><span class="label">${p.rolling?'滚动建议功率':'日计划建议功率'}</span><strong>${fmt(Math.abs(p.power))} <small>kW</small></strong></div><div><span class="label">${p.rolling?'建议购电(kW)':plan.emsOriginal?'模拟购电(kW)':'计划购电(kW)'}</span><strong>${fmt(p.grid)} <small>kW</small></strong></div><div class="soc-reading"><span class="label">${p.historical?'历史建议 SOC':p.rolling?'滚动预计 SOC':'日计划预计 SOC'}</span><strong>${finite(p.soc)?fmt(p.soc,1)+'%':'—'}</strong><div class="label soc-timing">计划 ${esc(plan.date)} ${clock(selected+1)}（时段末）</div></div>`;const line=$('chart-cursor'),x=60+(selected+.5)*1020/96;line.setAttribute('x1',x);line.setAttribute('x2',x);}
 
 
-const advisoryStateText={daily_plan:'日计划',table_pending:'已下发 · 待生效',table_active:'执行中',table_ended:'已执行',table_unconfirmed:'下发待确认',pending:'未开始',active_unverified:'时段进行中 · 未核实执行',ended_unverified:'时段已结束 · 未核实执行',superseded:'已替代',expired:'已失效'};
+const advisoryStateText={daily_plan:'日计划',table_pending:'已下发 · 待生效',table_active:'计划时段内 · 表已确认',table_ended:'计划时段已结束 · 表已确认',table_unconfirmed:'下发待确认',pending:'未开始',active_unverified:'时段进行中 · 未核实执行',ended_unverified:'时段已结束 · 未核实执行',superseded:'已替代',expired:'已失效'};
 const advisoryStateColor={daily_plan:'muted',table_pending:'pending',table_active:'active',table_ended:'ended',table_unconfirmed:'error',pending:'muted',active_unverified:'warning',ended_unverified:'warning',superseded:'muted',expired:'muted'};
 function emsStateBadge(state){return '<span class="badge ems-status ems-status-'+(advisoryStateColor[state]||'muted')+'">'+esc(advisoryStateText[state]||'未核实')+'</span>';}
 function emsPointState(point,now=Date.now()){
@@ -500,18 +534,6 @@ function currentRollingHistory(){
  const h=rollingHistory;
  return h?.schema_version==='m4-rolling-history-v1'&&h.station_id===$('station').value&&h.date===$('plan-date').value&&h.date===today()&&h.dispatch_status==='not_dispatched'&&Array.isArray(h.points)&&Array.isArray(h.versions)?h:null;
 }
-let rollingVersionRenderKey=null;
-function renderRollingVersionLogs(){
- const h=currentRollingHistory(),container=$('rolling-version-logs');
- const key=JSON.stringify([$('station').value,$('plan-date').value,h]);
- if(key===rollingVersionRenderKey)return;
- rollingVersionRenderKey=key;
- $('rolling-version-context').textContent=h?stationName(h.station_id)+' · '+h.date:'等待滚动建议历史';
- if(!h){container.innerHTML='<p class="empty">滚动建议历史暂不可用</p>';return;}
- container.innerHTML=h.versions.map(v=>'<article class="strategy-event"><time>生成 '+esc(timeText(v.finished_at))+'</time><h3>'+esc(timeText(v.effective_at))+' 起 · '+(v.source==='optimized'?'优化建议':'原计划安排')+'</h3><details><summary>查看时段</summary><p class="note">版本 '+esc(v.run_id)+'</p><div class="table-wrap"><table><thead><tr><th>时段</th><th>动作</th><th>功率 kW</th><th>预计 SOC</th><th>状态</th></tr></thead><tbody>'+v.plan.map(point=>'<tr><td>'+esc(timeText(point.timestamp))+'</td><td>'+esc({charge:'充电',discharge:'放电',idle:'待机'}[point.mode]||'未知')+'</td><td>'+fmt(point.target_power_kw,2)+'</td><td>'+fmt(point.expected_soc_pct,1)+'%</td><td>'+emsStateBadge(emsPointState(point))+'</td></tr>').join('')+'</tbody></table></div></details></article>').join('')||'<p class="empty">暂无滚动计划历史</p>';
- if(h.skipped)container.innerHTML+='<p class="note">部分历史记录暂不可用</p>';
-}
-
 function dispatchLogTitle(point){
  const period={feng:'峰段',jian:'尖段'}[point.tariff_period];
  if(period&&point.mode==='discharge'&&finite(point.target_power_kw)&&point.target_power_kw>.01&&finite(point.load_forecast_kw)&&point.load_forecast_kw>.01&&finite(point.pv_forecast_kw)&&point.pv_forecast_kw>=0&&finite(point.grid_import_kw)&&point.grid_import_kw>=0){
@@ -523,66 +545,17 @@ function dispatchLogTitle(point){
 }
 let dispatchLogRenderKey=null;
 function renderStrategyExecutionLogs(){
- renderRollingVersionLogs();
- const h=currentRollingHistory(),container=$('strategy-execution-logs'),now=Date.now();
- const key=JSON.stringify([$('station').value,$('plan-date').value,h?.points,Math.floor(now/900000)]);
- if(key===dispatchLogRenderKey)return;
- dispatchLogRenderKey=key;
- $('strategy-log-context').textContent=h?stationName(h.station_id)+' · '+h.date:'等待调度建议历史';
- if(!h?.points.some(point=>point.ems_execution==='confirmed')){container.innerHTML='<p class="empty">暂无已确认执行的调度日志</p>';return;}
- const groups=[];
- for(const point of h.points){
-  const at=Date.parse(point.timestamp);if(at>now||point.ems_execution!=='confirmed')continue;
-  const power=point.mode==='idle'?0:Number(point.target_power_kw.toFixed(2));
-  const mode=power===0?'idle':point.mode,title=dispatchLogTitle(point),state=emsPointState(point,now),last=groups.at(-1);
-  if(last&&last.end===at&&last.mode===mode&&last.state===state&&last.title===title){last.end=at+900000;last.minPower=Math.min(last.minPower,power);last.maxPower=Math.max(last.maxPower,power);last.soc=point.expected_soc_pct;}
-  else groups.push({start:at,end:at+900000,mode,state,title,minPower:power,maxPower:power,soc:point.expected_soc_pct});
- }
- const dayStart=Date.parse(h.date+'T00:00:00+08:00');
- container.innerHTML=groups.reverse().map(g=>'<article class="strategy-event"><div class="strategy-event-head"><time>'+clock((g.start-dayStart)/900000)+'–'+clock((g.end-dayStart)/900000)+'</time></div><h3>'+esc(g.title)+'</h3><p>建议功率 '+fmt(g.minPower,2)+(g.maxPower!==g.minPower?'–'+fmt(g.maxPower,2):'')+' kW · 时段末预计 SOC '+fmt(g.soc,1)+'%</p>'+emsStateBadge(g.state)+'</article>').join('');
+ const state=currentDailyDispatch(),container=$('strategy-execution-logs');
+ $('strategy-log-context').textContent='计划表确认记录 · 实际执行以实测为准';
+ container.innerHTML=(state?.versions||[]).slice().reverse().map(v=>'<article class="strategy-event"><time>'+esc(timeText(v.effective_at))+' 起</time><h3>'+(v.kind==='daily'?'日计划':'凌晨保底充电')+'</h3><p>计划表已确认 · 今日有效 · 充放电设定 600 kW</p><p class="note">设备实际执行尚未核实</p></article>').join('')||'<p class="empty">暂无计划表确认记录</p>';
 }
 
-function currentRollingPayload(){
- const job=rollingAdvice,p=job?.result,station=$('station').value;
- if(job?.station_id!==station||job.status!=='completed'||p?.station_id!==station||p.date!==today()||$('plan-date').value!==p.date||p.schema_version!=='m4-rolling-plan-v1'||p.dispatch_status!=='not_dispatched'||!(Date.parse(p.valid_until)>Date.now()))return null;
- const start=Date.parse(p.effective_at),dayStart=Date.parse(p.date+'T00:00:00+08:00');
- if(!p.anchor||!Number.isFinite(start)||start<dayStart||start>=dayStart+86400000||(start-dayStart)%900000!==0||!Array.isArray(p.plan)||!p.plan.length||!p.plan.every((v,i)=>Date.parse(v.timestamp)===start+i*900000&&start+(i+1)*900000<=dayStart+86400000&&['charge','discharge','idle'].includes(v.mode)&&finite(v.target_power_kw)&&v.target_power_kw>=0&&finite(v.expected_soc_pct)))return null;
- return p;
-}
-function rollingDisplayPoints(){
- const history=currentRollingHistory(),rolling=currentRollingPayload(),points=new Map(),now=Date.now();
- for(const v of history?.points||[]){
-  const at=Date.parse(v.timestamp);
-  // Ended advice only replaces the daily plan when EMS table readback confirms it.
-  if(at+900000<=now&&v.ems_execution!=='confirmed')continue;
-  points.set(at,{...v,historical:true});
- }
- if(rolling){
-  const inputs=new Map((rolling.request?.points||[]).map(v=>[Date.parse(v.timestamp),v]));
-  for(const v of rolling.plan){
-   const at=Date.parse(v.timestamp);
-   // Once a slot has started its archived version owns the historical value.
-   if(points.has(at)||at+900000<=now)continue;
-   points.set(at,{...inputs.get(at),...v,run_id:rollingAdvice.run_id,source:rolling.source});
-  }
- }
- return [...points.values()].sort((a,b)=>Date.parse(a.timestamp)-Date.parse(b.timestamp));
-}
-function displayedPlanPoints(){
- if(!plan)return [];
- if(plan.station!==$('station').value||plan.date!==$('plan-date').value)return plan.points;
- const dayStart=Date.parse(plan.date+'T00:00:00+08:00'),updates=new Map(rollingDisplayPoints().map(v=>[Date.parse(v.timestamp),v]));
- return plan.points.map((point,i)=>{
-  const v=updates.get(dayStart+i*900000);
-  if(!v)return point;
-  const power=v.mode==='charge'?-v.target_power_kw:v.mode==='discharge'?v.target_power_kw:0;
-  return {...point,rolling:true,historical:!!v.historical,runId:v.run_id,emsExecution:v.ems_execution,rollingState:v.state,power,simulatedPower:power,grid:v.grid_import_kw,soc:v.expected_soc_pct,action:power<0?'储能充电':power>0?'储能放电':'保持待机',load:finite(v.load_forecast_kw)?v.load_forecast_kw:point.load,pv:finite(v.pv_forecast_kw)?v.pv_forecast_kw:point.pv};
- });
-}
+function currentRollingPayload(){return null;}
+function rollingDisplayPoints(){return [];}
+function displayedPlanPoints(){return plan?plan.points:[];}
 function refreshChartContext(){
- const rolling=currentRollingPayload();
- $('chart-context').textContent=currentRollingHistory()?.points.length?'历史按日计划展示 · 已确认执行时段采用滚动计划':rolling?'日计划衔接滚动建议 · '+timeText(rolling.effective_at)+' 起采用滚动值':dailySnapshotNote(plan);
- $('storage-power-label').textContent=rolling?'储能安排(kW)':plan.emsOriginal?'EMS 配置功率(kW)':'储能计划(kW)';
+ $('chart-context').textContent=dailySnapshotNote(plan);
+ $('storage-power-label').textContent='日计划建议功率(kW)';
 }
 function dailyRollingTimelineGroups(rolling){
  const daily=plan?.station===$('station').value&&plan.date===$('plan-date').value?plan:null;
@@ -602,28 +575,67 @@ function renderActionTimeline(rolling){
  const label=g=>clock(g.start)+'–'+clock(g.end)+' · '+g.action+' '+powerText(g);
  timeline.innerHTML=groups.map(g=>'<button class="action-segment '+(g.sign<0?'charge':g.sign>0?'discharge':'idle')+'" aria-label="'+label(g)+'" title="'+label(g)+'" style="grid-column:'+(g.start+1)+' / span '+(g.end-g.start)+'" aria-pressed="'+(rollingSelectedSlot!==null&&rollingSelectedSlot>=g.start&&rollingSelectedSlot<g.end)+'" data-start="'+g.start+'"><span class="segment-copy"><span>'+clock(g.start)+'–'+clock(g.end)+'</span><strong>'+g.action+'</strong></span></button>').join('');
  const selectedGroup=groups.find(g=>rollingSelectedSlot!==null&&rollingSelectedSlot>=g.start&&rollingSelectedSlot<g.end);
- const source=rolling?clock((Date.parse(rolling.effective_at)-Date.parse(rolling.date+'T00:00:00+08:00'))/900000)+' 起采用滚动建议':currentRollingHistory()?.points.length?'历史建议与日计划参考 · 暂无有效后续建议':'日计划 · 暂无有效滚动建议';
+ const source='日计划建议 · 实际功率由 EMS 控制';
  $('timeline-selection').textContent=(selectedGroup?'已选：'+label(selectedGroup)+' · ':'')+source;
  timeline.querySelectorAll('button').forEach(b=>b.onclick=()=>{rollingSelectedSlot=Number(b.dataset.start);selected=rollingSelectedSlot;$('time').value=selected;if(plan){renderInspector();}else renderActionTimeline(currentRollingPayload());});
 }
 let rollingSelectedSlot=null;
+function currentDailyDispatch(){
+ return dailyDispatch?.station_id===$('station').value&&dailyDispatch.date===$('plan-date').value?dailyDispatch:null;
+}
+function renderDailyDispatch(){
+ const job=latestJobs.get($('station').value),state=currentDailyDispatch(),active=state?.active_plan;
+ const candidate=job?.status==='completed'&&job.result?.record?.daily_comparison?.recommended;
+ const pending=candidate&&job.run_id!==state?.confirmed_daily_run_id;
+ $('preview-daily').hidden=!job?.active_daily||!pending;
+ $('preview-daily').textContent=previewDaily?'返回已下发日计划':'查看新计划';
+ $('dispatch-daily').hidden=!pending||job?.ems_table_write?.enabled!==true;
+ $('dispatch-daily').disabled=dispatchSubmitting||state?.status==='writing'||state?.status==='blocked'||plan?.record?.run_id!==job?.run_id;
+ $('dispatch-daily').textContent=dispatchSubmitting?'正在提交…':state?.confirmed_daily_run_id?'替换剩余计划':'下发日计划';
+ const text=state?.status==='blocked'||state?.status==='failed'?state.message:active?.status==='plan_table_readback_verified'?(active.kind==='daily'?'日计划表已确认':'凌晨保底计划表已确认'):state?.message||'日计划尚未下发';
+ $('daily-dispatch-status').textContent=text+(active?' · 今日有效 · 充放电设定 600 kW':'')+(pending&&job?.active_daily?' · 有新计划待查看，当前安排保持不变':'');
+}
+async function dispatchDailyPlan(){
+ if($('dispatch-daily').disabled||$('dispatch-daily').hidden)return;
+ const station=$('station').value,date=$('plan-date').value,run=plan?.record?.run_id;
+ if(!run)return;
+ dispatchSubmitting=true;renderDailyDispatch();
+ try{
+  await api(station,'daily-dispatch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({request_id:run})});
+  notify('已提交计划表更新，仅处理未来时段。');previewDaily=false;
+ }catch(error){notify('计划表更新请求未确认：'+error.message);}
+ finally{dispatchSubmitting=false;forgetView(station,date);pendingReads.delete(viewKey(station,date));if(station===$('station').value)await loadCurrent();}
+}
 function renderScheduleTable(){
  $('runtime-station').textContent=stationName($('station').value);
- renderStrategyExecutionLogs();
- const rows=$('schedule-rows'),p=currentRollingPayload(),groups=[],now=Date.now(),dayStart=Date.parse($('plan-date').value+'T00:00:00+08:00');
+ renderStrategyExecutionLogs();renderActionTimeline(null);
+ const rows=$('schedule-rows'),state=currentDailyDispatch(),active=state?.active_plan;
  const daily=plan?.station===$('station').value&&plan.date===$('plan-date').value;
- const points=daily?displayedPlanPoints().map((v,i)=>({timestamp:new Date(dayStart+i*900000).toISOString(),mode:v.power<0?'charge':v.power>0?'discharge':'idle',target_power_kw:Math.abs(v.power),run_id:v.runId,ems_execution:v.emsExecution,state:v.rollingState,display_source:v.rolling?'rolling':'daily'})):rollingDisplayPoints();
- renderActionTimeline(p);
- if(!points.length){rows.innerHTML='<tr><td colspan="4" class="empty">暂无调度安排</td></tr>';$('schedule-context').textContent='等待日计划或有效滚动建议';return;}
- for(const point of points){
-  const at=Date.parse(point.timestamp),start=(at-dayStart)/900000,power=point.mode==='idle'?0:Number(point.target_power_kw.toFixed(2));
-  const action=power===0?'待机':point.mode==='charge'?'充电':'放电';
-  const state=emsPointState(point,now),previous=groups.at(-1);
-  if(previous&&previous.end===start&&previous.action===action&&previous.power===power&&previous.state===state&&previous.runId===point.run_id)previous.end=start+1;
-  else groups.push({start,end:start+1,action,power,state,runId:point.run_id});
- }
- rows.innerHTML=groups.map(g=>`<tr><td>${clock(g.start)}–${clock(g.end)}</td><td>${g.action}</td><td class="number"><span class="schedule-power">${fmt(g.power,2)}</span></td><td>${emsStateBadge(g.state)}</td></tr>`).join('');
- $('schedule-context').textContent=stationName($('station').value)+' · '+$('plan-date').value+' · 日计划、已确认执行与后续建议';
+ const start=Date.parse($('plan-date').value+'T00:00:00+08:00');
+ const points=daily?plan.points.map((v,i)=>({timestamp:new Date(start+i*900000).toISOString(),target_power_kw:Math.abs(v.simulatedPower),mode:v.simulatedPower<0?'charge':v.simulatedPower>0?'discharge':'idle'})):active?.plan||[];
+ if(!points.length){rows.innerHTML='<tr><td colspan="5" class="empty">暂无日计划安排</td></tr>';$('schedule-context').textContent='等待日计划或凌晨保底安排';return;}
+ const versions=(state?.versions?.length?state.versions:active?[active]:[]).filter(v=>v.status==='plan_table_readback_verified');
+ const confirmed=[];
+ versions.forEach((version,index)=>{
+  const stop=index+1<versions.length?Date.parse(versions[index+1].effective_at):Infinity;
+  const schedule=Array.isArray(version.schedule)?version.schedule:(version.dispatch_plan||[]).filter(p=>p.mode!=='idle').map(p=>({start_at:p.timestamp,end_at:new Date(Date.parse(p.timestamp)+900000).toISOString(),type:p.mode,kw:600}));
+  for(const entry of schedule){
+   const begin=Math.max(Date.parse(entry.start_at),Date.parse(version.effective_at)),end=Math.min(Date.parse(entry.end_at),stop);
+   if(begin<end)confirmed.push({begin,end,mode:entry.type,kw:entry.kw,version});
+  }
+ });
+ rows.innerHTML=points.map(v=>{
+  const at=Date.parse(v.timestamp),i=(at-start)/900000,action=v.target_power_kw>10?v.mode:'idle';
+  const written=confirmed.findLast(entry=>at>=entry.begin&&at+900000<=entry.end);
+  const uncertain=['writing','blocked'].includes(state?.status)&&state.pending_effective_at&&at>=Date.parse(state.pending_effective_at);
+  const known=!uncertain&&!!written;
+  const advice=known?written.version.plan?.find(p=>Date.parse(p.timestamp)===at):null;
+  const setting=uncertain?'待核对':known?String(written.kw):'—';
+  const status=uncertain?'写表待核对':known?'下发成功':action==='idle'?'无需下发':'未下发';
+  const shownAction=known?written.mode:action,shownPower=known?(advice?.target_power_kw??v.target_power_kw):v.target_power_kw;
+  return '<tr><td>'+clock(i)+'–'+clock(i+1)+'</td><td>'+({charge:'充电',discharge:'放电',idle:'待机'}[shownAction]||'未知')+'</td><td class="number">'+fmt(shownPower,2)+'</td><td class="number">'+setting+'</td><td>'+esc(status)+'</td></tr>';
+ }).join('');
+ $('schedule-context').textContent='按成功下发的充放计划时间范围显示 · 今日有效 · 实际功率由 EMS 控制';
 }
 
 function renderActualOverview(){
@@ -640,7 +652,7 @@ function renderActualOverview(){
 
 
 function clearReferenceOverview(){$('compact-load-peak').textContent='—';$('compact-pv-energy').textContent='—';renderActualOverview();renderScheduleTable();for(const id of ['ref-price','ref-saving','ref-next'])$(id).textContent='—';for(const id of ['ref-price-next','ref-next-action'])$(id).textContent='';}
-function renderReferenceOverview(){const p=plan;$('compact-load-peak').textContent=fmt(Math.max(...p.points.map(v=>v.load)));$('compact-pv-energy').textContent=fmt(p.points.reduce((sum,v)=>sum+v.pv*.25,0),1);$('compact-pv-metric').hidden=!requireStation(p.station).has_pv;const now=new Date(Date.now()+28800000),isToday=p.date===now.toISOString().slice(0,10),index=isToday?now.getUTCHours()*4+Math.floor(now.getUTCMinutes()/15):selected,v=p.points[index];$('ref-price-label').textContent=(isToday?'当前':'所选时段')+'电价 · '+v.tariff;$('ref-price').textContent='¥ '+fmt(v.price,2);const priceNext=p.points.slice(index+1).find(q=>q.price!==v.price||q.tariff!==v.tariff);$('ref-price-next').textContent=priceNext?priceNext.time+' 进入'+priceNext.tariff+'段':'元/kWh · 当日后续不变';$('ref-baseline-cost').textContent=finite(p.baseWear)?money(p.baseline+p.baseWear):'—';$('ref-plan-cost').textContent=finite(p.wear)?money(p.cost+p.wear):'—';$('ref-saving').textContent=finite(p.saving)?money(Math.abs(p.saving)):'—';$('ref-saving-label').textContent=p.saving<0?'预计增加':'预计减少';$('ref-saving').parentElement.classList.toggle('positive',finite(p.saving)&&p.saving>0);$('ref-saving').parentElement.classList.toggle('negative',finite(p.saving)&&p.saving<0);const next=p.points.slice(index+1).find(q=>Math.sign(q.power)!==Math.sign(v.power));$('ref-next').textContent=next?next.time:'无后续变化';$('ref-next-action').textContent=next?next.action+' '+fmt(Math.abs(next.power))+' kW':v.action+'至日末';const timeLabel=$('current-chart-time');timeLabel.hidden=!isToday;timeLabel.textContent=isToday?'当前时段 '+v.time:'';timeLabel.style.left=((60+(index+.5)*1020/96)/1140*100)+'%';timeLabel.classList.toggle('align-end',index>72);const marker=$('current-chart-marker');if(marker){const x=60+(index+.5)*1020/96;marker.innerHTML=isToday?`<line x1="${x}" x2="${x}" y1="44" y2="430" stroke="var(--red)" stroke-dasharray="5 5"/>`:'';}$('reference-updated').textContent='计划生成：'+timeText(p.record.finished_at)+' · '+p.date+' · 15 分钟粒度';}
+function renderReferenceOverview(){const p=plan;$('compact-load-peak').textContent=fmt(Math.max(...p.points.map(v=>v.load)));$('compact-pv-energy').textContent=fmt(p.points.reduce((sum,v)=>sum+v.pv*.25,0),1);$('compact-pv-metric').hidden=!requireStation(p.station).has_pv;const now=new Date(Date.now()+28800000),isToday=p.date===now.toISOString().slice(0,10),index=isToday?now.getUTCHours()*4+Math.floor(now.getUTCMinutes()/15):selected,v=p.points[index];$('ref-price-label').textContent=(isToday?'当前':'所选时段')+'电价 · '+v.tariff;$('ref-price').textContent='¥ '+fmt(v.price,2);const priceNext=p.points.slice(index+1).find(q=>q.price!==v.price||q.tariff!==v.tariff);$('ref-price-next').textContent=priceNext?priceNext.time+' 进入'+priceNext.tariff+'段':'元/kWh · 当日后续不变';$('ref-baseline-cost').textContent=finite(p.baseWear)?money(p.baseline+p.baseWear):'—';$('ref-plan-cost').textContent=finite(p.wear)?money(p.cost+p.wear+(p.inventoryAdjustment||0)):'—';$('ref-saving').textContent=finite(p.saving)?money(Math.abs(p.saving)):'—';$('ref-saving-label').textContent=p.saving<0?'预计增加':'预计减少';$('ref-saving').parentElement.classList.toggle('positive',finite(p.saving)&&p.saving>0);$('ref-saving').parentElement.classList.toggle('negative',finite(p.saving)&&p.saving<0);const next=p.points.slice(index+1).find(q=>Math.sign(q.power)!==Math.sign(v.power));$('ref-next').textContent=next?next.time:'无后续变化';$('ref-next-action').textContent=next?next.action+' '+fmt(Math.abs(next.power))+' kW':v.action+'至日末';const timeLabel=$('current-chart-time');timeLabel.hidden=!isToday;timeLabel.textContent=isToday?'当前时段 '+v.time:'';timeLabel.style.left=((60+(index+.5)*1020/96)/1140*100)+'%';timeLabel.classList.toggle('align-end',index>72);const marker=$('current-chart-marker');if(marker){const x=60+(index+.5)*1020/96;marker.innerHTML=isToday?`<line x1="${x}" x2="${x}" y1="44" y2="430" stroke="var(--red)" stroke-dasharray="5 5"/>`:'';}$('reference-updated').textContent='计划生成：'+timeText(p.record.finished_at)+' · '+p.date+' · 15 分钟粒度';}
 let logRequest=0;
 async function loadRecentLogs(){if(!projectReady)return;const id=++logRequest,station=$('station').value;$('recent-logs').textContent='正在读取决策记录…';try{
  const [data,bundle]=await Promise.all([api(station,'decision-history?limit=4&offset=0'),readCurrent(station,today())]);if(id!==logRequest||station!==$('station').value)return;const items=data.items;if(!Array.isArray(items))throw Error('记录格式暂不可用');validateJob(bundle[1],station);const latest=bundle[1]?.result?.record,valid=items.filter(r=>r.status!=='unreadable');if(latest&&!valid.some(r=>r.run_id===latest.run_id))valid.unshift(latest);
@@ -650,22 +662,12 @@ async function loadRecentLogs(){if(!projectReady)return;const id=++logRequest,st
 
 let rollingRenderKey=null;
 function renderRollingAdvice(){
- const rows=$('rolling-rows'),job=rollingAdvice,p=job?.result,station=$('station').value;
- const valid=!!currentRollingPayload();
- renderScheduleTable();
- const renderKey=JSON.stringify([station,$('plan-date').value,job,valid,rollingHistory,Math.floor(Date.now()/900000)]);
- if(renderKey===rollingRenderKey)return;
- rollingRenderKey=renderKey;
- if(plan&&plan.station===station&&plan.date===$('plan-date').value){renderChart();renderInspector();}
- rows.replaceChildren();$('rolling-anchor').textContent='';$('rolling-status').textContent='等待计划';
- if(!valid){$('rolling-context').textContent=job?.status==='running'?'正在更新后续建议':p?'滚动建议已过期，等待更新':job?.message||'等待实测状态与当日日计划';rows.innerHTML='<tr><td colspan="4" class="empty">暂无有效后续建议</td></tr>';return;}
- if(!p.anchor||!Array.isArray(p.plan)||!p.plan.length||!p.plan.every(v=>finite(v.target_power_kw)&&finite(v.expected_soc_pct)&&Number.isFinite(Date.parse(v.timestamp)))){$('rolling-context').textContent='后续建议数据不完整';return;}
- $('rolling-context').textContent=timeText(p.effective_at)+' 起 · '+p.reason;
- $('rolling-status').textContent=(p.source==='optimized'?'优化计划':'沿用原计划');
- $('rolling-anchor').textContent='实测 SOC '+fmt(p.anchor.measured_soc_pct,1)+'%（'+timeText(p.anchor.observed_at)+'） · 生效时刻预计 '+fmt(p.anchor.projected_soc_pct,1)+'% · 按建议运行预测';
- rows.innerHTML=p.plan.map(v=>{const at=new Date(Date.parse(v.timestamp)+28800000),i=at.getUTCHours()*4+at.getUTCMinutes()/15;return '<tr><td>'+clock(i)+'–'+clock(i+1)+'</td><td>'+esc({charge:'充电',discharge:'放电',idle:'待机'}[v.mode]||'未知')+'</td><td>'+fmt(v.target_power_kw,2)+'</td><td>'+fmt(v.expected_soc_pct,1)+'%</td></tr>';}).join('');
+ renderStrategyExecutionLogs();
+ if(plan){refreshChartContext();renderScheduleTable();}
 }
-setInterval(renderRollingAdvice,30000);
+setInterval(()=>{renderDailyDispatch();if(plan)renderScheduleTable();},30000);
+$('preview-daily').onclick=()=>{previewDaily=!previewDaily;loadCurrent();};
+$('dispatch-daily').onclick=dispatchDailyPlan;
 
 function refreshReferenceSources(){loadRecentLogs();}
 

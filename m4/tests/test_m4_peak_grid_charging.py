@@ -153,6 +153,10 @@ class PeakGridChargingTests(unittest.TestCase):
                     economic_policy='station-1-cost-first-v1', grid_charging_policy=GRID_CHARGING_POLICY)
                 if station == 'station-2':
                     payload['peak_reserve_policy'] = dict(version='peak-reserve-v4', terminal_soc_min_pct=20.0)
+                    from m4.settings.terminal_policy import POLICY as TERMINAL_POLICY
+                    payload['points'][0]['tariff_period'] = 'gu'
+                    payload['source_versions'].update(terminal_policy=TERMINAL_POLICY,
+                        terminal_inventory_price=format(payload['points'][0]['buy_price_per_kwh'], '.17g'))
                 self.assertTrue(matches_current_daily_policy(station, payload))
                 payload['points'][0]['tariff_period'] = None
                 self.assertFalse(matches_current_daily_policy(station, payload))
@@ -177,7 +181,8 @@ class PeakGridChargingTests(unittest.TestCase):
             daily.latest.return_value = dict(status='completed', request=request.model_dump(mode='json'),
                 result=dict(record=dict(daily_comparison=dict(date=now.date().isoformat(), status='blocked'))))
             daily.store.get.return_value = SimpleNamespace(version='audit')
-            daily.inputs.fetch.return_value = dict(plan_start_at=now.replace(hour=0).isoformat(), sources={})
+            daily.inputs.fetch.return_value = dict(plan_start_at=now.replace(hour=0).isoformat(),
+                request=request.model_dump(mode='json'), sources={})
             adapter, writer = Mock(), Mock()
             service = RollingPlanService(daily, ems_remaining_adapter=adapter, ems_table_writer=writer)
             with patch('m4.settings.rolling_plans.configured_window', return_value=False), \

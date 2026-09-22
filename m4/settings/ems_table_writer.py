@@ -59,6 +59,7 @@ class EMSTableWriter:
             station_id=station, network_write_performed=False,
             device_execution_status='unverified', commissioning_only=True, completed_operations=0,
             effective_at=prepared['effective_at'], configuration_version=prepared['configuration_version'],
+            kind=payload.get('kind', 'rolling'), daily_run_id=payload.get('daily_run_id'),
             operations=prepared['operations'], cutover_record_ids=prepared.get('cutover_record_ids', []),
             pending_operation=None, verified_operations=[])
         try:
@@ -103,6 +104,9 @@ class EMSTableWriter:
                                 or any(selected[0].get(key) != expected['$eq']
                                 for clause in predicate for key, expected in clause.items())):
                             raise ModelUpdateError('计划表已被其他操作修改，暂停写入。')
+                    if action == 'destroy' and (not isinstance(selected[0].get('m4_run_id'), str)
+                            or not selected[0]['m4_run_id'].strip()):
+                        raise ModelUpdateError('现有计划没有计划 ID，保留该记录并暂停删除。')
                     url = get_project().sources['m4_base_url'].rstrip('/')+'/'+operation['path']
                     if operation['query']:
                         url += '?'+urlencode(operation['query'])
@@ -150,6 +154,8 @@ class EMSTableWriter:
             # physical device execution remains independently unverified.
             outcome['execution_basis'] = 'ems_plan_table_readback_v1'
             outcome['plan_date'] = payload['date']
+            outcome['confirmed_schedule'] = final.get('schedule', [])
+            outcome['ems_setpoint_kw'] = 600
             outcome['confirmed_plan'] = [{k: p[k] for k in
                 ('timestamp', 'mode', 'target_power_kw')} for p in dispatch_points(payload['plan'])]
             save()

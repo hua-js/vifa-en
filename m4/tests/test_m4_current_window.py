@@ -81,5 +81,14 @@ class CurrentWindowTests(TestCase):
     def test_remaining_rechecks_score_even_if_ready_flag_is_forged(self):
         inputs=self.daily();self.assertTrue(inputs['can_compare'],inputs['checks'])
         inputs['sources']['load']['accuracy_gate']['evidence']['current_score']['mape_percent']=31
+        with self.assertRaisesRegex(ValueError,'证据已变化'):
+            prepare_remaining_request(self.config,inputs,NOW)
+
+    def test_remaining_rejects_high_score_with_current_evidence_version(self):
+        from m4.settings.load_accuracy import assess
+        inputs=self.daily()
+        gate=inputs['sources']['load']['accuracy_gate']
+        gate['evidence']['current_score']['mape_percent']=31
+        inputs['sources']['load']['accuracy_gate']=assess(gate['evidence'],'station-1',NOW)
         with self.assertRaisesRegex(ValueError,'MAPE'):
             prepare_remaining_request(self.config,inputs,NOW)

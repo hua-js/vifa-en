@@ -42,6 +42,16 @@ def reserve_request(version='peak-reserve-v2', peaks=((40, 48), (56, 76))):
     return OptimizationRequest.model_validate(payload)
 
 
+def current_reserve_request():
+    """Current admission fixture, separate from historical reserve model fixtures."""
+    from m4.settings.terminal_policy import POLICY as TERMINAL_POLICY
+    payload = reserve_request('peak-reserve-v4').model_dump()
+    payload['source_versions'].update(daily_policy=PEAK_RESERVE_DAILY_POLICY,
+        terminal_policy=TERMINAL_POLICY, terminal_inventory_price=format(.27, '.17g'))
+    payload['profiles'] = [p.model_dump() for p in get_daily_profiles('station-2')]
+    return OptimizationRequest.model_validate(payload)
+
+
 class LatePeakReserveTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -87,7 +97,7 @@ class LatePeakReserveTests(unittest.TestCase):
 
     def test_new_daily_policy_rejects_old_saved_request(self):
         self.assertEqual(PEAK_RESERVE_DAILY_POLICY, 'm4-daily-operating-floor-v1')
-        current=reserve_request('peak-reserve-v4').model_dump(mode='json')
+        current=current_reserve_request().model_dump(mode='json')
         current['pv_midday_economic'] = True
         current['source_versions'].update(pv_export_policy='pv-export-flat-tariff-v1',
             grid_charging_policy=GRID_CHARGING_POLICY,

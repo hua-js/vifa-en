@@ -78,10 +78,20 @@ class RemainingPlanTests(unittest.TestCase):
         self.full_day()
         self.payload['plan'][0].update(mode='charge', target_power_kw=10)
         self.reader._read_table.return_value = [self.row, dict(self.row, id=8,
-            start_time='14:15:00', end_time='14:30:00', kw=600)]
+            start_time='14:15:00', end_time='14:30:00', kw=600, m4_run_id=self.payload['run_id'])]
         result = self.remaining()
         self.assertFalse(result['schedule'])
         self.assertEqual(result['operations']['destroy'][0]['query']['filterByTk'], 8)
+
+    def test_unmarked_future_record_blocks_replacement_without_deletion(self):
+        self.full_day()
+        for marker in (None, '', '   '):
+            with self.subTest(marker=marker):
+                self.reader._read_table.return_value = [dict(self.row, id=8,
+                    start_time='16:00:00', end_time='17:00:00', m4_run_id=marker)]
+                with self.assertRaisesRegex(ModelUpdateError, '没有计划 ID'):
+                    self.remaining()
+                self.opener.open.assert_not_called()
 
     def test_filtered_discharge_cannot_hide_demand_violation(self):
         self.full_day()
@@ -95,7 +105,7 @@ class RemainingPlanTests(unittest.TestCase):
         self.full_day()
         self.payload['plan'][0].update(mode='discharge', target_power_kw=540)
         first = dict(self.row, id=8, start_time='14:15:00', end_time='14:30:00', type='discharge', kw=80)
-        stale = dict(self.row, id=9, start_time='16:00:00', end_time='17:00:00')
+        stale = dict(self.row, id=9, start_time='16:00:00', end_time='17:00:00', m4_run_id=self.payload['run_id'])
         self.reader._read_table.return_value = [self.row, first, stale]
         result = self.remaining()
         self.assertEqual(len(result['operations']['create']), 0)
@@ -108,7 +118,7 @@ class RemainingPlanTests(unittest.TestCase):
         self.reader._read_table.return_value = [dict(self.row, start_time='14:00:00', end_time='18:00:00')]
         result = self.remaining()
         self.assertEqual(result['cutover_record_ids'], [7])
-        self.assertEqual(result['operations']['update'][0]['body'], {'end_time': '14:15:00'})
+        self.assertEqual(result['operations']['update'][0]['body'], {'end_time': '14:15:00', 'repeat': '今日有效'})
         self.assertFalse(result['operations']['create'])
         self.assertFalse(result['operations']['destroy'])
 
@@ -125,7 +135,8 @@ class RemainingPlanTests(unittest.TestCase):
         self.assertFalse(result['operations']['create'])
         self.assertFalse(result['operations']['destroy'])
         body = result['operations']['update'][0]['body']
-        self.assertEqual(body, dict(m4_run_id=self.payload['run_id'], m4_plan_date=self.payload['date']))
+        self.assertEqual(body, dict(m4_run_id=self.payload['run_id'], m4_plan_date=self.payload['date'], repeat='今日有效',
+            explain='日计划安排放电，减少电网购电。设定功率 600 kW，实际充放功率由 EMS 控制。今日有效。'))
         row.update(body)
         result = adapter.preview('station-2', self.payload, self.config, now=self.now)
         self.assertFalse(any(result['operations'].values()))
@@ -151,7 +162,7 @@ class RemainingPlanTests(unittest.TestCase):
                 else:
                     result = adapter.preview('station-2', self.payload, self.config, now=self.now)
                     self.assertEqual(result['cutover_record_ids'], [27])
-                    self.assertEqual(result['operations']['update'][0]['body'], {'end_time': '14:15:00'})
+                    self.assertEqual(result['operations']['update'][0]['body'], {'end_time': '14:15:00', 'repeat': '今日有效'})
                     self.assertEqual(result['operations']['create'][0]['body']['start_time'], '14:15:00')
                     self.assertEqual(result['operations']['create'][0]['body']['end_time'], '14:45:00')
                     self.assertFalse(result['operations']['destroy'])
@@ -174,8 +185,9 @@ class RemainingPlanTests(unittest.TestCase):
         self.full_day()
         self.payload['plan'][0].update(mode='discharge', target_power_kw=540)
         self.reader._read_table.return_value = [dict(self.row, id=8,
-            start_time='14:15:00', end_time='14:30:00', type='discharge', kw=90,
-            m4_run_id=self.payload['run_id'], m4_plan_date=self.payload['date'])]
+            start_time='14:15:00', end_time='14:30:00', type='discharge', kw=90, repeat='今日有效',
+            m4_run_id=self.payload['run_id'], m4_plan_date=self.payload['date'],
+            explain='日计划安排放电，减少电网购电。今日有效。')]
         result = self.remaining()
         self.assertEqual(result['unchanged_record_ids'], [8])
         self.assertFalse(any(result['operations'].values()))

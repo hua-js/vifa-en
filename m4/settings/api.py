@@ -95,19 +95,18 @@ def create_app(settings_path: Path | None = None, *, control_reader=None, input_
     from .daily_plans import DailyPlanService
     daily_plans = DailyPlanService(store, daily_inputs, decision_results.root.parent / 'daily-comparisons')
     from .auto_plans import AutomaticPlans
-    from .rolling_plans import RollingPlanService, PlanningCoordinator
-    from .ems_model_update import EMSModelUpdateAdapter
-    from .ems_remaining_plan import EMSRemainingPlanAdapter
+    from .rolling_plans import RollingPlanService
+    from .daily_schedule import DailyScheduleService
+    from .daily_dispatch import DailyScheduleAdapter
     model_reader = SimpleNamespace(_read_table=lambda table:
         (reader if reader is not None else ControlSourceReader(token))._read_table(table))
     from .ems_table_writer import EMSTableWriter
-    remaining_adapter = EMSRemainingPlanAdapter(model_reader, fixed_cabinet_power=True)
+    remaining_adapter = DailyScheduleAdapter(model_reader)
     table_writer = EMSTableWriter(remaining_adapter, daily_plans.root / 'ems-table-writes', token,
         enabled=os.environ.get('M4_EMS_STATION2_TABLE_WRITES') == '1')
-    rolling_plans = RollingPlanService(daily_plans,
-        ems_model_adapter=EMSModelUpdateAdapter(model_reader),
-        ems_remaining_adapter=remaining_adapter, ems_table_writer=table_writer)
-    coordinator = PlanningCoordinator(daily_plans, rolling_plans)
+    # History reader only: no writer or scheduler is connected to rolling plans.
+    rolling_plans = RollingPlanService(daily_plans)
+    coordinator = DailyScheduleService(daily_plans, table_writer)
     automatic = AutomaticPlans(coordinator, daily_plans.root,
         enabled=os.environ.get('M4_AUTO_PLAN_ENABLED', '1').lower() not in ('0', 'false', 'off'))
     app.state.automatic_plans = automatic
@@ -206,19 +205,24 @@ def create_app(settings_path: Path | None = None, *, control_reader=None, input_
     def get_daily_plan(station_id: str) -> dict:
         station_exists(station_id)
         try:
-            daily = daily_plans.latest(station_id)
+            dispatch = coordinator.latest(station_id)
             try:
-                rolling = rolling_plans.latest(station_id)
-            except Exception:
-                rolling = dict(station_id=station_id, status='failed', result=None,
-                    message='滚动建议读取失败，等待更新。')
+                daily = daily_plans.latest(station_id)
+            except (ValueError, OSError):
+                if not dispatch.get('active_daily'):
+                    raise
+                daily = dict(station_id=station_id, status='failed', result=None,
+                    message='新日计划暂不可用，保留已确认日计划。')
+            rolling = dict(station_id=station_id, status='disabled', result=None,
+                message='已停用滚动计划。')
             try:
                 history = rolling_plans.history(station_id)
             except Exception:
                 history = dict(station_id=station_id, status='failed',
                     message='滚动建议历史暂不可用。')
             return {**daily, 'automation': automatic.metadata(), 'rolling': rolling,
-                'rolling_history': history, 'ems_table_write': table_writer.status(station_id)}
+                'rolling_history': history, 'ems_table_write': table_writer.status(station_id),
+                'daily_dispatch': dispatch, 'active_daily': dispatch.get('active_daily')}
         except Exception:
             raise HTTPException(503, '全天计划读取或校验失败，请重新计算。') from None
 
@@ -226,6 +230,20 @@ def create_app(settings_path: Path | None = None, *, control_reader=None, input_
     def start_daily_plan(station_id: str) -> dict:
         station_exists(station_id)
         return daily_plans.start(station_id)
+
+    @app.post('/m4-api/stations/{station_id}/daily-dispatch', status_code=202)
+    def dispatch_daily_plan(station_id: str, body: StartDecisionRun) -> dict:
+        station_exists(station_id)
+        # Bind an explicit replacement to the exact reviewed solver version.
+        run_id = body.request_id
+        try:
+            if not isinstance(run_id, str) or str(UUID(run_id)) != run_id:
+                raise ValueError
+        except (ValueError, TypeError):
+            raise HTTPException(422, '日计划版本无效。') from None
+        if not table_writer.status(station_id).get('enabled'):
+            raise HTTPException(409, '本站未启用计划表写入。')
+        return coordinator.start(station_id, replace_run_id=run_id)
 
     from .candidate_jobs import CandidateJobs
     candidate_jobs = CandidateJobs(candidates)

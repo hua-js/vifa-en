@@ -6,6 +6,7 @@ import math
 import re
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from urllib.parse import urlencode, urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 from .schedule_power import SCHEDULE_POWER_POLICY
@@ -26,7 +27,7 @@ _TABLES = {
     't_es': ('电站容量', 'id,sn,es_power_storage,updatedAt'),
     't_need': ('需量控制', 'id,f_es_sn,need_kw,reserved_kw,rated_capacity,load_rate,updatedAt'),
     're_flow': ('防逆流', 'id,fk_es_sn,re_kw,updatedAt'),
-    't_model': ('每日充放电计划', 'id,es_sn,start_time,end_time,type,kw,repeat,updatedAt,m4_run_id,m4_plan_date'),
+    't_model': ('每日充放电计划', 'id,es_sn,start_time,end_time,type,kw,repeat,updatedAt,m4_run_id,m4_plan_date,explain'),
 }
 _TIME = re.compile(r'(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d\Z')
 _PAGE_SIZE = 100
@@ -106,12 +107,25 @@ def _schedule(rows):
         mode = row.get('type')
         if mode not in ('charge', 'discharge'):
             raise ControlSourceError('每日充放电计划含未知充放电模式')
-        if row.get('repeat') != '每天重复':
-            raise ControlSourceError('仅支持已确认的“每天重复”充放电计划')
+        if row.get('repeat') not in ('每天重复', '今日有效'):
+            raise ControlSourceError('充放电计划有效期规则无法识别')
+        valid_on = None
+        if row['repeat'] == '今日有效':
+            try:
+                marker = row.get('m4_plan_date')
+                if marker:
+                    valid_on = datetime.fromisoformat(marker.replace('Z', '+00:00')).date().isoformat()
+                else:
+                    valid_on = datetime.fromisoformat(_updated_at(row, '每日充放电计划').replace('Z', '+00:00')).astimezone(ZoneInfo('Asia/Shanghai')).date().isoformat()
+            except (AttributeError, ValueError, TypeError):
+                raise ControlSourceError('今日有效计划缺少可确认日期') from None
+            if valid_on != datetime.now(ZoneInfo('Asia/Shanghai')).date().isoformat():
+                continue
         result.append({
             'id': identifier, 'start_time': start, 'end_time': end,
             'mode': mode, 'power_kw': _number(row, 'kw', '每日充放电计划'),
             'repeat': 'daily', 'updated_at': _updated_at(row, '每日充放电计划'),
+            **({'valid_on': valid_on, 'validity': 'today'} if valid_on else {}),
         })
     return sorted(result, key=lambda row: (row['start_time'], row['end_time'], str(row['id'])))
 

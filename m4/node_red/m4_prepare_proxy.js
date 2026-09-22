@@ -11,7 +11,7 @@ const projectRequest = msg.req.route?.path === '/m4-api/project';
 const allowed = {
     GET: ['candidate-jobs','settings','control-sources','inputs','daily-inputs','daily-plan','candidates','selection-policy','decision-result','decision-history','decision-runs','bills'],
     PUT: ['settings','selection-policy'],
-    POST: ['candidate-jobs','daily-plan','candidates','selection','decision-runs']
+    POST: ['candidate-jobs','daily-plan','daily-dispatch','candidates','selection','decision-runs']
 };
 // The backend project registry is authoritative; only path-safe IDs reach it.
 if (!projectRequest && (typeof stationId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/.test(stationId))) return fail(404, '未知电站');
