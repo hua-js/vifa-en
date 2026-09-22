@@ -592,7 +592,7 @@ function renderDailyDispatch(){
  $('dispatch-daily').disabled=dispatchSubmitting||state?.status==='writing'||state?.status==='blocked'||plan?.record?.run_id!==job?.run_id;
  $('dispatch-daily').textContent=dispatchSubmitting?'正在提交…':state?.confirmed_daily_run_id?'替换剩余计划':'下发日计划';
  const text=state?.status==='blocked'||state?.status==='failed'?state.message:active?.status==='plan_table_readback_verified'?(active.kind==='daily'?'日计划表已确认':'凌晨保底计划表已确认'):state?.message||'日计划尚未下发';
- $('daily-dispatch-status').textContent=text+(active?' · 今日有效 · 充放电设定 600 kW':'')+(pending&&job?.active_daily?' · 有新计划待查看，当前安排保持不变':'');
+ $('daily-dispatch-status').textContent=text+(active?' · 今日有效':'')+(pending&&job?.active_daily?' · 有新计划待查看，当前安排保持不变':'');
 }
 async function dispatchDailyPlan(){
  if($('dispatch-daily').disabled||$('dispatch-daily').hidden)return;
@@ -696,7 +696,7 @@ function renderScheduleTable(){
   }else exportNote=' 预计上网数据暂不可用。';
  }
  rows.innerHTML=displayRows.sort((a,b)=>a.begin-b.begin).map(row=>row.html).join('')||'<tr><td colspan="4" class="empty">今日暂无可展示的安排</td></tr>';
- $('schedule-context').textContent='充放电设定600 kW，光伏余电上网设定540 kW；计划今日有效。'+exportNote;
+ $('schedule-context').textContent='充电600 kW；尖、峰段放电600 kW，平段放电540 kW；光伏余电上网540 kW。计划今日有效。'+exportNote;
 }
 
 function renderActualOverview(){

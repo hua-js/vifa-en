@@ -100,9 +100,27 @@ class RemainingPlanTests(unittest.TestCase):
                         'station-2', self.payload, self.config, now=self.now)
                     self.assertEqual(len(result['schedule']), int(power > 10))
                     if power > 10:
-                        self.assertEqual(result['schedule'][0]['kw'], 600)
+                        self.assertEqual(result['schedule'][0]['kw'], 600 if mode == 'charge' else 540)
                         self.assertEqual(result['schedule'][0]['type'], mode)
                     self.assertEqual(self.payload['plan'][0]['target_power_kw'], power)
+
+    def test_fixed_discharge_splits_at_flat_tariff_boundary(self):
+        from copy import deepcopy
+        self.full_day()
+        for index, tariff in enumerate(('ping', 'feng', 'jian', 'ping', 'gu')):
+            self.payload['plan'][index].update(mode='discharge', target_power_kw=120)
+            self.payload['request']['points'][index]['tariff_period'] = tariff
+        original = deepcopy(self.payload)
+        result = EMSRemainingPlanAdapter(self.reader, fixed_cabinet_power=True).preview(
+            'station-2', self.payload, self.config, now=self.now)
+        self.assertEqual([(row['start_time'], row['end_time'], row['kw'])
+                          for row in result['schedule']], [
+            ('14:15:00', '14:30:00', 540),
+            ('14:30:00', '15:00:00', 600),
+            ('15:00:00', '15:15:00', 540),
+            ('15:15:00', '15:30:00', 600),
+        ])
+        self.assertEqual(self.payload, original)
 
     def test_filtered_small_power_removes_conflicting_future_row(self):
         self.full_day()
@@ -157,7 +175,7 @@ class RemainingPlanTests(unittest.TestCase):
         for i in (0, 1):
             self.payload['plan'][i].update(mode='discharge', target_power_kw=300+i*20)
         row = dict(self.row, id=27, start_time='14:00:00', end_time='14:45:00',
-                   type='discharge', kw=600)
+                   type='discharge', kw=540)
         self.reader._read_table.return_value = [self.row, row]
         adapter = EMSRemainingPlanAdapter(self.reader, fixed_cabinet_power=True)
         result = adapter.preview('station-2', self.payload, self.config, now=self.now)
@@ -179,7 +197,7 @@ class RemainingPlanTests(unittest.TestCase):
                 for i in (0, 1):
                     self.payload['plan'][i].update(mode='discharge', target_power_kw=300)
                 row = dict(self.row, id=27, start_time='14:00:00', end_time='14:45:00',
-                           type='discharge', kw=600)
+                           type='discharge', kw=540)
                 row.update({k: v for k, v in changes.items() if k != 'overlap'})
                 rows = [self.row, row]
                 if changes.get('overlap'):

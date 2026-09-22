@@ -51,7 +51,8 @@ def daily_payload(daily, configuration, now=None):
         effective_at=start.isoformat(), valid_until=(start+timedelta(minutes=15)).isoformat(),
         end_at=(midnight+timedelta(days=1)).isoformat(), finished_at=now.isoformat(),
         source=comparison.get('recommended_source'), request=request, full_request=full_request, plan=points[index:],
-        prediction_basis='daily_solver_advice', ems_setpoint_kw=600,
+        prediction_basis='daily_solver_advice',
+        ems_setpoints_kw=dict(charge=600, discharge=dict(jian=600, feng=600, ping=540, gu=600)),
         device_execution_status='unverified')
 
 

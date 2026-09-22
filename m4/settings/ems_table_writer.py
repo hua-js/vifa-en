@@ -155,7 +155,10 @@ class EMSTableWriter:
             outcome['execution_basis'] = 'ems_plan_table_readback_v1'
             outcome['plan_date'] = payload['date']
             outcome['confirmed_schedule'] = final.get('schedule', [])
-            outcome['ems_setpoint_kw'] = 600
+            setpoints = sorted({row['kw'] for row in outcome['confirmed_schedule']
+                                if row['type'] in ('charge', 'discharge')})
+            outcome['ems_setpoint_kw'] = setpoints[0] if len(setpoints) == 1 else None
+            outcome['ems_setpoints_kw'] = setpoints
             outcome['confirmed_plan'] = [{k: p[k] for k in
                 ('timestamp', 'mode', 'target_power_kw')} for p in dispatch_points(payload['plan'])]
             save()

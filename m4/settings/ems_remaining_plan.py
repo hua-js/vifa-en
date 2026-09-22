@@ -125,8 +125,8 @@ class EMSRemainingPlanAdapter:
             end = at+timedelta(minutes=15)
             kw = (100 if mode == 'charge' else 90) if fixed_cabinet_power else power/len(station.cabinet_sns)
             if fixed_cabinet_power and station_id == 'station-2':
-                # Station-2 commissioning explicitly requires literal kw=600 in both modes.
-                kw = 600
+                # Map the EMS setpoint using this slot's tariff; keep solver advice intact.
+                kw = 540 if mode == 'discharge' and request['points'][index]['tariff_period'] == 'ping' else 600
             reason = _explanation(point, request['points'][index], request, startup=bool(startup))
             if segments and segments[-1]['end'] == at and segments[-1]['mode'] == mode and segments[-1]['kw'] == kw:
                 segments[-1]['end'] = end
