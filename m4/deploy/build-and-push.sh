@@ -21,7 +21,8 @@ including uncommitted/new source files; runtime secrets and local data are exclu
 Does not generate Flow JSON or standalone HTML copies. Update the Node-RED
 Template from the canonical workspace HTML when the frontend changes.
 Pushes only the fixed 0.1.0-<architecture> tag; the Git revision stays in image labels.
-Prints production update and scoped old-image cleanup commands. Never starts production services.
+Prints production update commands with preflight checks and rollback image retention.
+Never starts production services.
 EOF
 }
 
@@ -115,11 +116,11 @@ cat <<EOF
 
 Published:
   $version_ref
-Matching deployment files: $release_dir
 
 服务器更新命令（VIFA 电站2 EMS计划表联调）：
 将下面从左括号到右括号的完整代码块复制到服务器终端执行。
-The fixed tag is always pulled. Cleanup runs only after health and source-content checks.
+The fixed tag is always pulled and checked before recreating the service.
+The previous image is retained for rollback; no images are automatically deleted.
 Existing project settings, credentials and data volumes are preserved.
 
 (
@@ -127,27 +128,67 @@ Existing project settings, credentials and data volumes are preserved.
   cd /userdata/holo/pyfiles/m4/backend
   export M4_IMAGE=$version_ref
   export M4_PLATFORM=$platform
+  export M4_AUTO_PLAN_ENABLED=1
   m4_compose() {
     docker compose -f compose.yaml -f m4-production.override.yaml -f m4-ems-table.override.yaml "\$@"
   }
+  # Older server Compose files do not forward the exported automatic-plan switch.
+  # Preserve the existing override and add the missing environment key only.
+  python3 - <<'PY_AUTO'
+from datetime import datetime
+from pathlib import Path
+import re
+import shutil
+
+path = Path("m4-ems-table.override.yaml")
+text = path.read_text()
+if not re.search(r"^\s*M4_AUTO_PLAN_ENABLED\s*:", text, re.M):
+    matches = list(re.finditer(r"^([ \t]*)M4_EMS_STATION2_TABLE_WRITES\s*:[^\r\n]*", text, re.M))
+    if len(matches) != 1:
+        raise SystemExit("Cannot locate a unique EMS switch; override unchanged.")
+    match = matches[0]
+    backup = path.with_name(path.name + ".bak-" + datetime.now().strftime("%Y%m%d-%H%M%S-%f"))
+    shutil.copy2(path, backup)
+    text = text[:match.end()] + '\n' + match.group(1) + 'M4_AUTO_PLAN_ENABLED: "1"' + text[match.end():]
+    path.write_text(text)
+    print("Automatic-plan switch added; backup:", backup)
+PY_AUTO
   m4_previous_container="\$(m4_compose ps -aq m4-api)"
-  m4_previous_image=""
   if [ -n "\$m4_previous_container" ]; then
     m4_previous_image="\$(docker inspect --format '{{.Image}}' "\$m4_previous_container")"
+    m4_rollback_tag="vifa-m4-rollback:\$(date +%Y%m%d-%H%M%S)"
+    docker image tag "\$m4_previous_image" "\$m4_rollback_tag"
+    echo "Rollback image retained: \$m4_rollback_tag"
   fi
   m4_compose pull m4-api
+  m4_actual_source="\$(docker image inspect --format '{{index .Config.Labels "vifa.m4.source-sha256"}}' "\$M4_IMAGE")"
+  [ "\$m4_actual_source" = "$source_sha" ] || { echo "Source content mismatch; deployment stopped before recreation."; exit 1; }
+  m4_expected_image="\$(docker image inspect --format '{{.Id}}' "\$M4_IMAGE")"
+  m4_check_code='
+import os
+from shared.project import get_project, load_project
+
+assert os.environ.get("M4_AUTO_PLAN_ENABLED") == "1", "Automatic plans disabled or missing"
+assert os.environ.get("M4_EMS_STATION2_TABLE_WRITES") == "1", "EMS table write override missing"
+project = get_project()
+assert project.id == "vifa", "These deployment commands are for VIFA only"
+expected = load_project("/app/config/projects/vifa.json").station("station-2").m4
+actual = project.station("station-2").m4
+for key in ("telemetry_max_charge_kw", "telemetry_soc_upper_exclusive_pct", "ems_charge_kw"):
+    assert actual[key] == expected[key], f"Project configuration mismatch: {key}; update external project.json"
+    print(key, "=", actual[key])
+print("Automatic plans and EMS table writes: enabled")
+print("Project configuration:", os.environ.get("VIFA_PROJECT_CONFIG") or "built-in")
+'
+  m4_compose run --rm --no-deps -T --entrypoint python m4-api -c "\$m4_check_code"
   m4_compose up -d --no-build --force-recreate --wait --wait-timeout 120 m4-api
-  m4_compose exec -T m4-api python -c 'import os; assert os.environ.get("M4_EMS_STATION2_TABLE_WRITES") == "1", "EMS table write override missing"; print("EMS table writes: enabled")'
   m4_current_container="\$(m4_compose ps -q m4-api)"
   m4_current_image="\$(docker inspect --format '{{.Image}}' "\$m4_current_container")"
-  m4_actual_source="\$(docker image inspect --format '{{index .Config.Labels "vifa.m4.source-sha256"}}' "\$m4_current_image")"
-  [ "\$m4_actual_source" = "$source_sha" ] || { echo "Source content mismatch; old image retained."; exit 1; }
+  [ "\$m4_current_image" = "\$m4_expected_image" ] || { echo "Running image mismatch; rollback image retained, no automatic rollback."; exit 1; }
+  m4_compose exec -T m4-api python -c "\$m4_check_code"
   m4_compose images m4-api
-  if [ -n "\$m4_previous_image" ] && [ "\$m4_previous_image" != "\$m4_current_image" ]; then
-    docker image rm "\$m4_previous_image" || echo "Old image retained: still referenced or cleanup failed; no forced removal."
-  fi
   m4_compose ps
-  m4_compose logs --tail=80 m4-api
+  m4_compose logs --since 5m --tail=80 m4-api
 )
 
 Frontend: replace the M4 Node-RED Template content with:

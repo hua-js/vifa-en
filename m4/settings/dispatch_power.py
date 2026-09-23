@@ -1,6 +1,8 @@
 """Minimum station-level advice power accepted for EMS schedule dispatch."""
 
-MIN_DISPATCH_POWER_KW = 10.0
+from shared.project import get_project
+
+MIN_DISPATCH_POWER_KW = get_project().m4['minimum_dispatch_power_kw']
 
 
 def dispatch_points(points):

@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 import re
 from urllib.parse import urlsplit
+from .m4_config import project_policy, station_policy
 
 ROOT = Path(__file__).resolve().parents[1]
 _IDENTIFIER = re.compile(r'[A-Za-z0-9][A-Za-z0-9_-]{0,79}\Z')
@@ -73,6 +74,7 @@ class Station:
     alarm_advisory_cabinets: tuple[str, ...]
     ems_baseline: dict | None = None
     ems_model_record_id: int | None = None
+    m4: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -84,6 +86,7 @@ class Project:
     sources: dict[str, str]
     m1: dict
     fingerprint: str
+    m4: dict
 
     def station(self, identifier):
         for station in self.stations:
@@ -95,7 +98,11 @@ class Project:
         return {'schema_version': 1, 'project_id': self.id, 'configuration_version': self.fingerprint,
                 'stations': [{'id': s.id, 'source_code': s.source_code,
                               'name': s.name, 'has_pv': s.has_pv, 'policy': s.policy,
-                              'grid_import_limit_kw': s.grid_import_limit_kw} for s in self.stations]}
+                              'grid_import_limit_kw': s.grid_import_limit_kw,
+                              'm4_display': {'minimum_dispatch_power_kw': self.m4['minimum_dispatch_power_kw'],
+                                  'export_min_revenue_yuan': self.m4['export_min_display_revenue_yuan'],
+                                  'charge_kw': s.m4['ems_charge_kw'], 'discharge_kw': dict(s.m4['ems_discharge_kw']),
+                                  'export_kw': s.m4['ems_export_kw']}} for s in self.stations]}
 
 
 def _unique_object(pairs):
@@ -109,7 +116,11 @@ def _unique_object(pairs):
 
 def load_project(path):
     data = json.loads(Path(path).read_text(encoding='utf-8'), object_pairs_hook=_unique_object)
-    _fields(data, {'schema_version', 'project_id', 'site_id', 'timezone', 'stations', 'sources', 'm1'}, 'project')
+    if type(data) is not dict:
+        raise ValueError('Project configuration must be an object')
+    data = {'m4': {}, **data}
+    _fields(data, {'schema_version', 'project_id', 'site_id', 'timezone', 'stations', 'sources', 'm1', 'm4'}, 'project')
+    m4 = project_policy(data['m4'])
     if type(data['schema_version']) is not int or data['schema_version'] != 1:
         raise ValueError('Unsupported project schema')
     project_id, site_id = _identifier(data['project_id']), _identifier(data['site_id'])
@@ -134,7 +145,7 @@ def load_project(path):
     # Enforce cross-station ownership within each source namespace, not globally.
     ems_devices, inverters = set(), set()
     for item in data['stations']:
-        item = {'ems_baseline': None, 'ems_model_record_id': None, **item}
+        item = {'ems_baseline': None, 'ems_model_record_id': None, 'm4': {}, **item}
         _fields(item, set(Station.__dataclass_fields__), 'station')
         record_id = item['ems_model_record_id']
         if record_id is not None and (type(record_id) is not int or record_id <= 0):
@@ -176,9 +187,12 @@ def load_project(path):
         inverters.update(solar)
         stations.append(Station(sid, code, item['name'], cabinets, item['has_pv'], meter,
                                 solar, item['policy'], float(limit) if limit is not None else None, advisory,
-                                item['ems_baseline'], record_id))
-    fingerprint = hashlib.sha256(json.dumps(data, sort_keys=True, ensure_ascii=False, allow_nan=False).encode()).hexdigest()
-    return Project(project_id, site_id, data['timezone'], tuple(stations), sources, dict(data['m1']), fingerprint)
+                                item['ems_baseline'], record_id, station_policy(item['m4'], legacy_station2=sid == 'station-2')))
+    # Include resolved defaults as well as explicit overrides in plan identity.
+    normalized = {**data, 'm4': m4,
+        'stations': [{**item, 'm4': station.m4} for item, station in zip(data['stations'], stations, strict=True)]}
+    fingerprint = hashlib.sha256(json.dumps(normalized, sort_keys=True, ensure_ascii=False, allow_nan=False).encode()).hexdigest()
+    return Project(project_id, site_id, data['timezone'], tuple(stations), sources, dict(data['m1']), fingerprint, m4)
 
 
 @lru_cache(maxsize=1)

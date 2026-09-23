@@ -12,9 +12,9 @@ LOG = logging.getLogger(__name__)
 
 
 class AutomaticPlans:
-    interval_seconds = 900
-    retry_seconds = 60
-    max_attempts = 3
+    interval_seconds = get_project().m4['auto_interval_seconds']
+    retry_seconds = get_project().m4['auto_retry_seconds']
+    max_attempts = get_project().m4['auto_max_attempts']
 
     def __init__(self, service, root, *, enabled=True):
         self.service, self.root, self.enabled = service, Path(root), enabled

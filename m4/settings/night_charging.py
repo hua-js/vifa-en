@@ -7,7 +7,7 @@ from shared.project import get_project
 from m4.optimizer.contracts import CapabilitySnapshot, OptimizationConstraints, GRID_CHARGING_POLICY
 from .ems_simulation import _slot
 from .frozen_baseline import baseline_configuration, baseline_version, planning_controls
-from .realtime import build_realtime_snapshot, SOURCE_FIELDS
+from .realtime import build_realtime_snapshot, telemetry_soc_allowed, SOURCE_FIELDS
 from .schedule_power import effective_station_power, station_energy_capacity, station_schedule
 from .startup_admission import POLICY as WINDOW_POLICY, ZONE, window
 from .dispatch_power import MIN_DISPATCH_POWER_KW
@@ -73,9 +73,12 @@ def build_payload(live, configuration, run_id, *, now=None, tariff=None):
         raise ValueError('读取期间充电窗口已变化，等待下一轮。')
     start, end = (datetime.fromisoformat(allowed[k]) for k in ('effective_at', 'end_at'))
     parameters = configuration.parameters
-    max_age = min(parameters.max_input_age_seconds, 900)
+    max_age = min(parameters.max_input_age_seconds, get_project().m4['night_max_input_age_seconds'])
     capacity = station_energy_capacity(configuration, controls)
     limits = effective_station_power(configuration, controls)
+    measured_charge_limit = project_station.m4['telemetry_max_charge_kw']
+    if measured_charge_limit is None:
+        measured_charge_limit = limits['max_charge_kw']
     snapshot_config = configuration.model_copy(update={'parameters': parameters.model_copy(update={
         'energy_capacity_kwh': capacity, 'max_input_age_seconds': max_age, **limits})})
     snapshot = build_realtime_snapshot(snapshot_config, devices, now=observed)
@@ -96,12 +99,12 @@ def build_payload(live, configuration, run_id, *, now=None, tariff=None):
     powers, socs = [], []
     for cabinet in snapshot['cabinets']:
         power = _number(rows[cabinet['emu_sn']]['latest_power'])
-        if not -limits['max_charge_kw']/count <= power <= limits['max_discharge_kw']/count:
+        if not -measured_charge_limit/count <= power <= limits['max_discharge_kw']/count:
             raise ValueError('当前储能功率超出配置范围，暂停凌晨充电。')
         age = (start-datetime.fromisoformat(cabinet['observed_at'])).total_seconds()/3600
         delta = -power*parameters.charge_efficiency if power < 0 else -power/parameters.discharge_efficiency
         soc = cabinet['soc_pct']+delta*age/cabinet_capacity*100
-        if not parameters.soc_min_pct <= soc <= parameters.soc_max_pct:
+        if not telemetry_soc_allowed(configuration, soc):
             raise ValueError('充电生效时刻SOC不满足安全范围。')
         powers.append(power)
         socs.append(soc)
@@ -114,6 +117,9 @@ def build_payload(live, configuration, run_id, *, now=None, tariff=None):
         demand_limit_kw=controls['demand']['need_kw'],
         grid_import_limit_kw=parameters.grid_import_limit_kw,
         grid_export_enabled=False, grid_export_limit_kw=0.0)
+    # A valid observation above the charging target may remain idle. Retain the
+    # measured SOC instead of clipping it or inventing additional energy/headroom.
+    constraints = constraints.model_copy(update={'soc_max_pct': max(parameters.soc_max_pct, max(socs))})
     ceiling = min(constraints.demand_limit_kw, constraints.grid_import_limit_kw
         if constraints.grid_import_limit_kw is not None else constraints.demand_limit_kw)
     if held_load > ceiling:
@@ -162,7 +168,7 @@ def build_payload(live, configuration, run_id, *, now=None, tariff=None):
 
 def validate_freshness(payload, configuration, now):
     """Recheck both telemetry sources after potentially slow planning reads."""
-    max_age = min(configuration.parameters.max_input_age_seconds, 900)
+    max_age = min(configuration.parameters.max_input_age_seconds, get_project().m4['night_max_input_age_seconds'])
     for key in ('observed_at', 'load_observed_at'):
         at = datetime.fromisoformat(payload['anchor'][key])
         if at.utcoffset() is None or not 0 <= (now-at).total_seconds() <= max_age:

@@ -4,3 +4,4 @@ services:
   m4-api:
     environment:
       M4_EMS_STATION2_TABLE_WRITES: "1"
+      M4_AUTO_PLAN_ENABLED: "1"

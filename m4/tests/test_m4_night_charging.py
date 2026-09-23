@@ -57,6 +57,43 @@ class NightChargingTests(unittest.TestCase):
         self.client.current_load_result.assert_not_called()
         self.assertEqual({c.args[0] for c in self.client.list_rows.call_args_list}, {'t_emu','t_es_data'})
 
+    def test_measured_charging_above_target_keeps_plan_and_setpoint_at_600(self):
+        from m4.settings.daily_dispatch import night_payload, DailyScheduleAdapter
+        for row in self.devices:
+            row['latest_power'] = -650 / len(self.devices)
+        self.station['grid_power'] = 750.0
+        payload = night_payload(self.payload())
+        self.assertEqual(payload['ems_setpoint_kw'], 600)
+        self.assertEqual(payload['request']['capability']['max_charge_kw'], 600)
+        self.assertLessEqual(max(p['target_power_kw'] for p in payload['plan']), 600)
+        reader = SimpleNamespace(_read_table=lambda table: [])
+        result = DailyScheduleAdapter(reader).preview('station-2', payload, self.config, now=self.now)
+        charges = [op['body'] for op in result['operations']['create'] if op['body']['type'] == 'charge']
+        self.assertTrue(charges)
+        self.assertTrue(all(row['kw'] == 600 for row in charges))
+
+    def test_measured_power_above_650_is_rejected(self):
+        self.devices[0]['latest_power'] = -650 / len(self.devices) - .01
+        with self.assertRaisesRegex(ValueError, '当前储能功率超出配置范围'):
+            self.payload()
+
+    def test_soc_between_target_and_99_stays_idle_without_clipping(self):
+        from m4.settings.ems_model_update import validate_dispatch_safety
+        for row in self.devices:
+            row['latest_soc'] = 98.5
+        payload = self.payload()
+        self.assertEqual(payload['request']['capability']['initial_soc_pct'], 98.5)
+        self.assertTrue(all(p['mode'] == 'idle' and p['target_power_kw'] == 0 for p in payload['plan']))
+        self.assertEqual(self.config.parameters.soc_max_pct, 98)
+        validate_dispatch_safety(payload['request'], payload['plan'])
+
+    def test_soc_at_or_above_99_is_not_admitted(self):
+        for soc in (99.0, 99.2):
+            with self.subTest(soc=soc):
+                self.devices[0]['latest_soc'] = soc
+                with self.assertRaisesRegex(ValueError, '储能柜状态或SOC'):
+                    self.payload()
+
     def test_full_soc_becomes_idle_and_unequal_soc_never_overcharges_highest_cabinet(self):
         self.devices[0]['latest_soc'] = 98.0
         payload = self.payload()

@@ -52,14 +52,16 @@ def daily_payload(daily, configuration, now=None):
         end_at=(midnight+timedelta(days=1)).isoformat(), finished_at=now.isoformat(),
         source=comparison.get('recommended_source'), request=request, full_request=full_request, plan=points[index:],
         prediction_basis='daily_solver_advice',
-        ems_setpoints_kw=dict(charge=600, discharge=dict(jian=600, feng=600, ping=540, gu=600)),
+        ems_setpoints_kw=dict(charge=get_project().station(configuration.station_id).m4['ems_charge_kw'],
+            discharge=dict(get_project().station(configuration.station_id).m4['ems_discharge_kw'])),
         device_execution_status='unverified')
 
 
 def night_payload(payload):
     payload = deepcopy(payload)
     payload.update(schema_version=SCHEMA, usage='daily_schedule_table_only', kind='night_fallback',
-        reason='日计划未就绪，凌晨谷电保底充电。', ems_setpoint_kw=600)
+        reason='日计划未就绪，凌晨谷电保底充电。',
+        ems_setpoint_kw=get_project().station(payload['station_id']).m4['ems_charge_kw'])
     return payload
 
 

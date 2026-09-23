@@ -1,5 +1,6 @@
 """Versioned operating floor and conservative end-inventory cost adjustment."""
 import math
+from shared.project import get_project
 
 POLICY = 'daily-operating-floor-v1'
 
@@ -27,7 +28,7 @@ def inventory_cost(request, baseline_soc, candidate_soc):
 
 
 ROLLING_REFERENCE_POLICY = 'remaining-ems-operating-floor-v2'
-IDLE_SOC_TOLERANCE_PCT = 0.05
+IDLE_SOC_TOLERANCE_PCT = get_project().m4['idle_soc_tolerance_pct']
 
 
 def remaining_reference(request, capability, points, schedule):

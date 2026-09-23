@@ -74,6 +74,16 @@
             "repeat": "daily"
           }
         ]
+      },
+      "m4": {
+        "ems_charge_kw": 100.0,
+        "ems_discharge_kw": {
+          "gu": 90.0,
+          "ping": 90.0,
+          "feng": 90.0,
+          "jian": 90.0
+        },
+        "ems_export_kw": 540.0
       }
     },
     {
@@ -146,7 +156,33 @@
           }
         ]
       },
-      "ems_model_record_id": 7
+      "ems_model_record_id": 7,
+      "m4": {
+        "telemetry_max_charge_kw": 650.0,
+        "telemetry_soc_upper_exclusive_pct": 99.0,
+        "ems_charge_kw": 600.0,
+        "ems_discharge_kw": {
+          "gu": 600.0,
+          "ping": 540.0,
+          "feng": 600.0,
+          "jian": 600.0
+        },
+        "ems_export_kw": 540.0,
+        "runtime_overrides": {}
+      }
     }
-  ]
+  ],
+  "m4": {
+    "max_load_mape_pct": 30.0,
+    "minimum_net_savings_yuan": 100.0,
+    "minimum_dispatch_power_kw": 10.0,
+    "night_max_input_age_seconds": 900,
+    "auto_interval_seconds": 900,
+    "auto_retry_seconds": 60,
+    "auto_max_attempts": 3,
+    "export_min_display_revenue_yuan": 10.0,
+    "cycle_cost_per_kwh": 0.0,
+    "max_input_age_seconds": 86400,
+    "idle_soc_tolerance_pct": 0.05
+  }
 }

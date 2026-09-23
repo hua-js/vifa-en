@@ -67,5 +67,18 @@
       "grid_import_limit_kw": 800,
       "alarm_advisory_cabinets": []
     }
-  ]
+  ],
+  "m4": {
+    "max_load_mape_pct": 30.0,
+    "minimum_net_savings_yuan": 100.0,
+    "minimum_dispatch_power_kw": 10.0,
+    "night_max_input_age_seconds": 900,
+    "auto_interval_seconds": 900,
+    "auto_retry_seconds": 60,
+    "auto_max_attempts": 3,
+    "export_min_display_revenue_yuan": 10.0,
+    "cycle_cost_per_kwh": 0.0,
+    "max_input_age_seconds": 86400,
+    "idle_soc_tolerance_pct": 0.05
+  }
 }

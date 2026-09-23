@@ -142,6 +142,12 @@ function validateProject(data){
  return Object.freeze({...data,stations:Object.freeze(stations)});
 }
 function requireStation(id){assert(projectReady&&stationRegistry.has(id),'项目未就绪或电站无效');return stationRegistry.get(id);}
+function m4DisplayPolicy(id){
+ // Compatibility for pages opened against an older backend without policy metadata.
+ const value=requireStation(id).m4_display||{minimum_dispatch_power_kw:10,export_min_revenue_yuan:10,charge_kw:600,discharge_kw:{gu:600,ping:540,feng:600,jian:600},export_kw:540};
+ assert([value.minimum_dispatch_power_kw,value.export_min_revenue_yuan,value.charge_kw,value.export_kw,...['gu','ping','feng','jian'].map(k=>value.discharge_kw?.[k])].every(v=>finite(v)&&v>=0),'调度展示配置不可用');
+ return value;
+}
 function validatedImportLimit(station,bounds){
  const metadata=requireStation(station);
  if(metadata.policy==='cost_first'){
@@ -303,7 +309,7 @@ function renderPlan(p){
  $('pv-rate').closest('article').hidden=!finite(p.pvRate);metric('pv-rate',fmt(p.pvRate*100,1)+'%');metric('pv-extra',finite(p.pvExtra)?'较 EMS 基准消纳变化 '+fmt(p.pvExtra)+' kWh':'');
  metric('battery-energy',fmt(p.charged)+' / '+fmt(p.discharged)+' kWh');metric('soc-range','SOC '+fmt(p.minSoc)+'%–'+fmt(p.maxSoc)+'% · 日终 '+fmt(p.endSoc)+'%');
  metric('chart-context',dailySnapshotNote(p));
- const spans=mode=>{const groups=[];p.points.forEach((v,i)=>{const applies=mode==='charge'?v.simulatedPower < -10:v.simulatedPower > 10;if(!applies)return;const last=groups.at(-1);if(last&&last.end===i)last.end=i+1;else groups.push({start:i,end:i+1});});return groups.map(g=>clock(g.start)+'–'+clock(g.end)).join('、');};
+ const spans=mode=>{const groups=[],threshold=m4DisplayPolicy(p.station).minimum_dispatch_power_kw;p.points.forEach((v,i)=>{const applies=mode==='charge'?v.simulatedPower < -threshold:v.simulatedPower > threshold;if(!applies)return;const last=groups.at(-1);if(last&&last.end===i)last.end=i+1;else groups.push({start:i,end:i+1});});return groups.map(g=>clock(g.start)+'–'+clock(g.end)).join('、');};
  const charges=spans('charge'),discharges=spans('discharge');
  $('daily-plan-summary').textContent=(charges?'充电安排：'+charges+'。':'当天无充电安排。')+(discharges?'放电安排：'+discharges+'。':'当天无放电安排。')+'日计划预计日末电量 '+fmt(p.endSoc,1)+'%。';
  metric('storage-power-label','日计划建议功率(kW)');metric('storage-track-label','储能安排');
@@ -511,7 +517,7 @@ function renderDailyLayout(){
  const p=plan,v=displayedPlanPoints()[selected],rows=items=>items.map(([k,val])=>'<div class="summary-row"><span>'+esc(k)+'</span><strong>'+esc(val)+'</strong></div>').join('');
  renderCurrentStrategy();
  const advice=Math.abs(v.simulatedPower),mode=v.mode;
- const reason=mode==='idle'?'本时段储能待机。':advice<=10?'本时段不形成充放电下发安排。':mode==='charge'?(v.tariff==='谷'?'谷段安排充电，为后续供电补充电量。':v.pv>=v.load+advice?'利用预计光伏余电充电。':'本时段按日计划补充电量。'):(['峰','尖'].includes(v.tariff)?'高价时段安排放电，减少预计电网购电。':'本时段按日计划安排放电，供应负荷。');
+ const reason=mode==='idle'?'本时段储能待机。':advice<=m4DisplayPolicy(p.station).minimum_dispatch_power_kw?'本时段不形成充放电下发安排。':mode==='charge'?(v.tariff==='谷'?'谷段安排充电，为后续供电补充电量。':v.pv>=v.load+advice?'利用预计光伏余电充电。':'本时段按日计划补充电量。'):(['峰','尖'].includes(v.tariff)?'高价时段安排放电，减少预计电网购电。':'本时段按日计划安排放电，供应负荷。');
  $('period-reason').textContent=reason+'时段末预计 SOC '+fmt(v.soc,1)+'%。';
  $('plan-summary').innerHTML=rows([['采用方案净电费',money(p.cost)],['全天最大购电',fmt(Math.max(...p.points.map(q=>q.grid)))+' kW'],['计划 SOC 范围',fmt(p.minSoc,1)+'%–'+fmt(p.maxSoc,1)+'%']]);
  $('input-summary').innerHTML=rows([['负荷预测','96 时段已校验'],['光伏预测',Number(p.request.source_versions?.pv_zero_filled_points)>0?'含 '+p.request.source_versions.pv_zero_filled_points+' 时段补零估算':'96 时段已校验'],['分时电价','已载入计划'],['功率 / SOC 约束','已载入计划'],['执行情况','查看安排表状态']]);
@@ -765,9 +771,11 @@ function renderScheduleTable(){
   }else exportNote=' 预计上网数据暂不可用。';
  }
  applyScheduleCosts(displayRows,day);
+ const displayPolicy=m4DisplayPolicy($('station').value);
  // Hide minor export revenue only after accounting for it in the full-day total.
- rows.innerHTML=displayRows.filter(row=>!row.isExport||!finite(row.estimatedCost)||Math.abs(row.estimatedCost)>=10).sort((a,b)=>a.begin-b.begin||a.end-b.end).map(row=>row.html).join('')||'<tr><td colspan="5" class="empty">今日暂无可展示的安排</td></tr>';
- $('schedule-context').textContent='充电600 kW；尖、峰段放电600 kW，平段放电540 kW；光伏余电上网540 kW。计划今日有效。光伏上网收入以负数显示。'+exportNote;
+ rows.innerHTML=displayRows.filter(row=>!row.isExport||!finite(row.estimatedCost)||Math.abs(row.estimatedCost)>=displayPolicy.export_min_revenue_yuan).sort((a,b)=>a.begin-b.begin||a.end-b.end).map(row=>row.html).join('')||'<tr><td colspan="5" class="empty">今日暂无可展示的安排</td></tr>';
+ const discharge=displayPolicy.discharge_kw,peak=discharge.jian===discharge.feng?'尖、峰段放电'+fmt(discharge.feng)+' kW':'尖段放电'+fmt(discharge.jian)+' kW，峰段放电'+fmt(discharge.feng)+' kW';
+ $('schedule-context').textContent='充电'+fmt(displayPolicy.charge_kw)+' kW；'+peak+'，平段放电'+fmt(discharge.ping)+' kW；光伏余电上网'+fmt(displayPolicy.export_kw)+' kW。计划今日有效。光伏上网收入以负数显示。'+exportNote;
 }
 
 function renderActualOverview(){

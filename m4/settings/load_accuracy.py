@@ -9,7 +9,7 @@ import json
 STATIONS = {s.id: s.source_code for s in get_project().stations}
 POLICY = 'm4-current-task-load-mape-v3'
 SCORE_POLICY = 'load-night-weighted-mape-v1'
-MAX_MAPE = Decimal('30')
+MAX_MAPE = Decimal(format(get_project().m4['max_load_mape_pct'], 'g'))
 SHANGHAI = ZoneInfo('Asia/Shanghai')
 # Match the M3 page's default output: 15 minutes, one day, current load policy.
 INTERVAL_SECONDS = 900

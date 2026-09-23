@@ -17,7 +17,7 @@ SHANGHAI = ZoneInfo('Asia/Shanghai')
 POWER_TOLERANCE_KW = 1e-5
 ENERGY_TOLERANCE_KWH = 1e-5
 COST_TOLERANCE_YUAN = 1e-6
-MIN_NET_SAVINGS_YUAN = 100.0
+MIN_NET_SAVINGS_YUAN = get_project().m4['minimum_net_savings_yuan']
 REVENUE_GATE_VERSION = 'daily-net-savings-100-v1'
 
 

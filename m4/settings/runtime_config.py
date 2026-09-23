@@ -14,14 +14,11 @@ class RuntimeSettings(StrictModel):
     max_input_age_seconds: Annotated[int, Field(strict=True, gt=0, le=86400)]
 
 
-# Preserve the values currently configured for both stations. This is not a
-# production freshness recommendation; operators maintain these values here.
+# Project policy owns service values; dashboard parameters remain in the store.
 GLOBAL_RUNTIME_DEFAULTS = {
-    'cycle_cost_per_kwh': 0.0,
-    'max_input_age_seconds': 86400,
+    key: get_project().m4[key] for key in ('cycle_cost_per_kwh', 'max_input_age_seconds')
 }
-# Optional partial overrides, e.g. {'station-2': {'max_input_age_seconds': 300}}.
-STATION_RUNTIME_OVERRIDES: dict[str, dict] = {}
+STATION_RUNTIME_OVERRIDES = {s.id: s.m4['runtime_overrides'] for s in get_project().stations}
 RUNTIME_POLICY = 'm4-runtime-v2-pv-priority'
 
 
@@ -43,6 +40,13 @@ def effective_configuration(configuration):
     parameters = type(configuration.parameters).model_validate({
         **configuration.parameters.model_dump(), **values,
     })
+    telemetry = get_project().station(configuration.station_id).m4
+    upper = telemetry['telemetry_soc_upper_exclusive_pct']
+    charge = telemetry['telemetry_max_charge_kw']
+    if upper is not None and parameters.soc_max_pct >= upper:
+        raise ValueError('计划SOC上限必须低于实时准入上界。')
+    if charge is not None and parameters.max_charge_kw > charge:
+        raise ValueError('计划充电上限不能超过实时准入上限。')
     digest = hashlib.sha256(json.dumps({
         'policy': RUNTIME_POLICY, 'station_id': configuration.station_id,
         'project_configuration': get_project().fingerprint,

@@ -22,6 +22,13 @@ SOURCE_FIELDS = ('f_es_sn', 'emu_sn', 'latest_soc', 'last_time_iso', 'alert_stat
 ALARM_POLICY = 'emu11-alert-advisory-v1'
 
 
+def telemetry_soc_allowed(configuration, soc):
+    """Observation admission is separate from the solver's charging target."""
+    upper = get_project().station(configuration.station_id).m4['telemetry_soc_upper_exclusive_pct']
+    return (configuration.parameters.soc_min_pct <= soc
+        and (soc < upper if upper is not None else soc <= configuration.parameters.soc_max_pct))
+
+
 def alarm_is_advisory(station_id, emu_sn, policy):
     """User-authorized exception for emu11; never applies to other cabinets."""
     return policy == ALARM_POLICY and emu_sn in get_project().station(station_id).alarm_advisory_cabinets
@@ -124,7 +131,7 @@ def build_realtime_snapshot(
             soc_pct = _soc(row.get('latest_soc'))
             if soc_pct is None:
                 issues.append('latest_soc 必须为 0–100 的有限数值')
-            elif parameters and not parameters.soc_min_pct <= soc_pct <= parameters.soc_max_pct:
+            elif parameters and not telemetry_soc_allowed(configuration, soc_pct):
                 issues.append('SOC 超出本站配置的安全范围')
 
             observed_at = _timestamp(row.get('last_time_iso'))
