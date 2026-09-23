@@ -67,7 +67,7 @@ def _mutation(action, row, station, *, body=None):
     # is checked before each POST; id + updatedAt guard the checked row remotely.
     predicate = {'$and': [{'id': {'$eq': row['id']}},
         {'updatedAt': {'$eq': row['updatedAt']}}]}
-    if action == 'destroy':
+    if action == 'destroy' or action == 'update' and body and body.get('repeat') == '已过期':
         plan_id = row.get('m4_run_id')
         if not isinstance(plan_id, str) or not plan_id.strip():
             raise ModelUpdateError('现有计划没有计划 ID，保留该记录并暂停写入。')
@@ -169,9 +169,21 @@ class EMSRemainingPlanAdapter:
             if owners != [station.source_code] or type(identifier) is not int or identifier <= 0 or identifier in identifiers:
                 raise ModelUpdateError('现有计划存在共享电站、重复或无效记录。')
             identifiers.add(identifier)
+            if row.get('repeat') == '已过期':
+                preserved.append(identifier)
+                continue
             if row.get('repeat') not in ('每天重复', '今日有效') or row.get('type') not in ('charge', 'discharge', 'pv_surplus_export'):
                 raise ModelUpdateError('现有计划动作或重复规则无法解释。')
             _stamp(row.get('updatedAt'))
+            if row.get('m4_run_id') and row.get('m4_plan_date'):
+                try:
+                    plan_date = datetime.fromisoformat(row['m4_plan_date'].replace('Z', '+00:00'))
+                    if plan_date.time() != datetime.min.time():
+                        raise ValueError
+                except (KeyError, AttributeError, TypeError, ValueError):
+                    raise ModelUpdateError('旧计划日期不明确，暂停计划替换。') from None
+                if plan_date.date() < observed.date():
+                    raise ModelUpdateError('往日计划尚未标记过期，需先完成有效期处理。')
             begin, end = _clock(row.get('start_time'), observed.date()), _clock(row.get('end_time'), observed.date(), end=True)
             if end == begin:
                 raise ModelUpdateError('现有计划开始与结束时间相同。')

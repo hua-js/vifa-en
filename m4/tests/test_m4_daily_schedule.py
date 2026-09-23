@@ -29,7 +29,7 @@ class TodayValidTests(unittest.TestCase):
             'station-2', self.payload, self.config, now=self.now)
         self.assertEqual(len(result['schedule']), 1)
         self.assertEqual(result['schedule'][0]['start_time'], '14:30:00')
-        self.assertEqual(result['schedule'][0]['kw'], 600)
+        self.assertEqual(result['schedule'][0]['kw'], 540)
         self.assertEqual(result['schedule'][0]['repeat'], '今日有效')
         self.assertEqual(self.payload, before)
 
@@ -42,7 +42,7 @@ class TodayValidTests(unittest.TestCase):
         update = result['operations']['update'][0]['body']
         self.assertEqual(update, dict(end_time='14:15:00', repeat='今日有效'))
 
-    def test_expiry_only_deletes_old_owned_rows_and_migrates_legacy(self):
+    def test_expiry_only_marks_old_owned_rows_and_preserves_unmarked(self):
         old = dict(self.row, id=8, m4_run_id=str(uuid4()), m4_plan_date='2026-09-16')
         other = dict(old, id=9, es_sn=['ES01'])
         self.reader._read_table.return_value = [self.row, old, other]
@@ -50,10 +50,59 @@ class TodayValidTests(unittest.TestCase):
             date='2026-09-17', run_id=str(uuid4()), effective_at=self.start.isoformat())
         adapter = DailyScheduleAdapter(self.reader)
         result = adapter.preview('station-2', payload, self.config, now=self.now)
-        self.assertEqual([op['query']['filterByTk'] for op in result['operations']['destroy']], [8])
-        self.assertEqual(result['operations']['update'][0]['body'], {'repeat': '今日有效'})
-        self.assertEqual(result['operations']['update'][0]['query']['filterByTk'], 7)
+        self.assertFalse(result['operations']['destroy'])
+        self.assertEqual(len(result['operations']['update']), 1)
+        operation = result['operations']['update'][0]
+        self.assertEqual(operation['query']['filterByTk'], 8)
+        self.assertEqual(operation['body'], {'repeat': '已过期'})
+        import json
+        self.assertIn({'m4_run_id': {'$eq': old['m4_run_id']}},
+                      json.loads(operation['query']['filter'])['$and'])
         self.assertFalse(result['operations']['create'])
+
+    def test_expiry_never_updates_rows_without_nonempty_plan_id(self):
+        payload = dict(schema_version=SCHEMA, kind='expire', station_id='station-2',
+            date='2026-09-17', run_id=str(uuid4()), effective_at=self.start.isoformat())
+        for marker in (None, '', '   ', 123):
+            with self.subTest(marker=marker):
+                self.reader._read_table.return_value = [dict(self.row,
+                    m4_run_id=marker, m4_plan_date='2026-09-16')]
+                result = DailyScheduleAdapter(self.reader).preview(
+                    'station-2', payload, self.config, now=self.now)
+                self.assertFalse(any(result['operations'].values()))
+
+    def test_expiry_marks_today_valid_history_and_readback_is_idempotent(self):
+        old = dict(self.row, id=8, m4_run_id=str(uuid4()), m4_plan_date='2026-09-16')
+        old['repeat'] = '今日有效'
+        already_expired = dict(old, id=9, repeat='已过期')
+        self.reader._read_table.return_value = [old, already_expired]
+        payload = dict(schema_version=SCHEMA, kind='expire', station_id='station-2',
+            date='2026-09-17', run_id=str(uuid4()), effective_at=self.start.isoformat())
+        adapter = DailyScheduleAdapter(self.reader)
+        result = adapter.preview('station-2', payload, self.config, now=self.now)
+        self.assertFalse(result['operations']['destroy'])
+        self.assertFalse(result['operations']['create'])
+        self.assertEqual(len(result['operations']['update']), 1)
+        self.assertEqual(result['operations']['update'][0]['query']['filterByTk'], 8)
+        self.assertEqual(result['operations']['update'][0]['body'], {'repeat': '已过期'})
+        old['repeat'] = '已过期'
+        final = adapter.preview('station-2', payload, self.config, now=self.now)
+        self.assertFalse(any(final['operations'].values()))
+
+    def test_retained_history_is_not_matched_or_deleted_as_today_schedule(self):
+        self.full_day()
+        old = dict(self.row, id=8, m4_run_id=str(uuid4()),
+            m4_plan_date='2026-09-16T00:00:00.000Z', repeat='已过期',
+            start_time='14:15:00', end_time='14:30:00')
+        today = dict(old, id=9, m4_plan_date='2026-09-17', repeat='今日有效')
+        self.reader._read_table.return_value = [old, today]
+        adapter = EMSRemainingPlanAdapter(self.reader, fixed_cabinet_power=True)
+        result = adapter.preview('station-2', self.payload, self.config, now=self.now)
+        self.assertEqual(result['preserved_record_ids'], [8])
+        self.assertEqual([op['query']['filterByTk'] for op in result['operations']['destroy']], [9])
+        old['repeat'] = '每天重复'
+        with self.assertRaisesRegex(ModelUpdateError, '往日计划尚未标记过期'):
+            adapter.preview('station-2', self.payload, self.config, now=self.now)
 
     def test_unknown_owned_date_blocks_cleanup(self):
         self.reader._read_table.return_value = [dict(self.row, m4_run_id=str(uuid4()))]

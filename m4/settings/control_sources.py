@@ -100,6 +100,8 @@ def _schedule(rows):
         if str(identifier) in identifiers:
             raise ControlSourceError('本站存在重复的每日充放电计划记录')
         identifiers.add(str(identifier))
+        if row.get('repeat') == '已过期':
+            continue
         start, end = row.get('start_time'), row.get('end_time')
         if not (isinstance(start, str) and _TIME.fullmatch(start)
                 and isinstance(end, str) and _TIME.fullmatch(end)):

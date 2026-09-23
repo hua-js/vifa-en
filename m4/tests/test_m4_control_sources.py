@@ -302,5 +302,13 @@ class ControlSourceTests(unittest.TestCase):
             'redirect', {}, 'https://evil.example/'))
 
 
+class ExpiredScheduleTests(unittest.TestCase):
+    def test_expired_records_do_not_enter_current_schedule(self):
+        from m4.settings.control_sources import _schedule
+        active = source_rows()['t_model'][0]
+        expired = dict(active, id=101, repeat='已过期')
+        self.assertEqual(_schedule([active, expired]), _schedule([active]))
+        self.assertEqual(_schedule([expired]), [])
+
 if __name__ == '__main__':
     unittest.main()

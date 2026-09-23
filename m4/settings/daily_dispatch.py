@@ -132,18 +132,19 @@ class DailyScheduleAdapter(EMSRemainingPlanAdapter):
                 raise ModelUpdateError('旧计划电站归属无效。')
             if station.source_code not in owners:
                 continue
+            plan_id = row.get('m4_run_id')
+            if not isinstance(plan_id, str) or not plan_id.strip():
+                continue
             if (owners != [station.source_code] or type(row.get('id')) is not int
                     or row['id'] <= 0 or row['id'] in identifiers):
                 raise ModelUpdateError('旧计划记录归属或标识无效。')
             identifiers.add(row['id'])
             _stamp(row.get('updatedAt'))
+            if row.get('repeat') == '已过期':
+                continue
             if row.get('repeat') not in ('每天重复', '今日有效') or row.get('type') not in ('charge', 'discharge', 'pv_surplus_export'):
                 raise ModelUpdateError('旧计划动作或有效期规则无法解释。')
-            if not row.get('m4_run_id'):
-                if row.get('repeat') == '每天重复':
-                    operations['update'].append(_mutation('update', row, station, body={'repeat': '今日有效'}))
-                continue
-            UUID(row['m4_run_id'])
+            UUID(plan_id)
             day = row.get('m4_plan_date')
             try:
                 # NocoBase may serialize a date field as midnight ISO text.
@@ -154,7 +155,7 @@ class DailyScheduleAdapter(EMSRemainingPlanAdapter):
                 raise ModelUpdateError('旧计划日期不明确，暂停自动清理。') from None
             _stamp(row.get('updatedAt'))
             if date_value.date() < now.date():
-                operations['destroy'].append(_mutation('destroy', row, station))
+                operations['update'].append(_mutation('update', row, station, body={'repeat': '已过期'}))
             elif date_value.date() == now.date() and row.get('repeat') == '每天重复':
                 operations['update'].append(_mutation('update', row, station, body={'repeat': '今日有效'}))
         return dict(status='preview', run_id=payload['run_id'], station_id=station_id,
