@@ -65,6 +65,57 @@ class SocScheduleRegressionTests(unittest.TestCase):
         champion=select_custom_champion(dataset,make_selection_config(28,forecast_days=1))
         self.assertTrue(all(score.scorable_point_count==24 for score in champion.candidate_scores))
 
+    def test_rest_day_uses_older_matching_holdout_with_prior_training(self):
+        from datetime import timedelta
+        from m3.tests.test_m3_custom_forecasting import (
+            make_selection_config, soc_dataset_with_weekly_pattern,
+        )
+
+        config = make_selection_config(28, forecast_days=1)
+        older_rest_day = config.forecast_start - timedelta(days=10)
+        rest_dates = {config.forecast_start.date(), older_rest_day.date()}
+        is_working = lambda value: value.date() not in rest_dates
+        calls = []
+
+        def predict(training, *, origin, periods):
+            self.assertTrue((training.frame['ds'] < origin).all())
+            self.assertEqual(periods, config.points_per_day)
+            calls.append(origin)
+            return [50.] * periods
+
+        with patch('m3.worker.domain.custom_forecasting.schedule_day', side_effect=is_working), \
+             patch('m3.worker.domain.custom_forecasting.schedule_slot',
+                   side_effect=lambda value: (is_working(value), 0)), \
+             patch('m3.worker.domain.custom_forecasting._soc_weekly_delta_values',
+                   side_effect=predict), \
+             patch('m3.worker.domain.custom_forecasting._soc_schedule_delta_values',
+                   side_effect=predict):
+            champion = select_custom_champion(soc_dataset_with_weekly_pattern(), config)
+
+        self.assertEqual(calls.count(older_rest_day), 2)
+        self.assertEqual(calls.count(config.forecast_start), 2)
+        self.assertTrue(all(score.scorable_point_count == config.points_per_day
+                            for score in champion.candidate_scores))
+
+    def test_rest_day_without_trainable_matching_holdout_still_fails(self):
+        from datetime import timedelta
+        from m3.tests.test_m3_custom_forecasting import (
+            make_selection_config, soc_dataset_with_weekly_pattern,
+        )
+        from m3.worker.errors import M3Error
+
+        config = make_selection_config(28, forecast_days=1)
+        too_early = config.history_start + timedelta(days=3)
+        rest_dates = {config.forecast_start.date(), too_early.date()}
+        is_working = lambda value: value.date() not in rest_dates
+        with patch('m3.worker.domain.custom_forecasting.schedule_day', side_effect=is_working), \
+             patch('m3.worker.domain.custom_forecasting.schedule_slot',
+                   side_effect=lambda value: (is_working(value), 0)):
+            with self.assertRaises(M3Error) as raised:
+                select_custom_champion(soc_dataset_with_weekly_pattern(), config)
+
+        self.assertEqual(raised.exception.code, 'model_selection_failed')
+
     def test_recent_plateau_prevents_recharging_high_monday_to_old_peak(self):
         from datetime import timedelta
         from m3.worker.domain.custom_forecasting import _soc_schedule_delta_values

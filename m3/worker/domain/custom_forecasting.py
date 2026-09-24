@@ -303,10 +303,6 @@ def _select_soc_champion(
         return seasonal_naive_champion(dataset)
 
     holdout_start = config.history_end - timedelta(days=7)
-    holdout = dataset.frame[
-        (dataset.frame["ds"] >= holdout_start)
-        & (dataset.frame["ds"] < config.history_end)
-    ].copy()
     unique_id = dataset.frame["unique_id"].iloc[0]
     excluded_times = frozenset(
         timestamp for key_unique_id, timestamp in dataset.imputed_keys
@@ -320,26 +316,65 @@ def _select_soc_champion(
                   for step in range(config.points_per_day)),
         )
 
-    # Prefer the same weekday when its actual schedule still matches. Otherwise
-    # evaluate matching day types, never an unrelated exceptional day merely
-    # because it falls inside the holdout week.
+    # Keep the recent holdout week as the first choice. If it has no matching
+    # schedule, look farther back only where a full week precedes the scored
+    # day; the scored day's observations never enter its training frame.
     history_days = [holdout_start + timedelta(days=day) for day in range(7)]
     signatures = {day: day_signature(day) for day in history_days}
+    earliest_older_day = max(
+        config.history_start + timedelta(days=7),
+        dataset.start + timedelta(days=7),
+    )
+    older_days = []
+    day = holdout_start - timedelta(days=1)
+    while day >= earliest_older_day:
+        older_days.append(day)
+        day -= timedelta(days=1)
+
+    def complete_day(day: datetime) -> pd.DataFrame | None:
+        actual = dataset.frame[
+            (dataset.frame["ds"] >= day)
+            & (dataset.frame["ds"] < day + timedelta(days=1))
+        ].copy()
+        expected = list(pd.date_range(
+            day, periods=config.points_per_day, freq=config.pandas_frequency,
+        ))
+        if list(actual["ds"]) != expected or actual["y"].isna().any():
+            return None
+        return actual
+
     selected_days = set()
     for offset in range(config.forecast_days):
         target = config.forecast_start + timedelta(days=offset)
         target_signature = day_signature(target)
         matching_days = [day for day in history_days if signatures[day] == target_signature]
-        preferred = [day for day in matching_days if day.weekday() == target.weekday()]
-        if not matching_days:
+        if matching_days:
+            preferred = [day for day in matching_days if day.weekday() == target.weekday()]
+            selected_days.update(preferred or matching_days)
+            continue
+        for day in older_days:
+            if day not in signatures:
+                signatures[day] = day_signature(day)
+            if signatures[day] != target_signature or complete_day(day) is None:
+                continue
+            prior_week = dataset.frame[
+                (dataset.frame["ds"] >= day - timedelta(days=7))
+                & (dataset.frame["ds"] < day)
+            ]
+            expected = list(pd.date_range(
+                day - timedelta(days=7), periods=7 * config.points_per_day,
+                freq=config.pandas_frequency,
+            ))
+            if list(prior_week["ds"]) == expected and not prior_week["y"].isna().any():
+                selected_days.add(day)
+                break
+        else:
             raise M3Error("model_selection_failed", "No matching SOC holdout day")
-        selected_days.update(preferred or matching_days)
 
     folds = []
     for day in sorted(selected_days):
-        actual = holdout[(holdout["ds"] >= day) & (holdout["ds"] < day + timedelta(days=1))].copy()
-        expected = list(pd.date_range(day, periods=config.points_per_day, freq=config.pandas_frequency))
-        if list(actual["ds"]) != expected or actual["y"].isna().any():
+        actual = complete_day(day)
+        if actual is None:
             raise M3Error("model_selection_failed", "SOC holdout day is incomplete")
         # Each day starts from real observations strictly before that day's
         # origin. No actual value from the scored day is a training donor.

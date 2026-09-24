@@ -14,6 +14,7 @@ from m3.worker.errors import M3Error
 from m3.worker.services.custom_forecast_repository import StoredCustomRun
 from m3.worker.services.daily_custom_forecast_service import (
     DAILY_REQUESTED_BY,
+    DailyCustomForecastAttemptsExhausted,
     DailyCustomForecastService,
 )
 
@@ -419,7 +420,37 @@ class DailyCustomForecastServiceTests(unittest.TestCase):
             service.run_station("ES01", NOW)
 
         self.assertEqual(raised.exception.code, "daily_custom_forecast_failed")
+        self.assertIsInstance(
+            raised.exception, DailyCustomForecastAttemptsExhausted,
+        )
         self.assertEqual(submitter.calls, [])
+
+    def test_retry_exhaustion_does_not_hide_another_interval_error(self):
+        failures = [
+            make_run(
+                f"daily-failed-{attempt}",
+                interval_seconds=30,
+                forecast_start=DAY,
+                status="failed",
+                requested_by=DAILY_REQUESTED_BY,
+                created_offset=attempt,
+            )
+            for attempt in (1, 2, 3)
+        ]
+        repository = InMemoryRepository(
+            {
+                ("ES01", 30): make_run("template-30", interval_seconds=30),
+                ("ES01", 900): make_run("template-900"),
+            },
+            {"ES01": failures},
+            {("ES01", 900): M3Error("sink_contract_invalid", "invalid daily row")},
+        )
+        service = DailyCustomForecastService(repository, RecordingSubmitter())
+
+        with self.assertRaises(M3Error) as raised:
+            service.run_station("ES01", NOW)
+
+        self.assertEqual(raised.exception.code, "sink_contract_invalid")
 
     def test_one_interval_failure_continues_other_intervals_and_stations(self):
         """Returning at the first error would starve unrelated cadence and station work."""

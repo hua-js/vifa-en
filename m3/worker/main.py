@@ -36,6 +36,7 @@ from m3.worker.services.custom_forecast_evaluation_service import (
 from m3.worker.services.custom_forecast_service import CustomForecastService
 from m3.worker.services.rolling_soc_service import RollingSocService
 from m3.worker.services.daily_custom_forecast_service import (
+    DailyCustomForecastAttemptsExhausted,
     DailyCustomForecastService,
 )
 from m3.worker.services.forecast_service import (
@@ -234,6 +235,12 @@ class WorkerResources:
                 if self.recovery_stop_event.is_set():
                     return False
                 self.daily_custom_forecasts.run_station(station_id, raw_now)
+            except DailyCustomForecastAttemptsExhausted as error:
+                # A spent daily retry budget is a task failure, not a failed
+                # recovery dependency. Keep manual custom runs available.
+                self._alert(
+                    station_id, "daily_custom_forecast", error, recovery_at
+                )
             except Exception as error:
                 failed = True
                 self._alert(

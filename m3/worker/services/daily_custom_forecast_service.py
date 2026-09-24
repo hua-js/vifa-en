@@ -24,6 +24,16 @@ MAX_DAILY_ATTEMPTS = 3
 _COMPLETED_DAILY_STATUSES = frozenset({"succeeded", "evaluated"})
 
 
+class DailyCustomForecastAttemptsExhausted(M3Error):
+    """The daily retry budget is spent; manual custom runs remain possible."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            "daily_custom_forecast_failed",
+            "Daily custom forecast attempts are exhausted",
+        )
+
+
 def _roll_request(
     config: CustomForecastConfig,
     day: datetime,
@@ -171,12 +181,7 @@ class DailyCustomForecastService:
             else:
                 failed = [run for run in matching if run.status == "failed"]
                 if len(failed) >= MAX_DAILY_ATTEMPTS:
-                    errors.append(
-                        M3Error(
-                            "daily_custom_forecast_failed",
-                            "Daily custom forecast attempts are exhausted",
-                        )
-                    )
+                    errors.append(DailyCustomForecastAttemptsExhausted())
                     continue
                 source_config = failed[0].config if failed else template.config
                 attempt = len(failed) + 1
@@ -206,5 +211,9 @@ class DailyCustomForecastService:
         ):
             self._remember_completed(cache_key)
         if errors:
-            raise errors[0]
+            raise next(
+                (error for error in errors
+                 if not isinstance(error, DailyCustomForecastAttemptsExhausted)),
+                errors[0],
+            )
         return attempted

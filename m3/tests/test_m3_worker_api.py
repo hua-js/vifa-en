@@ -16,6 +16,9 @@ from pydantic import HttpUrl, SecretStr, TypeAdapter
 from m3.worker.config import Settings, StationBinding
 from m3.worker.contracts import JobState
 from m3.worker.errors import M3Error
+from m3.worker.services.daily_custom_forecast_service import (
+    DailyCustomForecastAttemptsExhausted,
+)
 import m3.worker.main as worker_main
 from m3.worker.main import WorkerResources, build_resources, create_app
 
@@ -987,6 +990,46 @@ class ResourceTests(unittest.TestCase):
             ],
         )
         self.assertFalse(resources.recovery_ready)
+
+    def test_exhausted_daily_attempts_do_not_block_worker_recovery(self):
+        alerts = []
+        now = NOW.replace(hour=11, minute=1)
+        resources = WorkerResources(
+            settings=SimpleNamespace(
+                station_ids=("station-1",), acceptance_enabled=False,
+            ),
+            source_http=SimpleNamespace(close=lambda: None),
+            nocobase_http=SimpleNamespace(close=lambda: None),
+            forecast_service=SimpleNamespace(
+                bootstrap=lambda *_args: None,
+                select_models=lambda *_args: None,
+                state=lambda _station: SimpleNamespace(state="ready"),
+            ),
+            acceptance_service=SimpleNamespace(),
+            custom_forecasts=SimpleNamespace(recover=lambda: None, close=lambda: None),
+            custom_evaluations=SimpleNamespace(),
+            daily_custom_forecasts=SimpleNamespace(
+                run_station=lambda *_args: (_ for _ in ()).throw(
+                    DailyCustomForecastAttemptsExhausted()
+                ),
+            ),
+            scheduler=SimpleNamespace(running=False),
+            jobs=SimpleNamespace(close=lambda: None),
+            clock=lambda: now,
+            alert_sink=lambda *items: alerts.append(items),
+            statsforecast_version="2.1.1",
+        )
+
+        with patch(
+            "m3.worker.main.verify_statsforecast_runtime", return_value="2.1.1",
+        ):
+            self.assertTrue(resources.recover())
+        self.assertTrue(resources.recovery_ready)
+        self.assertEqual(
+            alerts,
+            [("station-1", "daily_custom_forecast", "daily_custom_forecast_failed",
+              now.replace(minute=0, second=0))],
+        )
 
     def test_recover_before_daily_start_calls_coordinator_without_creating_work(self):
         """Startup before 00:17 must preserve the coordinator's no-op boundary."""
