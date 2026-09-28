@@ -1,6 +1,5 @@
 """Build interval-independent M3 training frames without changing v1 data."""
 
-from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
@@ -8,6 +7,11 @@ import pandas as pd
 
 from m3.worker.contracts import SeriesId, is_load_series
 from m3.worker.domain.work_schedule import schedule_interpolate, schedule_slot
+from m3.worker.domain.load_history import (
+    MAX_LOAD_FALLBACK_DAYS,
+    MAX_WEEK_IMPUTATION_RATIO,
+    fill_load_schedule_gaps,
+)
 from m3.worker.custom_forecast_contracts import (
     CustomForecastConfig,
     CustomObservationPoint,
@@ -15,8 +19,6 @@ from m3.worker.custom_forecast_contracts import (
 
 
 SHORT_GAP_BUCKETS = 2
-MAX_WEEK_IMPUTATION_RATIO = 0.05
-MAX_LOAD_FALLBACK_DAYS = 28
 
 
 @dataclass(frozen=True)
@@ -182,33 +184,11 @@ def build_custom_training_dataset(
                 imputed_times.add(value.to_pydatetime())
                 break
 
-    load_fallback_donors = []
-    if is_load_series(unique_id):
-        # Match the same history-end-aligned weeks used by model selection.
-        def week_key(timestamp):
-            return (config.history_end - timestamp - config.interval) // timedelta(days=7)
-
-        weekly_imputed = Counter(week_key(t) for t in imputed_times)
-        budget = int(config.weekly_season_length * MAX_WEEK_IMPUTATION_RATIO)
-        for value in frame.index[frame["y"].isna()]:
-            week = week_key(value)
-            if weekly_imputed[week] >= budget:
-                continue
-            working = schedule_slot(value)[0]
-            for days in range(1, min(MAX_LOAD_FALLBACK_DAYS, config.history_days) + 1):
-                donor = value - timedelta(days=days)
-                if donor not in observed_load.index:
-                    continue
-                observed = observed_load.loc[donor]
-                if pd.isna(observed) or observed < 0:
-                    continue
-                if schedule_slot(donor)[0] != working:
-                    continue
-                frame.loc[value, "y"] = observed
-                imputed_times.add(value.to_pydatetime())
-                weekly_imputed[week] += 1
-                load_fallback_donors.append((value.to_pydatetime(), donor.to_pydatetime()))
-                break
+    load_fallback_donors = fill_load_schedule_gaps(
+        frame, observed_load, imputed_times,
+        history_end=config.history_end, interval=config.interval,
+        points_per_day=config.points_per_day, history_days=config.history_days,
+    ) if is_load_series(unique_id) else []
 
     unresolved = frame["y"].isna()
     if unresolved.any():

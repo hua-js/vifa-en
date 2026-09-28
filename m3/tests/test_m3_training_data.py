@@ -1,6 +1,10 @@
-from datetime import timedelta
+from datetime import datetime, timedelta
 import unittest
 import warnings
+
+from m3.worker.contracts import ObservationPoint
+from m3.worker.domain.forecasting import forecast_one, select_champion
+from m3.worker.domain.production_schedule import ProductionSchedule, use_schedule
 
 from m3.worker.domain.training_data import (
     OPERATIONAL_HISTORY_DAYS,
@@ -10,6 +14,36 @@ from m3.tests.m3_test_support import make_quarter_hour_points
 
 
 class TrainingDataTests(unittest.TestCase):
+    def test_operational_rest_day_gap_preserves_history_like_custom_forecast(self):
+        end = datetime.fromisoformat("2026-09-28T00:00:00+08:00")
+        start = end - timedelta(days=28)
+        gap = end - timedelta(days=3) + timedelta(hours=6, minutes=30)
+        donor_day = (gap - timedelta(days=5)).date()
+        statuses = {(start + timedelta(days=i)).date(): "WORK" for i in range(29)}
+        statuses[gap.date()] = statuses[donor_day] = "REST"
+        calendar = ProductionSchedule("ES01", "station_1", "86", start.date(),
+            end.date(), end.date(), statuses, {}, "{}")
+        points = []
+        for i in range(28 * 96):
+            timestamp = start + timedelta(minutes=15*i)
+            invalid = gap <= timestamp < gap + timedelta(minutes=15*17)
+            points.append(ObservationPoint(
+                unique_id="station_total_load", ds=timestamp,
+                y=None if invalid else (120.0 if timestamp.date() == donor_day else 800.0),
+                quality="invalid" if invalid else "valid", source_revision=1,
+            ))
+        with use_schedule(calendar):
+            dataset = build_training_dataset(points, "station_total_load", history_days=28)
+            forecast = forecast_one(dataset, select_champion(dataset), end)
+        self.assertEqual(forecast.status, "warming_up")
+        self.assertEqual(len(forecast.points), 96)
+        self.assertIsNone(forecast.fallback_reason)
+        self.assertEqual(len(dataset.frame), 28 * 96)
+        self.assertEqual(dataset.mode, "warming_up")
+        self.assertEqual(len(dataset.imputed_keys), 17)
+        self.assertEqual(dataset.frame.set_index("ds").loc[gap.replace(hour=8, minute=0), "y"], 120.0)
+        self.assertEqual(sum(p.quality == "invalid" for p in points), 17)
+
     def test_operational_training_expands_with_available_history_up_to_ready_window(self):
         """Keeping the cold-start 15-day cap would prevent readiness forever."""
         points = make_quarter_hour_points(35)

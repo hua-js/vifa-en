@@ -5,6 +5,7 @@ import pandas as pd
 
 from m3.worker.contracts import ObservationPoint, SeriesId, is_load_series
 from m3.worker.domain.work_schedule import schedule_interpolate, schedule_slot
+from m3.worker.domain.load_history import fill_load_schedule_gaps
 
 
 GRID = timedelta(minutes=15)
@@ -66,6 +67,7 @@ def build_training_dataset(
     ]
     frame = pd.DataFrame(rows).set_index("ds").asfreq("15min")
     frame["y"] = pd.to_numeric(frame["y"], errors="coerce")
+    observed_load = frame["y"].copy()
     missing = frame["y"].isna()
     groups = (missing != missing.shift()).cumsum()
     missing_groups = [
@@ -121,6 +123,13 @@ def build_training_dataset(
                     frame.loc[value, "y"] = seasonal_donors.loc[donor]
                     imputed_times.add(value.to_pydatetime())
                     break
+
+        if is_load_series(unique_id):
+            fill_load_schedule_gaps(
+                frame, observed_load, imputed_times,
+                history_end=selected[-1].ds + GRID, interval=GRID,
+                points_per_day=POINTS_PER_DAY, history_days=history_days,
+            )
 
     unresolved = frame["y"].isna()
     if unresolved.any():
