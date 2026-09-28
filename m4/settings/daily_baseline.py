@@ -17,6 +17,7 @@ from .daily_pv_policy import POLICY as DAILY_PV_POLICY
 from .timeseries import tariff_export_price
 from .ems_simulation import EMS_BASELINE_POLICY, simulate_ems_day
 from .schedule_power import effective_station_power, station_schedule, station_energy_capacity
+from .dispatch_power import daily_dispatch_versions
 
 
 def prepare_ems_day(configuration, bundle):
@@ -76,7 +77,8 @@ def prepare_ems_day(configuration, bundle):
         terminal_versions = dict(terminal_policy=TERMINAL_POLICY,
             terminal_inventory_price=format(max(valley_prices), '.17g'))
     profiles = get_daily_profiles(configuration.station_id)
-    content = {**terminal_versions, 'grid_charging_policy': GRID_CHARGING_POLICY,
+    dispatch_versions = daily_dispatch_versions(configuration.station_id) if not startup else {}
+    content = {**terminal_versions, **dispatch_versions, 'grid_charging_policy': GRID_CHARGING_POLICY,
                'configuration': configuration.model_dump(mode='json'), 'points': bundle['points'],
                'controls_version': control['version'], 'initial': initial, 'terminal': terminal,
                'baseline_policy': EMS_BASELINE_POLICY, 'pv_midday_economic': True,
@@ -92,7 +94,7 @@ def prepare_ems_day(configuration, bundle):
         profiles=profiles, pv_dispatch_policy=parameters.pv_dispatch_policy, pv_midday_economic=True,
         peak_reserve_policy=reserve_policy,
         solver_time_limit_seconds=30.0, solver_mip_rel_gap=0.01,
-        source_versions={**terminal_versions, **(dict(startup_policy=STARTUP_POLICY, startup_window_end=startup['end_at'],
+        source_versions={**terminal_versions, **dispatch_versions, **(dict(startup_policy=STARTUP_POLICY, startup_window_end=startup['end_at'],
                 startup_tariff_periods=json.dumps(sources['tariff']['period_types'])) if startup else {}),
             **{k: sources[k]['version'] for k in ('load', 'pv', 'tariff')},
             'pv_export_policy': sources['tariff']['export_price_policy'],

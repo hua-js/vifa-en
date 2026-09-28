@@ -113,6 +113,17 @@ def compare_daily_plan(request, candidate, *, baseline=None, controls_version=No
         except ValueError:
             output.update(status='blocked', recommended_source=None, recommended=None,
                 reason='当前方案包含尖、峰段电网充电，暂停推荐，请重新生成合规方案。')
+            return output
+        from m4.optimizer.dispatch_policy import minimum_action_power
+        if minimum_action_power(request):
+            from .dispatch_power import dispatch_points
+            from .ems_model_update import validate_dispatch_safety
+            try:
+                validate_dispatch_safety(request.model_dump(mode='json'), recommended['plan'])
+                validate_dispatch_safety(request.model_dump(mode='json'), dispatch_points(recommended['plan']))
+            except ValueError:
+                output.update(status='blocked', recommended_source=None, recommended=None,
+                    reason='当前方案未通过下发安全检查，暂停推荐，请重新生成。')
     return output
 
 

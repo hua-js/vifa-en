@@ -6,6 +6,7 @@ import pyomo.environ as pyo
 from pyomo.repn.standard_repn import generate_standard_repn
 
 from m4.optimizer.contracts import ObjectiveName, OptimizationRequest
+from m4.optimizer.dispatch_policy import minimum_action_power, MINIMUM_POWER_MARGIN_KW
 from m4.optimizer.solver import PyomoProblem
 
 
@@ -36,6 +37,8 @@ class VariableIndex:
     power_variation: slice | None = None
     discharge_active: slice | None = None
     discharge_start: slice | None = None
+    charge_active: slice | None = None
+    charge_start: slice | None = None
 
 
 @dataclass(frozen=True)
@@ -57,10 +60,15 @@ def build_model(request: OptimizationRequest, *, terminal_soc_target_pct: float 
                      for layer in profile.objective_order)
     discharge_starts = any("discharge_starts" in layer.terms for profile in request.profiles
                            for layer in profile.objective_order)
+    charge_starts = any("charge_starts" in layer.terms for profile in request.profiles
+                       for layer in profile.objective_order)
+    minimum_power = minimum_action_power(request)
+    charge_classification = charge_starts and not minimum_power
     index = _build_variable_index(load_first=load_first, horizon=horizon,
                                   peak_reserve=peak_reserve is not None, continuity=continuity,
                                   soft_peak_reserve=soft_reserve,
-                                  discharge_starts=discharge_starts)
+                                  discharge_starts=discharge_starts, charge_starts=charge_starts,
+                                  charge_classification=charge_classification)
     capability, constraints = request.capability, request.constraints
     charge_max = capability.max_charge_kw if capability.available else 0.0
     discharge_max = capability.max_discharge_kw if capability.available else 0.0
@@ -203,6 +211,12 @@ def build_model(request: OptimizationRequest, *, terminal_soc_target_pct: float 
         m.peak_demand_exceed >= m.demand_exceed[t])
     model.charge_power = pyo.Constraint(model.periods, rule=lambda m, t: m.charge[t] <= charge_max * m.charge_on[t])
     model.discharge_power = pyo.Constraint(model.periods, rule=lambda m, t: m.discharge[t] <= discharge_max * m.discharge_on[t])
+    if minimum_power:
+        active_minimum = minimum_power + MINIMUM_POWER_MARGIN_KW
+        model.minimum_charge_power = pyo.Constraint(model.periods,
+            rule=lambda m, t: m.charge[t] >= active_minimum * m.charge_on[t])
+        model.minimum_discharge_power = pyo.Constraint(model.periods,
+            rule=lambda m, t: m.discharge[t] >= active_minimum * m.discharge_on[t])
     model.storage_exclusivity = pyo.Constraint(model.periods, rule=lambda m, t:
         m.charge_on[t] + m.discharge_on[t] <= (1.0 if capability.available else 0.0))
     model.grid_import_mode = pyo.Constraint(model.periods, rule=lambda m, t: m.grid_import[t] <= import_max * m.grid_import_on[t])
@@ -278,6 +292,30 @@ def build_model(request: OptimizationRequest, *, terminal_soc_target_pct: float 
             m.discharge_start[t] <= 1 - (m.discharge_active[t-1] if t > 0 else 0))
         model.discharge_starts = pyo.Expression(expr=pyo.quicksum(model.discharge_start.values()))
 
+    if charge_starts:
+        # Match discharge episode classification without imposing a new minimum.
+        # The separately versioned dispatch policy supplies any physical minimum.
+        threshold = 0.01
+        if charge_classification:
+            model.charge_active = pyo.Var(model.periods, domain=pyo.Binary)
+        # With a positive dispatch minimum, charge_on already represents exact
+        # activity. Avoid a redundant binary and its weak big-M classification.
+        charge_activity = model.charge_active if charge_classification else model.charge_on
+        model.charge_start = pyo.Var(model.periods, domain=pyo.Binary)
+        if charge_classification:
+            model.charge_active_upper = pyo.Constraint(model.periods, rule=lambda m, t:
+                m.charge[t] <= threshold + charge_max * m.charge_active[t])
+            model.charge_active_lower = pyo.Constraint(model.periods, rule=lambda m, t:
+                m.charge[t] >= threshold * m.charge_active[t])
+        model.charge_start_lower = pyo.Constraint(model.periods, rule=lambda m, t:
+            m.charge_start[t] >= charge_activity[t]
+                - (charge_activity[t-1] if t > 0 else 0))
+        model.charge_start_active = pyo.Constraint(model.periods, rule=lambda m, t:
+            m.charge_start[t] <= charge_activity[t])
+        model.charge_start_previous = pyo.Constraint(model.periods, rule=lambda m, t:
+            m.charge_start[t] <= 1 - (charge_activity[t-1] if t > 0 else 0))
+        model.charge_starts = pyo.Expression(expr=pyo.quicksum(model.charge_start.values()))
+
     if continuity:
         model.power_edges = pyo.RangeSet(0, horizon)
         model.power_change = pyo.Var(model.power_edges, domain=pyo.NonNegativeReals)
@@ -352,7 +390,8 @@ def _overnight_valley_windows(
 def _build_variable_index(*, load_first: bool = False, horizon: int = HORIZON_POINTS,
                           peak_reserve: bool = False, continuity: bool = False,
                           soft_peak_reserve: bool = False,
-                          discharge_starts: bool = False) -> VariableIndex:
+                          discharge_starts: bool = False, charge_starts: bool = False,
+                          charge_classification: bool = False) -> VariableIndex:
     cursor = 0
 
     def allocate(size: int) -> slice:
@@ -383,6 +422,8 @@ def _build_variable_index(*, load_first: bool = False, horizon: int = HORIZON_PO
     late_peak_reserve_shortfall = allocate(horizon + 1) if soft_peak_reserve else None
     discharge_active = allocate(horizon) if discharge_starts else None
     discharge_start = allocate(horizon) if discharge_starts else None
+    charge_active = allocate(horizon) if charge_classification else None
+    charge_start = allocate(horizon) if charge_starts else None
     power_variation = allocate(horizon + 1) if continuity else None
     return VariableIndex(
         charge=charge,
@@ -406,4 +447,6 @@ def _build_variable_index(*, load_first: bool = False, horizon: int = HORIZON_PO
         power_variation=power_variation,
         discharge_active=discharge_active,
         discharge_start=discharge_start,
+        charge_active=charge_active,
+        charge_start=charge_start,
     )

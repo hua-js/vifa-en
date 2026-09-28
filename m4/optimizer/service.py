@@ -161,6 +161,9 @@ class M4Optimizer:
 
     def _effective_model_version(self, request: OptimizationRequest) -> str:
         model_version = f"{self.model_version}/pyomo-v1/{GRID_CHARGING_POLICY}"
+        from m4.optimizer.dispatch_policy import minimum_action_power, POLICY
+        if minimum_action_power(request):
+            model_version += '/' + POLICY
         if request.pv_midday_economic:
             model_version += "/pv-midday-economic-v1"
         if request.ems_schedule_modes is not None:

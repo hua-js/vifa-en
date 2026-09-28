@@ -28,6 +28,11 @@ def matches_current_daily_policy(station_id, request):
         return False
     if versions.get('grid_charging_policy') != GRID_CHARGING_POLICY:
         return False
+    from .dispatch_power import daily_dispatch_versions
+    from .startup_admission import POLICY as STARTUP_POLICY
+    if versions.get('startup_policy') != STARTUP_POLICY and any(
+            versions.get(key) != value for key, value in daily_dispatch_versions(station_id).items()):
+        return False
     if (request.get('pv_midday_economic') is not True
             or not isinstance(points, list) or len(points) != 96
             or any(not isinstance(point, dict)

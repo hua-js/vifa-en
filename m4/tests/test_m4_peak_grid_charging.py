@@ -152,6 +152,8 @@ class PeakGridChargingTests(unittest.TestCase):
                     daily_policy=daily_policy_version(station), physical_grid_policy=physical_grid_policy(station),
                     economic_policy='station-1-cost-first-v1', grid_charging_policy=GRID_CHARGING_POLICY)
                 if station == 'station-2':
+                    from m4.settings.dispatch_power import daily_dispatch_versions
+                    payload['source_versions'].update(daily_dispatch_versions(station))
                     payload['peak_reserve_policy'] = dict(version='peak-reserve-v4', terminal_soc_min_pct=20.0)
                     from m4.settings.terminal_policy import POLICY as TERMINAL_POLICY
                     payload['points'][0]['tariff_period'] = 'gu'

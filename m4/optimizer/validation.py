@@ -52,6 +52,8 @@ def validate_candidate(
         validate_peak_grid_charging(request, candidate.plan, tolerance)
 
     capability = request.capability
+    from m4.optimizer.dispatch_policy import minimum_action_power
+    minimum_power = 0.0 if historical_baseline else minimum_action_power(request)
     constraints = request.constraints
     peak_reserve = request.peak_reserve_policy
     terminal_reserve_start = None
@@ -78,6 +80,8 @@ def validate_candidate(
         if point.timestamp != source.timestamp:
             _raise(label, "timestamp")
         charge_kw, discharge_kw = _mode_power(point.mode, point.target_power_kw, label, tolerance)
+        if minimum_power and tolerance < point.target_power_kw <= minimum_power:
+            _raise(label, "minimum dispatch power")
         if (request.ems_schedule_modes is not None and point.mode != "idle"
                 and point.mode != request.ems_schedule_modes[index]):
             _raise(label, "EMS schedule direction")

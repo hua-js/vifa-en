@@ -87,8 +87,8 @@ class DischargeStartTests(unittest.TestCase):
             point['sell_price_per_kwh'] = 0.6
         self.assertTrue(matches_current_daily_policy('station-2', payload))
         for profile in payload['profiles']:
-            profile['profile_version'] = profile['profile_version'].replace('station-2-continuity-v3', 'station-2-continuity-v1')
-            profile['objective_order'] = [x for x in profile['objective_order'] if 'discharge_starts' not in x['terms']]
+            profile['profile_version'] = profile['profile_version'].replace('station-2-continuity-v4', 'station-2-continuity-v1')
+            profile['objective_order'] = [x for x in profile['objective_order'] if not ({'discharge_starts', 'charge_starts'} & x['terms'].keys())]
             early = next(x for x in profile['objective_order'] if 'valley_charge_delay' in x['terms'])
             profile['objective_order'].remove(early)
             profile['objective_order'].append(early)

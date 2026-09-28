@@ -19,6 +19,9 @@ def reserve_request(version='peak-reserve-v2', peaks=((40, 48), (56, 76))):
     payload['source_versions']['project_configuration'] = get_project().fingerprint
     payload['source_versions']['daily_policy'] = 'm4-daily-peak-reserve-' + version.rsplit('-', 1)[-1]
     for profile in payload['profiles']:
+        # Historical reserve fixtures retain their original continuity contract.
+        profile['profile_version'] = profile['profile_version'].replace('station-2-continuity-v4', 'station-2-continuity-v3')
+        profile['objective_order'] = [layer for layer in profile['objective_order'] if 'charge_starts' not in layer['terms']]
         profile['profile_version'] = profile['profile_version'].replace(
             PEAK_RESERVE_DAILY_POLICY, payload['source_versions']['daily_policy'])
     payload['capability'].update(initial_soc_pct=2, charge_efficiency=.98, discharge_efficiency=.98)
@@ -45,9 +48,11 @@ def reserve_request(version='peak-reserve-v2', peaks=((40, 48), (56, 76))):
 def current_reserve_request():
     """Current admission fixture, separate from historical reserve model fixtures."""
     from m4.settings.terminal_policy import POLICY as TERMINAL_POLICY
+    from m4.settings.dispatch_power import daily_dispatch_versions
     payload = reserve_request('peak-reserve-v4').model_dump()
     payload['source_versions'].update(daily_policy=PEAK_RESERVE_DAILY_POLICY,
         terminal_policy=TERMINAL_POLICY, terminal_inventory_price=format(.27, '.17g'))
+    payload['source_versions'].update(daily_dispatch_versions('station-2'))
     payload['profiles'] = [p.model_dump() for p in get_daily_profiles('station-2')]
     return OptimizationRequest.model_validate(payload)
 

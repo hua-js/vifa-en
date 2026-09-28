@@ -124,8 +124,10 @@ def get_daily_profiles(station_id: str) -> list[ObjectiveProfile]:
     if policy_version is None:
         return profiles
     settings, _ = _resolve(station_id)
+    charge_continuity = get_project().id == 'vifa' and station_id == 'station-2'
     for profile in profiles:
-        profile.profile_version += '/' + policy_version + '/station-2-continuity-v3'
+        profile.profile_version += '/' + policy_version + (
+            '/station-2-continuity-v4' if charge_continuity else '/station-2-continuity-v3')
         # Economic objectives precede reserve preparation; reserve is a tie-break.
         position = next(i for i, layer in enumerate(profile.objective_order) if layer.name == 'throughput')
         profile.objective_order.insert(position, ObjectiveLayer(
@@ -136,6 +138,12 @@ def get_daily_profiles(station_id: str) -> list[ObjectiveProfile]:
         profile.objective_order.insert(len(profile.objective_order)-1, ObjectiveLayer(
             name='discharge-starts', terms={'discharge_starts': 1.0},
             absolute_tolerance=0.0, relative_tolerance=0.0))
+        if charge_continuity:
+            # Valley reordering freezes non-valley charging. Consolidate all
+            # charging episodes first, within the already locked priorities.
+            profile.objective_order.insert(len(profile.objective_order)-1, ObjectiveLayer(
+                name='charge-starts', terms={'charge_starts': 1.0},
+                absolute_tolerance=0.0, relative_tolerance=0.0))
         # Early valley charging takes priority over power smoothing.
         profile.objective_order.append(ObjectiveLayer(
             name='power-variation', terms={'power_variation': 1.0},
