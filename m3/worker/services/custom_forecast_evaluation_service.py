@@ -1,6 +1,9 @@
 """Actual overlay, persistent evaluation, and comparable MAPE for custom runs."""
 
 from datetime import datetime, timedelta
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP, localcontext
+import logging
+import re
 import math
 from statistics import median
 from typing import Any
@@ -21,6 +24,25 @@ from m3.worker.services.custom_forecast_repository import (
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 MINIMUM_COVERAGE = 0.8
+LOGGER = logging.getLogger("m3.worker.custom_evaluation")
+
+
+def _optional_percent(value: float | None) -> float | None:
+    """Respect numeric(10,6), including overflow caused by database rounding."""
+    if value is None or not math.isfinite(value):
+        return None
+    try:
+        with localcontext() as context:
+            context.prec = 32
+            rounded = Decimal(str(value)).quantize(Decimal("0.000001"), rounding=ROUND_HALF_UP)
+    except InvalidOperation:
+        return None
+    return value if abs(rounded) < Decimal("10000") else None
+
+
+def _diagnostic_name(value: object) -> str:
+    return value if isinstance(value, str) and re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,63}", value) else "unknown"
+
 
 
 def _timestamp(value: object) -> datetime:
@@ -211,6 +233,13 @@ class CustomForecastEvaluationService:
             if baseline_mape not in {None, 0} and mape is not None
             else None
         )
+        stored_relative = _optional_percent(relative)
+        if relative is not None and stored_relative is None:
+            LOGGER.warning(
+                "m3_evaluation_optional_metric_out_of_range run_id=%s station_id=%s "
+                "series=%s field=relative_baseline_improvement_percent value=%s",
+                run.run_id, run.station_id, unique_id, relative,
+            )
         available = len(valid) >= math.ceil(expected * MINIMUM_COVERAGE) and mape is not None
         return {
             "run_pk": run.record_id,
@@ -235,7 +264,7 @@ class CustomForecastEvaluationService:
             "median_ape_percent": float(median(apes)) if apes else None,
             "p90_ape_percent": float(np.percentile(apes, 90)) if apes else None,
             "baseline_mape_percent": baseline_mape,
-            "relative_baseline_improvement_percent": relative,
+            "relative_baseline_improvement_percent": stored_relative,
             "outcome": "available" if available else "insufficient_data",
             "calculated_at": calculated_at.isoformat(),
         }
@@ -293,7 +322,24 @@ class CustomForecastEvaluationService:
         completed = 0
         for run in self._repository.list_succeeded(station_id):
             if run.config.forecast_end <= now:
-                self.evaluate_run(run, calculated_at=now)
+                try:
+                    self.evaluate_run(run, calculated_at=now)
+                except Exception as error:
+                    details = getattr(error, "details", {})
+                    details = details if isinstance(details, dict) else {}
+                    status = details.get("status_code")
+                    LOGGER.error(
+                        "m3_custom_evaluation_failed run_id=%s station_id=%s "
+                        "error_code=%s error_type=%s collection=%s action=%s "
+                        "status_code=%s failure_type=%s",
+                        run.run_id, station_id,
+                        _diagnostic_name(getattr(error, "code", "internal_error")),
+                        type(error).__name__, _diagnostic_name(details.get("collection")),
+                        _diagnostic_name(details.get("action")),
+                        status if type(status) is int else -1,
+                        _diagnostic_name(details.get("failure_type")),
+                    )
+                    continue
                 completed += 1
         return completed
 
@@ -424,7 +470,7 @@ class CustomForecastEvaluationService:
                     "unique_id": unique_id,
                     "mape_percent": mape,
                     "baseline_mape_percent": baseline,
-                    "relative_baseline_improvement_percent": improvement,
+                    "relative_baseline_improvement_percent": _optional_percent(improvement),
                     "scorable_point_count": total_weight,
                     "run_count": len(included),
                     "daily": daily,

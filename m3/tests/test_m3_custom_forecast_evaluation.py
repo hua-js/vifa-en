@@ -1,7 +1,11 @@
 """Regression coverage for custom forecast performance aggregates."""
 
 from datetime import datetime, timedelta
+from dataclasses import replace
 import unittest
+from unittest.mock import Mock
+
+from m3.worker.errors import M3Error
 
 from m3.worker.api.models import CustomPerformanceResponse
 from m3.worker.custom_forecast_contracts import (
@@ -10,6 +14,7 @@ from m3.worker.custom_forecast_contracts import (
 )
 from m3.worker.services.custom_forecast_evaluation_service import (
     CustomForecastEvaluationService,
+    _optional_percent,
 )
 from m3.worker.services.custom_forecast_repository import StoredCustomRun
 
@@ -97,6 +102,82 @@ class InMemoryEvaluationRepository:
 
 
 class CustomForecastEvaluationServiceTests(unittest.TestCase):
+    def test_evaluate_run_saves_all_three_rows_with_optional_overflow_as_null(self):
+        run = make_run("recover", {"selection_policy": "weekly_load_v2"})
+        run = replace(run, record=run.record.model_copy(update={"status": "succeeded"}))
+        rows = [dict(unique_id=series,
+                     target_time=(run.config.forecast_start + timedelta(minutes=15*i)).isoformat(),
+                     forecast_value=7.621005010102843 if series == "storage_soc" else 1.1,
+                     actual_value=1, actual_quality="valid",
+                     baseline_forecast_value=1.0608168584719392)
+                for series in ("station_total_load", "storage_soc") for i in range(96)]
+        repository = Mock()
+        repository.list_points.return_value = rows
+        service = CustomForecastEvaluationService(repository, None, lambda: NOW)
+        service.overlay_actuals = Mock(return_value=rows)
+        with self.assertLogs("m3.worker.custom_evaluation", level="WARNING"):
+            service.evaluate_run(run, calculated_at=NOW)
+        saved = repository.save_evaluations.call_args.args[1]
+        self.assertEqual([row["evaluation_key"] for row in saved],
+                         ["station_total_load", "storage_soc", "overall"])
+        self.assertIsNone(saved[1]["relative_baseline_improvement_percent"])
+        self.assertAlmostEqual(saved[1]["mape_percent"], 662.1005010102843)
+        repository.transition.assert_called_once_with(run, "evaluated", at=NOW)
+
+    def test_optional_percent_respects_six_decimal_storage_boundary(self):
+        for value in (0.0, -25.5, 100.0, -9999.9999994, 9999.9999994):
+            with self.subTest(value=value):
+                self.assertEqual(_optional_percent(value), value)
+        for value in (-9999.9999995, 9999.9999995, -10786.792209,
+                      float("inf"), float("nan"), None):
+            with self.subTest(value=value):
+                self.assertIsNone(_optional_percent(value))
+
+    def test_overflowing_aggregate_improvement_keeps_mape_and_task_count(self):
+        run = make_run("poor-soc", {"selection_policy": "weekly_load_v2"})
+        row = evaluation(run.run_id, 662.100501)
+        row["baseline_mape_percent"] = 6.081686
+        repository = InMemoryEvaluationRepository([run], [row])
+        service = CustomForecastEvaluationService(repository, None, lambda: NOW)
+        result = service.performance(station_id="ES01", interval_seconds=900,
+                                     forecast_days=1, history_days=28)
+        for series in result["series"]:
+            self.assertIsNone(series["relative_baseline_improvement_percent"])
+            self.assertEqual(series["run_count"], 1)
+            self.assertAlmostEqual(series["mape_percent"], 662.100501)
+
+    def test_large_negative_optional_improvement_does_not_discard_soc_score(self):
+        run = make_run("overflow", {"selection_policy": "weekly_load_v2"})
+        points = [dict(forecast_value=7.621005010102843, actual_value=1,
+                       actual_quality="valid", baseline_forecast_value=1.0608168584719392)
+                  for _ in range(96)]
+        service = CustomForecastEvaluationService(None, None, lambda: NOW)
+        with self.assertLogs("m3.worker.custom_evaluation", level="WARNING") as logs:
+            row = service._series_evaluation(run, "storage_soc", points, NOW)
+        self.assertIsNone(row["relative_baseline_improvement_percent"])
+        self.assertEqual(row["outcome"], "available")
+        self.assertAlmostEqual(row["mape_percent"], 662.1005010102843)
+        self.assertIn("relative_baseline_improvement_percent", logs.output[0])
+
+    def test_station_continues_after_one_failed_evaluation(self):
+        runs = [make_run(name, {}) for name in ("broken", "healthy")]
+        runs = [replace(run, record=run.record.model_copy(update={"status": "succeeded"}))
+                for run in runs]
+        repository = Mock()
+        repository.list_succeeded.return_value = runs
+        service = CustomForecastEvaluationService(repository, None, lambda: NOW)
+        service.evaluate_run = Mock(side_effect=[
+            M3Error("sink_http_failed", "private upstream error", {
+                "collection": "energy_forecast_manual_evaluations",
+                "action": "updateOrCreate", "status_code": 500}), runs[1]])
+        with self.assertLogs("m3.worker.custom_evaluation", level="ERROR") as logs:
+            self.assertEqual(service.evaluate_station("ES01", NOW), 1)
+        self.assertEqual(service.evaluate_run.call_count, 2)
+        self.assertIn("run_id=broken", logs.output[0])
+        self.assertIn("status_code=500", logs.output[0])
+        self.assertNotIn("private upstream error", logs.output[0])
+        repository.transition.assert_not_called()
+
     def test_saved_score_matches_live_score_without_replacing_standard_metrics(self):
         run = make_run("score-run", {"selection_policy": "weekly_load_v2"})
         points = [dict(target_time=(run.config.forecast_start + timedelta(minutes=15*i)).isoformat(),
