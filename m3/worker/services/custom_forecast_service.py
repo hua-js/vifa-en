@@ -551,6 +551,10 @@ class CustomForecastService:
                         ].negative_invalid_points,
                         "retained_points": len(datasets[unique_id].frame),
                         "imputed_points": len(datasets[unique_id].imputed_keys),
+                        **({"load_fallback_donors": [
+                            {"target_time": target.isoformat(), "source_time": donor.isoformat()}
+                            for target, donor in datasets[unique_id].load_fallback_donors
+                        ]} if datasets[unique_id].load_fallback_donors else {}),
                         "mode": datasets[unique_id].mode,
                         "usable_week_count": len(datasets[unique_id].usable_weeks),
                         "weeks": [

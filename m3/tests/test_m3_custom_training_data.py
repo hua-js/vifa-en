@@ -3,6 +3,8 @@
 from datetime import datetime, timedelta
 import unittest
 
+from m3.worker.domain.production_schedule import ProductionSchedule, use_schedule
+
 from m3.worker.custom_forecast_contracts import (
     CustomForecastConfig,
     CustomObservationPoint,
@@ -208,6 +210,61 @@ class CustomTrainingDataUsableWeekTests(unittest.TestCase):
 
         self.assertEqual(dataset.source_available_start, history_start)
         self.assertEqual(dataset.leading_no_data_points, 0)
+
+
+
+class LoadRestGapRecoveryTests(unittest.TestCase):
+    def build(self, *, gap_count=17, donor_days=5, donor_valid=True):
+        end = datetime.fromisoformat("2026-09-28T00:00:00+08:00")
+        start = end - timedelta(days=41)
+        target = end - timedelta(days=3) + timedelta(hours=6, minutes=30)
+        config = make_config(HISTORY_END - timedelta(days=41)).model_copy(update={
+            "history_start": start, "history_end": end,
+            "forecast_start": end, "forecast_end": end + timedelta(days=1),
+        })
+        donor_day = (target - timedelta(days=donor_days)).date()
+        statuses = {(start + timedelta(days=i)).date(): "WORK" for i in range(42)}
+        statuses[target.date()] = "REST"
+        statuses[donor_day] = "REST"
+        calendar = ProductionSchedule("ES01", "station_1", "86", start.date(),
+            end.date(), end.date(), statuses, {}, "{}")
+        gaps = {target + timedelta(minutes=15*i) for i in range(gap_count)}
+        points = make_points(start, end)
+        for i, point in enumerate(points):
+            if point.ds in gaps:
+                points[i] = point.model_copy(update={"y": None, "quality": "invalid", "source_state": "negative"})
+            elif point.ds.date() == donor_day:
+                points[i] = point.model_copy(update={
+                    "y": 120.0 if donor_valid else None,
+                    "quality": "valid" if donor_valid else "invalid",
+                    "source_state": "valid" if donor_valid else "coverage",
+                })
+        with use_schedule(calendar):
+            dataset = build_custom_training_dataset(points, UNIQUE_ID, config)
+        return dataset, target, gaps
+
+    def test_rest_day_negative_gap_recovers_from_earlier_real_rest_day(self):
+        dataset, target, gaps = self.build()
+        self.assertEqual(len(dataset.usable_weeks), 5)
+        self.assertEqual(dataset.negative_invalid_points, 17)
+        self.assertTrue(all((UNIQUE_ID, t) in dataset.imputed_keys for t in gaps))
+        at_eight = target.replace(hour=8, minute=0)
+        self.assertEqual(dataset.frame.set_index("ds").loc[at_eight, "y"], 120.0)
+        self.assertIn((at_eight, at_eight - timedelta(days=5)), dataset.load_fallback_donors)
+
+    def test_does_not_use_donors_beyond_28_days(self):
+        dataset, target, _ = self.build(donor_days=29)
+        self.assertEqual(dataset.usable_weeks, ())
+        self.assertEqual(dataset.start, target + timedelta(minutes=15*17))
+
+    def test_does_not_chain_imputed_rest_day_values(self):
+        dataset, target, _ = self.build(donor_valid=False)
+        self.assertEqual(dataset.usable_weeks, ())
+        self.assertEqual(dataset.start, target + timedelta(minutes=15*17))
+
+    def test_extended_fallback_does_not_exceed_weekly_imputation_budget(self):
+        dataset, _, _ = self.build(gap_count=40)
+        self.assertEqual(dataset.usable_weeks, ())
 
 
 if __name__ == "__main__":

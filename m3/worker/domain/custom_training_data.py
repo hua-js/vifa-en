@@ -1,5 +1,6 @@
 """Build interval-independent M3 training frames without changing v1 data."""
 
+from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
@@ -15,6 +16,7 @@ from m3.worker.custom_forecast_contracts import (
 
 SHORT_GAP_BUCKETS = 2
 MAX_WEEK_IMPUTATION_RATIO = 0.05
+MAX_LOAD_FALLBACK_DAYS = 28
 
 
 @dataclass(frozen=True)
@@ -43,6 +45,7 @@ class CustomTrainingDataset:
     points_per_day: int
     usable_weeks: tuple[CustomWeekSummary, ...] = ()
     energy_capacity_kwh: float | None = None
+    load_fallback_donors: tuple[tuple[datetime, datetime], ...] = ()
 
 
 def _history_mode(real_point_count: int, points_per_day: int) -> str:
@@ -147,6 +150,8 @@ def build_custom_training_dataset(
     frame.index.name = "ds"
     frame["y"] = pd.to_numeric(frame["y"], errors="coerce")
 
+    # Snapshot before any interpolation: extended load recovery uses real data only.
+    observed_load = frame["y"].copy()
     missing = frame["y"].isna()
     missing_groups = (missing != missing.shift()).cumsum()
     interpolated = schedule_interpolate(
@@ -175,6 +180,34 @@ def build_custom_training_dataset(
             if donor in seasonal_donors.index and pd.notna(seasonal_donors.loc[donor]):
                 frame.loc[value, "y"] = seasonal_donors.loc[donor]
                 imputed_times.add(value.to_pydatetime())
+                break
+
+    load_fallback_donors = []
+    if is_load_series(unique_id):
+        # Match the same history-end-aligned weeks used by model selection.
+        def week_key(timestamp):
+            return (config.history_end - timestamp - config.interval) // timedelta(days=7)
+
+        weekly_imputed = Counter(week_key(t) for t in imputed_times)
+        budget = int(config.weekly_season_length * MAX_WEEK_IMPUTATION_RATIO)
+        for value in frame.index[frame["y"].isna()]:
+            week = week_key(value)
+            if weekly_imputed[week] >= budget:
+                continue
+            working = schedule_slot(value)[0]
+            for days in range(1, min(MAX_LOAD_FALLBACK_DAYS, config.history_days) + 1):
+                donor = value - timedelta(days=days)
+                if donor not in observed_load.index:
+                    continue
+                observed = observed_load.loc[donor]
+                if pd.isna(observed) or observed < 0:
+                    continue
+                if schedule_slot(donor)[0] != working:
+                    continue
+                frame.loc[value, "y"] = observed
+                imputed_times.add(value.to_pydatetime())
+                weekly_imputed[week] += 1
+                load_fallback_donors.append((value.to_pydatetime(), donor.to_pydatetime()))
                 break
 
     unresolved = frame["y"].isna()
@@ -212,4 +245,8 @@ def build_custom_training_dataset(
         interval_seconds=config.interval_seconds,
         points_per_day=config.points_per_day,
         usable_weeks=_usable_week_summaries(frame, imputed_keys, unique_id, config),
+        load_fallback_donors=tuple(
+            (target, donor) for target, donor in load_fallback_donors
+            if (unique_id, target) in imputed_keys
+        ),
     )
