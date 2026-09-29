@@ -56,7 +56,7 @@ class AutomaticPlans:
                         except Exception:
                             LOG.exception('Cannot read automatic plan status for %s', station)
                             continue
-                        if not isinstance(latest, dict) or latest.get('status') not in ('failed', 'stale', 'empty'):
+                        if not isinstance(latest, dict) or latest.get('status') not in ('failed', 'stale', 'empty', 'blocked'):
                             continue
                 # Persist the claim under the cross-process lock before dispatch.
                 state[station] = dict(window=window,

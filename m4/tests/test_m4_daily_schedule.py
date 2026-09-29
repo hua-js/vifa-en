@@ -121,6 +121,7 @@ class DailyCoordinatorTests(unittest.TestCase):
         self.daily.store.get.return_value = self.config
         self.writer = Mock()
         self.writer.status.return_value = {'enabled': True}
+        self.writer.reconcile.return_value = {'status': 'blocked', 'reason': '等待核对'}
         self.service = DailyScheduleService(self.daily, self.writer)
         self.day = datetime.now(ZONE).date().isoformat()
         self.state = dict(station_id='station-2', date=self.day, policy_version=POLICY,
@@ -144,6 +145,125 @@ class DailyCoordinatorTests(unittest.TestCase):
         self.service._run('station-2', None)
         self.writer.submit.assert_not_called()
         self.daily.start.assert_not_called()
+
+    def test_reconciled_block_rechecks_expiry_without_replaying_pending(self):
+        previous = str(uuid4())
+        self.state.update(status='blocked', pending_run_id=previous)
+        self.service._save(self.state)
+        self.writer.reconcile.return_value = {'status': 'ready'}
+        with patch.object(self.service, '_submit', return_value=True) as submit, \
+                patch('m4.settings.daily_schedule.configured_window', return_value=False):
+            self.service._run('station-2', None)
+        self.writer.reconcile.assert_called_once_with('station-2', run_id=previous)
+        payload = submit.call_args.args[1]
+        self.assertEqual(payload['kind'], 'expire')
+        self.assertNotEqual(payload['run_id'], previous)
+        self.assertEqual(payload['plan'], [])
+        self.assertNotIn('pending_run_id', self.service.latest('station-2'))
+        self.daily.start.assert_called_once_with('station-2')
+
+    def test_recovered_replacement_does_not_report_old_frozen_plan(self):
+        old, replacement = str(uuid4()), str(uuid4())
+        self.state.update(status='blocked', confirmed_daily_run_id=old,
+            pending_run_id=replacement, pending_daily_run_id=replacement,
+            active_plan={'kind': 'daily', 'run_id': old, 'status': CONFIRMED},
+            active_daily={'run_id': old})
+        self.service._save(self.state)
+        self.writer.reconcile.return_value = {'status': 'ready'}
+        with patch.object(self.service, '_submit', return_value=True):
+            self.service._run('station-2', None)
+        state = self.service.latest('station-2')
+        self.assertEqual(state['replan_from_run_id'], replacement)
+        self.assertTrue(state['automatic_replan'])
+        self.assertEqual(state['status'], 'waiting')
+        self.assertNotIn('已保留确认', state['message'])
+        self.assertNotIn('active_plan', state)
+        self.assertNotIn('active_daily', state)
+        self.assertEqual(state['interrupted_previous']['active_daily']['run_id'], old)
+        # Recalculate first; do not replay the stale target or the old snapshot.
+        self.writer.submit.assert_not_called()
+        self.daily.start.assert_called_once_with('station-2')
+
+    def test_automatic_replan_submits_new_ready_forecast_without_approval(self):
+        old, fresh = str(uuid4()), str(uuid4())
+        self.state.update(status='waiting', confirmed_daily_run_id=old,
+            automatic_replan=True, replan_from_run_id=old)
+        self.service._save(self.state)
+        latest = dict(status='completed', run_id=fresh,
+            request={'source_versions': {'configuration': 'v1', 'controls': 'current'}},
+            result={'record': {'daily_comparison': {'date': self.day, 'recommended': {'plan': []}}}})
+        self.daily.latest.return_value = latest
+        with patch('m4.settings.daily_schedule.planning_controls', return_value={'version': 'current'}), \
+                patch('m4.settings.daily_schedule.daily_payload', return_value={'run_id': fresh}), \
+                patch.object(self.service, '_submit', return_value=True) as submit:
+            self.service._run('station-2', None)
+        submit.assert_called_once()
+        self.assertEqual(submit.call_args.kwargs['snapshot']['run_id'], fresh)
+
+    def test_expired_dispatch_requests_regeneration_without_replaying(self):
+        from m4.settings.ems_table_writer import PlanRegenerationRequired
+        run_id = str(uuid4())
+        self.daily.latest.return_value = dict(status='completed', run_id=run_id,
+            request={'source_versions': {'configuration': 'v1', 'controls': 'current'}},
+            result={'record': {'daily_comparison': {'date': self.day, 'recommended': {'plan': []}}}})
+        def expired(state, payload, configuration, **kwargs):
+            state.update(status='writing', pending_run_id=run_id, pending_daily_run_id=run_id)
+            raise PlanRegenerationRequired()
+        with patch('m4.settings.daily_schedule.planning_controls', return_value={'version': 'current'}), \
+                patch('m4.settings.daily_schedule.daily_payload', return_value={'run_id': run_id}), \
+                patch.object(self.service, '_submit', side_effect=expired):
+            self.service._run('station-2', None)
+        state = self.service.latest('station-2')
+        self.assertTrue(state['automatic_replan'])
+        self.assertEqual(state['replan_from_run_id'], run_id)
+        self.assertNotIn('pending_run_id', state)
+        self.daily.start.assert_called_once_with('station-2')
+
+    def test_crash_after_complete_write_restores_original_snapshot_without_submit(self):
+        run_id = str(uuid4())
+        payload = dict(kind='daily', run_id=run_id, daily_run_id=run_id, date=self.day,
+            effective_at=self.day+'T08:15:00+08:00', end_at=self.day+'T23:45:00+08:00',
+            plan=[{'timestamp': self.day+'T08:15:00+08:00', 'mode': 'idle', 'target_power_kw': 0}])
+        snapshot = {'run_id': run_id, 'original': True}
+        confirmed = dict(status=CONFIRMED, run_id=run_id, effective_at=payload['effective_at'],
+            confirmed_plan=deepcopy(payload['plan']), confirmed_schedule=[])
+        self.state.update(status='writing', pending_run_id=run_id,
+            pending_payload=payload, pending_snapshot=snapshot)
+        self.service._save(self.state)
+        self.writer.reconcile.return_value = dict(status='ready', confirmed_write=confirmed)
+        self.daily.latest.return_value = {'run_id': str(uuid4()), 'status': 'completed'}
+        self.service._run('station-2', None)
+        state = self.service.latest('station-2')
+        self.assertEqual(state['confirmed_daily_run_id'], run_id)
+        self.assertEqual(state['active_daily'], snapshot)
+        self.assertEqual(state['active_plan']['effective_at'], payload['effective_at'])
+        self.assertEqual(state['active_plan']['plan'], payload['plan'])
+        self.writer.submit.assert_not_called()
+        self.daily.latest.assert_not_called()
+
+    def test_blocked_recovery_preserves_state_and_never_submits(self):
+        self.state.update(status='blocked', pending_run_id=str(uuid4()))
+        self.service._save(self.state)
+        self.service._run('station-2', None)
+        self.assertEqual(self.service.latest('station-2')['status'], 'blocked')
+        self.writer.submit.assert_not_called()
+        self.daily.start.assert_not_called()
+
+    def test_explicit_new_replacement_can_supersede_stale_recovery_snapshot(self):
+        target = str(uuid4())
+        self.state.update(status='failed', confirmed_daily_run_id=str(uuid4()),
+            recovery_daily_run_id=str(uuid4()), recovery_daily_snapshot={'status': 'stale'})
+        self.service._save(self.state)
+        latest = dict(status='completed', run_id=target,
+            request={'source_versions': {'configuration': 'v1', 'controls': 'current'}},
+            result={'record': {'daily_comparison': {'date': self.day, 'recommended': {'plan': []}}}})
+        self.daily.latest.return_value = latest
+        with patch('m4.settings.daily_schedule.planning_controls', return_value={'version': 'current'}), \
+                patch('m4.settings.daily_schedule.daily_payload', return_value={'run_id': target}), \
+                patch.object(self.service, '_submit', return_value=True) as submit:
+            self.service._run('station-2', target)
+        submit.assert_called_once()
+        self.assertEqual(submit.call_args.kwargs['snapshot'], latest)
 
     def test_stale_explicit_version_cannot_become_automatic_dispatch(self):
         self.service._run('station-2', str(uuid4()))

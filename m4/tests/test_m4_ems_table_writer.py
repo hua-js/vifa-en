@@ -1,6 +1,8 @@
 """Mock-only commissioning writes; never contacts an upstream service."""
 import io
 import json
+import fcntl
+from datetime import timedelta
 from pathlib import Path
 import tempfile
 import unittest
@@ -83,7 +85,7 @@ class TableWriterTests(unittest.TestCase):
             self.assertEqual(again.submit('station-2', self.payload, self.config, now=self.now), result)
             self.assertEqual(self.transport.open.call_count, 2)
 
-    def test_timeout_after_partial_write_holds_station_across_runs(self):
+    def test_timeout_reconciles_absent_create_before_fresh_run(self):
         with tempfile.TemporaryDirectory() as root:
             writer = self.prepare(root)
             original = self.transport.open.side_effect
@@ -106,6 +108,115 @@ class TableWriterTests(unittest.TestCase):
             self.assertEqual(again['status'], 'blocked')
             self.assertEqual(count, 2)
             self.assertNotIn('secret must', json.dumps(result))
+            again = writer.submit('station-2', self.payload, self.config,
+                                  now=self.now+timedelta(seconds=61))
+            self.assertEqual(again['status'], 'plan_table_readback_verified')
+            self.assertEqual(count, 3)
+            archived = list((Path(root)/'reconciled').glob('*.json'))
+            self.assertEqual(len(archived), 1)
+            proof = json.loads(archived[0].read_text())['reconciliation']
+            self.assertEqual(proof['operations'][-1]['result'], 'not_applied')
+            self.assertFalse(proof['replayed'])
+
+    def test_500_after_create_is_read_back_without_duplicate_create(self):
+        with tempfile.TemporaryDirectory() as root:
+            writer = self.prepare(root)
+            original = self.transport.open.side_effect
+            def lost_response(request, **kwargs):
+                response = original(request, **kwargs)
+                if request.full_url.endswith('t_model:create'):
+                    raise HTTPError(request.full_url, 500, 'failed', {}, None)
+                return response
+            self.transport.open.side_effect = lost_response
+            result = writer.submit('station-2', self.payload, self.config, now=self.now)
+            self.assertEqual(result['status'], 'table_write_unconfirmed')
+            count = self.transport.open.call_count
+            result = writer.reconcile('station-2', now=self.now+timedelta(seconds=61))
+            self.assertEqual(result['status'], 'ready')
+            self.assertEqual(self.transport.open.call_count, count)
+            self.assertFalse((Path(root)/'station-2.hold').exists())
+            self.payload['run_id'] = '433f7478-faf0-4b46-aa08-dbd05e37dec1'
+            self.transport.open.side_effect = original
+            result = writer.submit('station-2', self.payload, self.config,
+                                   now=self.now+timedelta(seconds=61))
+            self.assertEqual(result['status'], 'plan_table_readback_verified')
+            self.assertFalse(result['operations']['create'])
+
+    def test_recovery_preserves_expired_record_without_post(self):
+        with tempfile.TemporaryDirectory() as root:
+            writer = self.prepare(root)
+            original = self.transport.open.side_effect
+            def lost_response(request, **kwargs):
+                response = original(request, **kwargs)
+                if request.full_url.endswith('t_model:create'):
+                    raise TimeoutError()
+                return response
+            self.transport.open.side_effect = lost_response
+            writer.submit('station-2', self.payload, self.config, now=self.now)
+            self.rows[-1]['repeat'] = '已过期'
+            self.transport.open.reset_mock()
+            result = writer.reconcile('station-2', now=self.now+timedelta(days=1))
+            self.assertEqual(result['status'], 'ready')
+            self.assertEqual(self.rows[-1]['repeat'], '已过期')
+            self.transport.open.assert_not_called()
+            with self.assertRaises(ValueError):
+                writer.submit('station-2', self.payload, self.config, now=self.now+timedelta(days=1))
+            self.transport.open.assert_not_called()
+
+    def test_expired_future_row_is_not_recreated_by_same_daily_run(self):
+        with tempfile.TemporaryDirectory() as root:
+            writer = self.prepare(root)
+            prepared = writer.adapter.preview('station-2', self.payload, self.config, now=self.now)
+            expired = dict(prepared['operations']['create'][0]['body'], id=99,
+                           repeat='已过期', updatedAt='2026-09-17T06:07:01Z')
+            self.rows.append(expired)
+            with self.assertRaisesRegex(ValueError, '已过期'):
+                writer.submit('station-2', self.payload, self.config, now=self.now)
+            self.transport.open.assert_not_called()
+
+    def test_preview_failure_has_no_intent_to_replay(self):
+        with tempfile.TemporaryDirectory() as root:
+            writer = self.prepare(root)
+            self.reader._read_table.side_effect = TimeoutError()
+            with self.assertRaises(TimeoutError):
+                writer.submit('station-2', self.payload, self.config, now=self.now)
+            self.assertEqual(writer.reconcile('station-2', now=self.now,
+                run_id=self.payload['run_id'])['status'], 'ready')
+            self.transport.open.assert_not_called()
+
+    def test_read_failure_and_duplicate_keep_hold_without_post(self):
+        for conflict in ('unavailable', 'duplicate', 'changed'):
+            with self.subTest(conflict=conflict), tempfile.TemporaryDirectory() as root:
+                writer = self.prepare(root)
+                original = self.transport.open.side_effect
+                def lost_response(request, **kwargs):
+                    response = original(request, **kwargs)
+                    if request.full_url.endswith('t_model:create'):
+                        raise TimeoutError()
+                    return response
+                self.transport.open.side_effect = lost_response
+                writer.submit('station-2', self.payload, self.config, now=self.now)
+                self.transport.open.reset_mock()
+                if conflict == 'unavailable':
+                    self.reader._read_table.side_effect = TimeoutError()
+                elif conflict == 'duplicate':
+                    self.rows.append(dict(self.rows[-1], id=11))
+                else:
+                    self.rows[-1]['kw'] = 123
+                result = writer.reconcile('station-2', now=self.now+timedelta(seconds=61))
+                self.assertEqual(result['status'], 'blocked')
+                self.assertTrue((Path(root)/'station-2.hold').exists())
+                self.transport.open.assert_not_called()
+
+    def test_live_writer_mutex_blocks_reconciliation_and_submit(self):
+        with tempfile.TemporaryDirectory() as root:
+            writer = self.prepare(root)
+            with (Path(root)/'station-2.write.lock').open('a') as lock:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                self.assertEqual(writer.reconcile('station-2', now=self.now)['status'], 'blocked')
+                self.assertEqual(writer.submit('station-2', self.payload, self.config,
+                                              now=self.now)['status'], 'blocked')
+            self.transport.open.assert_not_called()
 
     def test_existing_crash_hold_prevents_post(self):
         with tempfile.TemporaryDirectory() as root:
@@ -134,7 +245,7 @@ class TableWriterTests(unittest.TestCase):
             prepared = writer.adapter.preview('station-2', self.payload, self.config, now=self.now)
             writer.adapter.preview = Mock(return_value=prepared)
             with patch('m4.settings.ems_table_writer.datetime') as clock:
-                clock.now.side_effect = [self.now, self.start]
+                clock.now.side_effect = [self.now, self.start, self.start]
                 result = writer.submit('station-2', self.payload, self.config)
             self.assertEqual(result['status'], 'table_write_unconfirmed')
             self.assertFalse(result['network_write_performed'])
@@ -210,8 +321,10 @@ class TableWriterTests(unittest.TestCase):
             self.transport.open.side_effect = check_order
             result = writer.submit('station-2', self.payload, self.config, now=self.now)
             self.assertEqual(result['status'], 'plan_table_readback_verified')
-            self.assertEqual(result['verified_operations'], [dict(action='create', record_id=10),
-                                                           dict(action='update', record_id=8)])
+            self.assertEqual([{k: op[k] for k in ('action', 'record_id')}
+                              for op in result['verified_operations']],
+                             [dict(action='create', record_id=10), dict(action='update', record_id=8)])
+            self.assertEqual(result['verified_operations'][1]['before']['end_time'], '16:00:00')
             self.assertEqual(self.rows[1]['start_time'], '14:00:00')
             self.assertEqual(self.rows[1]['kw'], 100)
 

@@ -78,3 +78,22 @@ class AutomaticPlanTests(unittest.TestCase):
             self.assertEqual(service.start.call_count, 6)
             auto.tick(2700)
             self.assertEqual(service.start.call_count, 8)
+
+    def test_blocked_reconciliation_retries_with_existing_limits(self):
+        with tempfile.TemporaryDirectory() as d:
+            service = Mock()
+            service.running = set()
+            service.latest.return_value = {'status': 'blocked'}
+            auto = AutomaticPlans(service, Path(d))
+            auto.tick(1800)
+            initial = service.start.call_count
+            auto.tick(1801)
+            self.assertEqual(service.start.call_count, initial)
+            auto.tick(1860)
+            self.assertEqual(service.start.call_count, initial * 2)
+            auto.tick(1920)
+            self.assertEqual(service.start.call_count, initial * 3)
+            auto.tick(1980)
+            self.assertEqual(service.start.call_count, initial * 3)
+            auto.tick(2700)
+            self.assertEqual(service.start.call_count, initial * 4)

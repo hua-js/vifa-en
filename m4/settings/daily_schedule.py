@@ -14,6 +14,7 @@ from uuid import uuid4
 from shared.project import get_project
 from .daily_dispatch import SCHEMA, daily_payload, night_payload
 from .ems_model_update import ModelUpdateError, ZONE
+from .ems_table_writer import PlanRegenerationRequired
 from .frozen_baseline import planning_controls
 from .night_charging import build_payload, configured_window, read_window, validate_freshness
 
@@ -61,9 +62,9 @@ class DailyScheduleService:
 
     def latest(self, station):
         state = self._read(station)
-        # Never resume a possibly completed write after a process crash.
+        # Read-only status; the next coordinator tick performs reconciliation.
         if state.get('status') == 'writing' and station not in self.active:
-            state.update(status='blocked', message='上次日计划写入中断，请核对计划表。')
+            state.update(status='blocked', message='上次日计划写入中断，等待自动核对。')
         return state
 
     def start(self, station, *, replace_run_id=None):
@@ -85,16 +86,46 @@ class DailyScheduleService:
             if payload['kind'] == 'night_fallback':
                 validate_freshness(payload, configuration, datetime.now(ZONE))
         state.update(status='writing', pending_run_id=payload['run_id'],
-            pending_effective_at=payload['effective_at'], message='正在写入计划表。')
+            pending_effective_at=payload['effective_at'], pending_kind=payload['kind'],
+            pending_daily_run_id=payload.get('daily_run_id'), pending_payload=deepcopy(payload),
+            pending_snapshot=deepcopy(snapshot), message='正在写入计划表。')
         self._save(state)
         result = self.writer.submit(state['station_id'], payload, configuration)
         state['last_write'] = result
         if result.get('status') != CONFIRMED:
+            if payload['kind'] != 'expire' and result.get('network_write_performed') is not False:
+                self._invalidate_previous(state)
             state.update(status='blocked', message=result.get('reason', '计划表写入未确认，已暂停自动更新。'))
             self._save(state)
             return False
+        self._confirm(state, payload, result, snapshot=snapshot)
+        return True
+
+    def _invalidate_previous(self, state):
+        if state.get('active_plan'):
+            state['interrupted_previous'] = {key: state.pop(key) for key in
+                ('active_plan', 'active_daily') if key in state}
+
+    def _regenerate(self, state, run_id):
+        """Replace an unusable recovery target automatically, never replay it."""
+        state.update(automatic_replan=True, replan_from_run_id=run_id,
+            status='waiting', message='正在重新生成有效计划，完成后自动下发。')
+        for key in ('recovery_daily_run_id', 'recovery_daily_snapshot', 'pending_run_id',
+                    'pending_effective_at', 'pending_kind', 'pending_daily_run_id',
+                    'pending_payload', 'pending_snapshot'):
+            state.pop(key, None)
+        self._save(state)
+        if state['station_id'] not in self.daily.running:
+            self.daily.start(state['station_id'])
+
+    def _confirm(self, state, payload, result, *, snapshot=None):
         state.pop('pending_run_id', None)
         state.pop('pending_effective_at', None)
+        state.pop('pending_kind', None)
+        state.pop('pending_daily_run_id', None)
+        state.pop('pending_payload', None)
+        state.pop('pending_snapshot', None)
+        state['last_write'] = result
         if payload['kind'] == 'expire':
             state['expired_rows_checked'] = True
         else:
@@ -107,10 +138,13 @@ class DailyScheduleService:
             if snapshot is not None:
                 state['active_daily'] = deepcopy(snapshot)
                 state['confirmed_daily_run_id'] = snapshot['run_id']
+                state.pop('recovery_daily_run_id', None)
+                state.pop('recovery_daily_snapshot', None)
+                state.pop('automatic_replan', None)
+                state.pop('replan_from_run_id', None)
             state.setdefault('versions', []).append(deepcopy(state['active_plan']))
         state.update(status='completed', message='日计划表已确认。' if snapshot else '保底安排已确认。')
         self._save(state)
-        return True
 
     def _run(self, station, replace_run_id):
         state = None
@@ -123,10 +157,56 @@ class DailyScheduleService:
                 except BlockingIOError:
                     return
                 state = self._read(station)
-                if state['status'] in ('writing', 'blocked'):
-                    return
                 configuration = self.daily.store.get(station)
-                enabled = self.writer.status(station).get('enabled') is True
+                write_status = self.writer.status(station)
+                enabled = write_status.get('enabled') is True
+                if state['status'] in ('writing', 'blocked') or write_status.get('status') == 'table_write_unconfirmed':
+                    if not enabled:
+                        return
+                    recovery = self.writer.reconcile(station,
+                        run_id=state.get('pending_run_id'))
+                    if recovery.get('status') != 'ready':
+                        state.update(status='blocked', message=recovery.get('reason', '计划表待核对，稍后自动重试。'))
+                        self._save(state)
+                        return
+                    confirmed = recovery.get('confirmed_write')
+                    if confirmed and state.get('pending_run_id') == confirmed['run_id']:
+                        pending = state.get('pending_payload')
+                        snapshot = state.get('pending_snapshot')
+                        if (not pending or pending.get('run_id') != confirmed['run_id']
+                                or pending.get('effective_at') != confirmed['effective_at']
+                                or pending.get('date') != state['date']
+                                or pending.get('kind') == 'daily' and not snapshot):
+                            # The table has been fully reconciled. An old build
+                            # without snapshots can regenerate future advice.
+                            self._invalidate_previous(state)
+                            self._regenerate(state, confirmed['run_id'])
+                            return
+                        # Restore the exact successful dispatch, never recut it
+                        # with today's latest candidate or a later start window.
+                        self._confirm(state, pending, confirmed, snapshot=snapshot)
+                        return
+                    pending_daily = (state.get('pending_daily_run_id') or recovery.get('daily_run_id')
+                        or ((state.get('last_write') or {}).get('daily_run_id')))
+                    if (pending_daily and state.get('confirmed_daily_run_id')
+                            and pending_daily != state['confirmed_daily_run_id']):
+                        # Preserve an explicitly requested replacement across
+                        # retries; never announce the partially replaced old plan.
+                        state['recovery_daily_run_id'] = pending_daily
+                        if state.get('pending_snapshot'):
+                            state['recovery_daily_snapshot'] = state['pending_snapshot']
+                        self._invalidate_previous(state)
+                    state.update(status='waiting', message='计划表已核对，等待新的有效计划。',
+                        expired_rows_checked=False)
+                    state.pop('pending_run_id', None)
+                    state.pop('pending_effective_at', None)
+                    state.pop('pending_kind', None)
+                    state.pop('pending_daily_run_id', None)
+                    state.pop('pending_payload', None)
+                    state.pop('pending_snapshot', None)
+                    self._save(state)
+                if replace_run_id is None:
+                    replace_run_id = state.get('recovery_daily_run_id')
                 if enabled and not state.get('expired_rows_checked'):
                     now = datetime.now(ZONE)
                     expiry = dict(schema_version=SCHEMA, kind='expire', station_id=station,
@@ -137,11 +217,13 @@ class DailyScheduleService:
                 day = datetime.now(ZONE).date().isoformat()
                 if day != state['date']:
                     raise ModelUpdateError('日期已变化，等待次日日计划。')
-                if state.get('confirmed_daily_run_id') and replace_run_id is None:
+                if (state.get('confirmed_daily_run_id') and replace_run_id is None
+                        and not state.get('automatic_replan')):
                     state.update(status='completed', message='已保留确认日计划；重算不会自动替换。')
                     self._save(state)
                     return
-                daily = self.daily.latest(station)
+                recovering = replace_run_id == state.get('recovery_daily_run_id')
+                daily = (state.get('recovery_daily_snapshot') if recovering else None) or self.daily.latest(station)
                 comparison = (daily.get('result') or {}).get('record', {}).get('daily_comparison', {})
                 ready = (daily.get('status') == 'completed' and comparison.get('date') == day
                     and comparison.get('recommended') is not None
@@ -150,9 +232,15 @@ class DailyScheduleService:
                 if ready:
                     controls = planning_controls(self.daily.inputs.live._controls(station, validate_schedule=False))
                     ready = controls['version'] == daily['request']['source_versions'].get('controls')
+                if state.get('automatic_replan') and daily.get('run_id') == state.get('replan_from_run_id'):
+                    self._regenerate(state, state.get('replan_from_run_id'))
+                    return
+                if recovering and replace_run_id is not None and (not ready or daily.get('run_id') != replace_run_id):
+                    self._regenerate(state, replace_run_id)
+                    return
                 if replace_run_id is not None and (not ready or daily.get('run_id') != replace_run_id):
                     raise ModelUpdateError('待替换日计划已变化，请重新读取。')
-                if state.get('confirmed_daily_run_id'):
+                if state.get('confirmed_daily_run_id') and not state.get('automatic_replan'):
                     if replace_run_id is None or replace_run_id == state['confirmed_daily_run_id']:
                         state.update(status='completed', message='已保留确认日计划；重算不会自动替换。')
                         self._save(state)
@@ -162,7 +250,13 @@ class DailyScheduleService:
                         state.update(status='completed', message='日计划已生成，本站未启用计划表写入。')
                         self._save(state)
                         return
-                    payload = daily_payload(daily, configuration)
+                    try:
+                        payload = daily_payload(daily, configuration)
+                    except ModelUpdateError:
+                        if recovering and replace_run_id is not None:
+                            self._regenerate(state, replace_run_id)
+                            return
+                        raise
                     self._submit(state, payload, configuration, snapshot=daily)
                     return
                 # Night fallback is independent of the daily solver and runs only
@@ -181,10 +275,13 @@ class DailyScheduleService:
                     self.daily.start(station)
                 state.update(status='waiting', message='等待完整日计划，保底安排以计划表确认为准。')
                 self._save(state)
+        except PlanRegenerationRequired:
+            if state is not None:
+                self._regenerate(state, state.get('pending_daily_run_id') or state.get('pending_run_id'))
         except Exception as error:
             if state is not None:
-                # Writing failures are not retried; a fresh no-write validation
-                # failure may be retried after inputs recover.
+                # Failed writes need read-only reconciliation on a later tick;
+                # a fresh validation failure may retry after inputs recover.
                 blocked = state.get('status') == 'writing'
                 state.update(status='blocked' if blocked else 'failed',
                     message=str(error) if isinstance(error, ValueError) else '日计划下发暂不可用。')
