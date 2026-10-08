@@ -2,6 +2,8 @@
 from datetime import datetime
 import hashlib
 import json
+from shared.project import get_project
+from shared.m4_config import PV_ECONOMIC_POLICY
 
 from m4.optimizer.contracts import (
     CapabilitySnapshot, ForecastPoint, ObjectiveProfile,
@@ -97,7 +99,9 @@ def build_request(
         interval_minutes=15,horizon_points=len(points),points=points,
         capability=capability,constraints=constraints,profiles=profiles,
         pv_dispatch_policy=parameters.pv_dispatch_policy, pv_midday_economic=True,
+        pv_economic_windows=get_project().station(configuration.station_id).m4['pv_economic_windows'],
         source_versions={**source_versions,
+            'pv_economic_policy': PV_ECONOMIC_POLICY,
             'grid_charging_policy': GRID_CHARGING_POLICY,
             'constraints':f'{configuration.version}/{control_limits.source_version}',
             'capability':f'manual-limits/{configuration.version}/live/{live_state.source_version}/scope/{scope_version}',

@@ -1,5 +1,6 @@
 """Build a natural-day baseline from the EMS schedule, demand and SOC replay."""
 from shared.project import get_project
+from shared.m4_config import PV_ECONOMIC_POLICY
 from datetime import datetime, timedelta
 import hashlib
 import json
@@ -82,6 +83,8 @@ def prepare_ems_day(configuration, bundle):
                'configuration': configuration.model_dump(mode='json'), 'points': bundle['points'],
                'controls_version': control['version'], 'initial': initial, 'terminal': terminal,
                'baseline_policy': EMS_BASELINE_POLICY, 'pv_midday_economic': True,
+               'pv_economic_policy': PV_ECONOMIC_POLICY,
+               'pv_economic_windows': get_project().station(configuration.station_id).m4['pv_economic_windows'],
                'profiles': [profile.model_dump(mode='json') for profile in profiles]}
     if policy_version:
         content.update(daily_policy=policy_version,
@@ -92,6 +95,7 @@ def prepare_ems_day(configuration, bundle):
         plan_start_at=start, input_observed_at=start, max_input_age_seconds=parameters.max_input_age_seconds,
         interval_minutes=15, horizon_points=96, points=points, capability=capability, constraints=constraints,
         profiles=profiles, pv_dispatch_policy=parameters.pv_dispatch_policy, pv_midday_economic=True,
+        pv_economic_windows=content['pv_economic_windows'],
         peak_reserve_policy=reserve_policy,
         solver_time_limit_seconds=30.0, solver_mip_rel_gap=0.01,
         source_versions={**terminal_versions, **dispatch_versions, **(dict(startup_policy=STARTUP_POLICY, startup_window_end=startup['end_at'],
@@ -99,6 +103,7 @@ def prepare_ems_day(configuration, bundle):
             **{k: sources[k]['version'] for k in ('load', 'pv', 'tariff')},
             'pv_export_policy': sources['tariff']['export_price_policy'],
             'pv_export_price': format(tariff_export_price(sources['tariff']), '.17g'),
+            'pv_economic_policy': PV_ECONOMIC_POLICY,
             'load_policy': sources['load']['policy'], 'load_run_id': sources['load']['run_id'],
             'controls': control['version'], 'configuration': configuration.version,
             **({'ems_baseline': control['baseline_version']} if control.get('baseline_version') else {}),

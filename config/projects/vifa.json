@@ -159,6 +159,9 @@
       "ems_model_record_id": 7,
       "m4": {
         "telemetry_max_charge_kw": 650.0,
+        "pv_economic_windows": [
+          {"start_time": "12:00", "end_time": "13:30"}
+        ],
         "telemetry_soc_upper_exclusive_pct": 99.0,
         "ems_charge_kw": 600.0,
         "ems_discharge_kw": {

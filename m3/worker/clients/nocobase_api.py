@@ -206,34 +206,14 @@ class NocoBaseApiClient:
     def _parse_list_envelope(
         value: object, required_fields: tuple[str, ...]
     ) -> list[dict[str, Any]]:
-        if not isinstance(value, dict) or set(value) != {"data", "meta"}:
-            raise M3Error("sink_contract_invalid", "NocoBase list envelope is invalid")
-        data = value["data"]
-        meta = value["meta"]
-        required_meta = {"count", "page", "pageSize", "totalPage"}
-        if (
-            not isinstance(data, list)
-            or not isinstance(meta, dict)
-            or set(meta) != required_meta
-            or any(
-                not isinstance(meta[key], int) or isinstance(meta[key], bool)
-                for key in required_meta
-            )
-            or meta["count"] < 0
-            or meta["page"] != 1
-            or meta["pageSize"] < 1
-            or meta["count"] != len(data)
-            or meta["count"] > meta["pageSize"]
-            or meta["totalPage"] != (0 if meta["count"] == 0 else 1)
-        ):
+        meta = value.get("meta") if isinstance(value, dict) else None
+        if not isinstance(meta, dict) or type(meta.get("pageSize")) is not int or meta["pageSize"] < 1:
             raise M3Error("sink_contract_invalid", "NocoBase list response is invalid")
-        rows: list[dict[str, Any]] = []
-        for item in data:
-            if not isinstance(item, dict) or any(
-                field not in item for field in required_fields
-            ):
-                raise M3Error("sink_contract_invalid", "NocoBase list row is invalid")
-            rows.append(item)
+        rows, _, _, has_next = NocoBaseApiClient._parse_list_page(
+            value, required_fields, expected_page=1, expected_page_size=meta["pageSize"],
+        )
+        if has_next:
+            raise M3Error("sink_contract_invalid", "NocoBase pagination is incomplete")
         return rows
 
     @staticmethod
@@ -243,46 +223,49 @@ class NocoBaseApiClient:
         *,
         expected_page: int,
         expected_page_size: int,
-    ) -> tuple[list[dict[str, Any]], int, int]:
+    ) -> tuple[list[dict[str, Any]], int | None, int | None, bool]:
         if not isinstance(value, dict) or set(value) != {"data", "meta"}:
             raise M3Error("sink_contract_invalid", "NocoBase list envelope is invalid")
         data = value["data"]
         meta = value["meta"]
-        required_meta = {"count", "page", "pageSize", "totalPage"}
+        if not isinstance(data, list) or not isinstance(meta, dict):
+            raise M3Error("sink_contract_invalid", "NocoBase list response is invalid")
         if (
-            not isinstance(data, list)
-            or not isinstance(meta, dict)
-            or set(meta) != required_meta
-            or any(
-                not isinstance(meta[key], int) or isinstance(meta[key], bool)
-                for key in required_meta
-            )
-            or meta["count"] < 0
+            type(meta.get("page")) is not int
+            or type(meta.get("pageSize")) is not int
             or meta["page"] != expected_page
             or meta["pageSize"] != expected_page_size
-            or meta["totalPage"] < 0
-            or (meta["totalPage"] == 0 and meta["count"] != 0)
-            or (meta["totalPage"] > 0 and expected_page > meta["totalPage"])
+            or len(data) > expected_page_size
         ):
             raise M3Error("sink_contract_invalid", "NocoBase list response is invalid")
-        expected_total_pages = (
-            0
-            if meta["count"] == 0
-            else (meta["count"] + expected_page_size - 1) // expected_page_size
-        )
-        expected_row_count = (
-            0
-            if expected_total_pages == 0
-            else (
-                expected_page_size
-                if expected_page < expected_total_pages
-                else meta["count"] - (expected_page - 1) * expected_page_size
+        if set(meta) == {"hasNext", "page", "pageSize"}:
+            if type(meta["hasNext"]) is not bool or (
+                meta["hasNext"] and len(data) != expected_page_size
+            ):
+                raise M3Error("sink_contract_invalid", "NocoBase list response is invalid")
+            total_pages = total_records = None
+            has_next = meta["hasNext"]
+        elif set(meta) == {"count", "page", "pageSize", "totalPage"}:
+            if (
+                type(meta["count"]) is not int or meta["count"] < 0
+                or type(meta["totalPage"]) is not int or meta["totalPage"] < 0
+            ):
+                raise M3Error("sink_contract_invalid", "NocoBase list response is invalid")
+            total_records = meta["count"]
+            total_pages = (total_records + expected_page_size - 1) // expected_page_size
+            expected_rows = (
+                0 if total_pages == 0 else
+                expected_page_size if expected_page < total_pages else
+                total_records - (expected_page - 1) * expected_page_size
             )
-        )
-        if (
-            meta["totalPage"] != expected_total_pages
-            or len(data) != expected_row_count
-        ):
+            if (
+                meta["totalPage"] != total_pages
+                or (total_pages > 0 and expected_page > total_pages)
+                or len(data) != expected_rows
+            ):
+                raise M3Error("sink_contract_invalid", "NocoBase list response is invalid")
+            has_next = expected_page < total_pages
+        else:
             raise M3Error("sink_contract_invalid", "NocoBase list response is invalid")
         rows: list[dict[str, Any]] = []
         for item in data:
@@ -293,7 +276,7 @@ class NocoBaseApiClient:
                     "sink_contract_invalid", "NocoBase list row is invalid"
                 )
             rows.append(item)
-        return rows, meta["totalPage"], meta["count"]
+        return rows, total_pages, total_records, has_next
 
     def _request(
         self,
@@ -436,7 +419,7 @@ class NocoBaseApiClient:
         }
 
         def parse(value: object) -> dict[str, Any] | None:
-            rows, _, _ = self._parse_list_page(
+            rows, _, _, _ = self._parse_list_page(
                 value,
                 checked_fields,
                 expected_page=1,
@@ -518,7 +501,7 @@ class NocoBaseApiClient:
             }
             if checked_sort:
                 params["sort"] = ",".join(checked_sort)
-            page_rows, reported_pages, reported_records = self._request(
+            page_rows, reported_pages, reported_records, has_next = self._request(
                 "GET",
                 collection,
                 "list",
@@ -530,10 +513,10 @@ class NocoBaseApiClient:
                     expected_page_size=LIST_PAGE_SIZE,
                 ),
             )
-            if total_pages is None:
+            if page == 1:
                 total_pages = reported_pages
                 total_records = reported_records
-                if total_records > MAX_LIST_RECORDS:
+                if total_records is not None and total_records > MAX_LIST_RECORDS:
                     raise M3Error(
                         "sink_contract_invalid",
                         "NocoBase list exceeded record limit",
@@ -551,8 +534,8 @@ class NocoBaseApiClient:
                 raise M3Error(
                     "sink_contract_invalid", "NocoBase list exceeded record limit"
                 )
-            if total_pages == 0 or page == total_pages:
-                if len(rows) != total_records:
+            if not has_next:
+                if total_records is not None and len(rows) != total_records:
                     raise M3Error(
                         "sink_contract_invalid",
                         "NocoBase pagination is incomplete",

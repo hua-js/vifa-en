@@ -139,15 +139,18 @@ class PeakGridChargingTests(unittest.TestCase):
             validate_dispatch_safety(raw, [point])
 
     def test_both_stations_reject_old_daily_charging_policy(self):
+        from shared.m4_config import PV_ECONOMIC_POLICY
         for station in ('station-1', 'station-2'):
             with self.subTest(station=station):
                 payload = make_request(station_id=station).model_dump(mode='json')
                 payload.update(pv_midday_economic=True,
+                    pv_economic_windows=get_project().station(station).m4['pv_economic_windows'],
                     profiles=[p.model_dump(mode='json') for p in get_daily_profiles(station)])
                 payload['constraints']['grid_import_limit_kw'] = get_project().station(station).grid_import_limit_kw
                 for point in payload['points']:
                     point['tariff_period'] = 'ping'
                 payload['source_versions'].update(pv_export_policy='pv-export-flat-tariff-v1',
+                    pv_economic_policy=PV_ECONOMIC_POLICY,
                     pv_export_price='0', project_configuration=get_project().fingerprint,
                     daily_policy=daily_policy_version(station), physical_grid_policy=physical_grid_policy(station),
                     economic_policy='station-1-cost-first-v1', grid_charging_policy=GRID_CHARGING_POLICY)

@@ -169,6 +169,82 @@ def make_api(handler, retry: RetryPolicy | None = None) -> NocoBaseApiClient:
 
 
 class NocoBaseClientTests(unittest.TestCase):
+    def test_has_next_empty_point_lookup_and_first_record(self):
+        def handler(request):
+            return httpx.Response(200, json={"data": [], "meta": {
+                "page": 1, "pageSize": int(request.url.params["pageSize"]),
+                "hasNext": False,
+            }})
+        client = make_api(handler)
+        self.assertEqual(client.list_records_all(
+            "energy_forecast_manual_points", filter={"run_pk": 800}, fields=["id"],
+        ), [])
+        self.assertIsNone(client.list_first_record(
+            "energy_forecast_manual_runs", filter={}, fields=["id"], sort=["-id"],
+        ))
+
+    def test_has_next_reads_every_page(self):
+        requested = []
+        def handler(request):
+            page = int(request.url.params["page"])
+            requested.append(page)
+            rows = [{"id": i} for i in range(1000)] if page == 1 else [{"id": 1000}]
+            return httpx.Response(200, json={"data": rows, "meta": {
+                "page": page, "pageSize": 1000, "hasNext": page == 1,
+            }})
+        rows = make_api(handler).list_records_all("points", filter={}, fields=["id"])
+        self.assertEqual(requested, [1, 2])
+        self.assertEqual([row["id"] for row in rows], list(range(1001)))
+
+    def test_count_pagination_remains_complete_and_rejects_changing_totals(self):
+        def handler(request):
+            page = int(request.url.params["page"])
+            rows = [{"id": i} for i in range(1000)] if page == 1 else [{"id": 1000}]
+            return httpx.Response(200, json={"data": rows, "meta": {
+                "page": page, "pageSize": 1000, "count": 1001, "totalPage": 2,
+            }})
+        rows = make_api(handler).list_records_all("points", filter={}, fields=["id"])
+        self.assertEqual([row["id"] for row in rows], list(range(1001)))
+        def changed(request):
+            response = handler(request)
+            body = response.json()
+            if int(request.url.params["page"]) == 2:
+                body["meta"]["count"] = 1002
+                body["data"].append({"id": 1001})
+            return httpx.Response(200, json=body)
+        with self.assertRaises(M3Error) as raised:
+            make_api(changed).list_records_all("points", filter={}, fields=["id"])
+        self.assertEqual(raised.exception.code, "sink_contract_invalid")
+
+    def test_has_next_rejects_truncated_or_invalid_pages(self):
+        cases = [
+            {"page": 1, "pageSize": 1000, "hasNext": True},  # short nonterminal
+            {"page": 1, "pageSize": 1000, "hasNext": 0},
+            {"page": True, "pageSize": 1000, "hasNext": False},
+            {"page": 2, "pageSize": 1000, "hasNext": False},
+            {"page": 1, "pageSize": 1, "hasNext": False},
+        ]
+        for meta in cases:
+            with self.subTest(meta=meta):
+                client = make_api(lambda request: httpx.Response(
+                    200, json={"data": [], "meta": meta},
+                ))
+                with self.assertRaises(M3Error) as raised:
+                    client.list_records_all("points", filter={}, fields=["id"])
+                self.assertEqual(raised.exception.code, "sink_contract_invalid")
+
+    def test_pagination_format_cannot_change_mid_read(self):
+        def handler(request):
+            page = int(request.url.params["page"])
+            if page == 1:
+                return httpx.Response(200, json={"data": [{"id": i} for i in range(1000)],
+                    "meta": {"page": 1, "pageSize": 1000, "hasNext": True}})
+            return httpx.Response(200, json={"data": [{"id": 1000}],
+                "meta": {"page": 2, "pageSize": 1000, "count": 1001, "totalPage": 2}})
+        with self.assertRaises(M3Error) as raised:
+            make_api(handler).list_records_all("points", filter={}, fields=["id"])
+        self.assertEqual(raised.exception.code, "sink_contract_invalid")
+
     def test_bulk_create_uses_extended_read_timeout(self):
         """Large NocoBase creates need longer than the shared 15-second read window."""
         timeout: dict[str, float] | None = None

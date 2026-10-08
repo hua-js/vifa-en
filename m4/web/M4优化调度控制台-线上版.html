@@ -313,7 +313,9 @@ function renderPlan(p){
  const charges=spans('charge'),discharges=spans('discharge');
  $('daily-plan-summary').textContent=(charges?'充电安排：'+charges+'。':'当天无充电安排。')+(discharges?'放电安排：'+discharges+'。':'当天无放电安排。')+'日计划预计日末电量 '+fmt(p.endSoc,1)+'%。';
  metric('storage-power-label','日计划建议功率(kW)');metric('storage-track-label','储能安排');
- $('constraints').innerHTML=[['储能容量',fmt(p.cap)+' kWh'],['最大充 / 放电功率',fmt(p.request.capability.max_charge_kw)+' / '+fmt(p.request.capability.max_discharge_kw)+' kW'],['SOC 安全范围',fmt(p.bounds.soc_min_pct)+'%–'+fmt(p.bounds.soc_max_pct)+'%'],['初始 / 日终 SOC',fmt(p.initialSoc)+'% / '+fmt(p.endSoc)+'%'],['需量目标',fmt(p.limit)+' kW'],['生成时间',timeText(p.record.finished_at)]].map(([k,v])=>'<div class="label">'+esc(k)+'<b style="color:var(--ink)">'+esc(v)+'</b></div>').join('');
+ const pvWindows=p.request.pv_midday_economic?(p.request.pv_economic_windows??[{start_time:'12:00',end_time:'14:00'}]):[];
+ const pvWindowRows=requireStation(p.station).has_pv?[['余电入储 / 上网选择时段',pvWindows.map(w=>w.start_time+'–'+w.end_time).join('、')||'未设置']]:[];
+ $('constraints').innerHTML=[['储能容量',fmt(p.cap)+' kWh'],['最大充 / 放电功率',fmt(p.request.capability.max_charge_kw)+' / '+fmt(p.request.capability.max_discharge_kw)+' kW'],['SOC 安全范围',fmt(p.bounds.soc_min_pct)+'%–'+fmt(p.bounds.soc_max_pct)+'%'],['初始 / 日终 SOC',fmt(p.initialSoc)+'% / '+fmt(p.endSoc)+'%'],['需量目标',fmt(p.limit)+' kW'],...pvWindowRows,['生成时间',timeText(p.record.finished_at)]].map(([k,v])=>'<div class="label">'+esc(k)+'<b style="color:var(--ink)">'+esc(v)+'</b></div>').join('');
  metric('basis-note','预计费用和节省按相同条件与原计划比较，不代表实际收益。'+(p.comparison.terminal_energy_rule==='not_less_than_baseline'?'日末电量不低于原计划。':p.comparison.terminal_energy_rule==='operating_floor_inventory_adjusted'?'日末电量按最低运行要求安排。':'日末电量与原计划一致。'));
  $('price-timeline').innerHTML=p.tariffs.map(t=>`<div class="price-segment" style="flex:${t.end-t.start};background:color-mix(in srgb,${t.color} 12%,var(--panel));color:${t.color}">${esc(t.name)} ${t.price.toFixed(2)}</div>`).join('');renderChart();renderInspector();
 }

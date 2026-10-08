@@ -3,6 +3,7 @@ from zoneinfo import ZoneInfo
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_serializer, model_validator
+from shared.m4_config import LEGACY_PV_ECONOMIC_WINDOWS, validate_pv_economic_windows
 
 
 HORIZON_POINTS = 96
@@ -87,6 +88,8 @@ class OptimizationRequest(StrictModel):
     ems_schedule_modes: list[Literal["charge", "discharge", "idle"]] | None = None
     pv_dispatch_policy: Literal["legacy", "load_first_economic", "load_first_export_priority", "load_first_storage_priority"] = "legacy"
     pv_midday_economic: bool = False
+    # None preserves the original midday rule in archived requests.
+    pv_economic_windows: list[dict[str, str]] | None = None
 
     peak_reserve_policy: PeakReservePolicy | None = None
     request_id: str = Field(min_length=1)
@@ -111,13 +114,22 @@ class OptimizationRequest(StrictModel):
             output.pop("ems_schedule_modes", None)
         if not self.pv_midday_economic:
             output.pop("pv_midday_economic", None)
+        if self.pv_economic_windows is None:
+            output.pop("pv_economic_windows", None)
         if self.peak_reserve_policy is None:
             output.pop("peak_reserve_policy", None)
         return output
 
     def pv_policy_at(self, timestamp: datetime) -> str:
-        if self.pv_midday_economic and 12 <= timestamp.astimezone(ZoneInfo("Asia/Shanghai")).hour < 14:
-            return "load_first_economic"
+        if self.pv_midday_economic:
+            local = timestamp.astimezone(ZoneInfo("Asia/Shanghai"))
+            minute = local.hour * 60 + local.minute
+            windows = self.pv_economic_windows if self.pv_economic_windows is not None else LEGACY_PV_ECONOMIC_WINDOWS
+            for window in windows:
+                start = sum(int(v) * factor for v, factor in zip(window['start_time'].split(':'), (60, 1)))
+                end = sum(int(v) * factor for v, factor in zip(window['end_time'].split(':'), (60, 1)))
+                if start <= minute < end:
+                    return "load_first_economic"
         return self.pv_dispatch_policy
 
     @property
@@ -129,6 +141,8 @@ class OptimizationRequest(StrictModel):
 
     @model_validator(mode="after")
     def validate_cross_fields(self) -> "OptimizationRequest":
+        if self.pv_economic_windows is not None:
+            self.pv_economic_windows = validate_pv_economic_windows(self.pv_economic_windows)
         if self.is_remaining_day:
             start = self.plan_start_at
             end = start + timedelta(minutes=15*self.horizon_points)

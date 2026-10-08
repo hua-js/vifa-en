@@ -1,5 +1,6 @@
 """Versioned daily planning rules; never inferred when replaying old requests."""
 from shared.project import get_project
+from shared.m4_config import PV_ECONOMIC_POLICY
 from m4.optimizer.contracts import GRID_CHARGING_POLICY
 import math
 
@@ -34,6 +35,8 @@ def matches_current_daily_policy(station_id, request):
             versions.get(key) != value for key, value in daily_dispatch_versions(station_id).items()):
         return False
     if (request.get('pv_midday_economic') is not True
+            or versions.get('pv_economic_policy') != PV_ECONOMIC_POLICY
+            or request.get('pv_economic_windows') != get_project().station(station_id).m4['pv_economic_windows']
             or not isinstance(points, list) or len(points) != 96
             or any(not isinstance(point, dict)
                    or point.get('tariff_period') not in ('gu', 'ping', 'feng', 'jian')

@@ -2,6 +2,26 @@ import unittest
 
 
 class ProjectTests(unittest.TestCase):
+    def test_pv_economic_windows_reject_invalid_and_overlapping_times(self):
+        from shared.m4_config import station_policy
+        invalid = [None, {}, [{'start_time': '12:00', 'end_time': '12:00'}],
+            [{'start_time': '12:00', 'end_time': '13:31'}],
+            [{'start_time': '24:00', 'end_time': '24:00'}],
+            [{'start_time': '23:00', 'end_time': '01:00'}],
+            [{'start_time': '12:00', 'end_time': '13:30'},
+             {'start_time': '13:15', 'end_time': '14:00'}],
+            [{'start_time': '17:30', 'end_time': '20:00'},
+             {'start_time': '12:00', 'end_time': '13:30'}]]
+        for windows in invalid:
+            with self.subTest(windows=windows), self.assertRaises(ValueError):
+                station_policy({'pv_economic_windows': windows})
+
+    def test_pv_economic_windows_can_be_disabled_and_old_configs_keep_midday(self):
+        from shared.m4_config import station_policy
+        self.assertEqual(station_policy({'pv_economic_windows': []})['pv_economic_windows'], [])
+        self.assertEqual(station_policy({})['pv_economic_windows'],
+                         [{'start_time': '12:00', 'end_time': '14:00'}])
+
     def test_default_inventory_and_public_boundary(self):
         from shared.project import get_project
         project = get_project()

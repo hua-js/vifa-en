@@ -24,6 +24,7 @@ from m3.worker.domain.forecasting import (
     select_champion,
 )
 from m3.worker.domain.work_schedule import WORK_SCHEDULE_POLICY, schedule_policy, schedule_manifest
+from m3.worker.domain.load_history import POST_HOLIDAY_LOAD_MODEL
 from m3.worker.domain.production_schedule import use_schedule
 from m3.worker.domain.training_data import (
     OPERATIONAL_HISTORY_DAYS,
@@ -292,6 +293,7 @@ def build_latest_snapshot(
     champions: dict[str, Champion | None],
     *,
     readiness: dict[str, object] | None = None,
+    load_reference: dict[str, object] | None = None,
 ) -> LatestSnapshot:
     """Build one canonical typed terminal snapshot and verify its digest."""
 
@@ -335,6 +337,8 @@ def build_latest_snapshot(
     }
     if readiness is not None:
         manifest["readiness"] = readiness
+    if load_reference is not None:
+        manifest["post_holiday_load_reference"] = load_reference
     if (calendar_manifest := schedule_manifest()) is not None:
         manifest["production_schedule"] = calendar_manifest
     body = {
@@ -508,10 +512,10 @@ class ForecastService:
         try:
             return self._schedule_provider.load(
                 station_id, (at - timedelta(days=91)).date(),
-                at.date() if selection else (
-                    at.replace(minute=(at.minute // 15) * 15, second=0, microsecond=0)
-                    + timedelta(minutes=95 * 15)
-                ).date(),
+                # Selection builds the same 24-hour load reference as publication.
+                # Include the next day when that horizon crosses midnight.
+                (at.replace(minute=(at.minute // 15) * 15, second=0, microsecond=0)
+                 + timedelta(minutes=95 * 15)).date(),
                 forecast_start=at.date() + timedelta(days=1) if selection else at.date(),
             )
         except M3Error as error:
@@ -686,10 +690,20 @@ class ForecastService:
                             "forecast_unavailable",
                             "Station champion is unavailable for usable history",
                         )
+                    publication_champions = dict(cache.state.champions)
+                    load_dataset = datasets["station_total_load"]
+                    load_champion = publication_champions["station_total_load"]
+                    if load_dataset.post_holiday_reference is not None:
+                        publication_champions["station_total_load"] = select_champion(load_dataset)
+                    elif load_champion is not None and load_champion.model_name == POST_HOLIDAY_LOAD_MODEL:
+                        publication_champions["station_total_load"] = (
+                            None if load_dataset.mode == "insufficient"
+                            else seasonal_naive_champion(load_dataset)
+                        )
                     forecast_series = [
                         self._forecast_one(
                             datasets[unique_id],
-                            cache.state.champions[unique_id],
+                            publication_champions[unique_id],
                             as_of,
                         )
                         for unique_id in SERIES_IDS
@@ -702,8 +716,10 @@ class ForecastService:
                         generated_at,
                         completed_end,
                         forecast_series,
-                        cache.state.champions,
+                        publication_champions,
                         readiness=_readiness_manifest(datasets),
+                        load_reference=(load_dataset.post_holiday_reference.manifest()
+                                        if load_dataset.post_holiday_reference is not None else None),
                     )
                 except Exception as cause:
                     error = _safe_error(

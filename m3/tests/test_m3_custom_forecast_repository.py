@@ -228,6 +228,16 @@ class DailyRunsApi:
 
 
 class CustomForecastRepositoryTests(unittest.TestCase):
+    def test_post_holiday_reference_can_be_stored_with_its_own_load_baseline(self):
+        run = make_run()
+        load = make_series("station_total_load", model_name="PostHolidayWorkdayReference").model_copy(
+            update={"status": "degraded", "fallback_reason": "post_holiday_workday_history"},
+        )
+        soc = make_series("storage_soc")
+        values = CustomForecastRepository._point_values(run, [load, soc], [load, soc])
+        self.assertEqual(len(values), 48)
+        self.assertTrue(all(row["forecast_value"] == row["baseline_forecast_value"] for row in values))
+
     def test_latest_completed_template_returns_the_newest_terminal_interval_run(self):
         """Removing the interval filter could return a template at the wrong cadence."""
         api = TemplateRunsApi(

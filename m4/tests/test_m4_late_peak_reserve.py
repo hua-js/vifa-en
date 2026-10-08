@@ -49,7 +49,10 @@ def current_reserve_request():
     """Current admission fixture, separate from historical reserve model fixtures."""
     from m4.settings.terminal_policy import POLICY as TERMINAL_POLICY
     from m4.settings.dispatch_power import daily_dispatch_versions
+    from shared.m4_config import PV_ECONOMIC_POLICY
     payload = reserve_request('peak-reserve-v4').model_dump()
+    payload['pv_economic_windows'] = get_project().station('station-2').m4['pv_economic_windows']
+    payload['source_versions']['pv_economic_policy'] = PV_ECONOMIC_POLICY
     payload['source_versions'].update(daily_policy=PEAK_RESERVE_DAILY_POLICY,
         terminal_policy=TERMINAL_POLICY, terminal_inventory_price=format(.27, '.17g'))
     payload['source_versions'].update(daily_dispatch_versions('station-2'))
@@ -110,6 +113,10 @@ class LatePeakReserveTests(unittest.TestCase):
         for point in current['points']:
             point['sell_price_per_kwh'] = 0.6
         self.assertTrue(matches_current_daily_policy('station-2', current))
+        self.assertFalse(matches_current_daily_policy('station-2',
+            {**current, 'pv_economic_windows': [{'start_time': '12:00', 'end_time': '14:00'}]}))
+        archived_midday = {k: v for k, v in current.items() if k != 'pv_economic_windows'}
+        self.assertFalse(matches_current_daily_policy('station-2', archived_midday))
         old_reserve = {**current, 'peak_reserve_policy': {
             **current['peak_reserve_policy'], 'version': 'peak-reserve-v3'}}
         self.assertFalse(matches_current_daily_policy('station-2', old_reserve))

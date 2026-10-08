@@ -47,6 +47,41 @@ def solve(request):
 
 
 class PVPolicyTests(unittest.TestCase):
+    def test_configured_break_and_after_work_boundaries_in_beijing_time(self):
+        from datetime import timedelta, timezone
+        from pydantic import ValidationError
+        payload = pv_request().model_dump()
+        windows = [{'start_time': '12:00', 'end_time': '13:30'},
+                   {'start_time': '17:30', 'end_time': '24:00'}]
+        payload.update(pv_dispatch_policy='load_first_storage_priority',
+                       pv_midday_economic=True, pv_economic_windows=windows)
+        request = OptimizationRequest.model_validate(payload)
+        start = request.plan_start_at.replace(hour=0, minute=0)
+        for minute, economic in ((719, False), (720, True), (809, True), (810, False),
+                                 (1049, False), (1050, True), (1439, True), (1440, False)):
+            at = (start + timedelta(minutes=minute)).astimezone(timezone.utc)
+            self.assertEqual(request.pv_policy_at(at),
+                'load_first_economic' if economic else 'load_first_storage_priority')
+        restored = OptimizationRequest.model_validate_json(request.model_dump_json())
+        self.assertEqual(restored.pv_economic_windows, windows)
+        payload['pv_economic_windows'] = []
+        disabled = OptimizationRequest.model_validate(payload)
+        self.assertEqual(disabled.pv_policy_at(start.replace(hour=12)), 'load_first_storage_priority')
+        payload['pv_economic_windows'] = [{'start_time': '12:00', 'end_time': '13:31'}]
+        with self.assertRaises(ValidationError):
+            OptimizationRequest.model_validate(payload)
+
+    def test_archived_midday_request_keeps_original_times_and_serialization(self):
+        from datetime import timedelta
+        payload = pv_request().model_dump()
+        payload.update(pv_midday_economic=True, pv_dispatch_policy='load_first_storage_priority')
+        self.assertNotIn('pv_economic_windows', payload)
+        request = OptimizationRequest.model_validate(payload)
+        self.assertNotIn('pv_economic_windows', request.model_dump(mode='json'))
+        start = request.plan_start_at.replace(hour=0, minute=0)
+        self.assertEqual(request.pv_policy_at(start + timedelta(hours=13, minutes=30)), 'load_first_economic')
+        self.assertEqual(request.pv_policy_at(start + timedelta(hours=14)), 'load_first_storage_priority')
+
     def test_midday_choice_overrides_only_the_confirmed_window(self):
         from datetime import timedelta, timezone
         from zoneinfo import ZoneInfo

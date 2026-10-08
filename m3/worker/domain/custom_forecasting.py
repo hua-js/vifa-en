@@ -26,6 +26,7 @@ from m3.worker.domain.custom_load_profiles import (
     weekly_profile_values,
 )
 from m3.worker.domain.custom_training_data import CustomTrainingDataset
+from m3.worker.domain.load_history import POST_HOLIDAY_LOAD_MODEL, POST_HOLIDAY_LOAD_REASON
 from m3.worker.domain.work_schedule import schedule_forecast, schedule_slot, schedule_day
 from m3.worker.errors import M3Error
 
@@ -126,6 +127,13 @@ def weekly_naive_champion(
 def select_load_champion(
     dataset: CustomTrainingDataset, config: CustomForecastConfig
 ) -> CustomChampion:
+    if dataset.post_holiday_reference is not None:
+        sources = [source for _, donors in dataset.post_holiday_reference.donors for source in donors]
+        return replace(
+            weekly_naive_champion(dataset), model_name=POST_HOLIDAY_LOAD_MODEL,
+            training_start=pd.Timestamp(min(sources)), training_end=pd.Timestamp(max(sources)),
+            selection_reason=POST_HOLIDAY_LOAD_REASON, selection_status="degraded",
+        )
     usable_week_count = len(dataset.usable_weeks)
     if usable_week_count == 0:
         latest_week_start = (
@@ -685,7 +693,7 @@ def _forecast_load_frame(
             None,
         )
     except Exception as champion_error:
-        if champion.model_name == "WeeklyNaive":
+        if champion.model_name in {"WeeklyNaive", POST_HOLIDAY_LOAD_MODEL}:
             raise M3Error(
                 "weekly_naive_failed", "weekly naive final forecast failed"
             ) from None
@@ -716,6 +724,14 @@ def _forecast_load_model(
     config: CustomForecastConfig,
 ) -> tuple[pd.DataFrame, str, str | None]:
     unique_id = dataset.frame["unique_id"].iloc[0]
+    if champion.model_name == POST_HOLIDAY_LOAD_MODEL:
+        reference = dataset.post_holiday_reference
+        if reference is None or reference.origin != config.forecast_start:
+            raise M3Error("insufficient_history", "Post-holiday reference is unavailable")
+        return (
+            _load_frame(config, unique_id, champion.model_name, reference.values),
+            champion.model_name, None,
+        )
     if champion.model_name.startswith("Weekly"):
         values = weekly_profile_values(
             dataset,

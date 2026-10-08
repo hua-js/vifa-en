@@ -165,7 +165,8 @@ class M4Optimizer:
         if minimum_action_power(request):
             model_version += '/' + POLICY
         if request.pv_midday_economic:
-            model_version += "/pv-midday-economic-v1"
+            model_version += ("/pv-midday-economic-v1" if request.pv_economic_windows is None
+                              else "/configured-pv-economic-windows-v1")
         if request.ems_schedule_modes is not None:
             model_version += "/ems-original-directions-v1"
         if request.horizon_points == 95:

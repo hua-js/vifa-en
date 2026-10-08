@@ -17,10 +17,11 @@ from m3.worker.domain.training_data import TrainingDataset
 from m3.worker.domain.work_schedule import schedule_cross_validation, schedule_forecast
 from m3.worker.errors import M3Error
 from m3.worker.domain.production_schedule import ACTIVE_SCHEDULE
+from m3.worker.domain.load_history import POST_HOLIDAY_LOAD_MODEL, POST_HOLIDAY_LOAD_REASON
 from m3.worker.domain.custom_forecasting import soc_schedule_values
 
 
-MODEL_NAMES = ("SeasonalNaive", "AutoETS", "AutoARIMA", "MSTL")
+MODEL_NAMES = ("SeasonalNaive", "AutoETS", "AutoARIMA", "MSTL", POST_HOLIDAY_LOAD_MODEL)
 
 
 def _candidate_factories():
@@ -106,6 +107,12 @@ def _model_mapes(
 
 
 def select_champion(dataset: TrainingDataset) -> Champion:
+    if dataset.post_holiday_reference is not None:
+        sources = [source for _, donors in dataset.post_holiday_reference.donors for source in donors]
+        return replace(seasonal_naive_champion(dataset),
+                       model_name=POST_HOLIDAY_LOAD_MODEL,
+                       training_start=pd.Timestamp(min(sources)), training_end=pd.Timestamp(max(sources)),
+                       selection_reason=POST_HOLIDAY_LOAD_REASON)
     if dataset.mode == "insufficient":
         raise M3Error(
             "insufficient_history", "fewer than seven complete training days"
@@ -178,6 +185,12 @@ def forecast_frame(
     dataset: TrainingDataset, model_name: str
 ) -> tuple[pd.DataFrame, pd.DataFrame | None, str, str | None]:
     unique_id = dataset.frame["unique_id"].iloc[0]
+    if is_load_series(unique_id) and dataset.post_holiday_reference is not None:
+        reference = dataset.post_holiday_reference
+        frame = pd.DataFrame({"unique_id": unique_id,
+            "ds": pd.date_range(reference.origin, periods=len(reference.values), freq=reference.interval),
+            POST_HOLIDAY_LOAD_MODEL: reference.values})
+        return frame, None, POST_HOLIDAY_LOAD_MODEL, POST_HOLIDAY_LOAD_REASON
     if not is_load_series(unique_id) and ACTIVE_SCHEDULE.get() is not None:
         origin = dataset.end + timedelta(minutes=15)
         # The common SOC routine only needs these three dataset attributes.
@@ -228,7 +241,14 @@ def forecast_one(
 ) -> ForecastSeries:
     unique_id = dataset.frame["unique_id"].iloc[0]
     unit = "kW" if is_load_series(unique_id) else "%"
-    if dataset.mode == "insufficient":
+    if dataset.post_holiday_reference is not None:
+        # Resolve per publication: a cached pre-holiday champion may be absent or
+        # unsuitable, and this temporary policy must not survive recovery.
+        if champion is None or champion.model_name != POST_HOLIDAY_LOAD_MODEL:
+            champion = select_champion(dataset)
+    elif champion is not None and champion.model_name == POST_HOLIDAY_LOAD_MODEL:
+        champion = None if dataset.mode == "insufficient" else seasonal_naive_champion(dataset)
+    if dataset.mode == "insufficient" and dataset.post_holiday_reference is None:
         return ForecastSeries(
             unique_id=unique_id,
             unit=unit,

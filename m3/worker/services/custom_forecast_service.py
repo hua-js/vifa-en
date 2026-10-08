@@ -58,7 +58,7 @@ SAFE_LOAD_SKIP_REASONS = frozenset(
     {"no_scorable_points", "non_finite_prediction", "wape_unavailable"}
 )
 SAFE_REALIZED_FALLBACK_REASONS = SAFE_LOAD_SKIP_REASONS | {
-    "latest_week_high_imputation"
+    "latest_week_high_imputation", "post_holiday_workday_history"
 }
 
 
@@ -520,7 +520,7 @@ class CustomForecastService:
                     datasets["station_total_load"],
                     (
                         selected_load_champion
-                        if selected_load_champion.model_name == "WeeklyNaive"
+                        if selected_load_champion.model_name in {"WeeklyNaive", "PostHolidayWorkdayReference"}
                         else weekly_naive_champion(datasets["station_total_load"])
                     ),
                     run.config,
@@ -555,6 +555,8 @@ class CustomForecastService:
                             {"target_time": target.isoformat(), "source_time": donor.isoformat()}
                             for target, donor in datasets[unique_id].load_fallback_donors
                         ]} if datasets[unique_id].load_fallback_donors else {}),
+                        **({"post_holiday_reference": datasets[unique_id].post_holiday_reference.manifest()}
+                           if datasets[unique_id].post_holiday_reference is not None else {}),
                         "mode": datasets[unique_id].mode,
                         "usable_week_count": len(datasets[unique_id].usable_weeks),
                         "weeks": [

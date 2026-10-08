@@ -549,7 +549,7 @@ class CustomForecastRepository:
             )
         values: list[dict[str, object]] = []
         baseline_models_by_id = {
-            "station_total_load": {"WeeklyNaive"},
+            "station_total_load": {"WeeklyNaive", "PostHolidayWorkdayReference"},
             "storage_soc": {"SeasonalNaive", "SeasonalNaive5mLinear",
                             "SOCScheduleDelta", "SOCScheduleDelta5mLinear"},
         }

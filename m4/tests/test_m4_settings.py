@@ -87,6 +87,9 @@ class SettingsTests(unittest.TestCase):
         request=build_request(config, live, request_id='real-request',plan_start_at=fixture.plan_start_at,
             points=fixture.points,source_versions={'load':'load-v1','pv':'baseline-v1','tariff':'tariff-v1'},profiles=fixture.profiles,control_limits=resolved_controls())
         self.assertEqual(request.capability.initial_soc_pct,61)
+        from shared.project import get_project
+        self.assertEqual(request.pv_economic_windows,
+            get_project().station('station-1').m4['pv_economic_windows'])
         self.assertEqual(request.capability.max_charge_kw,80)
         self.assertEqual(request.capability.max_discharge_kw,90)
         self.assertEqual(request.capability.energy_capacity_kwh,500)

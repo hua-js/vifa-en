@@ -1,6 +1,34 @@
 """Credential-free M4 project policy, separate from editable solver parameters."""
 from copy import deepcopy
 import math
+import re
+
+
+PV_ECONOMIC_POLICY = 'configured-pv-economic-windows-v1'
+LEGACY_PV_ECONOMIC_WINDOWS = [{'start_time': '12:00', 'end_time': '14:00'}]
+
+
+def validate_pv_economic_windows(windows):
+    """Validate Beijing-time, same-day, half-open windows on the plan grid."""
+    if type(windows) is not list:
+        raise ValueError('光伏余电时段必须为列表')
+    previous_end = 0
+    for window in windows:
+        if type(window) is not dict or set(window) != {'start_time', 'end_time'}:
+            raise ValueError('光伏余电时段须包含开始和结束时间')
+        minutes = []
+        for key in ('start_time', 'end_time'):
+            value = window[key]
+            if (type(value) is not str or not re.fullmatch(r'(?:[01][0-9]|2[0-3]):(?:00|15|30|45)', value)):
+                if key != 'end_time' or value != '24:00':
+                    raise ValueError('光伏余电时段须使用 HH:MM 并对齐15分钟')
+            hour, minute = map(int, value.split(':'))
+            minutes.append(hour * 60 + minute)
+        start, end = minutes
+        if start >= end or start < previous_end:
+            raise ValueError('光伏余电时段须按时间排序、不重叠且结束晚于开始')
+        previous_end = end
+    return deepcopy(windows)
 
 
 DEFAULTS = {
@@ -22,6 +50,7 @@ STATION_DEFAULTS = {
     'ems_charge_kw': 100.0,
     'ems_discharge_kw': {'gu': 90.0, 'ping': 90.0, 'feng': 90.0, 'jian': 90.0},
     'ems_export_kw': 540.0,
+    'pv_economic_windows': LEGACY_PV_ECONOMIC_WINDOWS,
     'runtime_overrides': {},
 }
 
@@ -61,6 +90,7 @@ def station_policy(raw, *, legacy_station2=False):
         defaults.update(ems_charge_kw=600.0,
             ems_discharge_kw={'gu': 600.0, 'ping': 540.0, 'feng': 600.0, 'jian': 600.0})
     values = {**defaults, **raw}
+    values['pv_economic_windows'] = validate_pv_economic_windows(values['pv_economic_windows'])
     for name in ('telemetry_max_charge_kw', 'telemetry_soc_upper_exclusive_pct'):
         if values[name] is not None:
             _number(values[name], name, positive=True)
