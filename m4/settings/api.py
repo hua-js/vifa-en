@@ -69,7 +69,7 @@ def create_app(settings_path: Path | None = None, *, control_reader=None, input_
         from .upstream import NocoBaseClient
         input_service = LiveInputService(NocoBaseClient(token), SimpleNamespace(fetch=read_controls))
     from .daily_inputs import DailyInputService
-    daily_inputs = daily_input_service if daily_input_service is not None else DailyInputService(input_service)
+    daily_inputs = daily_input_service if daily_input_service is not None else DailyInputService(input_service, score_optional=True)
     from .candidates import CandidateError, CandidateService
     candidates = candidate_service if candidate_service is not None else CandidateService(
         store=store, fetch_inputs=input_service.fetch, read_controls=read_controls)

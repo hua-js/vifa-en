@@ -42,7 +42,7 @@ def _load_power(value):
 LOAD_POLICY = 'm3-current-task-load-v1'
 
 
-def load_forecast(client, station_id, *, plan_start_at, now, require_full_day=False):
+def load_forecast(client, station_id, *, plan_start_at, now, require_full_day=False, require_accuracy=True):
     """Use the same M3 task for forecast and score; refresh actuals separately."""
     if station_id not in STATIONS:
         raise ValueError('未知电站')
@@ -105,8 +105,9 @@ def load_forecast(client, station_id, *, plan_start_at, now, require_full_day=Fa
         'rolling_points': 0, 'manual_points': 96-len(missing),
         'rolling_status': None, 'rolling_generated_at': None,
         'rolling_forecast_start': None, 'rolling_forecast_end': None,
-        'issues': gate['issues'] + ([] if not missing else ['M3当前任务未覆盖完整计划时段']),
-        'warnings': [], 'source': 'M3 station_total_load',
+        'issues': (gate['issues'] if require_accuracy else []) + ([] if not missing else ['M3当前任务未覆盖完整计划时段']),
+        'warnings': [] if require_accuracy or gate['status'] == 'ready' else ['预测评分暂未达标，计划按现有预测生成。'],
+        'source': 'M3 station_total_load',
         'first_missing_at': missing[0].isoformat() if missing else None}
 
 

@@ -18,6 +18,13 @@ def daily_policy_version(station_id):
     return PEAK_RESERVE_DAILY_POLICY if get_project().station(station_id).policy == 'peak_reserve' else None
 
 
+def daily_soc_preference_versions(station_id):
+    from m4.optimizer.soc_policy import INITIAL_IDLE_PREFERENCE_POLICY
+    if get_project().id == 'vifa' and station_id == 'station-2':
+        return dict(initial_idle_preference=INITIAL_IDLE_PREFERENCE_POLICY)
+    return {}
+
+
 def matches_current_daily_policy(station_id, request):
     """Reject stale daily plans before either memory or disk results are adopted."""
     if not isinstance(request, dict):
@@ -28,6 +35,8 @@ def matches_current_daily_policy(station_id, request):
     if not isinstance(versions, dict) or versions.get('pv_export_policy') != PV_EXPORT_POLICY:
         return False
     if versions.get('grid_charging_policy') != GRID_CHARGING_POLICY:
+        return False
+    if any(versions.get(key) != value for key, value in daily_soc_preference_versions(station_id).items()):
         return False
     from .dispatch_power import daily_dispatch_versions
     from .startup_admission import POLICY as STARTUP_POLICY

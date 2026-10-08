@@ -250,8 +250,8 @@ function mapPlan(record,request,station,date,settings,controls,emsBaseline){
  assert(['ems','optimized'].includes(c.status),'暂无可用全天比较结果');
  assert(c.date===date&&Date.parse(c.start_at)===start&&Date.parse(c.end_at)===start+86400000&&Date.parse(request.plan_start_at)===start,'计划日期不匹配，请重新生成当天计划');
  assert(record.input_summary?.configuration_version===settings.version&&c.controls_version===controls.version&&request.source_versions?.controls===controls.version,'配置已变化，请重新生成计划');
- assert(['ems-demand-soc-duration-v7-pv-export-idle','ems-demand-soc-duration-v8-reference-soc'].includes(c.baseline_policy_version)&&c.baseline_policy_version===request.source_versions?.baseline_policy&&c.baseline_policy_version===emsBaseline?.controller_version,'EMS 基线版本已变化，请重新生成');
- if(controls.baseline_source==='fixed_configuration')assert(c.baseline_policy_version==='ems-demand-soc-duration-v8-reference-soc'&&request.source_versions?.ems_baseline===controls.baseline_version&&emsBaseline?.reference_version===controls.baseline_version,'EMS 比较基线已变化，请重新生成计划');
+ assert(['ems-demand-soc-duration-v7-pv-export-idle','ems-demand-soc-duration-v8-reference-soc','ems-demand-soc-duration-v9-initial-soc'].includes(c.baseline_policy_version)&&c.baseline_policy_version===request.source_versions?.baseline_policy&&c.baseline_policy_version===emsBaseline?.controller_version,'EMS 基线版本已变化，请重新生成');
+ if(controls.baseline_source==='fixed_configuration')assert(['ems-demand-soc-duration-v8-reference-soc','ems-demand-soc-duration-v9-initial-soc'].includes(c.baseline_policy_version)&&request.source_versions?.ems_baseline===controls.baseline_version&&emsBaseline?.reference_version===controls.baseline_version,'EMS 比较基线已变化，请重新生成计划');
  const chosen=c.recommended,base=c.baseline;
  assert(validSeries(chosen?.plan,start)&&validSeries(base?.plan,start),'全天计划不完整或存在无效数值');
  const inputs=request.points;
@@ -344,13 +344,16 @@ function restoreView(station,date){
   badge.textContent='上次计划 · 正在更新';viewCache.set(viewKey(station,date),snapshot);return true;
  }catch{forgetView(station,date);return false;}
 }
+function savedPlanningSnapshot(job){
+ return job?.status==='completed'&&job.request?.source_versions?.load_admission_policy==='complete-forecast-v1'&&job.result?.record?.daily_comparison?.recommended?job:null;
+}
 function readCurrent(station,date){
  const key=viewKey(station,date);
  if(!pendingReads.has(key)){
   const request=Promise.allSettled([api(station,'daily-inputs'),api(station,'daily-plan'),api(station,'settings'),api(station,'control-sources')]).then(results=>{
    const job=results[1].status==='fulfilled'?results[1].value:null;
-   if(!job?.active_daily){const failed=results.find(v=>v.status==='rejected');if(failed)throw failed.reason;return results.map(v=>v.value);}
-   const frozen=job.active_daily;
+   const frozen=job?.active_daily||savedPlanningSnapshot(job);
+   if(!frozen){const failed=results.find(v=>v.status==='rejected');if(failed)throw failed.reason;return results.map(v=>v.value);}
    return [results[0].status==='fulfilled'?results[0].value:{sources:{},can_compare:false},job,
     results[2].status==='fulfilled'?results[2].value:{version:frozen.request.source_versions.configuration},
     results[3].status==='fulfilled'?results[3].value:{version:frozen.request.source_versions.controls}];
@@ -424,8 +427,8 @@ async function loadCurrent(){
   autoPlanEnabled=job.automation?.enabled===true;
   $('auto-plan-status').textContent=autoPlanEnabled?'日计划自动生成':'自动计算未开启';
   $('auto-plan-status').title=autoPlanEnabled?'关闭页面后仍继续检查日计划；下次检查 '+timeText(job.automation.next_check_at):'自动计算未开启';
-  const frozen=job.active_daily;
-  if(frozen&&!previewDaily){
+  const frozen=job.active_daily||savedPlanningSnapshot(job);
+  if(frozen&&(!job.active_daily||!previewDaily)){
    const savedControls={version:frozen.request.source_versions.controls};
    const savedSettings={version:frozen.request.source_versions.configuration};
    context={station,date,inputs,settings,controls:savedControls,executionControls:liveControls};cacheable=true;

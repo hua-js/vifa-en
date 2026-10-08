@@ -10,7 +10,7 @@ from m4.optimizer.contracts import (CapabilitySnapshot, ForecastPoint, PeakReser
 from m4.optimizer.metrics import calculate_metrics
 from .daily_comparison import comparison_input_sha256, compare_daily_plan
 from .objectives import get_daily_profiles
-from .daily_policy import daily_policy_version, physical_grid_policy
+from .daily_policy import daily_policy_version, physical_grid_policy, daily_soc_preference_versions
 from .terminal_policy import POLICY as TERMINAL_POLICY, target as terminal_target
 from .startup_admission import require_admission, POLICY as STARTUP_POLICY
 from .forecast_source import validate_forecast_values
@@ -38,7 +38,8 @@ def prepare_ems_day(configuration, bundle):
         raise ValueError('全天预测、电价、零点 SOC 或 EMS 时段尚未就绪。')
     if get_project().station(configuration.station_id).has_pv and sources['pv'].get('gap_policy') != DAILY_PV_POLICY:
         raise ValueError('光伏预测完整性规则已更新，请重新读取输入。')
-    startup = require_admission(sources['load'].get('accuracy_gate'), configuration.station_id,
+    score_optional = bundle.get('score_optional') is True
+    startup = None if score_optional else require_admission(sources['load'].get('accuracy_gate'), configuration.station_id,
         sources['tariff'].get('period_types', []), datetime.fromisoformat(bundle['fetched_at']))
     control, initial = sources['controls'], sources['initial_soc']
     if control.get('power_scope') not in ('station', 'cabinet') or control.get('source_health', {}).get('schedule') != 'ready' or not control.get('schedule'):
@@ -81,11 +82,12 @@ def prepare_ems_day(configuration, bundle):
             terminal_inventory_price=format(max(valley_prices), '.17g'))
     profiles = get_daily_profiles(configuration.station_id)
     dispatch_versions = daily_dispatch_versions(configuration.station_id) if not startup else {}
-    content = {**terminal_versions, **dispatch_versions, 'grid_charging_policy': GRID_CHARGING_POLICY,
+    preference_versions = daily_soc_preference_versions(configuration.station_id)
+    content = {**terminal_versions, **dispatch_versions, **preference_versions, 'grid_charging_policy': GRID_CHARGING_POLICY,
                'configuration': configuration.model_dump(mode='json'), 'points': bundle['points'],
                'controls_version': control['version'], 'initial': initial, 'terminal': terminal,
                'baseline_policy': EMS_BASELINE_POLICY, 'pv_midday_economic': True,
-               'initial_soc_policy': INITIAL_SOC_POLICY,
+               'initial_soc_policy': INITIAL_SOC_POLICY, 'score_optional': score_optional,
                'pv_economic_policy': PV_ECONOMIC_POLICY,
                'pv_economic_windows': get_project().station(configuration.station_id).m4['pv_economic_windows'],
                'profiles': [profile.model_dump(mode='json') for profile in profiles]}
@@ -101,7 +103,8 @@ def prepare_ems_day(configuration, bundle):
         pv_economic_windows=content['pv_economic_windows'],
         peak_reserve_policy=reserve_policy,
         solver_time_limit_seconds=30.0, solver_mip_rel_gap=0.01,
-        source_versions={**terminal_versions, **dispatch_versions, **(dict(startup_policy=STARTUP_POLICY, startup_window_end=startup['end_at'],
+        source_versions={**({'load_admission_policy': 'complete-forecast-v1'} if score_optional else {}),
+            **terminal_versions, **dispatch_versions, **preference_versions, **(dict(startup_policy=STARTUP_POLICY, startup_window_end=startup['end_at'],
                 startup_tariff_periods=json.dumps(sources['tariff']['period_types'])) if startup else {}),
             **{k: sources[k]['version'] for k in ('load', 'pv', 'tariff')},
             'pv_export_policy': sources['tariff']['export_price_policy'],

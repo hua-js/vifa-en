@@ -6,7 +6,8 @@ from pydantic import ValidationError
 from m4.optimizer.contracts import OptimizationRequest
 from m4.optimizer.metrics import calculate_metrics, materialize_plan
 from m4.optimizer.model import build_model
-from m4.optimizer.soc_policy import INITIAL_SOC_POLICY
+from m4.optimizer.soc_policy import (INITIAL_SOC_POLICY, INITIAL_IDLE_PREFERENCE_POLICY,
+                                     preferred_soc_upper)
 from m4.optimizer.solver import solve_milp
 from m4.optimizer.validation import ResultValidationError, validate_candidate
 from m4.settings.daily_comparison import _baseline_plan, comparison_input_sha256
@@ -36,6 +37,55 @@ SCHEDULE = [dict(start_time='00:00:00', end_time='08:00:00', mode='charge',
 
 
 class InitialSocTests(unittest.TestCase):
+    def test_inherited_upper_soc_idle_has_no_preference_penalty_but_history_is_unchanged(self):
+        req = request()
+        raw = req.model_dump()
+        raw['source_versions']['initial_idle_preference'] = INITIAL_IDLE_PREFERENCE_POLICY
+        updated = OptimizationRequest.model_validate(raw)
+        idle_schedule = [dict(start_time='00:00:00', end_time='24:00:00', mode='charge',
+                              repeat='daily', power_kw=0.)]
+        plan, _ = simulate_ems_day(req.capability, req.constraints, req.points, idle_schedule,
+                                   allow_initial_soc_excess=True)
+        self.assertAlmostEqual(calculate_metrics(req, plan).preferred_soc_deviation, .083 * 24)
+        self.assertEqual(calculate_metrics(updated, plan).preferred_soc_deviation, 0.)
+        validate_candidate(updated, make_candidate(updated, plan, calculate_metrics(updated, plan)))
+        validate_dispatch_safety(updated.model_dump(mode='json'), [p.model_dump(mode='json') for p in plan])
+
+    def test_idle_preference_does_not_relax_charging_or_a_distinct_lower_soc_preference(self):
+        raw = request().model_dump()
+        raw['source_versions']['initial_idle_preference'] = INITIAL_IDLE_PREFERENCE_POLICY
+        req = OptimizationRequest.model_validate(raw)
+        self.assertEqual(preferred_soc_upper(req), 98.083)
+        plan, _ = simulate_ems_day(req.capability, req.constraints, req.points, SCHEDULE,
+                                   allow_initial_soc_excess=True)
+        plan[0] = plan[0].model_copy(update=dict(mode='charge', target_power_kw=1.))
+        with self.assertRaisesRegex(ResultValidationError, 'charging above SOC ceiling'):
+            validate_candidate(req, make_candidate(req, plan, calculate_metrics(req, plan)), historical_baseline=True)
+        with self.assertRaisesRegex(ModelUpdateError, '不能继续充电'):
+            validate_dispatch_safety(req.model_dump(mode='json'), [p.model_dump(mode='json') for p in plan])
+        raw['constraints']['preferred_soc_max_pct'] = 95.
+        self.assertEqual(preferred_soc_upper(OptimizationRequest.model_validate(raw)), 95.)
+        raw['capability']['initial_soc_pct'] = 50.
+        raw['constraints']['preferred_soc_max_pct'] = 98.
+        self.assertEqual(preferred_soc_upper(OptimizationRequest.model_validate(raw)), 98.)
+
+    def test_idle_preference_solver_objective_matches_public_metric(self):
+        for versioned in (False, True):
+            raw = request().model_dump()
+            raw['ems_schedule_modes'] = ['idle'] * 96
+            if versioned:
+                raw['source_versions']['initial_idle_preference'] = INITIAL_IDLE_PREFERENCE_POLICY
+            req = OptimizationRequest.model_validate(raw)
+            built = build_model(req, terminal_soc_target_pct=req.capability.initial_soc_pct)
+            objective = built.objectives['soc_preferred_deviation']
+            solved = solve_milp(built.problem, objective, locks=(), time_limit_seconds=3., mip_rel_gap=0.)
+            self.assertEqual(solved.status, 'optimal')
+            plan = materialize_plan(req, built, solved.x)
+            metric = calculate_metrics(req, plan).preferred_soc_deviation
+            self.assertAlmostEqual(float(objective @ solved.x), metric)
+            self.assertAlmostEqual(metric, 0. if versioned else .083 * 24)
+            self.assertTrue(all(p.mode == 'idle' for p in plan))
+
     def test_daily_preparation_uses_real_midnight_soc_and_versions_new_rule(self):
         from m4.settings.daily_baseline import prepare_ems_day
         from m4.settings.daily_pv_policy import POLICY as DAILY_PV_POLICY
@@ -69,6 +119,7 @@ class InitialSocTests(unittest.TestCase):
             dict(station_id='station-2', configuration_version=config.version,
                  plan_start_at=start, fetched_at=NOW.isoformat(), sources=sources, points=points))
         self.assertEqual(req.source_versions['initial_soc_policy'], INITIAL_SOC_POLICY)
+        self.assertEqual(req.source_versions['initial_idle_preference'], INITIAL_IDLE_PREFERENCE_POLICY)
         self.assertEqual(req.constraints.soc_max_pct, 98.)
         self.assertAlmostEqual(baseline['plan'][0]['expected_soc_pct'], 98.083)
         self.assertNotEqual(comparison['status'], 'unavailable')

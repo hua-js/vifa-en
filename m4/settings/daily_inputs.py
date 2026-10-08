@@ -31,8 +31,9 @@ def _version(value):
 
 
 class DailyInputService:
-    def __init__(self, live_inputs):
+    def __init__(self, live_inputs, *, score_optional=False):
         self.live = live_inputs
+        self.score_optional = score_optional
 
     def _pv(self, station_id, start, now):
         if not get_project().station(station_id).has_pv:
@@ -134,7 +135,7 @@ class DailyInputService:
         station_id = configuration.station_id
         jobs = {
             'load': lambda: load_forecast(self.live.client, station_id,
-                plan_start_at=start, now=now, require_full_day=True),
+                plan_start_at=start, now=now, require_full_day=True, require_accuracy=not self.score_optional),
             'pv': lambda: self._pv(station_id, start, now),
             'tariff': lambda: self.live._tariff(start),
             # Daily/rolling bind their fixed reference after the read. Current
@@ -169,7 +170,7 @@ class DailyInputService:
             sources['controls'] = planning_controls(sources['controls'])
         # Only quality rejection may enter the bounded startup path. Missing
         # forecasts, broken evidence and every other source remain blocking.
-        if day == now.date() and _complete(load.get('values'), 96):
+        if not self.score_optional and day == now.date() and _complete(load.get('values'), 96):
             from .startup_admission import require_admission
             try:
                 startup = require_admission(load.get('accuracy_gate'), station_id,
@@ -197,8 +198,8 @@ class DailyInputService:
                 detail = '已读取' if ready else '；'.join(source.get('issues', [])) or '尚未读取到有效时段'
             if key == 'load' and ready and source.get('startup_admission'):
                 detail = '凌晨谷电保底充电可用'
-            elif key == 'load' and ready:
-                detail += ' · MAPE ' + str(source['accuracy_gate']['mape_percent']) + '%（门槛30%）'
+            elif key == 'load' and ready and self.score_optional:
+                detail = '全天预测已就绪'
             checks.append(dict(key=key, label=label, status='ready' if ready else 'missing', detail=detail))
         capacity = sources.get('controls', {}).get('storage_capacity', {}).get('energy_capacity_kwh')
         capacity_ready = type(capacity) in (int, float) and math.isfinite(capacity) and capacity > 0
@@ -220,7 +221,7 @@ class DailyInputService:
             configuration_version=configuration.version, fetched_at=now.isoformat(),
             usage='retrospective_comparison_only', dispatch_status='not_dispatched',
             status='blocked' if missing else 'ready', can_compare=False,
-            interval_minutes=15, horizon_points=96, sources=sources, points=points,
+            interval_minutes=15, horizon_points=96, sources=sources, points=points, score_optional=self.score_optional,
             checks=checks, missing=missing,
             warnings=['预测可能包含当日零点后生成的批次，仅用于相同输入下的日费用回算；不代表零点已知计划或实测收益。',
                       '历史日期电价采用当前配置按时段展开；未接入历史电价版本。'])

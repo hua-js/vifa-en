@@ -7,6 +7,7 @@ from numpy.typing import NDArray
 
 from m4.optimizer.contracts import CandidateMetrics, OptimizationRequest, PlanPoint
 from m4.optimizer.model import BuiltModel
+from m4.optimizer.soc_policy import preferred_soc_upper
 
 
 INTERVAL_HOURS = 0.25
@@ -148,7 +149,7 @@ def calculate_metrics(
     preferred_soc_deviation = sum(
         (
             max(request.constraints.preferred_soc_min_pct - point.expected_soc_pct, 0.0)
-            + max(point.expected_soc_pct - request.constraints.preferred_soc_max_pct, 0.0)
+            + max(point.expected_soc_pct - preferred_soc_upper(request), 0.0)
         )
         * INTERVAL_HOURS
         for point in plan

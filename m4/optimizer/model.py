@@ -8,7 +8,7 @@ from pyomo.repn.standard_repn import generate_standard_repn
 from m4.optimizer.contracts import ObjectiveName, OptimizationRequest
 from m4.optimizer.dispatch_policy import minimum_action_power, MINIMUM_POWER_MARGIN_KW
 from m4.optimizer.solver import PyomoProblem
-from m4.optimizer.soc_policy import allows_initial_soc_excess
+from m4.optimizer.soc_policy import allows_initial_soc_excess, preferred_soc_upper
 
 
 INTERVAL_HOURS = 0.25
@@ -264,7 +264,7 @@ def build_model(request: OptimizationRequest, *, terminal_soc_target_pct: float 
     model.preferred_soc_low = pyo.Constraint(model.periods, rule=lambda m, t:
         m.soc_low_deviation[t] + 100.0 / capacity * m.energy[t + 1] >= constraints.preferred_soc_min_pct)
     model.preferred_soc_high = pyo.Constraint(model.periods, rule=lambda m, t:
-        m.soc_high_deviation[t] - 100.0 / capacity * m.energy[t + 1] >= -constraints.preferred_soc_max_pct)
+        m.soc_high_deviation[t] - 100.0 / capacity * m.energy[t + 1] >= -preferred_soc_upper(request))
 
     model.demand_peak = pyo.Expression(expr=model.peak_demand_exceed)
     model.demand_duration = pyo.Expression(expr=INTERVAL_HOURS * pyo.quicksum(model.demand_exceed.values()))

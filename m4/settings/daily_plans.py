@@ -48,6 +48,10 @@ class DailyPlanService:
             raw = json.loads(path.read_text())
         if raw['station_id'] != station or raw.get('status') != 'completed':
             raise ValueError('invalid saved daily result')
+        if ((raw.get('request', {}).get('source_versions', {}).get('load_admission_policy') == 'complete-forecast-v1')
+                != (getattr(self.inputs, 'score_optional', False) is True)):
+            return dict(station_id=station, status='empty', result=None,
+                message='预测准入规则已变化，等待重新生成日计划。')
         if raw.get('request', {}).get('source_versions', {}).get('ems_baseline') != baseline_version(station):
             return dict(station_id=station, status='empty', result=None,
                 message='EMS 比较基线已更新，等待重新生成日计划。')
@@ -111,7 +115,9 @@ class DailyPlanService:
             result, chosen = None, None
             if not startup:
                 from .load_accuracy import require_gate
-                require_gate(inputs['sources']['load'].get('accuracy_gate'), station, datetime.now(timezone.utc))
+                if not (getattr(self.inputs, 'score_optional', False) is True
+                        and request.source_versions.get('load_admission_policy') == 'complete-forecast-v1'):
+                    require_gate(inputs['sources']['load'].get('accuracy_gate'), station, datetime.now(timezone.utc))
                 result = M4Optimizer(model_version='m4-daily-ems-baseline-v1').optimize(
                     request, terminal_soc_target_pct=terminal_target(request, baseline['terminal_soc_pct']))
                 usable = [c for c in result.candidates if c.status in ('optimal', 'feasible')
