@@ -9,7 +9,8 @@ from zoneinfo import ZoneInfo
 from m4.optimizer.contracts import CandidateResult, PlanPoint
 from m4.optimizer.metrics import calculate_metrics
 from m4.optimizer.validation import validate_candidate, validate_peak_grid_charging
-from .ems_simulation import EMS_BASELINE_POLICY, simulate_ems_day
+from m4.optimizer.soc_policy import allows_initial_soc_excess
+from .ems_simulation import EMS_BASELINE_POLICY, LEGACY_EMS_BASELINE_POLICY, simulate_ems_day
 from .terminal_policy import enabled as operating_floor, inventory_cost
 
 
@@ -51,8 +52,10 @@ def _baseline_plan(request, baseline, controls_version):
     if (not isinstance(baseline, dict)
             or baseline.get('schema_version') != 'm4-ems-daily-baseline-v1'
             or baseline.get('basis') != 'ems_rule_simulation'
-            or baseline.get('controller_version') != EMS_BASELINE_POLICY
-            or request.source_versions.get('baseline_policy') != EMS_BASELINE_POLICY
+            or baseline.get('controller_version') not in (EMS_BASELINE_POLICY, LEGACY_EMS_BASELINE_POLICY)
+            or request.source_versions.get('baseline_policy') != baseline.get('controller_version')
+            or (baseline.get('controller_version') == LEGACY_EMS_BASELINE_POLICY
+                and allows_initial_soc_excess(request.source_versions))
             or baseline.get('station_id') != request.station_id
             or baseline.get('input_sha256') != comparison_input_sha256(request)
             or not controls_version or baseline.get('controls_version') != controls_version
@@ -71,7 +74,11 @@ def _baseline_plan(request, baseline, controls_version):
             raise ValueError('EMS schedule boundary provenance mismatch')
     plan = [PlanPoint.model_validate_json(json.dumps(point, allow_nan=False))
             for point in baseline['plan']]
-    replay, simulation = simulate_ems_day(request.capability, request.constraints, request.points, baseline['schedule'], pv_dispatch_policy=request.pv_dispatch_policy)
+    replay, simulation = simulate_ems_day(request.capability, request.constraints, request.points,
+        baseline['schedule'], pv_dispatch_policy=request.pv_dispatch_policy,
+        allow_initial_soc_excess=allows_initial_soc_excess(request.source_versions))
+    if baseline['controller_version'] == LEGACY_EMS_BASELINE_POLICY:
+        simulation['policy_version'] = LEGACY_EMS_BASELINE_POLICY
     if ([p.model_dump(mode='json') for p in replay] != baseline['plan']
             or simulation != baseline.get('simulation')):
         raise ValueError('EMS replay does not match saved baseline')
@@ -171,7 +178,7 @@ def _compare_daily_plan(request, candidate, *, baseline=None, controls_version=N
     ems_view = dict(profile_id='ems', plan_version=ems.plan_version,
                     plan=[point.model_dump(mode='json') for point in ems.plan],
                     metrics=ems.metrics.model_dump(mode='json'), simulation=baseline['simulation'])
-    output.update(status='ems', baseline_policy_version=EMS_BASELINE_POLICY, baseline_cost_yuan=ems.metrics.energy_cost,
+    output.update(status='ems', baseline_policy_version=baseline['controller_version'], baseline_cost_yuan=ems.metrics.energy_cost,
                   baseline=ems_view, recommended=ems_view,
                   reason='暂无费用更低且满足需量约束的完整日方案，沿用 EMS 原计划。')
     if candidate is None or candidate.status not in ('optimal', 'feasible'):

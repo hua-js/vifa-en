@@ -8,6 +8,7 @@ from pyomo.repn.standard_repn import generate_standard_repn
 from m4.optimizer.contracts import ObjectiveName, OptimizationRequest
 from m4.optimizer.dispatch_policy import minimum_action_power, MINIMUM_POWER_MARGIN_KW
 from m4.optimizer.solver import PyomoProblem
+from m4.optimizer.soc_policy import allows_initial_soc_excess
 
 
 INTERVAL_HOURS = 0.25
@@ -78,14 +79,18 @@ def build_model(request: OptimizationRequest, *, terminal_soc_target_pct: float 
     export_max = constraints.grid_export_limit_kw if constraints.grid_export_enabled else 0.0
     capacity = capability.energy_capacity_kwh
     initial_energy = capacity * capability.initial_soc_pct / 100.0
+    terminal_upper = (max(constraints.soc_max_pct, capability.initial_soc_pct)
+                      if allows_initial_soc_excess(request.source_versions) else constraints.soc_max_pct)
     if terminal_soc_target_pct is not None and not (
         np.isfinite(terminal_soc_target_pct)
-        and constraints.soc_min_pct <= terminal_soc_target_pct <= constraints.soc_max_pct
+        and constraints.soc_min_pct <= terminal_soc_target_pct <= terminal_upper
     ):
         raise ValueError('terminal SOC target must be within safety bounds')
     terminal_energy = initial_energy if terminal_soc_target_pct is None else capacity * terminal_soc_target_pct / 100.0
     minimum_energy = capacity * constraints.soc_min_pct / 100.0
     maximum_energy = capacity * constraints.soc_max_pct / 100.0
+    initial_excess = (max(initial_energy - maximum_energy, 0.0)
+                      if allows_initial_soc_excess(request.source_versions) else 0.0)
     terminal_tolerance = capacity * constraints.terminal_soc_tolerance_pct / 100.0
     if peak_reserve is not None:
         if not constraints.preferred_soc_min_pct <= peak_reserve.terminal_soc_min_pct <= constraints.soc_max_pct:
@@ -145,11 +150,11 @@ def build_model(request: OptimizationRequest, *, terminal_soc_target_pct: float 
             return initial_energy, initial_energy
         if t == horizon:
             if peak_reserve is not None:
-                return capacity * peak_reserve.terminal_soc_min_pct / 100.0, maximum_energy
+                return capacity * peak_reserve.terminal_soc_min_pct / 100.0, maximum_energy + initial_excess
             if terminal_soc_target_pct is not None:
                 return terminal_energy, terminal_energy
-            return max(minimum_energy, initial_energy - terminal_tolerance), min(maximum_energy, initial_energy + terminal_tolerance)
-        return minimum_energy, maximum_energy
+            return max(minimum_energy, initial_energy - terminal_tolerance), min(maximum_energy + initial_excess, initial_energy + terminal_tolerance)
+        return minimum_energy, maximum_energy + initial_excess
 
     # Component declaration order also matches the stable materialization index.
     model.charge = pyo.Var(model.periods, domain=pyo.NonNegativeReals, bounds=charge_bound)
@@ -219,6 +224,14 @@ def build_model(request: OptimizationRequest, *, terminal_soc_target_pct: float 
             rule=lambda m, t: m.discharge[t] >= active_minimum * m.discharge_on[t])
     model.storage_exclusivity = pyo.Constraint(model.periods, rule=lambda m, t:
         m.charge_on[t] + m.discharge_on[t] <= (1.0 if capability.available else 0.0))
+    if initial_excess:
+        # Existing inventory may remain while idle or decrease by discharge.
+        # Charging is permitted only when both interval states respect the
+        # configured ceiling; reaching it again never recreates the excess.
+        model.initial_excess_charge_start = pyo.Constraint(model.periods, rule=lambda m, t:
+            m.energy[t] <= maximum_energy + initial_excess * (1 - m.charge_on[t]))
+        model.initial_excess_charge_end = pyo.Constraint(model.periods, rule=lambda m, t:
+            m.energy[t + 1] <= maximum_energy + initial_excess * (1 - m.charge_on[t]))
     model.grid_import_mode = pyo.Constraint(model.periods, rule=lambda m, t: m.grid_import[t] <= import_max * m.grid_import_on[t])
     model.grid_export_mode = pyo.Constraint(model.periods, rule=lambda m, t: m.grid_export[t] <= export_max * (1 - m.grid_import_on[t]))
     model.pv_available = pyo.Constraint(model.periods, rule=lambda m, t:

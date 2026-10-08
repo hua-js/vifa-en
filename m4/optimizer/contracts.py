@@ -313,7 +313,9 @@ class OptimizationRequest(StrictModel):
             <= bounds.soc_max_pct
         ):
             raise ValueError("preferred SOC range must be inside absolute SOC bounds")
-        if not bounds.soc_min_pct <= self.capability.initial_soc_pct <= bounds.soc_max_pct:
+        from m4.optimizer.soc_policy import allows_initial_soc_excess
+        initial_upper = 100.0 if allows_initial_soc_excess(self.source_versions) else bounds.soc_max_pct
+        if not bounds.soc_min_pct <= self.capability.initial_soc_pct <= initial_upper:
             raise ValueError("initial SOC must be inside absolute SOC bounds")
         if self.peak_reserve_policy is not None and not (
             bounds.preferred_soc_min_pct

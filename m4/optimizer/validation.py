@@ -2,6 +2,7 @@
 
 from m4.optimizer.contracts import CandidateMetrics, CandidateResult, OptimizationRequest, GRID_CHARGING_POLICY
 from m4.optimizer.metrics import INTERVAL_HOURS, calculate_metrics
+from m4.optimizer.soc_policy import allows_initial_soc_excess
 
 
 class ResultValidationError(ValueError):
@@ -75,6 +76,7 @@ def validate_candidate(
                         index == 0 or request.points[index - 1].tariff_period not in ('feng', 'jian')):
                     terminal_reserve_start = index
     current_energy = capability.energy_capacity_kwh * capability.initial_soc_pct / 100.0
+    allow_excess = allows_initial_soc_excess(request.source_versions)
     for index, (source, point) in enumerate(zip(request.points, candidate.plan, strict=True)):
         label = f"point {index} ({source.timestamp.isoformat()})"
         if point.timestamp != source.timestamp:
@@ -89,6 +91,9 @@ def validate_candidate(
             _raise(label, "device availability")
         if charge_kw - capability.max_charge_kw > tolerance:
             _raise(label, "charge power limit")
+        start_soc_pct = current_energy / capability.energy_capacity_kwh * 100.0
+        if allow_excess and start_soc_pct > constraints.soc_max_pct + tolerance and charge_kw > tolerance:
+            _raise(label, "charging above SOC ceiling")
         if discharge_kw - capability.max_discharge_kw > tolerance:
             _raise(label, "discharge power limit")
         if peak_reserve is not None:
@@ -190,12 +195,16 @@ def validate_candidate(
         if expected_soc_pct < constraints.soc_min_pct - tolerance:
             _raise(label, "SOC minimum")
         if expected_soc_pct > constraints.soc_max_pct + tolerance:
-            _raise(label, "SOC maximum")
+            if not (allow_excess and start_soc_pct > constraints.soc_max_pct
+                    and charge_kw <= tolerance and expected_soc_pct <= min(start_soc_pct, 100.0) + tolerance):
+                _raise(label, "SOC maximum")
         current_energy = expected_energy
 
     terminal_soc_pct = current_energy / capability.energy_capacity_kwh * 100.0
     target = capability.initial_soc_pct if terminal_soc_target_pct is None else terminal_soc_target_pct
-    if terminal_soc_target_pct is not None and not constraints.soc_min_pct <= target <= constraints.soc_max_pct:
+    terminal_upper = (max(constraints.soc_max_pct, capability.initial_soc_pct)
+                      if allow_excess else constraints.soc_max_pct)
+    if terminal_soc_target_pct is not None and not constraints.soc_min_pct <= target <= terminal_upper:
         raise ResultValidationError('terminal SOC target outside safety bounds')
     if peak_reserve is not None:
         if terminal_soc_pct < peak_reserve.terminal_soc_min_pct - tolerance:

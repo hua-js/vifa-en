@@ -44,8 +44,10 @@ def remaining_reference(request, capability, points, schedule):
         reference = [dict(row, soc_min_pct=max(
             row.get('soc_min_pct', request.constraints.soc_min_pct), floor))
             for row in schedule]
+    from m4.optimizer.soc_policy import allows_initial_soc_excess
     plan, simulation = simulate_ems_day(capability, request.constraints, points,
-        reference, pv_dispatch_policy=request.pv_dispatch_policy, remaining_day=True)
+        reference, pv_dispatch_policy=request.pv_dispatch_policy, remaining_day=True,
+        allow_initial_soc_excess=allows_initial_soc_excess(request.source_versions))
     if enabled(request):
         simulation = dict(simulation, reference_policy=ROLLING_REFERENCE_POLICY,
                           operating_soc_floor_pct=floor)

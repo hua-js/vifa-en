@@ -48,7 +48,9 @@ def validate_dispatch_safety(request, points):
             and type(floor) in (int, float) and math.isfinite(floor)
             and near_operating_floor(cap.initial_soc_pct, floor))
         soc = cap.initial_soc_pct
-        if not bounds.soc_min_pct <= soc <= bounds.soc_max_pct:
+        from m4.optimizer.soc_policy import allows_initial_soc_excess
+        allow_excess = allows_initial_soc_excess(request.get('source_versions', {}))
+        if not bounds.soc_min_pct <= soc <= (100.0 if allow_excess else bounds.soc_max_pct):
             raise ValueError
         for source, point in zip(sources, points, strict=True):
             if _stamp(source['timestamp']) != _stamp(point['timestamp']):
@@ -73,8 +75,13 @@ def validate_dispatch_safety(request, points):
                 ceiling = min(ceiling, bounds.grid_import_limit_kw)
             if grid > ceiling+1e-6:
                 raise ModelUpdateError('计划存在需量或购电上限缺口，不能生成下发预览。')
+            previous_soc = soc
+            if allow_excess and soc > bounds.soc_max_pct+1e-6 and charge > 1e-6:
+                raise ModelUpdateError('SOC 高于充电上限，不能继续充电。')
             soc += (charge*cap.charge_efficiency-discharge/cap.discharge_efficiency)*0.25/cap.energy_capacity_kwh*100
-            if not bounds.soc_min_pct-1e-6 <= soc <= bounds.soc_max_pct+1e-6:
+            retaining_excess = (allow_excess and previous_soc > bounds.soc_max_pct
+                and charge <= 1e-6 and soc <= min(previous_soc, 100.0)+1e-6)
+            if soc < bounds.soc_min_pct-1e-6 or (soc > bounds.soc_max_pct+1e-6 and not retaining_excess):
                 raise ModelUpdateError('计划超出SOC安全范围，不能生成下发预览。')
             if protect_floor and (soc < min(cap.initial_soc_pct, floor)-1e-6
                     or (discharge > 0 and soc < floor-1e-6)):

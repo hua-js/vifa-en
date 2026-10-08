@@ -7,7 +7,8 @@ from zoneinfo import ZoneInfo
 from m4.optimizer.contracts import PlanPoint
 
 
-EMS_BASELINE_POLICY = 'ems-demand-soc-duration-v8-reference-soc'
+EMS_BASELINE_POLICY = 'ems-demand-soc-duration-v9-initial-soc'
+LEGACY_EMS_BASELINE_POLICY = 'ems-demand-soc-duration-v8-reference-soc'
 INTERVAL_HOURS = 0.25
 EPSILON = 1e-9
 
@@ -21,7 +22,8 @@ def _slot(value):
     return h*4 + m//15
 
 
-def simulate_ems_day(capability, constraints, points, schedule, *, pv_dispatch_policy="legacy", remaining_day=False):
+def simulate_ems_day(capability, constraints, points, schedule, *, pv_dispatch_policy="legacy", remaining_day=False,
+                     allow_initial_soc_excess=False):
     """Apply demand first, then equipment/SOC limits, integrating active time.
 
     Forecast load and prices are constant within each quarter hour. Once SOC
@@ -66,7 +68,8 @@ def simulate_ems_day(capability, constraints, points, schedule, *, pv_dispatch_p
     if slot_lower >= slot_upper:
         raise ValueError('EMS 基线 SOC 与当前安全范围无交集。')
     energy = capacity*capability.initial_soc_pct/100
-    if not lower-EPSILON <= energy <= upper+EPSILON:
+    initial_upper = capacity if allow_initial_soc_excess else upper
+    if not lower-EPSILON <= energy <= initial_upper+EPSILON:
         raise ValueError('零点 SOC 位于当前安全范围之外，请核对历史状态与参数。')
     grid_limit = min(constraints.demand_limit_kw, constraints.grid_import_limit_kw
         if constraints.grid_import_limit_kw is not None else constraints.demand_limit_kw)
@@ -132,7 +135,8 @@ def simulate_ems_day(capability, constraints, points, schedule, *, pv_dispatch_p
             curtailed = max(export-export_limit, 0.0)
             export = min(export, export_limit)
         plan.append(PlanPoint(timestamp=point.timestamp, mode=actual_mode, target_power_kw=average_kw,
-            expected_soc_pct=max(constraints.soc_min_pct, min(constraints.soc_max_pct, energy/capacity*100)),
+            expected_soc_pct=(energy/capacity*100 if allow_initial_soc_excess else
+                max(constraints.soc_min_pct, min(constraints.soc_max_pct, energy/capacity*100))),
             grid_import_kw=max(grid, 0.0), grid_export_kw=export,
             pv_unabsorbed_kw=curtailed, demand_exceed_kw=excess))
         intervals.append(dict(timestamp=point.timestamp.isoformat(), requested_mode=requested_mode,

@@ -17,6 +17,7 @@ from .forecast_source import validate_forecast_values
 from .daily_pv_policy import POLICY as DAILY_PV_POLICY
 from .timeseries import tariff_export_price
 from .ems_simulation import EMS_BASELINE_POLICY, simulate_ems_day
+from m4.optimizer.soc_policy import INITIAL_SOC_POLICY
 from .schedule_power import effective_station_power, station_schedule, station_energy_capacity
 from .dispatch_power import daily_dispatch_versions
 
@@ -65,7 +66,8 @@ def prepare_ems_day(configuration, bundle):
         grid_import_limit_kw=(parameters.grid_import_limit_kw if parameters.grid_import_limit_kw is not None else control['demand']['need_kw']),
         grid_export_enabled=True, grid_export_limit_kw=max(p.pv_forecast_kw for p in points))
     schedule = station_schedule(control)
-    plan, simulation = simulate_ems_day(capability, constraints, points, schedule, pv_dispatch_policy=parameters.pv_dispatch_policy)
+    plan, simulation = simulate_ems_day(capability, constraints, points, schedule,
+        pv_dispatch_policy=parameters.pv_dispatch_policy, allow_initial_soc_excess=True)
     terminal = plan[-1].expected_soc_pct
     policy_version = daily_policy_version(configuration.station_id)
     reserve_policy = (PeakReservePolicy(version='peak-reserve-v4', terminal_soc_min_pct=max(
@@ -83,6 +85,7 @@ def prepare_ems_day(configuration, bundle):
                'configuration': configuration.model_dump(mode='json'), 'points': bundle['points'],
                'controls_version': control['version'], 'initial': initial, 'terminal': terminal,
                'baseline_policy': EMS_BASELINE_POLICY, 'pv_midday_economic': True,
+               'initial_soc_policy': INITIAL_SOC_POLICY,
                'pv_economic_policy': PV_ECONOMIC_POLICY,
                'pv_economic_windows': get_project().station(configuration.station_id).m4['pv_economic_windows'],
                'profiles': [profile.model_dump(mode='json') for profile in profiles]}
@@ -110,6 +113,7 @@ def prepare_ems_day(configuration, bundle):
             'project_configuration': get_project().fingerprint,
             'grid_charging_policy': GRID_CHARGING_POLICY,
             'capability': initial['version'], 'planning_basis': 'whole-station-retrospective-v1',
+            'initial_soc_policy': INITIAL_SOC_POLICY,
             **({'pv_gap_policy': DAILY_PV_POLICY,
                 'pv_zero_filled_points': str(sources['pv'].get('zero_filled_points', 0))}
                if get_project().station(configuration.station_id).has_pv else {}),
