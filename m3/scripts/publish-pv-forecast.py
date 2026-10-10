@@ -20,13 +20,15 @@ history = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(history)
 RUNS = 'energy_pv_forecast_runs'
 POINTS = 'energy_pv_forecast_points'
+MAX_RUN_REQUEST_BYTES = 8*1024*1024
+MAX_POINT_REQUEST_BYTES = 2*1024*1024
 
 
 class ForecastRepository:
     def __init__(self, key):
         self.key = key
         self.client = history.BusinessApiClient(history.deployment.schema.BASE_URL,
-            key, timeout_seconds=30, max_response_bytes=4*1024*1024)
+            key, timeout_seconds=30, max_response_bytes=MAX_RUN_REQUEST_BYTES)
 
     def request(self, table, action, *, query=None, body=None):
         allowed = {(RUNS, 'list'), (RUNS, 'create'), (RUNS, 'update'), (POINTS, 'list'), (POINTS, 'create')}
@@ -36,8 +38,9 @@ class ForecastRepository:
         if query:
             url += '?'+urlencode(query)
         data = None if body is None else json.dumps(body, ensure_ascii=False, allow_nan=False).encode()
-        if data is not None and len(data) > 2*1024*1024:
-            raise ValueError('publication request exceeds 2MB')
+        limit = MAX_RUN_REQUEST_BYTES if table == RUNS else MAX_POINT_REQUEST_BYTES
+        if data is not None and len(data) > limit:
+            raise ValueError('publication request exceeds size limit')
         return self.client._request(Request(url, data=data,
             headers={'Authorization': 'Bearer '+self.key, 'Accept': 'application/json',
                      'Content-Type': 'application/json; charset=utf-8'}, method='GET' if action == 'list' else 'POST'))

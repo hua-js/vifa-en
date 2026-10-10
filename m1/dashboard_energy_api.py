@@ -28,7 +28,7 @@ DEFAULT_TK = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOjEsInRlbXAiOnRyd
 DEFAULT_E606_TK = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOjEsInJvbGVOYW1lIjoicm9vdCIsImlhdCI6MTc4NzM5MjA1OSwiZXhwIjozMzM0NDk5MjA1OX0.ZJT1Lg_MbkT6R243Nl3ojBwWDmnA-slbLyVgqjn0k9M"
 
 # NocoBase 原看板数据源。
-BASE = "http://holobase/api"
+BASE = "https://ems.lvkpower.com/api"
 
 # Growatt 逆变器历史表：最近记录排在前面，后续仍按 SN 再次选最新值。
 GROWATT_URL = (

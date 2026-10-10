@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import Mock
 
 from m3.tests.test_pv_publication import bundle
 
@@ -20,6 +21,34 @@ def load(filename):
 
 
 class ForecastToolTests(unittest.TestCase):
+    def test_expanded_training_evidence_is_preserved_in_run_publication(self):
+        module = load('publish-pv-forecast.py')
+        client = module.ForecastRepository('test-credential-placeholder')
+        body = {'source_manifest': {'training_samples': ['evidence'*64]*5016}}
+        client.client._request = Mock(return_value={'data': body})
+        result = client.request(module.RUNS, 'create', body=body)
+        request = client.client._request.call_args.args[0]
+        self.assertGreater(len(request.data), 2*1024*1024)
+        self.assertEqual(json.loads(request.data), body)
+        self.assertEqual(result['data'], body)
+        client.client._request.assert_called_once()
+
+    def test_oversized_training_evidence_is_rejected_before_post(self):
+        module = load('publish-pv-forecast.py')
+        client = module.ForecastRepository('test-credential-placeholder')
+        client.client._request = Mock()
+        with self.assertRaises(ValueError):
+            client.request(module.RUNS, 'create', body={'source_manifest': 'x'*(8*1024*1024)})
+        client.client._request.assert_not_called()
+
+    def test_point_publication_keeps_existing_request_limit(self):
+        module = load('publish-pv-forecast.py')
+        client = module.ForecastRepository('test-credential-placeholder')
+        client.client._request = Mock()
+        with self.assertRaises(ValueError):
+            client.request(module.POINTS, 'create', body={'points': 'x'*(2*1024*1024)})
+        client.client._request.assert_not_called()
+
     def test_new_training_source_mode_requires_its_manifest_before_generation(self):
         module=load('generate-pv-forecast.py')
         self.assertTrue(callable(getattr(module,'load_inputs',None)), 'new training input loader missing')

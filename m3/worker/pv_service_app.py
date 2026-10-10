@@ -83,6 +83,11 @@ def create_app(reader_factory, manager_factory, token_factory):
 
 
 def build_manager():
+    timeout_value = os.environ.get('PV_JOB_TIMEOUT_SECONDS', '600')
+    if (not timeout_value.isascii() or not timeout_value.isdecimal()
+            or not 300 <= int(timeout_value) <= 3600):
+        raise ValueError('PV_JOB_TIMEOUT_SECONDS must be between 300 and 3600')
+    timeout_seconds = int(timeout_value)
     root = Path(os.environ.get('PV_MANUAL_STATE_DIR', '/run/vifa-pv/manual'))
     training = Path(os.environ.get('PV_TRAINING_SOURCE', '/app/pv-training'))
     project = Path(__file__).resolve().parents[2]
@@ -92,7 +97,7 @@ def build_manager():
             '--job-dir', str(directory), '--training-source', str(training),
             '--training-state', str(root/'training-state.json')], cwd=project,
             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            check=True, timeout=600)
+            check=True, timeout=timeout_seconds)
         return json.loads((directory/'result.json').read_text())
 
     enabled = os.environ.get('PV_DAILY_SCHEDULE_ENABLED', '0')

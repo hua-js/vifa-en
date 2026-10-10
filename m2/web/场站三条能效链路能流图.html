@@ -2318,6 +2318,17 @@ svg {
       return Number.isFinite(Number(value)) ? Number(value).toFixed(2) + "%" : "无运行数据";
     }
 
+    function formatChainEfficiency(result, metric) {
+      if (hasNumericData(result?.[metric])) return formatPercent(result[metric]);
+      const codes = result?.quality_by_metric?.[metric] || [];
+      if (codes.includes("zero_denominator") || codes.includes("low_power")) return "无运行数据";
+      if (codes.includes("time_misaligned")) return "数据延迟";
+      if (codes.includes("device_abnormal")) return "设备异常";
+      if (codes.length) return "效率暂不可用";
+      const denominator = result?.intermediate?.[metric]?.denominator_kw;
+      return hasNumericData(denominator) && Number(denominator) > 0 ? "暂无效率数据" : "无运行数据";
+    }
+
     function formatTime(value) {
       const match = String(value || "").match(/^\d{4}-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
       return match ? match[1] + "/" + match[2] + " " + match[3] + ":" + match[4] : String(value || "--");
@@ -2393,7 +2404,7 @@ svg {
       setText("pcs-charge-loss", "损耗" + formatPower(Math.max((input.pcs_charge_power || 0) - (input.bms_charge_power || 0), 0)) + " kW");
       setText("bms-charge-power", formatPower(input.bms_charge_power));
       setText("bms-pv-attribution", "总充电 · 光伏归属" + formatPower(intermediate.pv_storage_efficiency?.numerator_kw) + " kW");
-      setText("pv-storage-efficiency", formatPercent(result.pv_storage_dc_efficiency));
+      setText("pv-storage-efficiency", formatChainEfficiency(result, "pv_storage_dc_efficiency"));
       setText("pv-storage-formula", formatPower(intermediate.pv_storage_dc_efficiency?.numerator_kw) + " ÷ " + formatPower(intermediate.pv_storage_dc_efficiency?.denominator_kw));
 
       setText("bms-discharge-power", formatPower(input.bms_discharge_power));
@@ -2402,12 +2413,12 @@ svg {
       setText("cabinet-discharge-power", formatPower(input.cabinet_discharge_power));
       setText("storage-line-loss", "线损" + formatPower(Math.max((result.storage_to_load_input_power || 0) - (result.storage_to_load_power || 0), 0)) + " kW");
       setText("storage-load-power", formatPower(result.storage_to_load_power));
-      setText("storage-load-efficiency", formatPercent(result.storage_load_efficiency));
+      setText("storage-load-efficiency", formatChainEfficiency(result, "storage_load_efficiency"));
       setText("storage-load-formula", formatPower(intermediate.storage_load_efficiency?.numerator_kw) + " ÷ " + formatPower(intermediate.storage_load_efficiency?.denominator_kw));
 
       setText("pv-load-line-loss", "线损" + formatPower(Math.max((result.pv_to_load_input_power || 0) - (result.pv_to_load_power || 0), 0)) + " kW");
       setText("pv-load-power", formatPower(result.pv_to_load_power));
-      setText("pv-load-efficiency", formatPercent(result.pv_load_efficiency));
+      setText("pv-load-efficiency", formatChainEfficiency(result, "pv_load_efficiency"));
       setText("pv-load-formula", formatPower(intermediate.pv_load_efficiency?.numerator_kw) + " ÷ " + formatPower(intermediate.pv_load_efficiency?.denominator_kw));
 
       setCardDataState("pv-dc-power", hasNumericData(input.pv_dc_power));
@@ -2431,9 +2442,9 @@ svg {
     }
 
     function renderCurrentEfficiency(result) {
-      setText("summary-pv-storage", formatPercent(result?.pv_storage_dc_efficiency));
-      setText("summary-storage-load", formatPercent(result?.storage_load_efficiency));
-      setText("summary-pv-load", formatPercent(result?.pv_load_efficiency));
+      setText("summary-pv-storage", formatChainEfficiency(result, "pv_storage_dc_efficiency"));
+      setText("summary-storage-load", formatChainEfficiency(result, "storage_load_efficiency"));
+      setText("summary-pv-load", formatChainEfficiency(result, "pv_load_efficiency"));
     }
 
     function eventDeviceLabel(item) {
@@ -2532,7 +2543,7 @@ svg {
       range = data.range || null;
       const currentTime = String(data.realtime?.inputs?.data_time || "").match(/T(\d{2}:\d{2})/)?.[1] || "--:--";
       const currentResult = data.realtime?.result || {};
-      readout.textContent = currentTime + "　光储" + formatValue(currentResult.pv_storage_dc_efficiency) + "　储用" + formatValue(currentResult.storage_load_efficiency) + "　光用" + formatValue(currentResult.pv_load_efficiency);
+      readout.textContent = currentTime + "　光储" + formatChainEfficiency(currentResult, "pv_storage_dc_efficiency") + "　储用" + formatChainEfficiency(currentResult, "storage_load_efficiency") + "　光用" + formatChainEfficiency(currentResult, "pv_load_efficiency");
       const rawEvents = Array.isArray(data.events) ? data.events : [];
       dayEvents = rawEvents;
       if (!eventHistoryMode) {

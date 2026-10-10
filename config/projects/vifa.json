@@ -4,7 +4,7 @@
   "site_id": "363738052231168",
   "timezone": "Asia/Shanghai",
   "sources": {
-    "m1_base_url": "http://holobase/api",
+    "m1_base_url": "https://ems.lvkpower.com/api",
     "m1_energy_base_url": "https://vifa.hlszh.com/api",
     "m1_growatt_url": "http://e606pro.hlszh.com:3510/api/t_growall:list",
     "m4_base_url": "https://vifa.hlszh.com/api",

@@ -1,6 +1,8 @@
 import importlib.util
 import json
+import os
 from pathlib import Path
+import subprocess
 import tempfile
 import threading
 import unittest
@@ -81,6 +83,43 @@ class ManualAPITests(unittest.TestCase):
                 self.assertEqual(response.headers['cache-control'],'no-store')
                 self.assertEqual(client.get('/api/pv/ES02/job?debug=x',headers=headers).status_code,400)
                 self.assertEqual(client.get('/health').json()['data']['service'],'pv-manual')
+
+
+class ManualRuntimeTimeoutTests(unittest.TestCase):
+    def test_cold_training_can_finish_with_configured_runtime_budget(self):
+        from m3.worker.pv_service_app import build_manager
+
+        def cold_training(command, *, timeout, **kwargs):
+            if timeout < 1200:
+                raise subprocess.TimeoutExpired(command, timeout)
+            directory = Path(command[command.index('--job-dir') + 1])
+            (directory/'result.json').write_text(json.dumps({
+                'status': 'completed', 'operation': 'forecast', 'verified_points': 96,
+            }))
+
+        with tempfile.TemporaryDirectory() as temp, patch.dict(os.environ, {
+            'PV_MANUAL_STATE_DIR': temp,
+            'PV_DAILY_SCHEDULE_ENABLED': '0',
+            'PV_JOB_TIMEOUT_SECONDS': '1800',
+        }), patch('m3.worker.pv_service_app.subprocess.run', side_effect=cold_training):
+            jobs = build_manager()
+            try:
+                jobs.submit('forecast')
+            finally:
+                jobs.close()
+            self.assertEqual(jobs.latest()['status'], 'completed')
+            self.assertEqual(jobs.latest()['result']['verified_points'], 96)
+
+    def test_invalid_runtime_budget_fails_before_starting_job_manager(self):
+        from m3.worker.pv_service_app import build_manager
+
+        for value in ('0', '299', '3601', 'invalid', ' 1800'):
+            with self.subTest(value=value), patch.dict(os.environ, {
+                'PV_JOB_TIMEOUT_SECONDS': value,
+            }), patch('m3.worker.pv_service_app.ManualJobs') as factory:
+                with self.assertRaises(ValueError):
+                    build_manager()
+                factory.assert_not_called()
 
 
 class ManualPipelineTests(unittest.TestCase):
