@@ -69,6 +69,7 @@ class ProductionScheduleClient:
         station_key = self._stations[station_id]
         department, station_sn = {"station_1": ("86", "ES01"), "station_2": ("113", "ES02")}[station_key]
         statuses, facts, horizons = {}, [], []
+        planned_hours = {}
         try:
             cursor = start
             while cursor <= end:
@@ -92,6 +93,8 @@ class ProductionScheduleClient:
                         if type(number) not in (int, float) or not math.isfinite(number) or number < 0:
                             raise ValueError("invalid schedule metric")
                         fact[field] = number
+                    if fact["scheduledHeadcount"] > 0:
+                        planned_hours[day] = fact["plannedHours"] / fact["scheduledHeadcount"]
                     statuses[day] = status
                     facts.append(fact)
                 cursor = chunk_end + timedelta(days=1)
@@ -132,12 +135,13 @@ class ProductionScheduleClient:
                 "period_seconds": PERIODS,
                 "historical_fallback_dates": [d.isoformat() for d in days_between(start, min(end, forecast_start - timedelta(days=1))) if d not in statuses],
                 "historical_fallback_policy": "mon-sat-work-sun-rest-v1",
-                "shift_policy": "08-12_14-18_19-21_station2-saturday-morning-v1",
+                "shift_policy": "08-12_14-18_19-21_station2-saturday-planned-hours-v2",
                 "historical_information_basis": "current_read_not_as_of_archive",
                 "daily_api_is_shift_schedule": False,
             }
             return ProductionSchedule(station_id, station_key, department, start, end, forecast_start,
-                statuses, {d: tuple(p) for d, p in overtime.items()}, json.dumps(manifest, sort_keys=True, ensure_ascii=False, separators=(",", ":")))
+                statuses, {d: tuple(p) for d, p in overtime.items()}, json.dumps(manifest, sort_keys=True, ensure_ascii=False, separators=(",", ":")),
+                planned_hours=planned_hours)
         except M3Error:
             raise
         except (KeyError, ValueError, TypeError, OverflowError):

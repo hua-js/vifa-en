@@ -119,6 +119,62 @@ class ProductionScheduleTests(unittest.TestCase):
                 raise RuntimeError("test")
         self.assertFalse(schedule_slot(at(9))[0])
 
+class Station2SaturdayShiftTests(unittest.TestCase):
+    """Station 2 Saturday window: half-day morning-only vs makeup full workday."""
+    SAT = date(2026, 10, 10)  # Saturday; makeup full workday after the holiday.
+
+    def at(self, hour):
+        return datetime(2026, 10, 10, hour, tzinfo=SHANGHAI)
+
+    def load(self, rows, *, forecast_start=SAT):
+        def response(request):
+            return httpx.Response(200, json={"code": 200, "data": {
+                "startDate": self.SAT.isoformat(), "endDate": self.SAT.isoformat(),
+                "scheduleHorizonEnd": self.SAT.isoformat(), "total": len(rows), "rows": rows,
+            }})
+        class OvertimeApi:
+            def list_records_all(self, *args, **kwargs):
+                return []
+        with httpx.Client(transport=httpx.MockTransport(response)) as http:
+            provider = ProductionScheduleClient("private-test-key", http, OvertimeApi(),
+                [SimpleNamespace(station_id="full-ES02", station_key="station_2")],
+                lambda: datetime(2026, 10, 10, tzinfo=SHANGHAI))
+            return provider.load("full-ES02", self.SAT, self.SAT, forecast_start=forecast_start)
+
+    def row(self, status="WORK", headcount=144, planned_hours=1144):
+        return {"date": self.SAT.isoformat(), "deptCode": "113", "status": status,
+                "scheduledHeadcount": headcount, "workHeadcount": headcount,
+                "restHeadcount": 0, "holidayHeadcount": 0, "workRatio": 1,
+                "plannedHours": planned_hours}
+
+    def test_full_planned_hours_saturday_uses_all_day_windows(self):
+        calendar = self.load([self.row()])
+        with use_schedule(calendar):
+            for hour in (9, 15, 20):
+                self.assertTrue(schedule_slot(self.at(hour))[0])
+            for hour in (0, 13, 23):
+                self.assertFalse(schedule_slot(self.at(hour))[0])
+
+    def test_half_planned_hours_saturday_keeps_morning_only(self):
+        calendar = self.load([self.row(headcount=142, planned_hours=568)])  # 4h each
+        with use_schedule(calendar):
+            self.assertTrue(schedule_slot(self.at(9))[0])
+            self.assertFalse(schedule_slot(self.at(15))[0])
+            self.assertFalse(schedule_slot(self.at(20))[0])
+
+    def test_zero_headcount_saturday_keeps_morning_only(self):
+        calendar = self.load([self.row(headcount=0, planned_hours=0)])
+        with use_schedule(calendar):
+            self.assertTrue(schedule_slot(self.at(9))[0])
+            self.assertFalse(schedule_slot(self.at(15))[0])
+
+    def test_historical_fallback_saturday_keeps_morning_only(self):
+        calendar = self.load([], forecast_start=date(2026, 10, 11))
+        with use_schedule(calendar):
+            self.assertTrue(schedule_slot(self.at(9))[0])
+            self.assertFalse(schedule_slot(self.at(15))[0])
+
+
 class IntradaySocScheduleTests(unittest.TestCase):
     def test_afternoon_run_ranks_same_time_anchor_instead_of_midnight_soc(self):
         from datetime import timedelta
