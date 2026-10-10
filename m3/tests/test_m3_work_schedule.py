@@ -18,10 +18,12 @@ from m3.worker.domain.training_data import TrainingDataset
 from m3.worker.domain.work_schedule import (
     LoadScheduleProfile,
     schedule_cross_validation,
+    schedule_day,
     schedule_forecast,
     schedule_interpolate,
     schedule_slot,
 )
+from m3.worker.domain.production_schedule import ProductionSchedule, use_schedule
 from m3.worker.errors import M3Error
 from m3.tests.test_m3_custom_forecasting import load_dataset_with_weeks, make_selection_config
 from m3.tests.test_m3_custom_training_data import make_config, make_points
@@ -49,6 +51,46 @@ class WorkScheduleTests(unittest.TestCase):
         ):
             with self.subTest(value=value):
                 self.assertEqual(schedule_slot(value)[0], expected)
+
+    def test_memo_hit_repeats_results_and_naive_still_raises(self):
+        aware = datetime.fromisoformat("2026-08-31T09:15:00+08:00")
+        first = schedule_slot(aware)
+        self.assertEqual(schedule_slot(aware), first)  # memo hit path
+        self.assertEqual(schedule_day(aware), schedule_day(aware))
+        with self.assertRaises(ValueError):
+            schedule_slot(datetime(2026, 8, 31, 9, 15))
+        with self.assertRaises(ValueError):
+            schedule_day(datetime(2026, 8, 31))
+
+    def test_calendar_switch_invalidates_memo(self):
+        sunday = datetime.fromisoformat("2026-08-30T09:00:00+08:00")
+
+        def calendar(status: str) -> ProductionSchedule:
+            return ProductionSchedule(
+                station_id="es01",
+                station_key="station_1",
+                department="dept",
+                start=sunday.date() - timedelta(days=7),
+                end=sunday.date() + timedelta(days=7),
+                forecast_start=sunday.date() + timedelta(days=2),
+                statuses={sunday.date(): status},
+                overtime={},
+                provenance_json="{}",
+            )
+
+        work_calendar = calendar("WORK")
+        rest_calendar = calendar("REST")
+        with use_schedule(work_calendar):
+            self.assertEqual(schedule_slot(sunday), (True, 9 * 3600))
+            self.assertTrue(schedule_day(sunday))
+        with use_schedule(rest_calendar):
+            self.assertEqual(schedule_slot(sunday), (False, 9 * 3600))
+            self.assertFalse(schedule_day(sunday))
+        # Back to the first calendar identity: its own memo, not the rest one.
+        with use_schedule(work_calendar):
+            self.assertEqual(schedule_slot(sunday), (True, 9 * 3600))
+        # Default mon-sat policy: Sunday rests regardless of earlier memos.
+        self.assertEqual(schedule_slot(sunday), (False, 9 * 3600))
 
     def test_future_actuals_are_never_used_in_schedule_profile(self):
         history = schedule_history()

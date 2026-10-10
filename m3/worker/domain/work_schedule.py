@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from datetime import datetime
+from typing import cast
 
 import numpy as np
 import pandas as pd
@@ -12,27 +13,70 @@ from m3.worker.domain.production_schedule import ACTIVE_SCHEDULE, PRODUCTION_SCH
 
 WORK_SCHEDULE_POLICY = "mon-sat-work-sun-rest-v1"
 
+# schedule_slot/schedule_day are pure for a given active calendar: within a
+# selection run the calendar never changes while the same timestamp is queried
+# hundreds of thousands of times across candidates and validation folds.
+# Memoize per calendar identity (strong references prevent id() reuse) and
+# bound growth so long-lived workers do not accumulate run history.
+_MEMO_CALENDAR_LIMIT = 4
+_MEMO_ENTRY_LIMIT = 500_000
+_MEMO_MISS = object()
+_slot_memos: dict[int, tuple[object, dict]] = {}
+_day_memos: dict[int, tuple[object, dict]] = {}
+
+
+def _memo(store: dict, calendar: object) -> dict:
+    key = id(calendar)
+    entry = store.get(key)
+    if entry is None or entry[0] is not calendar:
+        if len(store) >= _MEMO_CALENDAR_LIMIT:
+            store.clear()
+        entry = (calendar, {})
+        store[key] = entry
+    return entry[1]
+
+
+def _memo_lookup(memo: dict, value: object) -> object:
+    try:
+        return memo.get(value, _MEMO_MISS)
+    except TypeError:  # unhashable input: fall through to the raising path
+        return _MEMO_MISS
+
 
 def schedule_slot(value: object) -> tuple[bool, int]:
     """Return (is_workday, seconds since midnight) in Asia/Shanghai."""
+    calendar = ACTIVE_SCHEDULE.get()
+    memo = _memo(_slot_memos, calendar)
+    cached = _memo_lookup(memo, value)
+    if cached is not _MEMO_MISS:
+        return cast(tuple[bool, int], cached)
     timestamp = pd.Timestamp(value)
     if pd.isna(timestamp) or timestamp.tzinfo is None:
         raise ValueError("work schedule requires a timezone-aware timestamp")
     local = timestamp.tz_convert("Asia/Shanghai")
     second = local.hour * 3600 + local.minute * 60 + local.second
-    calendar = ACTIVE_SCHEDULE.get()
     working = calendar.slot_is_working(local.date(), second) if calendar else local.weekday() < 6
-    return working, second
+    result = (working, second)
+    if len(memo) < _MEMO_ENTRY_LIMIT:
+        memo[timestamp] = result
+    return result
 
 
 def schedule_day(value: object) -> bool:
     """Whole-day context for SOC, distinct from whether a shift is active now."""
+    calendar = ACTIVE_SCHEDULE.get()
+    memo = _memo(_day_memos, calendar)
+    cached = _memo_lookup(memo, value)
+    if cached is not _MEMO_MISS:
+        return cast(bool, cached)
     timestamp = pd.Timestamp(value)
     if pd.isna(timestamp) or timestamp.tzinfo is None:
         raise ValueError("work schedule requires a timezone-aware timestamp")
     local = timestamp.tz_convert("Asia/Shanghai")
-    calendar = ACTIVE_SCHEDULE.get()
-    return calendar.day_is_working(local.date()) if calendar else local.weekday() < 6
+    result = calendar.day_is_working(local.date()) if calendar else local.weekday() < 6
+    if len(memo) < _MEMO_ENTRY_LIMIT:
+        memo[timestamp] = result
+    return result
 
 
 def schedule_policy() -> str:

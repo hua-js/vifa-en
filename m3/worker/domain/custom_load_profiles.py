@@ -126,13 +126,15 @@ def weekly_profile_values(
     values: list[float] = []
     for period in range(periods):
         target = origin + period * interval
+        # The target slot is invariant across lags: resolve it once per period.
+        target_slot = schedule_slot(target)
         lag_values: list[float] = []
         for lag in lags:
             source_time = target - timedelta(days=7 * lag)
             if source_time >= origin:
                 raise ValueError("weekly profile source must be before origin")
-            if schedule_slot(source_time) != schedule_slot(target):
-                candidates = matching_slots.get(schedule_slot(target), [])
+            if schedule_slot(source_time) != target_slot:
+                candidates = matching_slots.get(target_slot, [])
                 # A changed Sunday/holiday must not copy the previous rest day.
                 if not candidates:
                     raise ValueError("missing matching production schedule history")

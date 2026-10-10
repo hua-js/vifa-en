@@ -543,6 +543,13 @@ def _soc_delta_values(
         deltas = []
         ranked_deltas = []
         recent_power_deltas = []
+        # Target-side schedule context is invariant across lag candidates:
+        # compute it once per period instead of once per lag.
+        target_day = schedule_day(target)
+        target_context = (target_day, schedule_day(target - timedelta(days=1)))
+        target_kind = 0 if target.weekday() < 5 else target.weekday()
+        target_slot = schedule_slot(target)[0]
+        target_previous_slot = schedule_slot(target - interval)[0]
         # Weekly candidate preserves same-weekday behavior. The baseline uses
         # closest matching day context and starting SOC, never predicted donors.
         for days in ((7, 14, 21) if weekly else range(1, 29)):
@@ -550,10 +557,10 @@ def _soc_delta_values(
             previous_time = source_time - interval
             if source_time not in source_values or previous_time not in source_values:
                 continue
-            if ((schedule_day(source_time) != schedule_day(target) if power
-                 else _soc_day_context(source_time) != _soc_day_context(target))
-                    or schedule_slot(source_time)[0] != schedule_slot(target)[0]
-                    or schedule_slot(previous_time)[0] != schedule_slot(target - interval)[0]):
+            if ((schedule_day(source_time) != target_day if power
+                 else _soc_day_context(source_time) != target_context)
+                    or schedule_slot(source_time)[0] != target_slot
+                    or schedule_slot(previous_time)[0] != target_previous_slot):
                 continue
             delta = source_values[source_time] - source_values[previous_time]
             if power:
@@ -563,7 +570,6 @@ def _soc_delta_values(
                 # Keep Mon-Fri, Saturday and Sunday behavior separate even when
                 # the production API marks all of them WORK.
                 source_kind = 0 if source_time.weekday() < 5 else source_time.weekday()
-                target_kind = 0 if target.weekday() < 5 else target.weekday()
                 if (source_time not in power_deltas or source_kind != target_kind
                         or source_time < origin - timedelta(days=7)):
                     continue
