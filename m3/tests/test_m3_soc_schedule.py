@@ -197,7 +197,6 @@ class SocScheduleRegressionTests(unittest.TestCase):
     def test_overtime_low_start_rejects_high_start_weekly_donors(self):
         from m3.tests.test_m3_custom_forecasting import soc_dataset_with_weekly_pattern
         from m3.worker.domain.custom_forecasting import _soc_weekly_delta_values, _soc_schedule_delta_values
-        from m3.worker.errors import M3Error
         dataset = soc_dataset_with_weekly_pattern()
         # Same schedule, but past Mondays were already full; other workdays
         # charged overnight from low SOC, just like this exceptional Monday.
@@ -208,11 +207,38 @@ class SocScheduleRegressionTests(unittest.TestCase):
         dataset.frame.loc[dataset.frame.index[-1], 'y'] = 2.
         with patch('m3.worker.domain.custom_forecasting.schedule_day', return_value=True), \
              patch('m3.worker.domain.custom_forecasting.schedule_slot', return_value=(True, 0)):
-            with self.assertRaises(M3Error):
-                _soc_weekly_delta_values(dataset, origin=FORECAST_START, periods=24)
+            # High-start Mondays stay rejected by the start tolerance in every
+            # layer; weekly widens to same-type low-start workdays instead of
+            # failing, and charges like the schedule baseline.
+            values = _soc_weekly_delta_values(dataset, origin=FORECAST_START, periods=24)
             baseline = _soc_schedule_delta_values(dataset, origin=FORECAST_START, periods=24)
+        self.assertEqual(values[0], 2.)
+        self.assertGreater(values[6], 90.)
         self.assertEqual(baseline[0], 2.)
         self.assertGreater(baseline[6], 90.)
+
+    def test_single_atypical_weekly_donor_is_widened_with_workday_median(self):
+        from datetime import timedelta
+        from m3.tests.test_m3_custom_forecasting import soc_dataset_with_weekly_pattern
+        from m3.worker.domain.custom_forecasting import _soc_weekly_delta_values
+        dataset = soc_dataset_with_weekly_pattern()
+        # Only one same-weekday donor survives; it is an atypical flat day,
+        # like a half-day Saturday before a makeup workday.
+        flat = FORECAST_START - timedelta(days=21)
+        for gone in (FORECAST_START - timedelta(days=7),
+                     FORECAST_START - timedelta(days=14)):
+            dataset = replace(dataset, frame=dataset.frame.loc[
+                ~((dataset.frame['ds'] >= gone)
+                  & (dataset.frame['ds'] < gone + timedelta(days=1)))].copy())
+        dataset.frame.loc[(dataset.frame['ds'] >= flat)
+                          & (dataset.frame['ds'] < flat + timedelta(days=1)), 'y'] = 50.
+        with patch('m3.worker.domain.custom_forecasting.schedule_day', return_value=True), \
+             patch('m3.worker.domain.custom_forecasting.schedule_slot', return_value=(True, 0)):
+            values = _soc_weekly_delta_values(dataset, origin=FORECAST_START, periods=12)
+        # The flat donor alone would hold SOC constant; coarse same-type
+        # workdays restore the morning charge and midday discharge.
+        self.assertGreater(values[6], values[0])
+        self.assertLess(values[8], values[6])
 
     def test_matching_weekly_start_retains_charging_increments(self):
         from m3.tests.test_m3_custom_forecasting import soc_dataset_with_weekly_pattern

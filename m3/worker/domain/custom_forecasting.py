@@ -37,10 +37,13 @@ logger = logging.getLogger(__name__)
 SOC_WEEKLY_DELTA_MODEL = "SOCWeeklyDelta"
 SOC_SCHEDULE_DELTA_MODEL = "SOCScheduleDelta"
 SOC_POWER_MODEL = "SOCSchedulePower"
-SOC_SCHEDULE_POLICY = "soc-schedule-power-v2"
+SOC_SCHEDULE_POLICY = "soc-schedule-power-v3"
 # Percentage points, not a charge target. Weekly increments are transferable
 # only between similar initial states; saturation otherwise hides charging.
 SOC_WEEKLY_START_TOLERANCE = 10.0
+# A single strict weekly donor day (e.g. a half-day Saturday before a makeup
+# workday) is too thin to trust on its own: widen to same-type coarse donors.
+SOC_WEEKLY_DONOR_MIN_DAYS = 2
 SOC_FIVE_MINUTE_LINEAR_SUFFIX = "5mLinear"
 SOC_MODEL_ORDER = (
     SOC_POWER_MODEL,
@@ -535,14 +538,18 @@ def _soc_delta_values(
         day_peaks[date] = max(day_peaks.get(date, value), value)
     forecast_day_start = current
     previous_day = origin.date()
+    fallback_periods = 0
     for period in range(1, periods):
         target = origin + period * interval
         if target.date() != previous_day:
             forecast_day_start = current
             previous_day = target.date()
-        deltas = []
+        strict_deltas = []
         ranked_deltas = []
         recent_power_deltas = []
+        coarse_deltas = []
+        coarse_ranked = []
+        strict_weekly_days = set()
         # Target-side schedule context is invariant across lag candidates:
         # compute it once per period instead of once per lag.
         target_day = schedule_day(target)
@@ -550,30 +557,44 @@ def _soc_delta_values(
         target_kind = 0 if target.weekday() < 5 else target.weekday()
         target_slot = schedule_slot(target)[0]
         target_previous_slot = schedule_slot(target - interval)[0]
-        # Weekly candidate preserves same-weekday behavior. The baseline uses
-        # closest matching day context and starting SOC, never predicted donors.
-        for days in ((7, 14, 21) if weekly else range(1, 29)):
+        # Weekly strict donors keep the same weekday (7/14/21 days back). The
+        # coarse layer widens the lag range so rare schedule forms (a makeup
+        # workday right after a long holiday) still find same-type donors.
+        # The baseline uses closest matching day context and starting SOC,
+        # never predicted donors.
+        for days in range(1, 29):
             source_time = target - timedelta(days=days)
             previous_time = source_time - interval
             if source_time not in source_values or previous_time not in source_values:
                 continue
-            if ((schedule_day(source_time) != target_day if power
-                 else _soc_day_context(source_time) != target_context)
-                    or schedule_slot(source_time)[0] != target_slot
-                    or schedule_slot(previous_time)[0] != target_previous_slot):
+            # The work/rest boundary is a hard constraint in every layer: a
+            # workday never borrows rest-day deltas, and vice versa.
+            if schedule_day(source_time) != target_day:
                 continue
+            slot_match = (
+                schedule_slot(source_time)[0] == target_slot
+                and schedule_slot(previous_time)[0] == target_previous_slot
+            )
+            strict_schedule = slot_match and (
+                power or _soc_day_context(source_time) == target_context
+            )
             delta = source_values[source_time] - source_values[previous_time]
             if power:
                 # Physical SOC integration already carries the current state.
                 # Do not choose the power waveform by historical initial SOC:
                 # an overtime Sunday may start similarly but dispatch later.
-                # Keep Mon-Fri, Saturday and Sunday behavior separate even when
-                # the production API marks all of them WORK.
-                source_kind = 0 if source_time.weekday() < 5 else source_time.weekday()
-                if (source_time not in power_deltas or source_kind != target_kind
+                if (source_time not in power_deltas or not slot_match
                         or source_time < origin - timedelta(days=7)):
                     continue
-                recent_power_deltas.append(power_deltas[source_time])
+                # Strict donors keep Mon-Fri, Saturday and Sunday behavior
+                # separate even when the production API marks all of them
+                # WORK; the coarse layer relaxes weekday kind so a makeup
+                # Saturday can borrow Mon-Fri waveforms.
+                source_kind = 0 if source_time.weekday() < 5 else source_time.weekday()
+                if source_kind == target_kind:
+                    recent_power_deltas.append(power_deltas[source_time])
+                else:
+                    coarse_deltas.append(power_deltas[source_time])
                 continue
             if weekly:
                 if target.date() != origin.date():
@@ -585,10 +606,16 @@ def _soc_delta_values(
                     reference = source_values.get(anchor_time - timedelta(days=days))
                 else:
                     reference = day_starts.get(source_time.date())
+                # Starting-state compatibility stays a hard constraint in
+                # every layer; the coarse layer relaxes only schedule shape.
                 if (reference is None
                         or abs(reference - forecast_day_start) > SOC_WEEKLY_START_TOLERANCE):
                     continue
-                deltas.append(delta)
+                if days in (7, 14, 21) and strict_schedule:
+                    strict_weekly_days.add(days)
+                    strict_deltas.append(delta)
+                else:
+                    coarse_deltas.append(delta)
             else:
                 if target.date() == origin.date() and origin != origin_day_start:
                     # A live run may start in the afternoon: compare historical
@@ -601,11 +628,30 @@ def _soc_delta_values(
                 distance = abs(reference - forecast_day_start)
                 if recent_plateau is not None and target < first_day_end:
                     distance += abs(day_peaks[source_time.date()] - recent_plateau)
-                ranked_deltas.append((distance, days, delta))
+                if strict_schedule:
+                    ranked_deltas.append((distance, days, delta))
+                else:
+                    coarse_ranked.append((distance, days, delta))
+        # Layered donor fallback: prefer strict donors, widen to same-type
+        # coarse donors only when strict evidence is missing or too thin.
         if power:
             deltas = recent_power_deltas
-        elif not weekly and ranked_deltas:
-            deltas = [min(ranked_deltas)[2]]
+            if not deltas and coarse_deltas:
+                deltas = coarse_deltas
+                fallback_periods += 1
+        elif weekly:
+            if len(strict_weekly_days) >= SOC_WEEKLY_DONOR_MIN_DAYS:
+                deltas = strict_deltas
+            else:
+                deltas = strict_deltas + coarse_deltas
+                fallback_periods += bool(coarse_deltas)
+        else:
+            deltas = []
+            if ranked_deltas:
+                deltas = [min(ranked_deltas)[2]]
+            elif coarse_ranked:
+                deltas = [min(coarse_ranked)[2]]
+                fallback_periods += 1
         if not deltas:
             raise M3Error("insufficient_history", "Missing matching SOC change history")
         raw = current + float(median(deltas))
@@ -614,6 +660,12 @@ def _soc_delta_values(
             raw = min(raw, max(current, recent_plateau))
         values.append(raw)
         current = _clip(unique_id, raw)[1]
+    if fallback_periods:
+        logger.info(
+            "SOC donor fallback: %d/%d periods widened to coarse same-type donors "
+            "(unique_id=%s origin=%s weekly=%s power=%s)",
+            fallback_periods, max(periods - 1, 1), unique_id, origin, weekly, power,
+        )
     return values
 
 

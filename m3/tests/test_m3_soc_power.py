@@ -36,6 +36,31 @@ class SocPowerTests(unittest.TestCase):
             with self.assertRaises(M3Error):
                 _soc_power_values(dataset, origin=FORECAST_START, periods=24)
 
+    def test_makeup_saturday_borrows_weekday_power_waveform(self):
+        import pandas as pd
+        dataset = soc_dataset_with_weekly_pattern()
+        saturday = FORECAST_START + timedelta(days=5)
+        # Cover the full week right up to the Saturday origin.
+        times = pd.date_range(saturday - timedelta(days=35), periods=35 * 24, freq='1h')
+        dataset = replace(
+            dataset,
+            frame=pd.DataFrame({'unique_id': 'storage_soc', 'ds': times,
+                                'y': [50.] * len(times)}),
+            energy_capacity_kwh=100.,
+        )
+        def calibrated(frame, real, **kwargs):
+            # Only Mon-Fri have measured power deltas; weekend timestamps are
+            # absent entirely, like a makeup Saturday after a holiday week.
+            return {t: (-10. if t.hour == 8 else 0.)
+                    for t in real if t.weekday() < 5}
+        with patch('m3.worker.domain.soc_power.calibrated_power_deltas', side_effect=calibrated), \
+             patch('m3.worker.domain.custom_forecasting.schedule_day', return_value=True), \
+             patch('m3.worker.domain.custom_forecasting.schedule_slot', return_value=(True, 0)):
+            values = _soc_power_values(dataset, origin=saturday, periods=12)
+        # Without the coarse layer the missing Saturday waveform would fail
+        # the whole candidate; weekday donors supply the discharge hour.
+        self.assertEqual(values[7:10], [50., 40., 40.])
+
     def history(self):
         dataset = soc_dataset_with_weekly_pattern()
         # 100 kWh; one-hour AC charge at 10 kW gives +9 points;
