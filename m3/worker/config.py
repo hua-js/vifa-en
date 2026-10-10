@@ -119,6 +119,7 @@ class Settings:
     production_schedule_api_key: SecretStr | None = None
     acceptance_enabled: bool = True
     timezone: str = "Asia/Shanghai"
+    raw_history_cache_dir: str | None = None
 
     @property
     def station_ids(self) -> tuple[str, str]:
@@ -140,6 +141,9 @@ class Settings:
         acceptance_value = os.environ["M3_ACCEPTANCE_ENABLED"]
         if acceptance_value not in {"true", "false"}:
             raise ValueError("M3_ACCEPTANCE_ENABLED must be true or false")
+        cache_dir = os.environ.get("M3_RAW_HISTORY_CACHE_DIR", "").strip()
+        if any(ord(character) < 32 or ord(character) == 127 for character in cache_dir):
+            raise ValueError("M3_RAW_HISTORY_CACHE_DIR must not contain control characters")
         url_adapter = TypeAdapter(HttpUrl)
         return cls(
             stations=parse_station_bindings(os.environ["M3_STATIONS_JSON"]),
@@ -153,6 +157,7 @@ class Settings:
             production_schedule_api_key=_production_schedule_key(),
             acceptance_enabled=acceptance_value == "true",
             timezone=timezone,
+            raw_history_cache_dir=cache_dir or None,
         )
 
 

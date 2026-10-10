@@ -291,6 +291,17 @@ class RawEnergySourceClient:
             bucket_start = bucket_end
         return points
 
+    def require_station(self, station_id: str) -> None:
+        """Public station guard for local caching wrappers."""
+        self._require_station(station_id)
+
+    def fetch_rows(
+        self, station_id: str, start: datetime, end: datetime
+    ) -> list[tuple[datetime, dict[str, object]]]:
+        """Return ordered verbatim raw rows for one station window."""
+        self._require_station(station_id)
+        return self._rows(station_id, start, end)
+
     def list_custom_observations(
         self,
         station_id: str,
@@ -304,6 +315,21 @@ class RawEnergySourceClient:
         self._require_station(station_id)
         self._validate_custom_window(start, end, interval_seconds)
         rows = self._rows(station_id, start, end)
+        return self.bucket_custom_rows(rows, start, end, interval_seconds)
+
+    @staticmethod
+    def bucket_custom_rows(
+        rows: list[tuple[datetime, dict[str, object]]],
+        start: datetime,
+        end: datetime,
+        interval_seconds: int,
+    ) -> list[CustomObservationPoint]:
+        """Bucket verbatim raw rows into two-series custom observation points.
+
+        This is the exact aggregation used by the direct upstream path; local
+        raw-row caches must produce identical points from identical rows.
+        """
+
         bucket_count = int((end - start).total_seconds() // interval_seconds)
         buckets: list[list[tuple[datetime, dict[str, object]]]] = [
             [] for _ in range(bucket_count)
@@ -317,6 +343,8 @@ class RawEnergySourceClient:
                 )
             buckets[index].append((timestamp, row))
 
+        number = RawEnergySourceClient._number
+        covered = RawEnergySourceClient._covered
         points: list[CustomObservationPoint] = []
         interval = timedelta(seconds=interval_seconds)
         for index, bucket in enumerate(buckets):
@@ -325,12 +353,12 @@ class RawEnergySourceClient:
             load_values = [
                 (timestamp, value)
                 for timestamp, row in bucket
-                if (value := self._number(row.get("load_power"))) is not None
+                if (value := number(row.get("load_power"))) is not None
             ]
             soc_values = [
                 (timestamp, value)
                 for timestamp, row in bucket
-                if (value := self._number(row.get("emus_soc"))) is not None
+                if (value := number(row.get("emus_soc"))) is not None
             ]
             valid_load = [
                 (timestamp, value)
@@ -342,11 +370,11 @@ class RawEnergySourceClient:
                 for timestamp, value in soc_values
                 if 0 <= value <= 100
             ]
-            load_valid = self._covered(valid_load, bucket_start, bucket_end)
-            soc_valid = self._covered(valid_soc, bucket_start, bucket_end)
+            load_valid = covered(valid_load, bucket_start, bucket_end)
+            soc_valid = covered(valid_soc, bucket_start, bucket_end)
             power_values = [(timestamp, value) for timestamp, row in bucket
-                            if (value := self._number(row.get('emus_power'))) is not None]
-            power_valid = self._covered(power_values, bucket_start, bucket_end)
+                            if (value := number(row.get('emus_power'))) is not None]
+            power_valid = covered(power_values, bucket_start, bucket_end)
             if load_valid:
                 load_state = "valid"
             elif not bucket:

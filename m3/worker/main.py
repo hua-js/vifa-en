@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 import logging
 import re
+from pathlib import Path
 from threading import Event, Lock
 from typing import Callable
 from zoneinfo import ZoneInfo
@@ -44,6 +45,10 @@ from m3.worker.services.forecast_service import (
     verify_statsforecast_runtime,
 )
 from m3.worker.services.job_service import JobService
+from m3.worker.services.raw_history_cache import (
+    CachedRawEnergySource,
+    RawHistoryCache,
+)
 from m3.worker.services.station_cache import StationCache
 from m3.worker.sinks.forecast_sink import ForecastSink
 
@@ -329,6 +334,13 @@ def build_resources(
             source_http,
             allowed_station_ids=settings.station_ids,
         )
+        if settings.raw_history_cache_dir is not None:
+            observation_source = CachedRawEnergySource(
+                observation_source,
+                RawHistoryCache(
+                    Path(settings.raw_history_cache_dir) / "raw_history.db"
+                ),
+            )
         alert_client = NodeRedAlertClient(
             str(settings.source_base_url),
             settings.source_api_token.get_secret_value(),
