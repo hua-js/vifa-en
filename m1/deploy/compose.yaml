@@ -1,0 +1,39 @@
+name: vifa-m1-api
+services:
+  m1-api:
+    image: ${M1_API_IMAGE:?M1_API_IMAGE must be pinned}
+    network_mode: host
+    user: "10001:10001"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+    stop_grace_period: 130s
+    environment:
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONUNBUFFERED: "1"
+      M1_LISTEN_HOST: "127.0.0.1"
+      M1_LISTEN_PORT: "8811"
+      M1_BASE_URL: "https://ems.lvkpower.com/api"
+      M1_PROJECT_CONFIG: /config/project.json
+      M1_ENERGY_CONFIG: /app/.local/energy_efficiency_local_config.py
+      M1_ALERT_HISTORY_DB: /state/alert_history.sqlite3
+      M1_MAX_REQUESTS: "4"
+    volumes:
+      - ${M1_DEPLOYMENT_ROOT:?M1_DEPLOYMENT_ROOT is required}/config/project.json:/config/project.json:ro
+      - ${M1_DEPLOYMENT_ROOT}/secrets/energy_efficiency_local_config.py:/app/.local/energy_efficiency_local_config.py:ro
+      - ${M1_DEPLOYMENT_ROOT}/runtime/m1:/state
+    tmpfs:
+      - /dev/mqueue:rw,nosuid,nodev,noexec
+      - /tmp:rw,nosuid,nodev,size=32m
+    healthcheck:
+      test: [CMD, /usr/local/bin/python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8811/ready', timeout=3).read()"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"

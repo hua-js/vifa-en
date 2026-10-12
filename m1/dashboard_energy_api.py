@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 import json
 import math
@@ -88,6 +89,10 @@ GROWATT_INVERTER_SNS = (
 )
 
 
+class SourceAuthorizationError(RuntimeError):
+    """The current user's EMS request was rejected; do not read privileged sources."""
+
+
 def api(path: str, token: str) -> dict[str, Any]:
     """请求现有 NocoBase API，保持 dashboard_api.py 的失败行为。"""
     request = urllib.request.Request(
@@ -97,7 +102,7 @@ def api(path: str, token: str) -> dict[str, Any]:
         with urllib.request.urlopen(request, timeout=20) as response:
             return json.loads(response.read().decode("utf-8"))
     except Exception as error:
-        return {"error": str(error)}
+        return {"error": str(error), "http_status": getattr(error, "code", None)}
 
 
 def _items(payload: dict[str, Any]) -> list[dict[str, Any]]:
@@ -111,6 +116,8 @@ def _required_items(payload: dict[str, Any], source: str) -> list[dict[str, Any]
     if not isinstance(payload, dict):
         raise RuntimeError(f"{source} 未返回 JSON 对象")
     if payload.get("error"):
+        if payload.get("http_status") in {401, 403}:
+            raise SourceAuthorizationError("登录状态已失效或无权访问，请重新打开页面。")
         raise RuntimeError(f"{source} 读取失败：{payload['error']}")
     data = payload.get("data")
     if not isinstance(data, list):
@@ -1062,6 +1069,35 @@ def attach_alert_history(result: dict[str, Any], db_path: str | Path) -> None:
         }
 
 
+def collect_dashboard(
+    token: str,
+    energy_token: str,
+    *,
+    growatt_token: str | None = None,
+    history_db: str | Path | None = None,
+) -> dict[str, Any]:
+    """校验客户权限后并行读独立源；不缓存或跨用户复用业务响应。"""
+    raw = fetch_raw_data(token)
+    with ThreadPoolExecutor(max_workers=3, thread_name_prefix="m1-source") as executor:
+        growatt = executor.submit(fetch_growatt_rows, growatt_token or energy_token)
+        load = executor.submit(fetch_station_load_sources, raw.get("data", {}).get("es_list", []), energy_token)
+        storage = executor.submit(fetch_station_storage_sources, energy_token)
+        growatt_rows, growatt_error = growatt.result()
+        load_sources, load_errors = load.result()
+        storage_sources, storage_errors = storage.result()
+    source_errors: dict[str, str] = {}
+    if growatt_error:
+        source_errors["growatt"] = growatt_error
+    source_errors.update(load_errors)
+    source_errors.update(storage_errors)
+    result = build_result(
+        raw, growatt_rows=growatt_rows, load_sources=load_sources,
+        storage_sources=storage_sources, source_errors=source_errors,
+    )
+    attach_alert_history(result, history_db if history_db is not None else DEFAULT_HISTORY_DB)
+    return result
+
+
 def main(argv: list[str] | None = None) -> int:
     """分别使用基础站点和能源源 Token，并输出组合后的单个 JSON 响应。"""
     parser = argparse.ArgumentParser(description="运营监控看板 API")
@@ -1081,35 +1117,12 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
-        token = args.token or DEFAULT_TK
-        # 基础看板始终从 NocoBase 接口获取。
-        raw = fetch_raw_data(token)
-        source_errors: dict[str, str] = {}
-
-        # Growatt 只返回固定九台逆变器白名单。
-        growatt_rows, growatt_error = fetch_growatt_rows(DEFAULT_E606_TK)
-        if growatt_error:
-            source_errors["growatt"] = growatt_error
-
-        # 负载与储能分别使用精确电站、精确柜体白名单数据。
-        energy_token = args.energy_token or DEFAULT_E606_TK
-        load_sources, load_errors = fetch_station_load_sources(
-            raw.get("data", {}).get("es_list", []), energy_token
+        result = collect_dashboard(
+            args.token or DEFAULT_TK,
+            args.energy_token or DEFAULT_E606_TK,
+            growatt_token=DEFAULT_E606_TK,
+            history_db=args.history_db,
         )
-        storage_sources, storage_errors = fetch_station_storage_sources(
-            energy_token
-        )
-        source_errors.update(load_errors)
-        source_errors.update(storage_errors)
-
-        result = build_result(
-            raw,
-            growatt_rows=growatt_rows,
-            load_sources=load_sources,
-            storage_sources=storage_sources,
-            source_errors=source_errors,
-        )
-        attach_alert_history(result, args.history_db)
         print(json.dumps(result, ensure_ascii=False))
         return 0
     except Exception as error:
