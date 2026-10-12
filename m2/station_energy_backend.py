@@ -345,13 +345,9 @@ def detect_quality(sample, result, config):
         for metric in CHAIN_METRICS:
             blockers[metric].append("power_balance_error")
 
-    times = [sample["_data_time"]] + sample["_source_times"]
-    if times:
-        time_span = (max(times) - min(times)).total_seconds()
-        if time_span > config["time_tolerance_seconds"]:
-            global_codes.add("time_misaligned")
-            for metric in CHAIN_METRICS:
-                blockers[metric].append("time_misaligned")
+    # 2026-10-10 起不再按设备时间戳跨度屏蔽链路效率：ES02 光伏 EMU（emu27）
+    # 上游上报恒定滞后约 338 秒但数值有效，全局 time_misaligned 会永久屏蔽
+    # 全部链路指标，按用户决定取消该判定。
 
     threshold = config["min_power_kw"]
 

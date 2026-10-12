@@ -248,7 +248,8 @@ class StationEnergyBackendTests(unittest.TestCase):
         self.assertIsNone(result["pv_load_efficiency"])
         self.assertAlmostEqual(result["pv_inverter_efficiency"], 100.0, places=6)
 
-    def test_time_misalignment_invalidates_all_chain_efficiencies(self):
+    def test_time_misalignment_no_longer_invalidates_chain_efficiencies(self):
+        # 2026-10-10 起取消时间错位屏蔽：上游光伏 EMU 恒定滞后但数值有效。
         result = calculate_bus(
             make_sample(
                 pv_dc_power=100,
@@ -260,8 +261,8 @@ class StationEnergyBackendTests(unittest.TestCase):
                 },
             )
         )
-        self.assertIn("time_misaligned", result["quality_codes"])
-        self.assertIsNone(result["pv_load_efficiency"])
+        self.assertNotIn("time_misaligned", result["quality_codes"])
+        self.assertIsNotNone(result["pv_load_efficiency"])
 
     def test_default_time_tolerance_accepts_90_second_source_gap(self):
         result = calculate_bus(
