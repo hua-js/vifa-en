@@ -3,11 +3,11 @@
 默认 Flow 使用 `M3_AUTH_MODE=query_token`，iframe URL 填写：
 
 ```text
-https://opdash.lvkpower.com/ett?token={{ ctx.token }}
+https://aivifa.hlszh.com/ett?token={{ ctx.token }}
 ```
 
 `{{ ctx.token }}` 由 NocoBase 解析为当前用户 Token，无需配置 iframe Header 或 postMessage。
-默认 `M3_AUTH_BASE_URL=https://ems.lvkpower.com`，必须与签发 Token 的 NocoBase 一致。
+当前工控机应保留 `M3_AUTH_BASE_URL=https://vifa.hlszh.com` 和同域父页面设置，必须与签发Token的平台一致。仓库通用Flow中的EMS默认值不代表现场配置，不应导入后覆盖当前域名。
 导入新版 Flow 后，使用当前 `m3_production_gateway_template.html` 覆盖 `m3_prod_page_template` 节点，
 再发布 Modified Flows；无需重启 Node-RED。
 
@@ -23,4 +23,4 @@ https://opdash.lvkpower.com/ett?token={{ ctx.token }}
 - 首次入口请求含用户 Token，访问日志须隐藏 token 参数；响应使用 no-store 和 no-referrer。
 
 `postmessage` 兼容模式保留；显式改为 `server_token` 会恢复公开访问。仅停用 iframe 区块与 M3 Flow 即可回退，
-不删除预测数据或令牌文件。详见 [部署手册](../AMD64三域Docker部署手册.md)。
+不删除预测数据或令牌文件。拓扑、目录和更新边界见[服务器部署架构](../../服务器部署架构.md)，服务行为见[部署说明](../部署说明.md)。

@@ -7,4 +7,4 @@
 - [M1/M2 需求访谈](2026-08-23-m1-m2-delivery-grill.md)：包含早期交付范围、验收口径及实现决策。
 - [M3 部署访谈](2026-08-28-m3-deployment-guide-grill.md)：包含旧 ARM64、postMessage 等部署方案，不应直接照此部署。
 
-当前协作规范见 [AGENTS.md](../../../AGENTS.md)，任务状态见 [CODEX_HANDOFF.md](../../../CODEX_HANDOFF.md)。M3 部署以[当前部署说明](../../../vifa/docs/m3/部署说明.md)和[AMD64 三域 Docker 部署手册](../../../vifa/docs/m3/AMD64三域Docker部署手册.md)为准。验收要求请核对[正式验收附件](../../附件1%20AI%20电价负载预测系统%20验收清单_修订版.docx)及后续明确确认。
+当前协作规范见[AGENTS.md](../../../AGENTS.md)，任务状态见[CODEX_HANDOFF.md](../../../CODEX_HANDOFF.md)。服务器拓扑见[部署架构](../../服务器部署架构.md)，M3服务行为见[部署说明](../../m3/部署说明.md)。验收要求请核对[正式验收附件](../../acceptance/附件1%20AI%20电价负载预测系统%20验收清单_修订版.docx)及后续明确确认。
