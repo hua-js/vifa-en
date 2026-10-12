@@ -199,6 +199,17 @@ async function api(station,route,options={}){
 }
 const header=document.querySelector('.decision h2'),badge=document.querySelector('.decision .badge');
 function clearPlan(title,message){plan=null;clearReferenceOverview();$('price-timeline').replaceChildren();header.textContent=title;badge.textContent='日计划待就绪';$('decision-copy').textContent=message;for(const id of ['decision-side','metrics','chart-panel','plan-tags','period-hero','plan-layout'])$(id).hidden=true;$('chart').replaceChildren();}
+function planBlockReasons(inputs){
+ const reasons=(inputs?.checks||[]).filter(c=>c&&c.status!=='ready'&&c.detail).map(c=>String(c.detail));
+ const gate=inputs?.sources?.load?.accuracy_gate;
+ if(gate&&gate.status==='blocked'&&Array.isArray(gate.issues))for(const issue of gate.issues)if(issue)reasons.push(String(issue));
+ return [...new Set(reasons)];
+}
+function planFailureText(message){
+ const text=String(message||'').trim();
+ if(/terminal SOC target must be within safety bounds/i.test(text))return '日末 SOC 目标超出安全边界，未生成日计划。';
+ return text;
+}
 function assert(condition,message){if(!condition)throw Error(message);}
 function validSeries(points,start){return Array.isArray(points)&&points.length===96&&points.every((p,i)=>Date.parse(p.timestamp)===start+i*900000&&['mode','target_power_kw','grid_import_kw','expected_soc_pct'].every(k=>k==='mode'?['charge','discharge','idle'].includes(p[k]):finite(p[k])&&p[k]>=0)&&p.expected_soc_pct<=100);}
 function peakWindowStats(inputs,baseline,recommended){
@@ -441,8 +452,8 @@ async function loadCurrent(){
   const controls=inputs.can_compare?comparisonControls(inputs,liveControls,station):liveControls;
   context={station,date,inputs,settings,controls,executionControls:liveControls};latestJobs.set(station,job);cacheable=true;
   if(job.status==='running'){if(plan?.station===station&&plan.date===date){badge.textContent='新计划计算中 · 保留上次计划';}else{clearPlan('计划计算中',job.message||'正在读取输入并计算…');}schedulePlanStatusPoll(station,date,id);return;}
-  if(!inputs.can_compare){const night=currentDailyDispatch()?.active_plan?.kind==='night_fallback';clearPlan(night?'凌晨谷电充电':'等待完整数据',night?'充电安排已生成，下发状态请查看安排表状态。':inputs.checks?.filter(c=>c.status!=='ready').map(c=>c.detail).join('；')||'当天数据尚未就绪。');return;}
-  if(job.status==='failed')clearPlan('计划未生成',job.message||'请检查数据后重新生成');
+  if(!inputs.can_compare){const night=currentDailyDispatch()?.active_plan?.kind==='night_fallback',reasons=planBlockReasons(inputs);clearPlan(night?'凌晨谷电充电':'等待完整数据',night?'充电安排已生成，下发状态请查看安排表状态。'+(reasons.length?'全天计划未生成：'+reasons.join('；'):''):reasons.join('；')||'当天数据尚未就绪。');return;}
+  if(job.status==='failed'){const reasons=[...new Set([...planBlockReasons(inputs),planFailureText(job.message)].filter(Boolean))];clearPlan('计划未生成',reasons.join('；')||'请检查数据后重新生成');}
   else if(job.status==='completed'&&job.result?.record){try{renderPlan(mapPlan(job.result.record,job.request,station,date,settings,controls,job.baseline));}catch(error){if(inputs.comparison?.status==='ems')renderBaseline(context,error.message);else throw error;}}
   else if(inputs.can_compare&&inputs.comparison?.status==='ems'){
    renderBaseline(context,job.message);
