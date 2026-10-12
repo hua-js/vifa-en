@@ -358,10 +358,11 @@ function restoreView(station,date){
 function savedPlanningSnapshot(job){
  return job?.status==='completed'&&job.request?.source_versions?.load_admission_policy==='complete-forecast-v1'&&job.result?.record?.daily_comparison?.recommended?job:null;
 }
-function readCurrent(station,date){
+function readCurrent(station,date,onPlan){
  const key=viewKey(station,date);
  if(!pendingReads.has(key)){
-  const request=Promise.allSettled([api(station,'daily-inputs'),api(station,'daily-plan'),api(station,'settings'),api(station,'control-sources')]).then(results=>{
+  const reads=[api(station,'daily-inputs'),api(station,'daily-plan'),api(station,'settings'),api(station,'control-sources')];
+  const request=Promise.allSettled(reads).then(results=>{
    const job=results[1].status==='fulfilled'?results[1].value:null;
    const frozen=job?.active_daily||savedPlanningSnapshot(job);
    if(!frozen){const failed=results.find(v=>v.status==='rejected');if(failed)throw failed.reason;return results.map(v=>v.value);}
@@ -369,9 +370,12 @@ function readCurrent(station,date){
     results[2].status==='fulfilled'?results[2].value:{version:frozen.request.source_versions.configuration},
     results[3].status==='fulfilled'?results[3].value:{version:frozen.request.source_versions.controls}];
   });
+  request.planRead=reads[1];
   pendingReads.set(key,request);request.finally(()=>{if(pendingReads.get(key)===request)pendingReads.delete(key);}).catch(()=>{});
  }
- return pendingReads.get(key);
+ const request=pendingReads.get(key);
+ if(onPlan)request.planRead.then(onPlan).catch(()=>{});
+ return request;
 }
 async function initializeCurrent(){
  // A token digest partitions cached views without persisting the credential itself.
@@ -430,10 +434,20 @@ function schedulePlanStatusPoll(station,date,id,delay=5000){
 }
 async function loadCurrent(){
  if(!projectReady)return;
- const id=++generation,station=$('station').value,date=$('plan-date').value;let cacheable=false;clearTimeout(pollTimer);context=null;updateRecalculateButton();if(rollingAdvice?.station_id!==station||rollingAdvice?.result?.date!==date)rollingAdvice=null;if(rollingHistory?.station_id!==station||rollingHistory?.date!==date)rollingHistory=null;renderRollingAdvice();try{sessionStorage.setItem(selectedStationKey(),station);}catch{}const retained=plan?.station===station&&plan.date===date&&date===today();const restored=retained||restoreView(station,date);setLoading(!restored);if(!restored)clearPlan('正在读取当天数据','正在核对电价、预测与计划来源…');
+ const id=++generation,station=$('station').value,date=$('plan-date').value;let cacheable=false;clearTimeout(pollTimer);context=null;updateRecalculateButton();renderDailyDispatch();if(rollingAdvice?.station_id!==station||rollingAdvice?.result?.date!==date)rollingAdvice=null;if(rollingHistory?.station_id!==station||rollingHistory?.date!==date)rollingHistory=null;renderRollingAdvice();try{sessionStorage.setItem(selectedStationKey(),station);}catch{}const retained=plan?.station===station&&plan.date===date&&date===today();const restored=retained||restoreView(station,date);setLoading(!restored);if(!restored)clearPlan('正在读取当天数据','正在核对电价、预测与计划来源…');
  if(date!==today()){setLoading(false);clearPlan('请选择当天查看策略','此处仅展示当天计划；历史日期请在「调度记录」中筛选。');return;}
  try{
-  const [inputs,job,settings,liveControls]=await readCurrent(station,date);
+  const [inputs,job,settings,liveControls]=await readCurrent(station,date,job=>{
+   if(id!==generation||station!==$('station').value||date!==$('plan-date').value||date!==today())return;
+   validateJob(job,station);
+   const frozen=job.active_daily||savedPlanningSnapshot(job);
+   if(!frozen||(job.active_daily&&previewDaily))return;
+   const savedSettings={version:frozen.request.source_versions.configuration},savedControls={version:frozen.request.source_versions.controls};
+   const snapshot=mapPlan(frozen.result.record,frozen.request,station,date,savedSettings,savedControls,frozen.baseline);
+   latestJobs.set(station,job);dailyDispatch=job.daily_dispatch||null;
+   renderPlan(snapshot);renderDailyDispatch();setLoading(false);updateRecalculateButton();
+   badge.textContent='日计划 · 正在更新实测';
+  });
   if(id!==generation)return;validateJob(job,station);rollingAdvice=null;rollingHistory=job.rolling_history||null;dailyDispatch=job.daily_dispatch||null;latestJobs.set(station,job);renderDailyDispatch();renderRollingAdvice();
   autoPlanEnabled=job.automation?.enabled===true;
   $('auto-plan-status').textContent=autoPlanEnabled?'日计划自动生成':'自动计算未开启';
@@ -618,7 +632,7 @@ function renderDailyDispatch(){
  $('preview-daily').hidden=!job?.active_daily||!pending;
  $('preview-daily').textContent=previewDaily?'返回已下发日计划':'查看新计划';
  $('dispatch-daily').hidden=!pending||job?.ems_table_write?.enabled!==true;
- $('dispatch-daily').disabled=dispatchSubmitting||state?.status==='writing'||state?.status==='blocked'||plan?.record?.run_id!==job?.run_id;
+ $('dispatch-daily').disabled=dispatchSubmitting||context?.station!==$('station').value||context?.date!==$('plan-date').value||state?.status==='writing'||state?.status==='blocked'||plan?.record?.run_id!==job?.run_id;
  $('dispatch-daily').textContent=dispatchSubmitting?'正在提交…':state?.confirmed_daily_run_id?'替换剩余计划':'下发日计划';
  const text=state?.status==='blocked'||state?.status==='failed'?state.message:active?.status==='plan_table_readback_verified'?(active.kind==='daily'?'日计划表已确认':'凌晨保底计划表已确认'):state?.message||'日计划尚未下发';
  $('daily-dispatch-status').textContent=text+(active?' · 今日有效':'')+(pending&&job?.active_daily?' · 有新计划待查看，当前安排保持不变':'');
@@ -811,7 +825,8 @@ function clearReferenceOverview(){$('compact-load-peak').textContent='—';$('co
 function renderReferenceOverview(){const p=plan;$('compact-load-peak').textContent=fmt(Math.max(...p.points.map(v=>v.load)));$('compact-pv-energy').textContent=fmt(p.points.reduce((sum,v)=>sum+v.pv*.25,0),1);$('compact-pv-metric').hidden=!requireStation(p.station).has_pv;const now=new Date(Date.now()+28800000),isToday=p.date===now.toISOString().slice(0,10),index=isToday?now.getUTCHours()*4+Math.floor(now.getUTCMinutes()/15):selected,v=p.points[index];$('ref-price-label').textContent=(isToday?'当前':'所选时段')+'电价 · '+v.tariff;$('ref-price').textContent='¥ '+fmt(v.price,2);const priceNext=p.points.slice(index+1).find(q=>q.price!==v.price||q.tariff!==v.tariff);$('ref-price-next').textContent=priceNext?priceNext.time+' 进入'+priceNext.tariff+'段':'元/kWh · 当日后续不变';$('ref-baseline-cost').textContent=finite(p.baseWear)?money(p.baseline+p.baseWear):'—';$('ref-plan-cost').textContent=finite(p.wear)?money(p.cost+p.wear+(p.inventoryAdjustment||0)):'—';$('ref-saving').textContent=finite(p.saving)?money(Math.abs(p.saving)):'—';$('ref-saving-label').textContent=p.saving<0?'预计增加':'预计减少';$('ref-saving').parentElement.classList.toggle('positive',finite(p.saving)&&p.saving>0);$('ref-saving').parentElement.classList.toggle('negative',finite(p.saving)&&p.saving<0);const next=p.points.slice(index+1).find(q=>Math.sign(q.power)!==Math.sign(v.power));$('ref-next').textContent=next?next.time:'无后续变化';$('ref-next-action').textContent=next?next.action+' '+fmt(Math.abs(next.power))+' kW':v.action+'至日末';const timeLabel=$('current-chart-time');timeLabel.hidden=!isToday;timeLabel.textContent=isToday?'当前时段 '+v.time:'';timeLabel.style.left=((60+(index+.5)*1020/96)/1140*100)+'%';timeLabel.classList.toggle('align-end',index>72);const marker=$('current-chart-marker');if(marker){const x=60+(index+.5)*1020/96;marker.innerHTML=isToday?`<line x1="${x}" x2="${x}" y1="44" y2="430" stroke="var(--red)" stroke-dasharray="5 5"/>`:'';}$('reference-updated').textContent='计划生成：'+timeText(p.record.finished_at)+' · '+p.date+' · 15 分钟粒度';}
 let logRequest=0;
 async function loadRecentLogs(){if(!projectReady)return;const id=++logRequest,station=$('station').value;$('recent-logs').textContent='正在读取决策记录…';try{
- const [data,bundle]=await Promise.all([api(station,'decision-history?limit=4&offset=0'),readCurrent(station,today())]);if(id!==logRequest||station!==$('station').value)return;const items=data.items;if(!Array.isArray(items))throw Error('记录格式暂不可用');validateJob(bundle[1],station);const latest=bundle[1]?.result?.record,valid=items.filter(r=>r.status!=='unreadable');if(latest&&!valid.some(r=>r.run_id===latest.run_id))valid.unshift(latest);
+ const current=pendingReads.get(viewKey(station,today())),jobRead=current?.planRead||Promise.resolve(latestJobs.get(station));
+ const [data,job]=await Promise.all([api(station,'decision-history?limit=4&offset=0'),jobRead]);if(id!==logRequest||station!==$('station').value)return;const items=data.items;if(!Array.isArray(items))throw Error('记录格式暂不可用');if(job)validateJob(job,station);const latest=job?.result?.record,valid=items.filter(r=>r.status!=='unreadable');if(latest&&!valid.some(r=>r.run_id===latest.run_id))valid.unshift(latest);
  $('recent-logs').innerHTML=valid.slice(0,4).map(r=>'<article class="recent-log"><time>'+esc(timeText(r.finished_at||r.started_at))+'</time><strong>'+esc(r.status==='completed'?'调度方案已生成':'调度记录')+'</strong><p>'+esc(r.daily_comparison?.reason||r.reason||r.run_id||'查看全部日志了解详细计划')+'</p><span class="badge">全天计划</span></article>').join('')+(items.some(r=>r.status==='unreadable')?'<p class="note">部分历史记录暂不可用。</p>':'');if(!$('recent-logs').textContent)$('recent-logs').textContent='暂无决策记录';
  }catch(e){if(id===logRequest)$('recent-logs').textContent=e.message;}}
 
