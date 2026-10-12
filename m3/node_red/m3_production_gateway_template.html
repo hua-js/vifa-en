@@ -645,6 +645,8 @@
       let lastRefreshSlot = null;
       let inFlight = null;
       let hasRenderedDashboard = false;
+      let hasRenderedCustomResult = false;
+      let currentViewStarted = false;
       let lastDashboard = null;
       let customBusy = false;
       let customPollTimer = null;
@@ -660,6 +662,7 @@
       let performanceLookupToken = 0;
       let selectedPerformance = null;
       let performanceState = "等待加载";
+      const performanceReads = new Map();
       const customRunIds = loadStoredRunIds();
       const customResults = new Map();
       let customDisplayDay = shanghaiDateValue(new Date());
@@ -693,6 +696,7 @@
         resultProgressOverlay.hidden = true;
         text(runButton, "开始预测");
         errorState.hidden = true;
+        hasRenderedCustomResult = false;
         clearSection(root.querySelector(".station-section"));
         root.querySelectorAll(".candidate").forEach((candidate) => {
           candidate.classList.remove("selected", "disabled");
@@ -700,11 +704,21 @@
         });
         const outputConfiguration = selectedOutputConfiguration();
         const cached = customResults.get(stationKey);
-        const matchingCached = cached !== undefined
+        let matchingCached = cached !== undefined
           && outputConfiguration !== null
           && runMatchesOutput(cached.result.run, outputConfiguration)
           && (!loadLatest || runCoversToday(cached.result.run));
-        if (matchingCached) renderCustomResult(cached);
+        if (matchingCached) {
+          try {
+            renderCustomResult(cached);
+            if (loadLatest) text(taskState, "已显示上次预测 · 正在更新");
+          } catch (_error) {
+            customResults.delete(stationKey);
+            matchingCached = false;
+            hasRenderedCustomResult = false;
+            clearSection(resultSection);
+          }
+        }
         root.querySelector(".station-section").dataset.station = stationKey;
         text(root.querySelector(".station-section h2"), STATION_NAMES[STATION_KEYS.indexOf(stationKey)]);
         if (!matchingCached && loadLatest) text(taskState, outputConfiguration === null ? "请检查任务参数" : "正在加载预测任务…");
@@ -719,8 +733,6 @@
       function changeStation() {
         forecastDays.value = "1";
         granularity.value = "900";
-        customResults.clear();
-        clearStoredRunId(stationPicker.value);
         initializeTaskDates(new Date(), true);
         selectStation(stationPicker.value);
         void loadDashboard();
@@ -855,6 +867,7 @@
       }
 
       function showNoCurrentResult(stationKey) {
+        hasRenderedCustomResult = false;
         customResults.delete(stationKey);
         clearStoredRunId(stationKey);
         clearSection(root.querySelector(".station-section"));
@@ -1882,7 +1895,8 @@
           return;
         }
         stopCustomPolling();
-        setCustomBusy(true, "正在读取预测结果");
+        setCustomBusy(true, hasRenderedCustomResult ? "已显示上次预测 · 正在更新" : "正在读取预测结果");
+        if (hasRenderedCustomResult) resultProgressOverlay.hidden = true;
         const result = validateCustomResult(await customRequest(
           `${CUSTOM_RUN_PATH}/${encodeURIComponent(run.run_id)}/result`, { timeout: 60_000 },
         ));
@@ -2264,16 +2278,25 @@
         performanceState = configuration === null ? "请检查历史范围" : "正在加载";
         renderSelectedPerformance();
         if (configuration === null || (authMode !== "server_token" && (!userTokenAuth || apiToken === null))) return;
+        const day = shanghaiDateValue(new Date());
+        const readKey = JSON.stringify([day, stationKey, configuration]);
         try {
-          const query = new URLSearchParams(Object.entries(configuration).map(([name, value]) => [name, String(value)]));
-          const value = validateCustomPerformance(await customRequest(
-            `${CUSTOM_PERFORMANCE_PATH}/${encodeURIComponent(stationKey)}?${query}`,
-          ));
-          if (disposed || token !== performanceLookupToken || key !== JSON.stringify([stationPicker.value, performanceConfiguration()])) return;
+          let request = performanceReads.get(readKey);
+          if (!request) {
+            const query = new URLSearchParams(Object.entries(configuration).map(([name, value]) => [name, String(value)]));
+            request = customRequest(`${CUSTOM_PERFORMANCE_PATH}/${encodeURIComponent(stationKey)}?${query}`)
+              .then(validateCustomPerformance);
+            performanceReads.set(readKey, request);
+            request.finally(() => {
+              if (performanceReads.get(readKey) === request) performanceReads.delete(readKey);
+            }).catch(() => {});
+          }
+          const value = await request;
+          if (disposed || day !== shanghaiDateValue(new Date()) || token !== performanceLookupToken || key !== JSON.stringify([stationPicker.value, performanceConfiguration()])) return;
           selectedPerformance = { key, value };
           renderSelectedPerformance();
         } catch (_error) {
-          if (disposed || token !== performanceLookupToken || key !== JSON.stringify([stationPicker.value, performanceConfiguration()])) return;
+          if (disposed || day !== shanghaiDateValue(new Date()) || token !== performanceLookupToken || key !== JSON.stringify([stationPicker.value, performanceConfiguration()])) return;
           selectedPerformance = null;
           performanceState = "统计加载失败";
           renderSelectedPerformance();
@@ -2388,11 +2411,13 @@
         renderCurrentPredictionMape(run, loadResult, ".current-day-mape-value", ".current-day-mape-note");
         renderCurrentPredictionMape(run, socResult, ".current-soc-mape-value", ".current-soc-mape-note");
         renderCustomEvidence(run);
+        hasRenderedCustomResult = true;
         errorState.hidden = true;
       }
 
       function renderError(message = "预测数据暂不可用") {
         hasRenderedDashboard = false;
+        hasRenderedCustomResult = false;
         lastDashboard = null;
         root.dataset.state = "error";
         text(root.querySelector("#system-state"), "错误");
@@ -2405,7 +2430,7 @@
       }
 
       function renderRefreshError(message) {
-        if (!hasRenderedDashboard) {
+        if (!hasRenderedDashboard && !hasRenderedCustomResult) {
           renderError(message);
           return;
         }
@@ -2424,7 +2449,6 @@
           text(root.querySelector("#generated-at"), `最近更新：${dateTime(dashboard.system.generated_at)}`);
           lastDashboard = dashboard;
           initializeTaskDates(dashboard.system.generated_at);
-          if (!hasRenderedDashboard) selectStation(stationPicker.value);
           hasRenderedDashboard = true;
           return true;
         } catch (_error) {
@@ -2525,7 +2549,23 @@
         void refreshSelectedPerformance();
       }
 
+      function startPageReads() {
+        if (disposed || (authMode !== "server_token" && (!userTokenAuth || apiToken === null))) return;
+        startRefreshTimer();
+        if (!currentViewStarted) {
+          currentViewStarted = true;
+          selectStation(stationPicker.value);
+        }
+        void loadDashboard();
+      }
+
       function requestAuthentication() {
+        currentViewStarted = false;
+        ++latestLookupToken;
+        ++performanceLookupToken;
+        performanceReads.clear();
+        customResults.clear();
+        selectedPerformance = null;
         if (authMode === "query_token") {
           apiToken = null;
           updateTaskConfiguration();
@@ -2563,8 +2603,7 @@
           authTimeout = null;
         }
         updateTaskConfiguration();
-        startRefreshTimer();
-        void loadDashboard();
+        startPageReads();
       }
 
       window.renderDashboard = renderDashboard;
@@ -2590,8 +2629,7 @@
       }, { once: true });
       if (parentOrigin === null || authMode === null) renderError("页面配置不可用");
       else if (authMode === "server_token" || (authMode === "query_token" && apiToken !== null)) {
-        startRefreshTimer();
-        void loadDashboard();
+        startPageReads();
       } else requestAuthentication();
     })();
   </script>

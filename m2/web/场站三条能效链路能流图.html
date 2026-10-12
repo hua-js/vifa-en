@@ -2116,6 +2116,7 @@ svg {
     const stationLoadingText = document.getElementById("station-loading-text");
     let fetchInFlight = false;
     let activeController = null;
+    const dashboardSnapshots = new Map();
 
     const curveDate = document.getElementById("curve-date");
     const curveStatus = document.getElementById("curve-query-status");
@@ -2573,6 +2574,22 @@ svg {
       render();
     }
 
+    function restoreDashboardSnapshot(stationId) {
+      const snapshot = dashboardSnapshots.get(stationId);
+      if (!snapshot || snapshot.date !== todayDate() || snapshot.data.realtime?.inputs?.bus_id !== stationId
+        || typeof snapshot.data.range?.start_time !== "string" || snapshot.data.range.start_time.slice(0, 10) !== todayDate()) return false;
+      try {
+        renderDashboard(snapshot.data);
+      } catch (_error) {
+        dashboardSnapshots.delete(stationId);
+        return false;
+      }
+      root.dataset.dashboardState = "refreshing";
+      statusNode.dataset.state = "loading";
+      statusNode.textContent = "上次数据 · " + formatTime(snapshot.data.realtime?.inputs?.data_time) + " · 正在更新";
+      return true;
+    }
+
     async function fetchData(force = false) {
       if (fetchInFlight && !force) return;
       if (force && activeController) activeController.abort();
@@ -2580,10 +2597,13 @@ svg {
       const controller = new AbortController();
       activeController = controller;
       fetchInFlight = true;
-      if (force) setStationLoading(true, stationId);
-      root.dataset.dashboardState = "loading";
-      statusNode.dataset.state = "loading";
-      statusNode.textContent = "正在加载后端数据";
+      const restored = force && restoreDashboardSnapshot(stationId);
+      if (force) setStationLoading(!restored, stationId);
+      if (!restored) {
+        root.dataset.dashboardState = "loading";
+        statusNode.dataset.state = "loading";
+        statusNode.textContent = "正在加载后端数据";
+      }
       const timeout = window.setTimeout(() => controller.abort(), 15000);
       try {
         const endpoint = new URL(apiUrl, window.location.href);
@@ -2592,23 +2612,36 @@ svg {
           headers: { Accept: "application/json" },
           signal: controller.signal
         });
-        if (!response.ok) throw new Error("HTTP " + response.status);
+        if (!response.ok) {
+          const error = new Error("HTTP " + response.status);
+          error.status = response.status;
+          throw error;
+        }
         const payload = await response.json();
-        if (payload.status !== "ok" || payload.data?.operation !== "dashboard") {
+        if (payload.status !== "ok" || payload.data?.operation !== "dashboard" || payload.data?.realtime?.inputs?.bus_id !== stationId) {
           throw new Error(payload.error?.message || "后端返回格式不正确");
         }
         if (controller !== activeController || stationId !== activeStationId) return;
         renderDashboard(payload.data);
+        dashboardSnapshots.set(stationId, { date: todayDate(), data: payload.data });
         root.dataset.dashboardState = "ready";
         statusNode.dataset.state = "ready";
         const mode = payload.data.realtime?.result?.calculation_mode === "estimated" ? "估算" : "实测";
         statusNode.textContent = "后端实时数据 · " + mode + " · " + formatTime(payload.data.realtime?.inputs?.data_time);
       } catch (error) {
         if (controller !== activeController) return;
+        const unauthorized = error.status === 401 || error.status === 403;
+        if (unauthorized) {
+          dashboardSnapshots.clear();
+          renderRealtime({});
+          renderCurrentEfficiency({});
+        }
+        const retained = !unauthorized && restoreDashboardSnapshot(stationId);
         root.dataset.dashboardState = "error";
         statusNode.dataset.state = "error";
-        statusNode.textContent = error.name === "AbortError" ? "后端请求超时" : "后端数据加载失败";
-        if (!selectedCurveDate) {
+        const message = error.name === "AbortError" ? "后端请求超时" : "后端数据加载失败";
+        statusNode.textContent = message + (retained ? " · 显示上次数据 · " + formatTime(dashboardSnapshots.get(stationId).data.realtime?.inputs?.data_time) : "");
+        if (unauthorized || (!selectedCurveDate && !retained)) {
           clearCurve("效率曲线加载失败");
           setQueryStatus(curveStatus, "error", "今日曲线加载失败，请重试查询。");
         }

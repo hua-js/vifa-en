@@ -664,6 +664,7 @@ const QUERY_PARAMS = new URLSearchParams(window.location.search);
 const TOKEN = QUERY_PARAMS.get('token');
 const API_URL = 'https://aivifa.hlszh.com/dashboard_energy_api';
 const REFRESH_INTERVAL_MS = 20000;
+const API_REQUEST_TIMEOUT_MS = 120000;
 const STALE_AFTER_MS = 60000;
 const ANOMALY_CATEGORIES = Object.freeze(['pv_efficiency', 'ess_self_loss', 'load_spike']);
 const ANOMALY_CATEGORY_META = Object.freeze({
@@ -933,10 +934,12 @@ function renderDataUnavailable(title, detail) {
 async function fetchData() {
   if (fetchInFlight) return;
   fetchInFlight = true;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), API_REQUEST_TIMEOUT_MS);
   try {
     const tokenQuery = TOKEN ? '?token=' + encodeURIComponent(TOKEN) : '';
     const requestUrl = DEMO_MODE ? DEMO_DATA_URL : API_URL + tokenQuery;
-    const resp = await fetch(requestUrl, {cache:'no-store'});
+    const resp = await fetch(requestUrl, {cache:'no-store', signal:controller.signal});
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const data = await resp.json();
     if (data.status !== 'ok' || !data.data) throw new Error(data.message||'API 数据格式错误');
@@ -947,9 +950,10 @@ async function fetchData() {
   } catch(e) {
     if (lastSuccessfulData) allData = lastSuccessfulData;
     else renderDataUnavailable('数据源未连接', DEMO_MODE ? '请通过看板服务地址访问，或提供可读取的 result.json 数据文件。' : '请更新 NocoBase 访问凭据后重试。');
-    console.error(e); showToast('\u2716 ' + e.message, true);
-    document.getElementById('refreshInfo').textContent = '\u2716 刷新失败';
+    console.error(e); showToast('\u2716 ' + (e.name === 'AbortError' ? '请求超时，请稍后重试' : e.message), true);
+    document.getElementById('refreshInfo').textContent = e.name === 'AbortError' ? '\u2716 刷新超时' : '\u2716 刷新失败';
   } finally {
+    clearTimeout(timeout);
     fetchInFlight = false;
   }
 }
