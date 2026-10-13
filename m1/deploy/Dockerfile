@@ -4,6 +4,7 @@ WORKDIR /app
 COPY --chown=10001:10001 m1/__init__.py /app/m1/__init__.py
 COPY --chown=10001:10001 m1/dashboard_energy_api.py /app/m1/dashboard_energy_api.py
 COPY --chown=10001:10001 m1/resident_api.py /app/m1/resident_api.py
+COPY --chown=10001:10001 m1/http_reader.py /app/m1/http_reader.py
 USER 10001:10001
 STOPSIGNAL SIGTERM
 ENTRYPOINT ["/usr/local/bin/python", "-m", "m1.resident_api"]

@@ -12,15 +12,23 @@ from __future__ import annotations
 import argparse
 import copy
 from concurrent.futures import ThreadPoolExecutor
+from contextvars import copy_context
 from datetime import datetime
 import json
 import math
 import os
 from pathlib import Path
 import sqlite3
+import sys
 from typing import Any
 from urllib.parse import urlencode
 import urllib.request
+
+# Preserve the existing direct-script CLI as well as package entrypoints.
+if __name__ == "__main__" and not __package__:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from m1.http_reader import get_json, reader_scope
 from zoneinfo import ZoneInfo
 
 
@@ -95,12 +103,8 @@ class SourceAuthorizationError(RuntimeError):
 
 def api(path: str, token: str) -> dict[str, Any]:
     """请求现有 NocoBase API，保持 dashboard_api.py 的失败行为。"""
-    request = urllib.request.Request(
-        f"{BASE}{path}", headers={"Authorization": f"Bearer {token}"}
-    )
     try:
-        with urllib.request.urlopen(request, timeout=20) as response:
-            return json.loads(response.read().decode("utf-8"))
+        return get_json(f"{BASE}{path}", token)
     except Exception as error:
         return {"error": str(error), "http_status": getattr(error, "code", None)}
 
@@ -177,21 +181,30 @@ def station_code(item: dict[str, Any]) -> str | None:
 
 def fetch_raw_data(token: str) -> dict[str, Any]:
     """按目标场站和两座电站白名单构造隔离后的基础响应。"""
-    # 1. 场站：请求层和响应层都锁定唯一客户。
-    sites_data = api(
-        _list_path(
-            "site",
-            page_size=1,
-            fields="id,name,site,status,edge_version,edge_version_type,access_time",
-            filter_value={
-                "$and": [
-                    {"id": {"$eq": int(TARGET_SITE_ID)}},
-                    {"status": {"$eq": "enabled"}},
-                ]
-            },
-        ),
-        token,
+    # 场站与电站过滤都依赖固定场站 ID；仅用当前用户凭据并发读取。
+    site_path = _list_path(
+        "site",
+        page_size=1,
+        fields="id,name,site,status,edge_version,edge_version_type,access_time",
+        filter_value={
+            "$and": [
+                {"id": {"$eq": int(TARGET_SITE_ID)}},
+                {"status": {"$eq": "enabled"}},
+            ]
+        },
     )
+    es_path = _list_path(
+        "es",
+        page_size=20,
+        fields="id,fk_site,name,sn,status,installed_power,power_storage",
+        filter_value={"fk_site": {"$eq": int(TARGET_SITE_ID)}},
+    )
+    with ThreadPoolExecutor(max_workers=2, thread_name_prefix="m1-topology") as executor:
+        site_read = executor.submit(copy_context().run, api, site_path, token)
+        station_read = executor.submit(copy_context().run, api, es_path, token)
+        sites_data = site_read.result()
+        es_data = station_read.result()
+    # 保留场站错误优先级；完整权限与拓扑校验通过前不读依赖节点或私有能源。
     sites = [
         item
         for item in _required_items(sites_data, "目标客户场站")
@@ -213,15 +226,6 @@ def fetch_raw_data(token: str) -> dict[str, Any]:
     ]
 
     # 2. 电站：只允许目标场站下的 ES01、ES02，并统一展示名称。
-    es_data = api(
-        _list_path(
-            "es",
-            page_size=20,
-            fields="id,fk_site,name,sn,status,installed_power,power_storage",
-            filter_value={"fk_site": {"$eq": int(TARGET_SITE_ID)}},
-        ),
-        token,
-    )
     station_rows: dict[str, dict[str, Any]] = {}
     for item in _required_items(es_data, "目标客户电站"):
         if str(item.get("fk_site")) != TARGET_SITE_ID:
@@ -352,12 +356,8 @@ def fetch_external_rows(
     url: str, token: str
 ) -> tuple[list[dict[str, Any]], str | None]:
     """请求外部列表接口；失败时返回错误文本，不中断基础看板。"""
-    request = urllib.request.Request(
-        url, headers={"Authorization": f"Bearer {token}"}
-    )
     try:
-        with urllib.request.urlopen(request, timeout=20) as response:
-            payload = json.loads(response.read().decode("utf-8"))
+        payload = get_json(url, token)
     except Exception as error:
         return [], str(error)
     if not isinstance(payload, dict):
@@ -1075,16 +1075,18 @@ def collect_dashboard(
     *,
     growatt_token: str | None = None,
     history_db: str | Path | None = None,
+    use_connection_pool: bool = False,
 ) -> dict[str, Any]:
     """校验客户权限后并行读独立源；不缓存或跨用户复用业务响应。"""
-    raw = fetch_raw_data(token)
-    with ThreadPoolExecutor(max_workers=3, thread_name_prefix="m1-source") as executor:
-        growatt = executor.submit(fetch_growatt_rows, growatt_token or energy_token)
-        load = executor.submit(fetch_station_load_sources, raw.get("data", {}).get("es_list", []), energy_token)
-        storage = executor.submit(fetch_station_storage_sources, energy_token)
-        growatt_rows, growatt_error = growatt.result()
-        load_sources, load_errors = load.result()
-        storage_sources, storage_errors = storage.result()
+    with reader_scope(use_connection_pool):
+        raw = fetch_raw_data(token)
+        with ThreadPoolExecutor(max_workers=3, thread_name_prefix="m1-source") as executor:
+            growatt = executor.submit(copy_context().run, fetch_growatt_rows, growatt_token or energy_token)
+            load = executor.submit(copy_context().run, fetch_station_load_sources, raw.get("data", {}).get("es_list", []), energy_token)
+            storage = executor.submit(copy_context().run, fetch_station_storage_sources, energy_token)
+            growatt_rows, growatt_error = growatt.result()
+            load_sources, load_errors = load.result()
+            storage_sources, storage_errors = storage.result()
     source_errors: dict[str, str] = {}
     if growatt_error:
         source_errors["growatt"] = growatt_error

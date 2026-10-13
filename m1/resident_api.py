@@ -16,7 +16,7 @@ from urllib.parse import urlsplit
 
 from m1 import dashboard_energy_api as api
 
-REVISION = "m1-resident-parallel-v1"
+REVISION = "m1-resident-parallel-pool-v2"
 LOGGER = logging.getLogger("vifa.m1")
 
 
@@ -134,6 +134,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                 match.group(1), self.resident.settings.energy_token,
                 growatt_token=self.resident.settings.energy_token,
                 history_db=self.resident.settings.history_db,
+                use_connection_pool=True,
             )
         except api.SourceAuthorizationError:
             result = {"status": "error", "message": "登录状态已失效或无权访问，请重新打开页面。"}
@@ -158,8 +159,15 @@ def make_server(
     return ResidentServer(address, settings, collector)
 
 
-def main() -> None:
+def configure_logging() -> None:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
+    # SDK INFO/DEBUG messages include request URLs and query values.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
+
+
+def main() -> None:
+    configure_logging()
     try:
         settings = load_settings()
         configure_sources(settings)
