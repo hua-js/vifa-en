@@ -19,7 +19,7 @@ import httpx
 from m3.worker.api.routes import health_router, router
 from m3.worker.clients.alert_api import NodeRedAlertClient
 from m3.worker.clients.production_schedule import ProductionScheduleClient
-from m3.worker.clients.http import RetryPolicy
+from m3.worker.clients.http import RETRYABLE_STATUS_CODES, RetryPolicy
 from m3.worker.clients.nocobase_api import NocoBaseApiClient
 from m3.worker.clients.raw_energy_api import RawEnergySourceClient
 from m3.worker.clients.source_api import STATION_ID_PATTERN
@@ -28,6 +28,7 @@ from m3.worker.contracts import validate_shanghai_timestamp
 from m3.worker.domain.forecasting import forecast_one_safe
 from m3.worker.errors import M3Error
 from m3.worker.scheduler.runner import SchedulerRunner
+from m3.worker.services.compute_process import ForecastComputeProcess
 from m3.worker.services.acceptance_service import AcceptanceService
 from m3.worker.services.acceptance_run_service import AcceptanceRunService
 from m3.worker.services.custom_forecast_repository import CustomForecastRepository
@@ -86,6 +87,25 @@ def _safe_code(error: BaseException) -> str:
     return code
 
 
+def _transient_recovery_error(error: BaseException) -> bool:
+    """Retry transport failures and temporary HTTP statuses, never invalid inputs."""
+    seen: set[int] = set()
+    cause: BaseException | None = error
+    while cause is not None and id(cause) not in seen:
+        seen.add(id(cause))
+        if isinstance(cause, httpx.TransportError):
+            return True
+        if isinstance(cause, M3Error):
+            # ForecastService may re-raise this exact error without its cause.
+            if cause.code == "http_retry_exhausted":
+                return True
+            status = cause.details.get("status_code")
+            if type(status) is int and status in RETRYABLE_STATUS_CODES:
+                return True
+        cause = cause.__cause__
+    return False
+
+
 def _log_alert(station_id: str, task: str, code: str, at: datetime) -> None:
     safe_station = (
         station_id
@@ -133,6 +153,7 @@ class WorkerResources:
     alert_sink: Callable[[str, str, str, datetime], None]
     statsforecast_version: str
     rolling_soc: object | None = None
+    compute: object | None = None
     alert_client: object | None = None
     recovery_ready: bool = False
     recovery_stop_event: Event = field(default_factory=Event, init=False, repr=False)
@@ -182,25 +203,11 @@ class WorkerResources:
                 self._alert(station_id, "startup_recovery", error, recovery_at)
         else:
             for station_id in self.settings.station_ids:
-                try:
-                    if self.recovery_stop_event.is_set():
-                        return False
-                    self.forecast_service.bootstrap(station_id, recovery_at)
-                    if self.recovery_stop_event.is_set():
-                        return False
-                    restore_models = getattr(
-                        self.forecast_service, "restore_models", None
-                    )
-                    restored = bool(
-                        restore_models(station_id)
-                        if callable(restore_models)
-                        else False
-                    )
-                    if not restored:
-                        self.forecast_service.select_models(station_id)
-                except Exception as error:
+                if not self._recover_station_inputs(station_id, recovery_at):
                     failed = True
-                    self._alert(station_id, "startup_recovery", error, recovery_at)
+                if self.recovery_stop_event.is_set():
+                    self.recovery_ready = False
+                    return False
         if getattr(self.settings, "acceptance_enabled", True):
             for station_id in self.settings.station_ids:
                 try:
@@ -235,6 +242,8 @@ class WorkerResources:
         if failed or self.recovery_stop_event.is_set():
             self.recovery_ready = False
             return False
+        # Input retries can cross a business-day boundary. Catch up the current day.
+        raw_now = self.clock()
         for station_id in self.settings.station_ids:
             try:
                 if self.recovery_stop_event.is_set():
@@ -263,10 +272,42 @@ class WorkerResources:
         self.recovery_ready = not failed
         return self.recovery_ready
 
+    def _recover_station_inputs(self, station_id: str, recovery_at: datetime) -> bool:
+        """Wait for transient input outages before any queued/daily jobs resume."""
+        delay = 5
+        while not self.recovery_stop_event.is_set():
+            try:
+                self.forecast_service.bootstrap(station_id, recovery_at)
+                if self.recovery_stop_event.is_set():
+                    return False
+                restore_models = getattr(self.forecast_service, "restore_models", None)
+                restored = bool(restore_models(station_id)) if callable(restore_models) else False
+                if not restored:
+                    self.forecast_service.select_models(station_id)
+                return True
+            except Exception as error:
+                if self.recovery_stop_event.is_set():
+                    return False
+                self._alert(station_id, "startup_recovery", error, recovery_at)
+                if not _transient_recovery_error(error):
+                    return False
+                LOGGER.warning(
+                    "m3_startup_input_retry station_id=%s error_code=%s delay_seconds=%s",
+                    station_id, _safe_code(error), delay,
+                )
+                if self.recovery_stop_event.wait(delay):
+                    return False
+                delay = min(delay * 2, 60)
+                now = self.clock()
+                recovery_at = now.replace(minute=(now.minute // 15) * 15, second=0, microsecond=0)
+        return False
+
     def current_ready(self) -> bool:
         """Recheck version metadata and every station state for current health."""
 
         if not self.recovery_ready:
+            return False
+        if self.compute is not None and not self.compute.healthy:
             return False
         try:
             if (
@@ -275,8 +316,10 @@ class WorkerResources:
                 != self._startup_statsforecast_version
             ):
                 return False
+            read_state = getattr(self.forecast_service, "readiness_state", None)
             return all(
-                self.forecast_service.state(station_id).state
+                (read_state(station_id) if callable(read_state)
+                 else self.forecast_service.state(station_id).state)
                 in {"ready", "degraded"}
                 for station_id in self.settings.station_ids
             )
@@ -290,11 +333,14 @@ class WorkerResources:
             self._closed = True
         first_error = None
         for resource in (
+            self.compute,
             self.jobs,
             self.custom_forecasts,
             self.source_http,
             self.nocobase_http,
         ):
+            if resource is None:
+                continue
             try:
                 resource.close()
             except Exception as error:
@@ -314,12 +360,14 @@ def build_resources(
 
     clock = clock or (lambda: datetime.now(SHANGHAI))
     supplied_alert_sink = alert_sink
+    recovery_stop_event = Event()
     timeout = httpx.Timeout(connect=2.0, read=15.0, write=15.0, pool=2.0)
     limits = httpx.Limits(max_connections=12, max_keepalive_connections=6)
     source_http = None
     nocobase_http = None
     jobs = None
     custom_forecasts = None
+    compute = None
     try:
         source_http = httpx.Client(
             timeout=timeout, limits=limits, follow_redirects=False
@@ -333,6 +381,7 @@ def build_resources(
             settings.raw_source_api_token.get_secret_value(),
             source_http,
             allowed_station_ids=settings.station_ids,
+            stop_event=recovery_stop_event,
         )
         if settings.raw_history_cache_dir is not None:
             observation_source = CachedRawEnergySource(
@@ -376,8 +425,10 @@ def build_resources(
             for station_id in settings.station_ids
         }
         locked_version = verify_statsforecast_runtime()
+        compute = ForecastComputeProcess(stop_event=recovery_stop_event)
         forecast_service = ForecastService(
-            observation_source, sink, caches, forecast_one_safe, clock, schedule_provider=schedule_provider
+            observation_source, sink, caches, forecast_one_safe, clock,
+            schedule_provider=schedule_provider, compute=compute,
         )
         acceptance_service = AcceptanceService(
             run_service=run_service,
@@ -395,6 +446,7 @@ def build_resources(
             max_workers=1,
             max_pending=16,
             schedule_provider=schedule_provider,
+            compute=compute,
         )
         custom_evaluations = CustomForecastEvaluationService(
             custom_repository,
@@ -425,7 +477,7 @@ def build_resources(
             max_pending=16,
             max_retained=256,
         )
-        return WorkerResources(
+        resources = WorkerResources(
             settings=settings,
             source_http=source_http,
             nocobase_http=nocobase_http,
@@ -440,10 +492,13 @@ def build_resources(
             alert_sink=effective_alert_sink,
             statsforecast_version=locked_version,
             rolling_soc=rolling_soc,
+            compute=compute,
             alert_client=alert_client,
         )
+        resources.recovery_stop_event = recovery_stop_event
+        return resources
     except Exception:
-        for resource in (jobs, custom_forecasts, source_http, nocobase_http):
+        for resource in (compute, jobs, custom_forecasts, source_http, nocobase_http):
             if resource is None:
                 continue
             try:

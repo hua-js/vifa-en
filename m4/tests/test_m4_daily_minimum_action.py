@@ -87,7 +87,9 @@ class DailyMinimumActionTests(unittest.TestCase):
         from m4.tests.test_m4_late_peak_reserve import current_reserve_request
         from m4.settings.daily_policy import matches_current_daily_policy
         from m4.optimizer.contracts import GRID_CHARGING_POLICY
+        from m4.settings.daily_policy import daily_soc_preference_versions
         raw = current_reserve_request().model_dump(mode='json')
+        raw['source_versions'].update(daily_soc_preference_versions('station-2'))
         raw['pv_midday_economic'] = True
         raw['source_versions'].update(pv_export_policy='pv-export-flat-tariff-v1',
             grid_charging_policy=GRID_CHARGING_POLICY, pv_export_price=format(0.6, '.17g'))

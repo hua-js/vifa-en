@@ -1,6 +1,8 @@
 from datetime import datetime, timedelta
 import json
 import unittest
+from threading import Event
+from unittest.mock import patch
 
 import httpx
 
@@ -36,6 +38,89 @@ def envelope(rows: list[dict[str, object]]) -> dict[str, object]:
 
 
 class RawEnergySourceClientTests(unittest.TestCase):
+    def test_retry_after_is_bounded_and_shutdown_interrupts_page_retry(self):
+        seen = []
+
+        def handler(request):
+            seen.append(request)
+            if len(seen) == 1:
+                return httpx.Response(503, headers={"Retry-After": "3600"})
+            return httpx.Response(200, json=envelope([]))
+
+        client = self.make_client(handler)
+        client._stop_event = Event()
+        with patch.object(client._stop_event, "wait", return_value=True) as wait, patch(
+            "m3.worker.clients.http.time.sleep"
+        ), self.assertRaises(M3Error) as raised:
+            client.list_observations(STATION_1, START, END)
+        self.assertEqual(raised.exception.code, "http_request_cancelled")
+        self.assertEqual(len(seen), 1)
+        self.assertLessEqual(wait.call_args.args[0], 5)
+
+    def test_transient_page_failures_retry_the_same_page_before_aggregation(self):
+        seen = []
+
+        def handler(request):
+            seen.append(str(request.url))
+            if len(seen) == 1:
+                raise httpx.ReadTimeout("temporary upstream timeout", request=request)
+            if len(seen) == 2:
+                return httpx.Response(503)
+            return httpx.Response(200, json=envelope(minute_rows(
+                es_sn=STATION_1, load_power=40, solar_power=0, emus_soc=50,
+            )))
+
+        with patch("m3.worker.clients.http.time.sleep"):
+            points = self.make_client(handler).list_observations(STATION_1, START, END)
+        self.assertEqual(len(seen), 3)
+        self.assertEqual(len(set(seen)), 1)
+        self.assertEqual([point.y for point in points], [40, 50])
+
+    def test_page_authorization_failure_is_not_retried(self):
+        seen = []
+
+        def handler(request):
+            seen.append(request)
+            return httpx.Response(401)
+
+        with self.assertRaises(M3Error) as raised:
+            self.make_client(handler).list_observations(STATION_1, START, END)
+        self.assertEqual(raised.exception.code, "source_unauthorized")
+        self.assertEqual(len(seen), 1)
+
+    def test_truncated_page_body_is_retried_without_partial_points(self):
+        seen = []
+
+        class BrokenBody(httpx.SyncByteStream):
+            def __iter__(self):
+                yield b'{"data":['
+                raise httpx.ReadError("upstream stream interrupted")
+
+        def handler(request):
+            seen.append(request)
+            if len(seen) == 1:
+                return httpx.Response(200, stream=BrokenBody())
+            return httpx.Response(200, json=envelope(minute_rows(
+                es_sn=STATION_1, load_power=40, solar_power=0, emus_soc=50,
+            )))
+
+        with patch("m3.worker.clients.http.time.sleep"):
+            points = self.make_client(handler).list_observations(STATION_1, START, END)
+        self.assertEqual(len(seen), 2)
+        self.assertEqual([point.y for point in points], [40, 50])
+
+    def test_page_server_failure_stops_after_three_attempts(self):
+        seen = []
+
+        def handler(request):
+            seen.append(request)
+            return httpx.Response(503)
+
+        with patch("m3.worker.clients.http.time.sleep"), self.assertRaises(M3Error) as raised:
+            self.make_client(handler).list_observations(STATION_1, START, END)
+        self.assertEqual(len(seen), 3)
+        self.assertEqual(raised.exception.details["status_code"], 503)
+
     def test_custom_power_keeps_signed_mean_and_missing_coverage(self):
         rows = minute_rows(es_sn=STATION_1, load_power=20, solar_power=0, emus_soc=50)
         for row in rows:

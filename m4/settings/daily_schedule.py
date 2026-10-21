@@ -130,6 +130,7 @@ class DailyScheduleService:
             state['expired_rows_checked'] = True
         else:
             state['active_plan'] = dict(kind=payload['kind'], run_id=payload['run_id'],
+                source=payload.get('source'),
                 daily_run_id=payload.get('daily_run_id'), effective_at=payload['effective_at'],
                 end_at=payload['end_at'], plan=deepcopy(payload['plan']),
                 dispatch_plan=deepcopy(result['confirmed_plan']),

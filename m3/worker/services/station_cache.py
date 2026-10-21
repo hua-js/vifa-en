@@ -162,3 +162,7 @@ class StationCache:
     def state_snapshot(self) -> StationState:
         with self._lock:
             return replace(self.state, champions=dict(self.state.champions))
+
+    def readiness_state(self) -> str:
+        """Read one atomically assigned state field without waiting for forecasting."""
+        return self.state.state

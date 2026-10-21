@@ -4,10 +4,12 @@ from datetime import datetime, timedelta
 import json
 import math
 import re
+from threading import Event
 from zoneinfo import ZoneInfo
 
 import httpx
 
+from m3.worker.clients.http import RetryPolicy, send_with_retry
 from m3.worker.contracts import ObservationPoint
 from m3.worker.custom_forecast_contracts import (
     ALLOWED_INTERVAL_SECONDS,
@@ -31,11 +33,13 @@ class RawEnergySourceClient:
     def __init__(
         self, api_url: str, token: str, http: httpx.Client, *,
         allowed_station_ids: tuple[str, str],
+        stop_event: Event | None = None,
     ) -> None:
         """Bind one fixed target and the exact two configured station identities."""
         self._api_url = self._validate_url(api_url)
         self._headers = {"Authorization": self._authorization(token)}
         self._http = http
+        self._stop_event = stop_event
         if type(allowed_station_ids) is not tuple or len(allowed_station_ids) != 2:
             raise ValueError("raw source requires exactly two configured station IDs")
         if any(type(value) is not str or not value or value != value.strip() for value in allowed_station_ids) or len(set(allowed_station_ids)) != 2:
@@ -174,21 +178,22 @@ class RawEnergySourceClient:
 
     def _page(self, filter_value: dict[str, object], page: int) -> tuple[list[dict[str, object]], bool]:
         params = {"filter": json.dumps(filter_value, separators=(",", ":")), "page": str(page), "pageSize": str(PAGE_SIZE), "sort": "timestamp"}
-        try:
-            request = self._http.build_request("GET", self._api_url, params=params, headers=self._headers)
-            response = self._http.send(request, stream=True, follow_redirects=False)
-        except httpx.RequestError as error:
-            raise M3Error("source_http_failed", "Raw source request failed") from error
-        try:
+
+        def consume(response: httpx.Response) -> bytes:
             if response.is_redirect or response.history:
                 raise M3Error("source_contract_invalid", "Raw source redirects are not allowed")
             if response.status_code in {401, 403}:
                 raise M3Error("source_unauthorized", "Raw source authorization failed")
             if response.status_code >= 400:
                 raise M3Error("source_http_failed", "Raw source request failed", {"status_code": response.status_code})
-            body = self._limited_body(response)
-        finally:
-            response.close()
+            return self._limited_body(response)
+
+        request = self._http.build_request("GET", self._api_url, params=params, headers=self._headers)
+        body = send_with_retry(
+            self._http, request, RetryPolicy(max_delay_seconds=5), stream=True,
+            follow_redirects=False, stop_event=self._stop_event,
+            response_consumer=consume,
+        )
         try:
             payload = json.loads(body)
         except (TypeError, ValueError, json.JSONDecodeError) as error:

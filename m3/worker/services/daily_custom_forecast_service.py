@@ -6,7 +6,6 @@ from threading import Lock
 
 from m3.worker.contracts import validate_shanghai_timestamp
 from m3.worker.custom_forecast_contracts import (
-    ALLOWED_INTERVAL_SECONDS,
     CustomForecastConfig,
     CustomForecastRequest,
 )
@@ -17,6 +16,7 @@ from m3.worker.services.custom_forecast_repository import (
     StoredCustomRun,
 )
 from m3.worker.services.custom_forecast_service import CustomForecastService
+from m3.worker.services.custom_forecast_policy import enabled_forecast_intervals
 
 
 DAILY_START = time(hour=0, minute=17)
@@ -91,6 +91,7 @@ class DailyCustomForecastService:
     ) -> None:
         self._repository = repository
         self._forecast_service = forecast_service
+        self._enabled_intervals = enabled_forecast_intervals()
         self._completed_dates: set[tuple[str, datetime]] = set()
         self._station_date_locks: dict[tuple[str, datetime], Lock] = {}
         self._cache_lock = Lock()
@@ -132,7 +133,7 @@ class DailyCustomForecastService:
     ) -> int:
         errors: list[M3Error] = []
         templates: dict[int, StoredCustomRun] = {}
-        for interval_seconds in ALLOWED_INTERVAL_SECONDS:
+        for interval_seconds in self._enabled_intervals:
             try:
                 template = self._repository.latest_completed_template(
                     station_id, interval_seconds=interval_seconds
@@ -206,7 +207,7 @@ class DailyCustomForecastService:
 
         if (
             not errors
-            and set(templates) == set(ALLOWED_INTERVAL_SECONDS)
+            and set(templates) == set(self._enabled_intervals)
             and complete_intervals == set(templates)
         ):
             self._remember_completed(cache_key)

@@ -107,6 +107,35 @@ def compare_daily_plan(request, candidate, *, baseline=None, controls_version=No
     """Keep EMS comparison evidence but never recommend prohibited peak charging."""
     output = _compare_daily_plan(request, candidate, baseline=baseline,
         controls_version=controls_version, terminal_soc_target_pct=terminal_soc_target_pct)
+    from .daily_fallback import enabled as fallback_enabled, build_fallback, POLICY as FALLBACK_POLICY
+    if not fallback_enabled(request):
+        return _check_daily_recommendation(request, output)
+    # Final dispatch rejection is also a rejection: do not claim adoption early.
+    if output['status'] == 'optimized':
+        output = _check_daily_recommendation(request, output)
+    adopted = output['status'] == 'optimized'
+    rejection = output['reason'].split('，沿用')[0].split('；沿用')[0].rstrip('。')+'。'
+    output.update(optimization_status='adopted' if adopted else 'not_adopted',
+        optimization_reason='' if adopted else rejection,
+        fallback_status='not_needed' if adopted else 'unavailable',
+        fallback_reason='', fallback_policy_version=FALLBACK_POLICY)
+    if not adopted and output.get('baseline') is not None:
+        try:
+            fallback = build_fallback(request, baseline)
+        except (ValueError, TypeError, KeyError, AttributeError, OverflowError):
+            reason = '保守 EMS 日计划未通过安全检查，暂无可下发方案。'
+            output.update(status='blocked', recommended_source=None,
+                recommended=None, fallback_status='blocked', fallback_reason=reason,
+                reason=rejection+reason)
+            return output
+        output.update(status='ems', recommended_source='ems_fallback', recommended=fallback,
+            fallback_status='ready', fallback_reason='已生成满足日末电量要求的保守 EMS 日计划。',
+            reason=rejection+'已生成满足日末电量要求的保守 EMS 日计划。')
+    return output
+
+
+def _check_daily_recommendation(request, output):
+    """Legacy checks also gate adoption before the new fallback is considered."""
     recommended = output.get('recommended')
     if (recommended is not None and operating_floor(request)
             and recommended['plan'][-1]['expected_soc_pct'] < request.peak_reserve_policy.terminal_soc_min_pct-POWER_TOLERANCE_KW):

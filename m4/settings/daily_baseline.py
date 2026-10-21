@@ -95,6 +95,9 @@ def prepare_ems_day(configuration, bundle):
         content.update(daily_policy=policy_version,
             peak_reserve_policy=reserve_policy.model_dump(mode='json'),
             profiles=[profile.model_dump(mode='json') for profile in profiles])
+    from .daily_fallback import versions as fallback_versions
+    fallback = fallback_versions(configuration.station_id) if not startup else {}
+    content.update(fallback)
     digest = hashlib.sha256(json.dumps(content, sort_keys=True, allow_nan=False).encode()).hexdigest()
     request = OptimizationRequest(request_id='m4-daily-'+digest, station_id=configuration.station_id,
         plan_start_at=start, input_observed_at=start, max_input_age_seconds=parameters.max_input_age_seconds,
@@ -103,7 +106,7 @@ def prepare_ems_day(configuration, bundle):
         pv_economic_windows=content['pv_economic_windows'],
         peak_reserve_policy=reserve_policy,
         solver_time_limit_seconds=30.0, solver_mip_rel_gap=0.01,
-        source_versions={**({'load_admission_policy': 'complete-forecast-v1'} if score_optional else {}),
+        source_versions={**fallback, **({'load_admission_policy': 'complete-forecast-v1'} if score_optional else {}),
             **terminal_versions, **dispatch_versions, **preference_versions, **(dict(startup_policy=STARTUP_POLICY, startup_window_end=startup['end_at'],
                 startup_tariff_periods=json.dumps(sources['tariff']['period_types'])) if startup else {}),
             **{k: sources[k]['version'] for k in ('load', 'pv', 'tariff')},

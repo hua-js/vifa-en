@@ -1544,6 +1544,9 @@ svg {
       position: absolute;
       visibility: hidden;
       box-shadow: var(--shadow-card);
+      max-width: calc(100% - 16px);
+      white-space: normal;
+      padding: .6rem .75rem;
     }
 
     #three-energy-flow .trend-tooltip.is-visible {
@@ -1554,6 +1557,43 @@ svg {
     #three-energy-flow .trend-readout {
       min-height: 1.4rem;
       font-variant-numeric: tabular-nums;
+    }
+
+    #three-energy-flow .curve-filters,
+    #three-energy-flow .cursor-heading {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: .5rem;
+    }
+    #three-energy-flow .curve-filters .legend-swatch { display: inline-block; vertical-align: middle; margin-right: .35rem; }
+    #three-energy-flow .cursor-heading { justify-content: space-between; margin-bottom: .6rem; }
+    #three-energy-flow .cursor-values {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: .5rem;
+    }
+    #three-energy-flow .cursor-value {
+      min-width: 0;
+      display: grid;
+      gap: .3rem;
+      padding: .7rem;
+      border: 1px solid var(--border);
+      border-top: 3px solid var(--lane-color);
+      border-radius: .5rem;
+      background: var(--card);
+    }
+    #three-energy-flow .cursor-value strong { font-size: 1rem; font-weight: 600; }
+    #three-energy-flow [data-curve-muted="true"] { opacity: .55; }
+    #three-energy-flow .trend-chart [role="slider"] { cursor: crosshair; }
+    #three-energy-flow .trend-chart [role="slider"]:focus-visible {
+      outline: 2px solid var(--primary);
+      outline-offset: 2px;
+    }
+    #three-energy-flow .curve-empty { pointer-events: none; }
+    @media (max-width: 520px) {
+      #three-energy-flow .cursor-values { grid-template-columns: 1fr; }
+      #three-energy-flow .cursor-value { grid-template-columns: 1fr auto; align-items: center; }
     }
 
     #three-energy-flow .event-type {
@@ -1973,40 +2013,9 @@ svg {
         <span class="zone-index">02</span>
         <div>
           <h2 id="efficiency-zone-title">效率图表</h2>
-          <div class="zone-description">当前链路效率与按日查询的24小时变化趋势</div>
+          <div class="zone-description">所选日期的累计效率与24小时变化趋势</div>
         </div>
       </div>
-    </div>
-
-    <div class="section-heading">
-      <h3 id="current-efficiency-title">当前链路效率</h3>
-    </div>
-
-    <div class="viz-grid" aria-label="当前效率概览">
-      <div class="card viz-stat" id="summary-card-pv-storage">
-        <div class="text-muted">光储链路</div>
-        <div class="viz-stat-value" id="summary-pv-storage">无运行数据</div>
-      </div>
-      <div class="card viz-stat" id="summary-card-storage-load">
-        <div class="text-muted">储用链路</div>
-        <div class="viz-stat-value" id="summary-storage-load">无运行数据</div>
-      </div>
-      <div class="card viz-stat" id="summary-card-pv-load">
-        <div class="text-muted">光用链路</div>
-        <div class="viz-stat-value" id="summary-pv-load">无运行数据</div>
-      </div>
-    </div>
-
-    <div class="section-heading">
-      <div class="trend-heading-main">
-        <h3 id="trend-title">今日24小时效率曲线</h3>
-        <div class="trend-legend text-small" aria-label="效率曲线图例">
-          <span class="legend-item" style="--lane-color: var(--flow-1)"><span class="legend-swatch"></span>光储链路</span>
-          <span class="legend-item" style="--lane-color: var(--flow-2)"><span class="legend-swatch"></span>储用链路</span>
-          <span class="legend-item" style="--lane-color: var(--flow-3)"><span class="legend-swatch"></span>光用链路</span>
-        </div>
-      </div>
-      <span class="text-muted text-small">无有效运行数据时曲线断开，不按0%展示</span>
     </div>
 
     <form class="history-toolbar" id="curve-query-form" aria-label="效率曲线日期查询">
@@ -2016,16 +2025,60 @@ svg {
       <button class="history-button" type="submit">查询</button>
       <button class="history-button" type="button" id="curve-today">回到今日</button>
     </form>
+    <div class="section-heading">
+      <h3 id="current-efficiency-title">今日累计效率</h3>
+      <span class="text-muted text-small" id="curve-range-label">今日 00:00–24:00 · 北京时间</span>
+    </div>
+
+    <div class="viz-grid" aria-label="所选日期累计效率">
+      <div class="card viz-stat" id="summary-card-pv-storage">
+        <div class="text-muted">光储链路</div>
+        <div class="viz-stat-value" id="summary-pv-storage">—</div>
+      </div>
+      <div class="card viz-stat" id="summary-card-storage-load">
+        <div class="text-muted">储用链路</div>
+        <div class="viz-stat-value" id="summary-storage-load">—</div>
+      </div>
+      <div class="card viz-stat" id="summary-card-pv-load">
+        <div class="text-muted">光用链路</div>
+        <div class="viz-stat-value" id="summary-pv-load">—</div>
+      </div>
+    </div>
+
+    <div class="section-heading">
+      <div class="trend-heading-main">
+        <h3 id="trend-title">今日24小时效率曲线</h3>
+      </div>
+      <span class="text-muted text-small">无有效运行数据时曲线断开，不按0%展示</span>
+    </div>
+
+    <div class="curve-filters" role="group" aria-label="突出显示链路">
+      <button class="history-button" type="button" data-curve-series="all" aria-pressed="true">全部链路</button>
+      <button class="history-button" type="button" data-curve-series="pvStorage" aria-pressed="false" style="--lane-color: var(--flow-1)"><span class="legend-swatch" aria-hidden="true"></span>光储</button>
+      <button class="history-button" type="button" data-curve-series="storageLoad" aria-pressed="false" style="--lane-color: var(--flow-2)"><span class="legend-swatch" aria-hidden="true"></span>储用</button>
+      <button class="history-button" type="button" data-curve-series="pvLoad" aria-pressed="false" style="--lane-color: var(--flow-3)"><span class="legend-swatch" aria-hidden="true"></span>光用</button>
+    </div>
     <div class="history-status" id="curve-query-status" role="status" aria-live="polite">按北京时间自然日查询，每分钟一个点；无运行数据时保留缺口。</div>
 
     <div class="chart-wrap" id="efficiency-chart-wrap">
-      <svg class="trend-chart" id="efficiency-trend-chart" role="img" aria-labelledby="efficiency-chart-title efficiency-chart-desc">
+      <svg class="trend-chart" id="efficiency-trend-chart" role="group" aria-labelledby="efficiency-chart-title efficiency-chart-desc">
         <title id="efficiency-chart-title">三条链路今日效率曲线</title>
         <desc id="efficiency-chart-desc">横轴为0点至24点，纵轴为效率百分比，并标记逆变器低负载和电池温升事件。</desc>
       </svg>
       <div class="tooltip trend-tooltip" id="efficiency-tooltip" aria-hidden="true"></div>
     </div>
-    <div class="trend-readout text-small" id="efficiency-readout" aria-live="polite">光储无运行数据　储用无运行数据　光用无运行数据</div>
+    <div class="trend-readout text-small" id="efficiency-readout">
+      <div class="cursor-heading">
+        <span id="efficiency-cursor-time" role="status" aria-live="polite">移动或点击图表查看分钟读数</span>
+        <button class="history-button" type="button" id="curve-clear-cursor" hidden>取消固定</button>
+      </div>
+      <div class="cursor-values">
+        <div class="cursor-value" data-readout-series="pvStorage" style="--lane-color: var(--flow-1)"><span class="text-muted">光储链路</span><strong id="cursor-pvStorage">—</strong></div>
+        <div class="cursor-value" data-readout-series="storageLoad" style="--lane-color: var(--flow-2)"><span class="text-muted">储用链路</span><strong id="cursor-storageLoad">—</strong></div>
+        <div class="cursor-value" data-readout-series="pvLoad" style="--lane-color: var(--flow-3)"><span class="text-muted">光用链路</span><strong id="cursor-pvLoad">—</strong></div>
+      </div>
+    </div>
+    <div class="text-muted text-small">移动查看分钟读数，点击固定；键盘方向键移动，Esc取消固定。</div>
   </section>
 
   <section class="dashboard-zone bottleneck-section" aria-labelledby="bottleneck-title">
@@ -2097,6 +2150,12 @@ svg {
     let events = [];
     let range = null;
     let geometry = null;
+    let activeSeries = "all";
+    let cursorTime = null;
+    let cursorPinned = false;
+    let cursorLayer = null;
+    let cursorOverlay = null;
+    let curveMessage = "正在加载效率曲线…";
 
     const series = [
       { key: "pvStorage", label: "光储", color: "var(--flow-1)" },
@@ -2117,6 +2176,8 @@ svg {
     let fetchInFlight = false;
     let activeController = null;
     const dashboardSnapshots = new Map();
+    const curveSnapshots = new Map();
+    const eventSnapshots = new Map();
 
     const curveDate = document.getElementById("curve-date");
     const curveStatus = document.getElementById("curve-query-status");
@@ -2125,8 +2186,12 @@ svg {
     const eventEndDate = document.getElementById("event-end-date");
     let selectedCurveDate = ""; // Empty means the live dashboard follows today.
     let curveController = null;
+    let dayEventController = null;
+    let dayReadGeneration = 0;
+    let detailDate = "";
     let eventController = null;
     let dayEvents = [];
+    let dayEventQueryState = { state: "loading", text: "正在加载瓶颈事件…" };
     let eventHistoryMode = false;
     let eventHistoryRows = [];
     let eventAppliedRange = null;
@@ -2152,26 +2217,40 @@ svg {
       node.textContent = text;
     }
 
-    function clearCurve(message) {
+    function clearCurve(message, keepEvents = false) {
       setQueryStatus(curveStatus, "loading", message);
-      rows = []; events = []; range = null; dayEvents = [];
+      rows = []; events = []; range = null;
+      if (!keepEvents) dayEvents = [];
+      if (!keepEvents) setDayEventStatus("loading", message);
+      curveMessage = message;
+      cursorTime = null;
+      cursorPinned = false;
       hideTooltip();
       svg.setAttribute("data-latest-time", "");
       root.setAttribute("data-latest-time", "");
-      readout.textContent = message;
-      if (!eventHistoryMode) { setEventMessage(message, false); eventStatus.textContent = ""; }
+      renderDailyEfficiency();
+      updateCurveScope();
+      if (!eventHistoryMode && !keepEvents) { setEventMessage(message, false); eventStatus.textContent = ""; }
       render();
     }
 
-    async function readHistory(params, controller) {
+    async function readHistory(params, controller, stationId = activeStationId) {
       const endpoint = new URL(apiUrl, window.location.href);
-      Object.entries({ station_id: activeStationId, ...params }).forEach(([key, value]) => endpoint.searchParams.set(key, value));
+      Object.entries({ station_id: stationId, ...params }).forEach(([key, value]) => endpoint.searchParams.set(key, value));
       const timeout = window.setTimeout(() => controller.abort(), 15000);
       try {
         const response = await fetch(endpoint, { headers: { Accept: "application/json" }, signal: controller.signal });
-        if (!response.ok) throw new Error("history_request_failed");
+        if (!response.ok) {
+          const error = new Error("history_request_failed");
+          error.status = response.status;
+          throw error;
+        }
         const payload = await response.json();
-        if (payload.status !== "ok" || payload.data?.operation !== params.operation || payload.data?.station_id !== activeStationId) throw new Error("invalid_history_response");
+        if (payload.status !== "ok" || payload.data?.operation !== params.operation || payload.data?.station_id !== stationId) throw new Error("invalid_history_response");
+        const startDate = params.date || params.start_date;
+        const endDate = params.date || params.end_date;
+        if (startDate && (payload.data.range?.start_time?.slice(0, 10) !== startDate ||
+          payload.data.range?.end_time?.slice(0, 10) !== shiftDate(endDate, 1))) throw new Error("invalid_history_range");
         return payload.data;
       } finally { window.clearTimeout(timeout); }
     }
@@ -2183,25 +2262,60 @@ svg {
         setQueryStatus(curveStatus, "error", "请选择有效日期，不能晚于今天。");
         return;
       }
-      if (curveController) curveController.abort();
-      curveController = null;
       selectedCurveDate = date === todayDate() ? "" : date;
       setText("trend-title", selectedCurveDate ? date + " 效率曲线" : "今日24小时效率曲线");
       clearCurve("正在查询效率曲线…");
       setQueryStatus(curveStatus, "loading", "正在查询 " + date + " 的分钟效率记录…");
       if (!selectedCurveDate) { fetchData(true); return; }
-      const controller = new AbortController();
-      curveController = controller;
+      await loadDay(date);
+    }
+
+    function cancelDayReads() {
+      dayReadGeneration += 1;
+      if (curveController) curveController.abort();
+      if (dayEventController) dayEventController.abort();
+      curveController = dayEventController = null;
+    }
+
+    function setDayEventStatus(state, text) {
+      dayEventQueryState = { state, text };
+      if (!eventHistoryMode) setQueryStatus(eventStatus, state, text);
+    }
+
+    async function loadDay(date) {
+      cancelDayReads();
+      detailDate = date;
+      const generation = dayReadGeneration;
       const stationId = activeStationId;
-      try {
-        const data = await readHistory({ operation: "history", date }, controller);
-        if (curveController !== controller || activeStationId !== stationId) return;
+      const current = () => generation === dayReadGeneration && stationId === activeStationId;
+      const retainedCurve = range?.start_time?.slice(0, 10) === date;
+      setQueryStatus(curveStatus, "loading", date + (retainedCurve ? " · 正在更新曲线，显示上次记录…" : " · 正在加载曲线…"));
+      setDayEventStatus("loading", date + " · 正在更新瓶颈事件…");
+      const curveRead = new AbortController();
+      const eventRead = new AbortController();
+      curveController = curveRead;
+      dayEventController = eventRead;
+      const curveTask = readHistory({ operation: "curve", date }, curveRead, stationId).then((data) => {
+        if (!current()) return;
         renderCurve(data);
-      } catch (error) {
-        if (curveController !== controller || activeStationId !== stationId) return;
-        clearCurve("历史效率曲线加载失败");
-        setQueryStatus(curveStatus, "error", error.name === "AbortError" ? "历史查询超时，请重试查询。" : "历史曲线查询失败，请重试查询。");
-      } finally { if (curveController === controller) curveController = null; }
+        if (date === todayDate()) curveSnapshots.set(stationId, { date, data });
+      }).catch((error) => {
+        if (!current()) return;
+        if (!retainedCurve) clearCurve("效率曲线加载失败", true);
+        setQueryStatus(curveStatus, "error", "曲线" + (error.name === "AbortError" ? "查询超时" : "加载失败") +
+          (retainedCurve ? "，显示上次记录。" : "，请重试查询。"));
+      }).finally(() => { if (curveController === curveRead) curveController = null; });
+      const eventTask = readHistory({ operation: "events", start_date: date, end_date: date }, eventRead, stationId).then((data) => {
+        if (!current()) return;
+        renderDayEvents(data, date);
+        if (date === todayDate()) eventSnapshots.set(stationId, { date, data });
+      }).catch((error) => {
+        if (!current()) return;
+        if (!eventHistoryMode && !dayEvents.length) setEventMessage("瓶颈事件加载失败，请重试查询。", false);
+        setDayEventStatus("error", "瓶颈事件" + (error.name === "AbortError" ? "查询超时" : "加载失败") +
+          (dayEvents.length ? "，显示上次记录。" : "，请重试查询。"));
+      }).finally(() => { if (dayEventController === eventRead) dayEventController = null; });
+      await Promise.allSettled([curveTask, eventTask]);
     }
 
     function renderEventHistory() {
@@ -2260,7 +2374,11 @@ svg {
       document.getElementById("event-pagination").hidden = true;
       setText("bottleneck-description", historical ? "查询已保存的瓶颈记录，可查看事件对应日期的效率曲线" : "异常区间与上方效率曲线使用同一时间轴");
       if (historical) queryEventHistory();
-      else { renderEvents(dayEvents); eventStatus.textContent = range ? range.start_time.slice(0, 10) + " · 共 " + dayEvents.length + " 条事件" : ""; }
+      else {
+        if (dayEvents.length || dayEventQueryState.state === "ready") renderEvents(dayEvents);
+        else setEventMessage(dayEventQueryState.text, false);
+        setQueryStatus(eventStatus, dayEventQueryState.state, dayEventQueryState.text);
+      }
     }
 
     function syncStationUi() {
@@ -2289,6 +2407,7 @@ svg {
     function selectStation(stationId) {
       if (!supportedStationIds.has(stationId) || stationId === activeStationId) return;
       activeStationId = stationId;
+      cancelDayReads();
       syncStationUi();
       clearCurve("正在加载所选电站数据…");
       if (selectedCurveDate) queryCurve(selectedCurveDate);
@@ -2349,11 +2468,8 @@ svg {
     }
 
     function nearestRow(targetTime) {
-      if (!rows.length) return null;
-      return rows.reduce((best, row) =>
-        Math.abs(Date.parse(row.data_time) - targetTime) <
-        Math.abs(Date.parse(best.data_time) - targetTime) ? row : best
-      );
+      const minute = Math.floor(targetTime / 60000);
+      return rows.find((row) => Math.floor(Date.parse(row.data_time) / 60000) === minute) || null;
     }
 
     function setLaneActivity(id, active) {
@@ -2442,10 +2558,21 @@ svg {
       setLaneActivity("lane-storage-load", result.storage_load_efficiency !== null);
     }
 
-    function renderCurrentEfficiency(result) {
-      setText("summary-pv-storage", formatChainEfficiency(result, "pv_storage_dc_efficiency"));
-      setText("summary-storage-load", formatChainEfficiency(result, "storage_load_efficiency"));
-      setText("summary-pv-load", formatChainEfficiency(result, "pv_load_efficiency"));
+    function renderDailyEfficiency(summary) {
+      const value = (key) => !summary ? "—" : hasNumericData(summary[key]) ? formatValue(summary[key]) : "暂无有效数据";
+      setText("summary-pv-storage", value("pv_storage_efficiency"));
+      setText("summary-storage-load", value("storage_load_efficiency"));
+      setText("summary-pv-load", value("pv_load_efficiency"));
+    }
+
+    function updateCurveScope() {
+      const date = range?.start_time?.slice(0, 10) || selectedCurveDate || curveDate.value || todayDate();
+      const isToday = date === todayDate();
+      setText("current-efficiency-title", isToday ? "今日累计效率" : date + " 累计效率");
+      setText("trend-title", isToday ? "今日24小时效率曲线" : date + " 24小时效率曲线");
+      const latest = range?.latest_time;
+      setText("curve-range-label", date + " 00:00–24:00 · 北京时间" +
+        (isToday && range ? (latest ? " · 累计截至 " + clockFromTimestamp(latest) : " · 暂无已记录数据") : ""));
     }
 
     function eventDeviceLabel(item) {
@@ -2531,8 +2658,7 @@ svg {
 
     function renderDashboard(data) {
       renderRealtime(data.realtime || {});
-      renderCurrentEfficiency(data.realtime?.result || {});
-      if (!selectedCurveDate) renderCurve(data);
+      if (!selectedCurveDate && Array.isArray(data.trend)) renderCurve(data);
     }
 
     function renderCurve(data) {
@@ -2542,23 +2668,37 @@ svg {
       setText("trend-title", selectedCurveDate ? selectedCurveDate + " 效率曲线" : "今日24小时效率曲线");
       rows = Array.isArray(data.trend) ? data.trend : [];
       range = data.range || null;
-      const currentTime = String(data.realtime?.inputs?.data_time || "").match(/T(\d{2}:\d{2})/)?.[1] || "--:--";
-      const currentResult = data.realtime?.result || {};
-      readout.textContent = currentTime + "　光储" + formatChainEfficiency(currentResult, "pv_storage_dc_efficiency") + "　储用" + formatChainEfficiency(currentResult, "storage_load_efficiency") + "　光用" + formatChainEfficiency(currentResult, "pv_load_efficiency");
-      const rawEvents = Array.isArray(data.events) ? data.events : [];
-      dayEvents = rawEvents;
-      if (!eventHistoryMode) {
-        renderEvents(rawEvents);
-        setQueryStatus(eventStatus, "ready", curveDate.value + " · 共 " + rawEvents.length + " 条事件");
+      if (cursorTime !== null && (!range || cursorTime < Date.parse(range.start_time) || cursorTime >= Date.parse(range.end_time))) {
+        cursorTime = null;
+        cursorPinned = false;
       }
+      curveMessage = "";
+      updateCurveScope();
+      if (Array.isArray(data.events)) renderDayEvents(data, curveDate.value);
       const summary = data.summary || data.summary_today || {};
-      if (selectedCurveDate) {
-        readout.textContent = "当日累计效率　光储" + formatValue(summary.pv_storage_efficiency) + "　储用" + formatValue(summary.storage_load_efficiency) + "　光用" + formatValue(summary.pv_load_efficiency);
-      }
+      renderDailyEfficiency(summary);
       const latestEnd = range?.latest_time;
       setQueryStatus(curveStatus, "ready", curveDate.value + " · " + (rows.length ? "已记录 " + rows.length + " 个分钟点 · 最近记录 " + clockFromTimestamp(latestEnd) : "暂无已保存的分钟效率记录") + " · 北京时间，缺失时段保留断点");
-      const eventEnd = selectedCurveDate ? range?.cutoff_time || range?.end_time : latestEnd;
-      events = rawEvents.map((item) => ({
+      updateEventBands();
+      svg.setAttribute("data-latest-time", latestEnd || "");
+      root.setAttribute("data-latest-time", latestEnd || "");
+      render();
+    }
+
+    function renderDayEvents(data, date) {
+      dayEvents = Array.isArray(data.events) ? data.events : [];
+      if (!eventHistoryMode) {
+        renderEvents(dayEvents);
+      }
+      setDayEventStatus("ready", date + " · 共 " + dayEvents.length + " 条事件");
+      updateEventBands();
+      render();
+    }
+
+    function updateEventBands() {
+      if (!range) { events = []; return; }
+      const eventEnd = selectedCurveDate ? range.cutoff_time || range.end_time : range.latest_time;
+      events = dayEvents.map((item) => ({
         startRatio: timeRatio(item.start) ?? 0,
         endRatio: timeRatio(item.end || eventEnd) ?? 0,
         eventType: item.event_type || "",
@@ -2569,17 +2709,20 @@ svg {
         shortLabel: item.type || "事件",
         color: item.status === "持续中" ? "var(--red)" : "var(--viz-series-4)"
       }));
-      svg.setAttribute("data-latest-time", latestEnd || "");
-      root.setAttribute("data-latest-time", latestEnd || "");
-      render();
     }
 
-    function restoreDashboardSnapshot(stationId) {
+    function restoreDashboardSnapshot(stationId, restoreDetails = true) {
       const snapshot = dashboardSnapshots.get(stationId);
       if (!snapshot || snapshot.date !== todayDate() || snapshot.data.realtime?.inputs?.bus_id !== stationId
         || typeof snapshot.data.range?.start_time !== "string" || snapshot.data.range.start_time.slice(0, 10) !== todayDate()) return false;
       try {
         renderDashboard(snapshot.data);
+        if (!selectedCurveDate && restoreDetails) {
+          const curve = curveSnapshots.get(stationId);
+          const event = eventSnapshots.get(stationId);
+          if (curve?.date === todayDate()) renderCurve(curve.data);
+          if (event?.date === todayDate()) renderDayEvents(event.data, event.date);
+        }
       } catch (_error) {
         dashboardSnapshots.delete(stationId);
         return false;
@@ -2604,10 +2747,15 @@ svg {
         statusNode.dataset.state = "loading";
         statusNode.textContent = "正在加载后端数据";
       }
+      if (!selectedCurveDate) {
+        if (range && range.start_time.slice(0, 10) !== todayDate()) clearCurve("正在加载今日曲线…");
+        void loadDay(todayDate());
+      }
       const timeout = window.setTimeout(() => controller.abort(), 15000);
       try {
         const endpoint = new URL(apiUrl, window.location.href);
         endpoint.searchParams.set("station_id", stationId);
+        endpoint.searchParams.set("operation", "realtime");
         const response = await fetch(endpoint, {
           headers: { Accept: "application/json" },
           signal: controller.signal
@@ -2618,7 +2766,7 @@ svg {
           throw error;
         }
         const payload = await response.json();
-        if (payload.status !== "ok" || payload.data?.operation !== "dashboard" || payload.data?.realtime?.inputs?.bus_id !== stationId) {
+        if (payload.status !== "ok" || payload.data?.operation !== "realtime" || payload.data?.station_id !== stationId || payload.data?.realtime?.inputs?.bus_id !== stationId) {
           throw new Error(payload.error?.message || "后端返回格式不正确");
         }
         if (controller !== activeController || stationId !== activeStationId) return;
@@ -2628,20 +2776,29 @@ svg {
         statusNode.dataset.state = "ready";
         const mode = payload.data.realtime?.result?.calculation_mode === "estimated" ? "估算" : "实测";
         statusNode.textContent = "后端实时数据 · " + mode + " · " + formatTime(payload.data.realtime?.inputs?.data_time);
+        const sourceDate = payload.data.range?.start_time?.slice(0, 10);
+        if (!selectedCurveDate && sourceDate && sourceDate !== detailDate) {
+          cancelDayReads();
+          clearCurve("正在加载对应日期的曲线…");
+          void loadDay(sourceDate);
+        }
       } catch (error) {
         if (controller !== activeController) return;
         const unauthorized = error.status === 401 || error.status === 403;
         if (unauthorized) {
           dashboardSnapshots.clear();
+          curveSnapshots.clear();
+          eventSnapshots.clear();
+          cancelDayReads();
           renderRealtime({});
-          renderCurrentEfficiency({});
+          renderDailyEfficiency();
         }
-        const retained = !unauthorized && restoreDashboardSnapshot(stationId);
+        const retained = !unauthorized && restoreDashboardSnapshot(stationId, false);
         root.dataset.dashboardState = "error";
         statusNode.dataset.state = "error";
         const message = error.name === "AbortError" ? "后端请求超时" : "后端数据加载失败";
         statusNode.textContent = message + (retained ? " · 显示上次数据 · " + formatTime(dashboardSnapshots.get(stationId).data.realtime?.inputs?.data_time) : "");
-        if (unauthorized || (!selectedCurveDate && !retained)) {
+        if (unauthorized) {
           clearCurve("效率曲线加载失败");
           setQueryStatus(curveStatus, "error", "今日曲线加载失败，请重试查询。");
         }
@@ -2674,11 +2831,11 @@ svg {
         const value = row[key];
         const currentTime = Date.parse(row.data_time);
         const ratio = timeRatio(row.data_time);
-        if (value === null || !Number.isFinite(Number(value)) || ratio === null) {
+        if (!hasNumericData(value) || ratio === null) {
           previousTime = null;
           return;
         }
-        const continues = previousTime !== null && currentTime - previousTime <= 120000;
+        const continues = previousTime !== null && currentTime - previousTime <= 60000;
         path += (continues ? " L " : " M ") + x(ratio) + " " + y(Number(value));
         previousTime = currentTime;
       });
@@ -2712,6 +2869,28 @@ svg {
       }));
       defs.appendChild(eventClip);
       svg.append(title, desc, defs);
+
+      if (range && range.start_time.slice(0, 10) === todayDate()) {
+        const nowRatio = timeRatio(new Date().toISOString());
+        if (nowRatio !== null && nowRatio < 1) {
+          const futureX = x(nowRatio);
+          svg.appendChild(make("rect", {
+            x: futureX, y: margin.top,
+            width: Math.max(0, x(1) - futureX), height: plotHeight,
+            fill: "var(--muted-foreground)", "fill-opacity": .08,
+            "aria-hidden": "true", "data-future-period": "true"
+          }));
+          svg.appendChild(make("line", {
+            x1: futureX, x2: futureX, y1: margin.top, y2: margin.top + plotHeight,
+            stroke: "var(--muted-foreground)", "stroke-dasharray": "4 4", "aria-hidden": "true"
+          }));
+          if (x(1) - futureX > 82) svg.appendChild(make("text", {
+            x: futureX + (x(1) - futureX) / 2,
+            y: margin.top + plotHeight / 2,
+            "text-anchor": "middle", class: "curve-empty"
+          }, "尚未到来"));
+        }
+      }
 
       events.forEach((event) => {
         const startRatio = Math.max(0, Math.min(1, event.startRatio));
@@ -2802,7 +2981,32 @@ svg {
           "stroke-linejoin": "round",
           "vector-effect": "non-scaling-stroke"
         }));
+        // A minute with no valid neighbour still needs a visible point.
+        rows.forEach((row, index) => {
+          if (!hasNumericData(row[item.key])) return;
+          const connected = (neighbour) => neighbour && hasNumericData(neighbour[item.key]) &&
+            Math.abs(Date.parse(neighbour.data_time) - Date.parse(row.data_time)) <= 60000;
+          const ratio = timeRatio(row.data_time);
+          if (ratio === null || connected(rows[index - 1]) || connected(rows[index + 1])) return;
+          svg.appendChild(make("circle", {
+            "data-series-point": item.key, cx: x(ratio), cy: y(Number(row[item.key])),
+            r: 2.5, fill: item.color
+          }));
+        });
       });
+
+      const hasVisibleData = rows.some((row) => series.some((item) =>
+        (activeSeries === "all" || activeSeries === item.key) && hasNumericData(row[item.key])));
+      if (!range || !hasVisibleData) {
+        svg.appendChild(make("text", {
+          x: margin.left + plotWidth / 2,
+          y: margin.top + plotHeight / 2 - 20,
+          "text-anchor": "middle", class: "curve-empty"
+        }, curveMessage || (!rows.length ? "所选日期暂无记录" : "所选链路暂无有效运行数据")));
+      }
+
+      cursorLayer = make("g", { "aria-hidden": "true", "pointer-events": "none" });
+      svg.appendChild(cursorLayer);
 
       const overlay = make("rect", {
         x: margin.left,
@@ -2810,34 +3014,136 @@ svg {
         width: plotWidth,
         height: plotHeight,
         fill: "transparent",
-        "aria-hidden": "true"
+        role: "slider", tabindex: range ? 0 : -1,
+        "aria-label": "效率曲线时间游标，左右方向键移动分钟，点击图表固定，Escape取消固定",
+        "aria-valuemin": 0, "aria-valuemax": 1439, "aria-valuenow": 0,
+        "aria-valuetext": "00:00", "aria-orientation": "horizontal",
+        "aria-disabled": String(!range)
       });
       overlay.addEventListener("pointermove", showTooltip);
-      overlay.addEventListener("pointerleave", hideTooltip);
+      overlay.addEventListener("pointerleave", () => { if (!cursorPinned) resetCursor(); });
+      overlay.addEventListener("click", (event) => {
+        const time = pointerTime(event);
+        if (time === null) return;
+        cursorTime = time;
+        cursorPinned = true;
+        updateCursor();
+      });
+      overlay.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") { event.preventDefault(); resetCursor(); return; }
+        if (!range || !["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+        event.preventDefault();
+        const start = Date.parse(range.start_time);
+        const end = Date.parse(range.end_time) - 60000;
+        const initial = cursorTime ?? Date.parse(range.latest_time || range.start_time);
+        cursorTime = event.key === "Home" ? start : event.key === "End" ? end :
+          Math.max(start, Math.min(end, initial + (event.key === "ArrowLeft" ? -60000 : 60000)));
+        cursorPinned = true;
+        updateCursor();
+      });
+      overlay.addEventListener("focus", () => {
+        if (cursorTime === null && range) {
+          cursorTime = Date.parse(range.latest_time || range.start_time);
+          updateCursor();
+        }
+      });
+      overlay.addEventListener("blur", () => { if (!cursorPinned) resetCursor(); });
+      cursorOverlay = overlay;
       svg.appendChild(overlay);
+      updateSeriesFocus();
+      updateCursor();
     }
 
-    function showTooltip(event) {
-      if (!geometry || !range || !rows.length) return;
+    function pointerTime(event) {
+      if (!geometry || !range) return null;
       const rect = svg.getBoundingClientRect();
-      const localX = event.clientX - rect.left;
+      const localX = (event.clientX - rect.left) * geometry.width / rect.width;
       const ratio = Math.max(0, Math.min(1,
         (localX - geometry.margin.left) / geometry.plotWidth
       ));
-      const targetTime = Date.parse(range.start_time) +
-        ratio * (Date.parse(range.end_time) - Date.parse(range.start_time));
-      const row = nearestRow(targetTime);
-      if (!row) return;
-      const summary = clockFromTimestamp(row.data_time) +
-        "　光储" + formatValue(row.pvStorage) +
-        "　储用" + formatValue(row.storageLoad) +
-        "　光用" + formatValue(row.pvLoad);
-      readout.textContent = summary;
-      tooltip.textContent = summary;
+      const start = Date.parse(range.start_time);
+      const end = Date.parse(range.end_time);
+      return Math.floor(Math.min(end - 1, start + ratio * (end - start)) / 60000) * 60000;
+    }
+
+    function showTooltip(event) {
+      if (cursorPinned) return;
+      const time = pointerTime(event);
+      if (time === null) return;
+      cursorTime = time;
+      updateCursor();
+    }
+
+    function updateSeriesFocus() {
+      root.querySelectorAll("[data-curve-series]").forEach((button) => {
+        button.setAttribute("aria-pressed", String(button.dataset.curveSeries === activeSeries));
+      });
+      series.forEach((item) => {
+        const muted = activeSeries !== "all" && activeSeries !== item.key;
+        const path = svg.querySelector('[data-series="' + item.key + '"]');
+        if (path) {
+          path.setAttribute("stroke-opacity", muted ? ".15" : "1");
+          path.setAttribute("stroke-width", !muted && activeSeries !== "all" ? "3.5" : "2.5");
+        }
+        svg.querySelectorAll('[data-series-point="' + item.key + '"]').forEach((point) => {
+          point.setAttribute("fill-opacity", muted ? ".15" : "1");
+        });
+        readout.querySelector('[data-readout-series="' + item.key + '"]').dataset.curveMuted = String(muted);
+      });
+    }
+
+    function resetCursor() {
+      cursorTime = null;
+      cursorPinned = false;
+      updateCursor();
+    }
+
+    function updateCursor() {
+      if (!cursorLayer || !geometry) return;
+      cursorLayer.replaceChildren();
+      document.getElementById("curve-clear-cursor").hidden = !cursorPinned;
+      const rowTime = cursorTime ?? (range?.latest_time ? Date.parse(range.latest_time) : null);
+      const future = rowTime !== null && rowTime > Date.now();
+      const row = rowTime !== null && !future ? nearestRow(rowTime) : null;
+      const timeLabel = rowTime !== null ? new Date(rowTime + 8 * 3600000).toISOString().slice(11, 16) : "";
+      const state = future ? "尚未到来" : row ? "" : "该时段暂无记录";
+      const label = !range ? curveMessage : rowTime === null ? "所选日期暂无记录" :
+        (cursorTime === null ? "最近记录 " : cursorPinned ? "已固定 " : "") + timeLabel + (state ? " · " + state : "");
+      setText("efficiency-cursor-time", label);
+      const values = series.map((item) => {
+        const value = !range || rowTime === null ? "—" : future ? "尚未到来" : !row ? "暂无记录" :
+          hasNumericData(row[item.key]) ? formatValue(row[item.key]) : "无有效运行数据";
+        setText("cursor-" + item.key, value);
+        return item.label + " " + value;
+      });
+      if (cursorOverlay && rowTime !== null && range) {
+        cursorOverlay.setAttribute("aria-valuenow", String(Math.max(0, Math.min(1439,
+          Math.floor((rowTime - Date.parse(range.start_time)) / 60000)))));
+        cursorOverlay.setAttribute("aria-valuetext", timeLabel + "，" + (state || values.join("，")));
+      }
+      if (cursorTime === null || !range) { hideTooltip(); return; }
+      const ratio = timeRatio(new Date(cursorTime).toISOString());
+      if (ratio === null) { hideTooltip(); return; }
+      const px = geometry.x(ratio);
+      cursorLayer.appendChild(make("line", {
+        x1: px, x2: px, y1: geometry.margin.top, y2: geometry.margin.top + geometry.plotHeight,
+        stroke: "var(--foreground)", "stroke-opacity": .65, "stroke-dasharray": "4 3"
+      }));
+      series.forEach((item) => {
+        if (!row || !hasNumericData(row[item.key]) || (activeSeries !== "all" && activeSeries !== item.key)) return;
+        cursorLayer.appendChild(make("circle", {
+          cx: px, cy: geometry.y(Number(row[item.key])), r: 4,
+          fill: item.color, stroke: "var(--card)", "stroke-width": 2
+        }));
+      });
+      tooltip.textContent = timeLabel + " · " + (state || series
+        .map((item, index) => activeSeries === "all" || activeSeries === item.key ? values[index] : "")
+        .filter(Boolean).join("　"));
       tooltip.classList.add("is-visible");
       tooltip.setAttribute("aria-hidden", "false");
-      tooltip.style.left = Math.max(0, Math.min(wrap.clientWidth - 220, localX + 12)) + "px";
-      tooltip.style.top = "36px";
+      const localX = px * wrap.clientWidth / geometry.width;
+      tooltip.style.left = Math.max(8, Math.min(wrap.clientWidth - tooltip.offsetWidth - 8, localX + 12)) + "px";
+      tooltip.style.top = "8px";
     }
 
     function hideTooltip() {
@@ -2849,6 +3155,16 @@ svg {
     eventEndDate.value = todayDate();
     eventStartDate.value = shiftDate(todayDate(), -6);
     updateDateLimits();
+    root.querySelectorAll("[data-curve-series]").forEach((button) => {
+      button.addEventListener("click", () => {
+        activeSeries = button.dataset.curveSeries;
+        render();
+      });
+    });
+    document.getElementById("curve-clear-cursor").addEventListener("click", () => {
+      cursorOverlay?.focus();
+      resetCursor();
+    });
     document.getElementById("curve-query-form").addEventListener("submit", (event) => { event.preventDefault(); queryCurve(curveDate.value); });
     document.getElementById("curve-prev").addEventListener("click", () => queryCurve(shiftDate(curveDate.value, -1)));
     document.getElementById("curve-next").addEventListener("click", () => queryCurve(shiftDate(curveDate.value, 1)));

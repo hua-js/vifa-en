@@ -26,6 +26,7 @@ from m3.worker.services.custom_forecast_repository import (
     StoredCustomRun,
 )
 from m3.worker.services.custom_forecast_service import CustomForecastService
+from m3.worker.errors import M3Error
 
 
 HISTORY_START = datetime.fromisoformat("2026-08-24T00:00:00+08:00")
@@ -451,6 +452,33 @@ class CustomForecastServiceTests(unittest.TestCase):
                 },
             ),
         )
+
+    def test_historical_lookup_uses_shanghai_midnight_without_submitting_a_run(self):
+        repository = InMemoryRepository(make_run())
+        service = CustomForecastService(
+            repository, InMemorySource(make_observations()),
+            now=lambda: NOW, station_ids=("ES01",),
+        )
+        self.addCleanup(service.close)
+        selected_day = (NOW - timedelta(days=2)).date()
+        service.latest("ES01", interval_seconds=900, forecast_days=1, forecast_date=selected_day)
+        covering_at = repository.latest_query[1]["covering_at"]
+        self.assertEqual(covering_at.isoformat(), f"{selected_day.isoformat()}T00:00:00+08:00")
+
+    def test_historical_lookup_rejects_future_before_querying_repository(self):
+        repository = InMemoryRepository(make_run())
+        service = CustomForecastService(
+            repository, InMemorySource(make_observations()),
+            now=lambda: NOW, station_ids=("ES01",),
+        )
+        self.addCleanup(service.close)
+        with self.assertRaises(M3Error) as raised:
+            service.latest(
+                "ES01", interval_seconds=900, forecast_days=1,
+                forecast_date=(NOW + timedelta(days=1)).date(),
+            )
+        self.assertEqual(raised.exception.code, "request_invalid")
+        self.assertIsNone(repository.latest_query)
 
     def test_evidence_serializers_keep_only_safe_candidate_values(self):
         """Non-finite metrics and arbitrary skip text must not enter run JSON."""

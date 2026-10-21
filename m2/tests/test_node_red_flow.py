@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 import subprocess
 import unittest
+from urllib.parse import parse_qs, urlsplit
 
 
 FLOW_PATH = Path(__file__).resolve().parents[1] / "node_red" / "node-red-energy-efficiency-api-flow.json"
@@ -59,24 +60,24 @@ class NodeRedFlowTests(unittest.TestCase):
 
     def test_calendar_minute_job_runs_each_station_independently_with_fixed_commands(self):
         accepted_station = self._run_function(
-            "检查场站",
+            "校验M2只读查询",
             {"req": {"query": {"station_id": "es01"}}},
         )
-        self.assertEqual(accepted_station[0]["payload"], "dashboard ES01")
+        self.assertEqual(parse_qs(urlsplit(accepted_station[0]["url"]).query), {"operation": ["dashboard"], "station_id": ["ES01"]})
         self.assertIsNone(accepted_station[1])
 
         missing_station = self._run_function(
-            "检查场站",
+            "校验M2只读查询",
             {"req": {"query": {}}},
         )
         self.assertIsNone(missing_station[0])
         self.assertEqual(missing_station[1]["statusCode"], 400)
         self.assertEqual(
             missing_station[1]["payload"]["error"]["message"],
-            "station_id 只能是 ES01 或 ES02",
+            "查询参数不正确。",
         )
         invalid_station = self._run_function(
-            "检查场站",
+            "校验M2只读查询",
             {"req": {"query": {"station_id": "ES03"}}},
         )
         self.assertIsNone(invalid_station[0])
@@ -108,12 +109,15 @@ class NodeRedFlowTests(unittest.TestCase):
         self.assertTrue(schedule["d"])
 
     def test_history_queries_validate_dates_and_allow_only_read_operations(self):
-        for query, expected in (
-            ({"operation": "history", "date": "2026-08-25"}, "history ES02 2026-08-25"),
-            ({"operation": "events", "start_date": "2026-08-01", "end_date": "2026-08-31"}, "events ES02 2026-08-01 2026-08-31"),
+        for query in (
+            {"operation": "history", "date": "2026-08-25"},
+            {"operation": "curve", "date": "2026-08-25"},
+            {"operation": "realtime"},
+            {"operation": "events", "start_date": "2026-08-01", "end_date": "2026-08-31"},
         ):
-            accepted = self._run_function("检查场站", {"req": {"query": {"station_id": "ES02", **query}}})
-            self.assertEqual(accepted[0]["payload"], expected)
+            accepted = self._run_function("校验M2只读查询", {"req": {"query": {"station_id": "ES02", **query}}})
+            self.assertEqual(parse_qs(urlsplit(accepted[0]["url"]).query), {key: [value] for key, value in {"station_id": "ES02", **query}.items()})
+            self.assertEqual(urlsplit(accepted[0]["url"]).netloc, "127.0.0.1:8812")
             self.assertIsNone(accepted[1])
         invalid = [
             {"operation": "minute"}, {"operation": "cleanup"}, {"operation": ["history"]},
@@ -127,16 +131,15 @@ class NodeRedFlowTests(unittest.TestCase):
         ]
         for query in invalid:
             with self.subTest(query=query):
-                rejected = self._run_function("检查场站", {"req": {"query": {"station_id": "ES02", **query}}})
+                rejected = self._run_function("校验M2只读查询", {"req": {"query": {"station_id": "ES02", **query}}})
                 self.assertIsNone(rejected[0])
                 self.assertEqual(rejected[1]["statusCode"], 400)
-        self.assertEqual(self.by_name["执行能效计算脚本"]["command"],
-                         "python3 /userdata/holo/pyfiles/energy-efficiency-api.py")
+        self.assertEqual(self.by_name["M2常驻只读接口"]["type"], "http request")
 
-    def test_dashboard_only_returns_parsed_single_line_success_json(self):
+    def test_dashboard_preserves_http_status_and_redacts_invalid_results(self):
         accepted = self._run_function(
-            "包装JSON结果",
-            {"payload": '{"status":"ok","data":{"station_id":"ES01"}}'},
+            "返回M2业务结果",
+            {"statusCode": 200, "payload": '{"status":"ok","data":{"station_id":"ES01"}}'},
         )
         self.assertEqual(accepted["statusCode"], 200)
         self.assertEqual(accepted["payload"]["data"]["station_id"], "ES01")
@@ -147,18 +150,18 @@ class NodeRedFlowTests(unittest.TestCase):
             '{"status":"error","error":{"message":"untrusted-secret"}}',
         ):
             with self.subTest(raw_output=raw_output):
-                rejected = self._run_function("包装JSON结果", {"payload": raw_output})
-                self.assertEqual(rejected["statusCode"], 500)
+                rejected = self._run_function("返回M2业务结果", {"payload": raw_output})
+                self.assertEqual(rejected["statusCode"], 502)
                 self.assertEqual(
                     rejected["payload"]["error"]["message"],
-                    "Python 没有返回正确的 JSON",
+                    "数据暂不可用，请稍后重试。",
                 )
                 self.assertNotIn("untrusted-secret", json.dumps(rejected))
 
-        dashboard_exec = self.by_name["执行能效计算脚本"]
-        self.assertEqual(dashboard_exec["addpay"], "payload")
-        self.assertEqual(dashboard_exec["useSpawn"], "false")
-        self.assertEqual(dashboard_exec["append"], " 2>&1")
+        dashboard_request = self.by_name["M2常驻只读接口"]
+        self.assertEqual(dashboard_request["method"], "GET")
+        self.assertFalse(dashboard_request["followRedirects"])
+        self.assertNotIn("command", dashboard_request)
 
         self.assertEqual(
             self._run_function("处理看板退出状态", {"payload": {"code": 0}}),
@@ -214,7 +217,6 @@ class NodeRedFlowTests(unittest.TestCase):
         self.assertNotIn("secret", flow_text)
 
         for exec_name in (
-            "执行能效计算脚本",
             "写入双电站分钟效率",
             "执行设备点清理",
         ):

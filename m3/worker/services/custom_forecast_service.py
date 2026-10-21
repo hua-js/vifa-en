@@ -3,7 +3,7 @@
 from contextlib import ExitStack
 from dataclasses import replace
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timedelta
+from datetime import date, datetime, time, timedelta
 import logging
 import math
 import re
@@ -42,6 +42,7 @@ from m3.worker.services.custom_forecast_repository import (
     CustomForecastRepository,
     StoredCustomRun,
 )
+from m3.worker.services.custom_forecast_policy import enabled_forecast_intervals
 
 
 LOGGER = logging.getLogger("m3.worker.custom_forecast")
@@ -114,6 +115,7 @@ class CustomForecastService:
         max_workers: int = 1,
         max_pending: int = 16,
         schedule_provider=None,
+        compute=None,
     ) -> None:
         if (
             type(station_ids) is not tuple
@@ -124,7 +126,10 @@ class CustomForecastService:
             raise ValueError("station_ids must be unique non-empty strings")
         if max_workers < 1 or max_pending < max_workers:
             raise ValueError("custom forecast executor bounds are invalid")
+        self._enabled_intervals = enabled_forecast_intervals()
+        LOGGER.info("custom_forecast_intervals_enabled intervals_seconds=%s", self._enabled_intervals)
         self._schedule_provider = schedule_provider
+        self._compute = compute
         self._repository = repository
         self._source = source
         self._now = now
@@ -141,6 +146,11 @@ class CustomForecastService:
         if station_id not in self._station_ids:
             raise M3Error("station_not_configured", "Station is not configured")
 
+    def _calculate(self, function, *args, **kwargs):
+        if self._compute is None:
+            return function(*args, **kwargs)
+        return self._compute.run(function, *args, **kwargs)
+
     def submit(
         self,
         station_id: str,
@@ -149,6 +159,8 @@ class CustomForecastService:
         requested_by: str | None,
     ) -> StoredCustomRun:
         self._require_station(station_id)
+        if request.interval_seconds not in self._enabled_intervals:
+            raise M3Error("request_invalid", "Prediction at this interval is paused")
         today = self._now().astimezone(ZoneInfo("Asia/Shanghai")).replace(
             hour=0, minute=0, second=0, microsecond=0
         )
@@ -164,6 +176,8 @@ class CustomForecastService:
         return run
 
     def _schedule(self, run: StoredCustomRun) -> None:
+        if run.config.interval_seconds not in self._enabled_intervals:
+            return
         with self._lock:
             if self._closing:
                 raise M3Error(
@@ -210,14 +224,21 @@ class CustomForecastService:
         *,
         interval_seconds: int,
         forecast_days: int,
+        forecast_date: date | None = None,
     ) -> StoredCustomRun | None:
         self._require_station(station_id)
+        covering_at = self._now()
+        if forecast_date is not None:
+            zone = ZoneInfo("Asia/Shanghai")
+            if forecast_date > covering_at.astimezone(zone).date():
+                raise M3Error("request_invalid", "Forecast date must not be in the future")
+            covering_at = datetime.combine(forecast_date, time.min, tzinfo=zone)
         return self._repository.latest_usable(
             station_id,
             interval_seconds=interval_seconds,
             forecast_days=forecast_days,
             selection_policy=LOAD_SELECTION_POLICY,
-            covering_at=self._now(),
+            covering_at=covering_at,
         )
 
     def result(
@@ -465,7 +486,7 @@ class CustomForecastService:
                     unique_id,
                 )
                 try:
-                    champions[unique_id] = select_custom_champion(
+                    champions[unique_id] = self._calculate(select_custom_champion,
                         datasets[unique_id], model_configs[unique_id]
                     )
                 except Exception as error:
@@ -492,7 +513,7 @@ class CustomForecastService:
                 )
             series = []
             for unique_id in SERIES_IDS:
-                model_series = forecast_custom_series(
+                model_series = self._calculate(forecast_custom_series,
                     datasets[unique_id],
                     champions[unique_id],
                     model_configs[unique_id],
@@ -506,7 +527,7 @@ class CustomForecastService:
                 )
             series_by_id = {item.unique_id: item for item in series}
             selected_load_champion = champions["station_total_load"]
-            soc_baseline = forecast_custom_series(
+            soc_baseline = self._calculate(forecast_custom_series,
                 datasets["storage_soc"],
                 seasonal_naive_champion(datasets["storage_soc"]),
                 model_configs["storage_soc"],
@@ -516,7 +537,7 @@ class CustomForecastService:
                     soc_baseline, model_configs["storage_soc"], run.config
                 )
             baseline_series = [
-                forecast_custom_series(
+                self._calculate(forecast_custom_series,
                     datasets["station_total_load"],
                     (
                         selected_load_champion

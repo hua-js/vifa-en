@@ -9,7 +9,7 @@ const {stationId, resource, runId} = msg.req.params;
 const method = msg.req.method;
 const projectRequest = msg.req.route?.path === '/m4-api/project';
 const allowed = {
-    GET: ['candidate-jobs','settings','control-sources','inputs','daily-inputs','daily-plan','candidates','selection-policy','decision-result','decision-history','decision-runs','bills'],
+    GET: ['candidate-jobs','settings','control-sources','inputs','daily-inputs','daily-plan','candidates','selection-policy','decision-result','decision-history','decision-runs','bills','today-revenue','storage-log'],
     PUT: ['settings','selection-policy'],
     POST: ['candidate-jobs','daily-plan','daily-dispatch','candidates','selection','decision-runs']
 };

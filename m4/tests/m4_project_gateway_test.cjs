@@ -27,6 +27,16 @@ test('metadata proxy is an explicit read-only endpoint', ()=>{
   const write=request({}, '/m4-api/project'); write.req.method='POST'; write.payload={};
   assert.equal(run('prepare_proxy',write)[1].statusCode,404);
 });
+test('today revenue and measured storage logs are explicitly GET-only', ()=>{
+  for(const resource of ['today-revenue','storage-log']) {
+    const msg=request({stationId:'station-2',resource});
+    assert.equal(run('prepare_proxy',msg)[0],msg);
+    for(const method of ['POST','PUT','DELETE']) {
+      const write=request({stationId:'station-2',resource});write.req.method=method;write.payload={};
+      assert.equal(run('prepare_proxy',write)[1].statusCode,404);
+    }
+  }
+});
 test('safe project-defined station IDs are forwarded for authoritative backend validation', ()=>{
   const msg=request({stationId:'factory-west',resource:'settings'});
   assert.equal(run('prepare_proxy',msg)[0],msg);

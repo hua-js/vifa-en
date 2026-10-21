@@ -6,6 +6,7 @@ import math
 import os
 import sys
 from copy import deepcopy
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -164,7 +165,7 @@ def parse_request(argv):
         return "cleanup", None
     if (
         len(values) < 2
-        or len(values) != {"dashboard": 2, "minute": 2, "history": 3, "events": 4}.get(values[0])
+        or len(values) != {"dashboard": 2, "realtime": 2, "minute": 2, "history": 3, "curve": 3, "events": 4}.get(values[0])
         or values[1] not in {"ES01", "ES02"}
     ):
         raise EntrypointError("invalid_arguments", "参数不正确", 2)
@@ -439,26 +440,35 @@ def execute(
         operation, station_id = parse_request(argv)
         config = load_runtime_config(
             environ, require_nocobase=True,
-            require_source=operation not in {"history", "events"},
+            require_source=operation not in {"history", "curve", "events"},
         )
-        if operation in {"history", "events"}:
+        if operation in {"history", "curve", "events"}:
             query_time = now or datetime.now(ZoneInfo(config["timezone"]))
             start, end = _history_bounds(argv, config["timezone"], query_time)
-            events = fetch_events(station_id, start.isoformat(), end.isoformat(), config)
             if operation == "events":
+                events = fetch_events(station_id, start.isoformat(), end.isoformat(), config)
                 dashboard = build_event_history(
                     station_id, config["timezone"], start.isoformat(), end.isoformat(), events,
                 )
             else:
-                points = fetch_points(station_id, start.isoformat(), end.isoformat(), config)
+                if operation == "curve":
+                    points = fetch_points(station_id, start.isoformat(), end.isoformat(), config)
+                    events = []
+                else:
+                    points, events = _read_day(
+                        station_id, start.isoformat(), end.isoformat(), config,
+                        fetch_points, fetch_events,
+                    )
                 cutoff = min(query_time, end - timedelta(minutes=1))
                 dashboard = build_dashboard(
                     station_id, config["timezone"], cutoff.isoformat(), None, points, events,
                 )
-                dashboard["operation"] = "history"
+                dashboard["operation"] = operation
                 dashboard["range"]["cutoff_time"] = min(query_time, end).astimezone(start.tzinfo).isoformat()
                 dashboard["summary"] = dashboard.pop("summary_today")
                 dashboard.pop("realtime")
+                if operation == "curve":
+                    dashboard.pop("events")
             dashboard["station_id"] = station_id
             return {"status": "ok", "data": dashboard}, 0
         if operation == "cleanup":
@@ -483,23 +493,21 @@ def execute(
             source["data_time"],
             config["timezone"],
         )
-        points = fetch_points(
-            station_id,
-            start_time,
-            end_time,
-            config,
-        )
-        events = fetch_events(
-            station_id,
-            start_time,
-            end_time,
-            config,
+        realtime = _public_realtime(source, calculation, config["timezone"])
+        if operation == "realtime":
+            return {"status": "ok", "data": {
+                "operation": "realtime", "station_id": station_id,
+                "range": {"start_time": start_time, "end_time": end_time, "timezone": config["timezone"]},
+                "realtime": realtime,
+            }}, 0
+        points, events = _read_day(
+            station_id, start_time, end_time, config, fetch_points, fetch_events,
         )
         dashboard = build_dashboard(
             station_id,
             config["timezone"],
             source["data_time"],
-            _public_realtime(source, calculation, config["timezone"]),
+            realtime,
             points,
             events,
         )
@@ -526,6 +534,14 @@ def execute(
             "internal_error",
             "服务器内部错误",
         ), 1
+
+
+def _read_day(station_id, start, end, config, fetch_points, fetch_events):
+    """Read independent day resources concurrently; keep the source's day boundary."""
+    with ThreadPoolExecutor(max_workers=2, thread_name_prefix="m2-day-read") as pool:
+        points = pool.submit(fetch_points, station_id, start, end, config)
+        events = pool.submit(fetch_events, station_id, start, end, config)
+        return points.result(), events.result()
 
 
 def _compact_json(payload):

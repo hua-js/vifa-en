@@ -31,6 +31,7 @@ function performanceFixture() {
     CUSTOM_PERFORMANCE_PATH: '/energy-forecast-api/custom-performance', URLSearchParams,
     shanghaiDateValue: () => day,
     renderSelectedPerformance() {}, validateCustomPerformance: value => value,
+    assert, performanceSnapshotKey: () => "same-policy", rememberPerformanceSnapshot() {},
     customRequest(url) { const read = deferred(); calls.push({ url, ...read }); return read.promise; },
   };
   load(sandbox, ['refreshSelectedPerformance']);
@@ -103,6 +104,9 @@ function stationFixture() {
     stationPicker: { value: 'station_2' }, forecastDays: { value: '1' }, granularity: { value: '900' },
     latestLookupToken: 0, performanceLookupToken: 0, selectedPerformance: null, performanceState: '',
     displayedConfigurationRunKey: null, customBusy: false, hasRenderedCustomResult: false,
+    customDisplayDay: "2026-10-12", resultSnapshots: new Map(), performanceSnapshots: new Map(),
+    prefetchStationViews() {}, saveViewSnapshots() {},
+    storeRunId(stationKey, runId) { sandbox.customRunIds[stationKey] = runId; },
     customResults: new Map(), customRunIds: { station_1: 'test-run-1', station_2: 'test-run-2' },
     root: { querySelector: node, querySelectorAll: () => [] },
     resultSection: node('.station-section'), resultProgressOverlay: node('overlay'),
@@ -117,9 +121,9 @@ function stationFixture() {
     Date: class extends Date { constructor(value) { super(value === undefined ? '2026-10-12T10:00:00+08:00' : value); } },
     milliseconds: value => Date.parse(value),
   };
-  load(sandbox, ['shanghaiDateValue', 'runMatchesOutput', 'runCoversToday', 'selectStation', 'changeStation']);
+  load(sandbox, ['shanghaiDateValue', 'runMatchesOutput', 'runCoversToday', 'resultSnapshotKey', 'selectStation', 'changeStation']);
   for (const stationKey of sandbox.STATION_KEYS) sandbox.customResults.set(stationKey, {
-    stationKey, result: { run: { forecast_days: 1, interval_seconds: 900,
+    stationKey, result: { run: { run_id: sandbox.customRunIds[stationKey], forecast_days: 1, interval_seconds: 900,
       forecast_start: '2026-10-12T00:00:00+08:00', forecast_end: '2026-10-13T00:00:00+08:00' } },
   });
   return { sandbox, renders, latestReads };
@@ -209,15 +213,16 @@ function bootFixture(mode = 'server_token', origin = 'https://example.invalid', 
   return { sandbox, calls, listeners, messages, parent };
 }
 
-test('M3 starts the selected forecast and statistics without waiting for the dashboard', () => {
+test('M3 starts the selected forecast and statistics without waiting for the dashboard', async () => {
   const { calls } = bootFixture();
+  await new Promise(setImmediate);
   assert.ok(calls.some(read => read.url.includes('/station_1/latest?')), 'selected forecast must start while dashboard is pending');
   assert.ok(calls.some(read => read.url.includes('/custom-performance/station_1?')));
   assert.equal(calls.filter(read => read.url === '/energy-forecast-api').length, 1);
   assert.ok(calls.every(read => read.options.method === 'GET'));
 });
 
-test('M3 keeps startup reads behind valid page configuration and authentication', () => {
+test('M3 keeps startup reads behind valid page configuration and authentication', async () => {
   assert.equal(bootFixture('server_token', 'invalid origin').calls.length, 0);
   assert.equal(bootFixture('query_token').calls.length, 0);
   const state = bootFixture('postmessage');
@@ -225,7 +230,8 @@ test('M3 keeps startup reads behind valid page configuration and authentication'
   const nonce = state.messages.at(-1).nonce;
   const data = vm.runInContext(`({type:'vifa-m3-auth-token',nonce:${JSON.stringify(nonce)},token:'test-user-token'})`, state.sandbox);
   state.listeners.get('message')({ source: state.parent, origin: 'https://example.invalid', data });
-  assert.equal(state.calls.length, 3);
+  await new Promise(setImmediate);
+  assert.equal(state.calls.length, 4);
   assert.ok(state.calls.every(read => read.options.headers.Authorization === 'Bearer test-user-token'));
 });
 
@@ -267,6 +273,7 @@ test('M3 leaves a retained forecast visible while its result is refreshed', asyn
     resultProgressOverlay: { hidden: true },
     text(target, value) { target.textContent = value; },
     setCustomBusy(busy, label) { sandbox.resultProgressOverlay.hidden = !busy; sandbox.taskState.textContent = label; },
+    rememberResultSnapshot() {}, refreshSelectedCustomResult() {},
     customRequest: () => read.promise, validateCustomResult: value => value, renderCustomResult() {},
   };
   load(sandbox, ['handleCustomRun']);
@@ -277,10 +284,49 @@ test('M3 leaves a retained forecast visible while its result is refreshed', asyn
   await request;
 });
 
+test('M3 cold view renders the saved forecast without waiting for actual refresh', async () => {
+  const read = deferred(), paths = [], rendered = [];
+  let actualRefreshes = 0;
+  const run = { run_id: 'saved-day', status: 'succeeded' };
+  const sandbox = {
+    stationPicker: { value: 'station_1' }, latestLookupToken: 1, hasRenderedCustomResult: false,
+    customRunIds: { station_1: run.run_id }, customResults: new Map(), taskState: {},
+    runMatchesOutput: () => true, loadEvidenceFor: () => ({}), stopCustomPolling() {},
+    CUSTOM_RUN_LABELS: { succeeded: '预测完成' }, CUSTOM_RUN_PATH: '/custom-runs',
+    resultProgressOverlay: { hidden: true }, text(target, value) { target.textContent = value; },
+    setCustomBusy(busy, label) { sandbox.resultProgressOverlay.hidden = !busy; sandbox.taskState.textContent = label; },
+    customRequest(url) { paths.push(url); return read.promise; }, validateCustomResult: value => value,
+    rememberResultSnapshot() {}, renderCustomResult(value) { rendered.push(value); },
+    refreshSelectedCustomResult() { actualRefreshes++; return new Promise(() => {}); },
+  };
+  load(sandbox, ['handleCustomRun']);
+  const opening = sandbox.handleCustomRun('station_1', run);
+  assert.match(paths[0], /include_actuals=false$/);
+  read.resolve({ run });
+  await opening;
+  assert.equal(rendered.length, 1);
+  assert.equal(actualRefreshes, 1);
+  assert.equal(sandbox.resultProgressOverlay.hidden, true);
+  assert.equal(rendered[0].actualsIncluded, false);
+});
+
+test('M3 prefetch never replaces the actuals already shown for the same run', () => {
+  const sandbox = { resultSnapshots: new Map(), assertSnapshotStation() {},
+    runCoversToday: () => true, loadEvidenceFor: () => ({}), milliseconds: Date.parse, saveViewSnapshots() {} };
+  load(sandbox, ['resultSnapshotKey', 'rememberResultSnapshot']);
+  const run = { run_id: 'saved-day', forecast_days: 1, interval_seconds: 900, completed_at: '2026-10-20T00:01:00+08:00' };
+  const full = { stationKey: 'station_1', result: { run }, actualsIncluded: true };
+  sandbox.rememberResultSnapshot(full);
+  sandbox.rememberResultSnapshot({ stationKey: 'station_1', result: { run }, actualsIncluded: false });
+  assert.equal([...sandbox.resultSnapshots.values()][0], full);
+});
+
 test('M3 clears cached views and invalidates pending lookups when authentication expires', () => {
   const { sandbox } = stationFixture();
   Object.assign(sandbox, {
     authMode: 'query_token', apiToken: 'test-user-token', currentViewStarted: true,
+    readEpoch: 0, snapshotScope: null, snapshotPreparation: null, prefetchInFlight: null,
+    inFlight: null, readRequests: new Map(), hasRenderedDashboard: true, lastDashboard: {},
     performanceReads: new Map([['pending', Promise.resolve({})]]), refreshTimer: null,
     window: { clearTimeout() {} }, renderRefreshError() {},
   });

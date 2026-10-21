@@ -208,6 +208,33 @@ for (const [query, expected] of [
   if (expected === 200) assert.equal(request.m3DashboardAuthModeJson, '"query_token"');
 }
 const customPrepare = nodeById(PRODUCTION_FLOW, "m3_prod_custom_prepare");
+for (const [date, expected] of [
+  ["2026-10-20", 200], ["2024-02-29", 200], ["2026-02-30", 422],
+  ["2026-13-01", 422], ["2026-10-20&extra=1", 422], [["2026-10-20"], 422],
+]) {
+  const request = { req: { query: { interval_seconds: "900", forecast_days: "1", forecast_date: date },
+    headers: { authorization: "Bearer test-user.token-123" }, method: "GET",
+    route: { path: "/energy-forecast-api/custom-runs/:station_key/latest" }, params: { station_key: "station_1" } } };
+  const result = runFunction(customPrepare, request, tokenEnv);
+  if (expected === 200) {
+    assert.equal(result[0], request);
+    assert.ok(request.m3Custom.target.endsWith("&forecast_date=" + date));
+  } else assert.equal(result[1].statusCode, expected);
+}
+for (const [query, accepted] of [
+  [{}, true], [{ include_actuals: "false" }, true], [{ include_actuals: "true" }, true],
+  [{ include_actuals: "invalid" }, false], [{ include_actuals: ["false"] }, false],
+  [{ include_actuals: "false", extra: "1" }, false],
+]) {
+  const request = { req: { query, headers: { authorization: "Bearer test-user.token-123" },
+    method: "GET", route: { path: "/energy-forecast-api/custom-runs/:run_id/result" }, params: { run_id: "saved-day" } } };
+  const result = runFunction(customPrepare, request, tokenEnv);
+  if (accepted) {
+    assert.equal(result[0], request, "snapshot reads must retain authentication");
+    assert.equal(request.m3Custom.target, "http://localhost/v1/custom-forecast-runs/saved-day/result"
+      + (query.include_actuals === undefined ? "" : "?include_actuals=" + query.include_actuals));
+  } else assert.equal(result[1].statusCode, 400);
+}
 for (const node of [authPrepare, customPrepare]) {
   for (const valid of [true, false]) {
     const request = { req: {

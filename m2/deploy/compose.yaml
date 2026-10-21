@@ -1,0 +1,32 @@
+name: vifa-m2-read-api
+services:
+  m2-read-api:
+    image: ${M2_READ_API_IMAGE:?M2_READ_API_IMAGE must be pinned}
+    network_mode: host
+    user: "10001:10001"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+    stop_grace_period: 50s
+    environment:
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONUNBUFFERED: "1"
+      M2_LISTEN_HOST: "127.0.0.1"
+      M2_LISTEN_PORT: "8812"
+    volumes:
+      - ${M2_DEPLOYMENT_ROOT:?M2_DEPLOYMENT_ROOT is required}/secrets/energy_efficiency_local_config.py:/app/.local/energy_efficiency_local_config.py:ro
+    tmpfs:
+      - /dev/mqueue:rw,nosuid,nodev,noexec
+      - /tmp:rw,nosuid,nodev,size=32m
+    healthcheck:
+      test: [CMD, /usr/local/bin/python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8812/ready', timeout=3).read()"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"

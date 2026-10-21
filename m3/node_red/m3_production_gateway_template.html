@@ -299,6 +299,21 @@
       border-radius: 10px; outline: 0; background: var(--panel-soft); font-weight: 700;
     }
     .date-sep { color: var(--muted); font-size: 12px; white-space: nowrap; }
+    .load-chart-head { flex-wrap: wrap; }
+    .load-chart-heading { flex: 1 1 240px; min-width: 0; }
+    .chart-actions { display: flex; flex: 0 1 auto; flex-direction: column; align-items: flex-end; gap: 8px; min-width: 0; max-width: 100%; }
+    .chart-actions .chart-legend { justify-content: flex-end; }
+    .result-query { position: relative; z-index: 9; display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; max-width: 100%; }
+    .result-query label { color: var(--ink); font-size: 14px; }
+    .result-query input, .result-query button { min-height: 42px; max-width: 100%; padding: 8px 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel-soft); color: var(--ink); font: inherit; font-size: 14px; }
+    .result-query input { flex: 0 1 164px; min-width: 0; }
+    .result-query label, .result-query button { white-space: nowrap; }
+    .result-query button { cursor: pointer; }
+    .result-query button:hover { border-color: var(--blue); }
+    .result-query button:active { background: var(--panel-raised); }
+    .result-query :is(input, button):focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+    .result-query button:disabled { cursor: not-allowed; opacity: .55; }
+    .result-query-note { flex-basis: 100%; color: var(--subtle-text); font-size: 12px; text-align: right; }
     .run-button {
       height: 43px; color: #fff; border: 0; border-radius: 10px;
       background: linear-gradient(90deg, var(--blue), var(--green)); font-weight: 750;
@@ -426,6 +441,11 @@
     @media (max-width: 720px) {
       main.app { padding: 15px; }
       .top, .section-head, .chart-head, .mape-head { flex-direction: column; }
+      .load-chart-heading { flex: 0 1 auto; }
+      .chart-actions { width: 100%; align-items: flex-start; }
+      .chart-actions .chart-legend, .result-query { justify-content: flex-start; }
+      .result-query { width: 100%; }
+      .result-query-note { text-align: left; }
       .tools { justify-content: flex-start; }
       .task-grid, .prediction-summary-grid, .config-grid { grid-template-columns: minmax(0, 1fr); }
       .prediction-summary-hero { flex-direction: column; }
@@ -493,7 +513,17 @@
         <div class="result-progress-overlay" id="result-progress-overlay" role="status" aria-live="polite" hidden><div class="result-progress-card"><span class="result-progress-spinner" aria-hidden="true"></span><span id="result-progress-label">正在处理预测任务…</span></div></div>
         <div class="result-grid">
           <article class="card chart-panel">
-            <header class="chart-head"><div><h3 class="title">电站总负荷 · 同时间轴</h3><p class="desc">预测值与对应目标时刻的实际值叠加展示；尚未到达的时刻不显示实际值</p></div><div class="chart-legend"><span class="legend-line" data-kind="actual">实际负载</span><span class="legend-line" data-kind="forecast">预测负载</span></div></header>
+            <header class="chart-head load-chart-head">
+              <div class="load-chart-heading"><h3 class="title">电站总负荷 · 同时间轴</h3><p class="desc">预测值与对应目标时刻的实际值叠加展示；尚未到达的时刻不显示实际值</p></div>
+              <div class="chart-actions">
+                <div class="result-query" role="group" aria-label="负荷与 SOC 预测结果查询">
+                  <label for="result-date">预测日期</label><input id="result-date" type="date">
+                  <button id="result-query-button" type="button">查询</button><button id="result-today-button" type="button">返回今天</button>
+                  <span class="result-query-note" id="result-query-note" role="status">按当前电站、预测时长和粒度查询最新已完成结果</span>
+                </div>
+                <div class="chart-legend"><span class="legend-line" data-kind="actual">实际负载</span><span class="legend-line" data-kind="forecast">预测负载</span></div>
+              </div>
+            </header>
             <div class="chart-viewport"><svg class="forecast-chart load-chart" role="img" aria-label="电站总负荷实际与预测趋势" viewBox="0 0 1180 250"></svg></div>
           </article>
           <article class="card chart-panel">
@@ -631,6 +661,13 @@
       const resultSection = root.querySelector(".station-section");
       const resultProgressOverlay = root.querySelector("#result-progress-overlay");
       const resultProgressLabel = root.querySelector("#result-progress-label");
+      const resultDate = root.querySelector("#result-date");
+      const resultQueryButton = root.querySelector("#result-query-button");
+      const resultTodayButton = root.querySelector("#result-today-button");
+      const resultQueryNote = root.querySelector("#result-query-note");
+      // A null date follows today, including after midnight. Historical reads stay fixed.
+      let historicalDate = null;
+      let historicalResult = null;
       const injectedAuthMode = window.__M3_DASHBOARD_AUTH_MODE__;
       const injectedParentOrigin = window.__M3_NOCOBASE_PARENT_ORIGIN__;
       if (!Reflect.deleteProperty(window, "__M3_DASHBOARD_AUTH_MODE__")) window.__M3_DASHBOARD_AUTH_MODE__ = undefined;
@@ -665,6 +702,13 @@
       const performanceReads = new Map();
       const customRunIds = loadStoredRunIds();
       const customResults = new Map();
+      const resultSnapshots = new Map();
+      const performanceSnapshots = new Map();
+      const readRequests = new Map();
+      let readEpoch = 0;
+      let snapshotScope = null;
+      let snapshotPreparation = null;
+      let prefetchInFlight = null;
       let customDisplayDay = shanghaiDateValue(new Date());
       let disposed = false;
 
@@ -682,6 +726,15 @@
 
       function selectStation(stationKey, loadLatest = true) {
         if (!STATION_KEYS.includes(stationKey)) return;
+        const day = shanghaiDateValue(new Date());
+        if (customDisplayDay !== day) {
+          customDisplayDay = day;
+          customResults.clear();
+          resultSnapshots.clear();
+          performanceSnapshots.clear();
+          selectedPerformance = null;
+          saveViewSnapshots();
+        }
         const lookupToken = loadLatest ? ++latestLookupToken : latestLookupToken;
         if (loadLatest) {
           displayedConfigurationRunKey = null;
@@ -702,18 +755,35 @@
           candidate.classList.remove("selected", "disabled");
           text(candidate.querySelector(".candidate-state"), "等待当前电站数据");
         });
+        if (historicalDate !== null) {
+          historicalResult = null;
+          resultSection.dataset.station = stationKey;
+          text(resultSection.querySelector("h2"), STATION_NAMES[STATION_KEYS.indexOf(stationKey)]);
+          updateTaskConfiguration();
+          if (loadLatest) {
+            void loadHistoricalResult(stationKey, selectedOutputConfiguration(), lookupToken);
+            void refreshSelectedPerformance();
+          }
+          return;
+        }
         const outputConfiguration = selectedOutputConfiguration();
-        const cached = customResults.get(stationKey);
-        let matchingCached = cached !== undefined
+        const ready = outputConfiguration === null ? undefined : resultSnapshots.get(resultSnapshotKey(stationKey, outputConfiguration));
+        if (ready !== undefined && runCoversToday(ready.result.run)) {
+          customResults.set(stationKey, ready);
+        }
+        const selectedResult = customResults.get(stationKey);
+        let matchingCached = selectedResult !== undefined
           && outputConfiguration !== null
-          && runMatchesOutput(cached.result.run, outputConfiguration)
-          && (!loadLatest || runCoversToday(cached.result.run));
+          && runMatchesOutput(selectedResult.result.run, outputConfiguration)
+          && (!loadLatest || runCoversToday(selectedResult.result.run));
         if (matchingCached) {
           try {
-            renderCustomResult(cached);
+            storeRunId(stationKey, selectedResult.result.run.run_id);
+            renderCustomResult(selectedResult);
             if (loadLatest) text(taskState, "已显示上次预测 · 正在更新");
           } catch (_error) {
             customResults.delete(stationKey);
+            resultSnapshots.delete(resultSnapshotKey(stationKey, outputConfiguration));
             matchingCached = false;
             hasRenderedCustomResult = false;
             clearSection(resultSection);
@@ -727,6 +797,7 @@
           startRefreshTimer(true);
           void loadLatestMatchingRun(stationKey, outputConfiguration, lookupToken, !matchingCached);
           void refreshSelectedPerformance();
+          prefetchStationViews();
         }
       }
 
@@ -749,13 +820,70 @@
 
       function changeOutputConfiguration() { selectStation(stationPicker.value); }
 
+      function queryResultDate() {
+        const today = shanghaiDateValue(new Date());
+        resultDate.max = today;
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(resultDate.value) || resultDate.value > today) {
+          text(resultQueryNote, "请选择今天或之前的有效日期");
+          return;
+        }
+        historicalDate = resultDate.value === today ? null : resultDate.value;
+        historicalResult = null;
+        text(resultQueryNote, historicalDate === null
+          ? "按当前电站、预测时长和粒度查询最新已完成结果"
+          : "历史预测 · 按当前电站、预测时长和粒度查询");
+        selectStation(stationPicker.value);
+      }
+
+      function returnToToday() {
+        resultDate.value = shanghaiDateValue(new Date());
+        queryResultDate();
+      }
+
+      async function loadHistoricalResult(stationKey, configuration, lookupToken) {
+        const day = historicalDate;
+        if (day === null || configuration === null || (authMode !== "server_token" && (!userTokenAuth || apiToken === null))) return;
+        const active = () => !disposed && lookupToken === latestLookupToken && historicalDate === day && stationPicker.value === stationKey;
+        setCustomBusy(true, "正在查询历史预测…");
+        text(resultQueryNote, `${day} · 正在查询历史预测…`);
+        text(root.querySelector("#result-date-note"), `${day} · 正在查询历史预测 · 北京时间`);
+        const query = new URLSearchParams({ interval_seconds: String(configuration.interval_seconds), forecast_days: String(configuration.forecast_days), forecast_date: day });
+        try {
+          const run = validateCustomRun(await customRequest(`${CUSTOM_RUN_PATH}/${encodeURIComponent(stationKey)}/latest?${query}`));
+          if (!active()) return;
+          assertSnapshotStation(stationKey, run.station_id);
+          assert(runMatchesOutput(run, configuration) && runCoversDate(run, day) && ["succeeded", "evaluated"].includes(run.status), "historical run mismatch");
+          const result = validateCustomResult(await customRequest(`${CUSTOM_RUN_PATH}/${encodeURIComponent(run.run_id)}/result`, { timeout: 60_000 }));
+          if (!active()) return;
+          assert(result.run.run_id === run.run_id && result.run.station_id === run.station_id && runMatchesOutput(result.run, configuration) && runCoversDate(result.run, day), "historical result mismatch");
+          historicalResult = { stationKey, result, actualsIncluded: true };
+          setCustomBusy(false, "历史预测 · 已加载");
+          renderCustomResult(historicalResult);
+          text(taskState, "历史预测 · 已加载");
+          text(resultQueryNote, `${day} · 历史预测 · 已加载`);
+        } catch (error) {
+          if (!active()) return;
+          clearSection(resultSection);
+          hasRenderedCustomResult = false;
+          historicalResult = null;
+          const message = error instanceof Error && error.code === "not_found" ? "所选日期暂无匹配预测结果" : "历史预测查询失败，请重试";
+          text(root.querySelector("#result-date-note"), `${day} · ${message} · 北京时间`);
+          text(resultQueryNote, `${day} · ${message}`);
+          setCustomBusy(false, message);
+        }
+      }
+
       themeToggle.addEventListener("click", toggleTheme);
       stationPicker.addEventListener("change", changeStation);
       detailsToggle.addEventListener("click", toggleDetails);
       runButton.addEventListener("click", startCustomForecast);
+      resultQueryButton.addEventListener("click", queryResultDate);
+      resultTodayButton.addEventListener("click", returnToToday);
       [historyStart, historyEnd].forEach((control) => control.addEventListener("change", changeHistoryConfiguration));
       [forecastDays, granularity].forEach((control) => control.addEventListener("change", changeOutputConfiguration));
       applyTheme("light");
+      resultDate.value = shanghaiDateValue(new Date());
+      resultDate.max = resultDate.value;
       initializeTaskDates(new Date());
       selectStation(stationPicker.value, false);
       updateTaskConfiguration();
@@ -861,14 +989,19 @@
       }
 
       function runCoversToday(run) {
-        const today = shanghaiDateValue(new Date());
-        return shanghaiDateValue(run.forecast_start) <= today
-          && shanghaiDateValue(new Date(milliseconds(run.forecast_end) - 1)) >= today;
+        return runCoversDate(run, shanghaiDateValue(new Date()));
+      }
+
+      function runCoversDate(run, day) {
+        return shanghaiDateValue(run.forecast_start) <= day
+          && shanghaiDateValue(new Date(milliseconds(run.forecast_end) - 1)) >= day;
       }
 
       function showNoCurrentResult(stationKey) {
         hasRenderedCustomResult = false;
         customResults.delete(stationKey);
+        resultSnapshots.delete(resultSnapshotKey(stationKey, selectedOutputConfiguration()));
+        saveViewSnapshots();
         clearStoredRunId(stationKey);
         clearSection(root.querySelector(".station-section"));
         text(root.querySelector("#result-date-note"), `${shanghaiDateValue(new Date())} · 今天暂无匹配预测结果 · 北京时间`);
@@ -877,11 +1010,14 @@
 
       function updateRunAvailability(configuration) {
         const authenticated = authMode === "server_token" || (userTokenAuth && apiToken !== null);
-        const enabled = authenticated && configuration !== null && !customBusy;
+        const enabled = authenticated && configuration !== null && !customBusy && historicalDate === null;
         runButton.disabled = !enabled;
         if (customBusy) {
           runButton.title = "预测任务正在处理";
           text(runHint, "任务处理中");
+        } else if (historicalDate !== null) {
+          runButton.title = "查看历史时不可提交预测，请先返回今天";
+          text(runHint, "查看历史中，请先返回今天");
         } else if (!authenticated) {
           runButton.title = "等待登录凭证";
           text(runHint, "等待登录");
@@ -909,7 +1045,7 @@
         const total = pointsPerDay * days;
         const usableWeeks = historyDays === null ? null : Math.floor(historyDays / 7);
         const candidates = configuredLoadCandidates(usableWeeks, seconds);
-        const selectedResult = customResults.get(stationPicker.value);
+        const selectedResult = historicalDate === null ? customResults.get(stationPicker.value) : historicalResult ?? undefined;
         text(root.querySelector("#history-hint"), historyDays === null ? "日期范围无效" : `共 ${historyDays} 天`);
         text(root.querySelector("#history-days-inline"), historyDays === null ? "—" : `${historyDays} 天`);
         text(root.querySelector("#history-days-value"), historyDays === null ? "—" : `${historyDays} 天`);
@@ -1687,6 +1823,120 @@
         } catch (_error) { /* persistence is best effort */ }
       }
 
+      function resultSnapshotKey(stationKey, configuration) {
+        return JSON.stringify([stationKey, configuration?.forecast_days, configuration?.interval_seconds]);
+      }
+
+      function performanceSnapshotKey(stationKey, configuration) {
+        if (configuration === null) return null;
+        return JSON.stringify([stationKey, configuration.forecast_days, configuration.interval_seconds,
+          configuration.model_policy ?? (configuration.history_days < 28 ? "seasonal_naive_only" : "full_selection")]);
+      }
+
+      function assertSnapshotStation(stationKey, stationId) {
+        assert(STATION_KEYS.includes(stationKey) && typeof stationId === "string"
+          && stationId.endsWith(stationKey === "station_1" ? "ES01" : "ES02"), "snapshot station mismatch");
+      }
+
+      function rememberResultSnapshot(rendered, persist = true) {
+        const { stationKey, result } = rendered;
+        assertSnapshotStation(stationKey, result.run.station_id);
+        if (!runCoversToday(result.run) || loadEvidenceFor(result.run) === null) return;
+        const key = resultSnapshotKey(stationKey, result.run);
+        const previous = resultSnapshots.get(key);
+        if (previous && milliseconds(previous.result.run.completed_at) > milliseconds(result.run.completed_at)) return;
+        if (previous?.result.run.run_id === result.run.run_id && previous.actualsIncluded !== false && rendered.actualsIncluded === false) return;
+        resultSnapshots.delete(key);
+        resultSnapshots.set(key, rendered);
+        while (resultSnapshots.size > 8) resultSnapshots.delete(resultSnapshots.keys().next().value);
+        if (persist) saveViewSnapshots();
+      }
+
+      function rememberPerformanceSnapshot(stationKey, value, persist = true) {
+        assertSnapshotStation(stationKey, value.station_id);
+        if (shanghaiDateValue(value.calculated_at) !== shanghaiDateValue(new Date())) return;
+        const key = performanceSnapshotKey(stationKey, value);
+        performanceSnapshots.delete(key);
+        performanceSnapshots.set(key, { stationKey, value });
+        while (performanceSnapshots.size > 8) performanceSnapshots.delete(performanceSnapshots.keys().next().value);
+        if (persist) saveViewSnapshots();
+      }
+
+      function saveViewSnapshots() {
+        if (snapshotScope === null || disposed) return;
+        try {
+          const value = { day: shanghaiDateValue(new Date()), results: [...resultSnapshots.values()], performance: [...performanceSnapshots.values()] };
+          let serialized = JSON.stringify(value);
+          // Keep small sessions useful; large, high-frequency forecasts stay in memory.
+          while (serialized.length > 1_500_000 && (value.results.length || value.performance.length)) {
+            if (value.results.length) value.results.shift();
+            else value.performance.shift();
+            serialized = JSON.stringify(value);
+          }
+          sessionStorage.setItem(snapshotScope, serialized);
+        } catch (_) { /* Storage restrictions must not delay live reads. */ }
+      }
+
+      function prepareViewSnapshots() {
+        if (snapshotPreparation !== null) return snapshotPreparation;
+        const epoch = readEpoch, token = apiToken;
+        snapshotPreparation = (async () => {
+          // Without a user identity, keep results only in this document's memory.
+          if (!userTokenAuth || token === null || !globalThis.crypto?.subtle) return;
+          const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify([parentOrigin, location.pathname, API_PATH, token])));
+          if (disposed || epoch !== readEpoch || token !== apiToken) return;
+          snapshotScope = "vifa.m3.view.v1:" + Array.from(new Uint8Array(digest), value => value.toString(16).padStart(2, "0")).join("");
+          try {
+            const raw = sessionStorage.getItem(snapshotScope);
+            if (raw === null) return;
+            assert(raw.length <= 1_500_000, "snapshot too large");
+            const saved = JSON.parse(raw);
+            assert(saved.day === shanghaiDateValue(new Date()) && Array.isArray(saved.results) && saved.results.length <= 8
+              && Array.isArray(saved.performance) && saved.performance.length <= 8, "snapshot expired");
+            for (const entry of saved.results) {
+              try { rememberResultSnapshot({ stationKey: entry.stationKey, result: validateCustomResult(entry.result), actualsIncluded: entry.actualsIncluded !== false }, false); } catch (_) { /* Ignore invalid entries individually. */ }
+            }
+            for (const entry of saved.performance) {
+              try { rememberPerformanceSnapshot(entry.stationKey, validateCustomPerformance(entry.value), false); } catch (_) { /* Ignore invalid entries individually. */ }
+            }
+            saveViewSnapshots();
+          } catch (_) {
+            try { sessionStorage.removeItem(snapshotScope); } catch (_) { /* Storage may be unavailable. */ }
+          }
+        })().catch(() => { /* Live requests remain available without WebCrypto or storage. */ });
+        return snapshotPreparation;
+      }
+
+      function prefetchStationViews() {
+        if (prefetchInFlight !== null || disposed || document.visibilityState !== "visible") return;
+        const epoch = readEpoch, day = shanghaiDateValue(new Date());
+        const configuration = { forecast_days: 1, interval_seconds: 900 };
+        const active = () => !disposed && epoch === readEpoch && day === shanghaiDateValue(new Date()) && document.visibilityState === "visible";
+        const request = (async () => {
+          for (const stationKey of STATION_KEYS) {
+            if (!active()) return;
+            if (stationKey === stationPicker.value && runMatchesOutput(configuration)) continue;
+            try {
+              const query = new URLSearchParams({ interval_seconds: String(configuration.interval_seconds), forecast_days: String(configuration.forecast_days) });
+              const run = validateCustomRun(await customRequest(`${CUSTOM_RUN_PATH}/${encodeURIComponent(stationKey)}/latest?${query}`));
+              if (!active()) return;
+              assertSnapshotStation(stationKey, run.station_id);
+              if (!runMatchesOutput(run, configuration) || !runCoversToday(run) || !["succeeded", "evaluated"].includes(run.status) || loadEvidenceFor(run) === null) continue;
+              const result = validateCustomResult(await customRequest(`${CUSTOM_RUN_PATH}/${encodeURIComponent(run.run_id)}/result?include_actuals=false`, { timeout: 60_000 }));
+              if (!active()) return;
+              if (result.run.run_id !== run.run_id) continue;
+              rememberResultSnapshot({ stationKey, result, actualsIncluded: false });
+              const performanceQuery = new URLSearchParams({ ...Object.fromEntries(query), history_days: String(run.history_days) });
+              const value = validateCustomPerformance(await customRequest(`${CUSTOM_PERFORMANCE_PATH}/${encodeURIComponent(stationKey)}?${performanceQuery}`));
+              if (!active()) return;
+              assert(performanceSnapshotKey(stationKey, value) === performanceSnapshotKey(stationKey, { ...configuration, history_days: run.history_days }), "prefetched statistics mismatch");
+              rememberPerformanceSnapshot(stationKey, value);
+            } catch (_) { /* Background reads do not interrupt the selected station. */ }
+          }
+        })().finally(() => { if (prefetchInFlight === request) prefetchInFlight = null; });
+        prefetchInFlight = request;
+      }
+
       function validateCustomRun(value) {
         const fields = [
           "run_id", "station_id", "status", "history_start", "history_end", "history_days",
@@ -1772,7 +2022,18 @@
         return value;
       }
 
-      async function customRequest(path, options = {}) {
+      function customRequest(path, options = {}) {
+        if ((options.method || "GET") !== "GET") return performCustomRequest(path, options, readEpoch);
+        const key = JSON.stringify([readEpoch, path]);
+        if (readRequests.has(key)) return readRequests.get(key);
+        const request = performCustomRequest(path, options, readEpoch).finally(() => {
+          if (readRequests.get(key) === request) readRequests.delete(key);
+        });
+        readRequests.set(key, request);
+        return request;
+      }
+
+      async function performCustomRequest(path, options, epoch) {
         if (authMode !== "server_token" && (!userTokenAuth || apiToken === null)) throw new Error("custom gateway unavailable");
         const controller = new AbortController();
         const timeout = window.setTimeout(() => controller.abort(), options.timeout || 30_000);
@@ -1790,6 +2051,7 @@
             body: options.body === undefined ? undefined : JSON.stringify(options.body),
             signal: controller.signal,
           });
+          if (disposed || epoch !== readEpoch) throw new Error("预测页面状态已更新");
           if (response.status === 401 && userTokenAuth) {
             requestAuthentication();
             const error = new Error("登录状态已失效，请从 NocoBase 重新打开页面");
@@ -1799,6 +2061,7 @@
           const declaredSize = Number(response.headers.get("content-length") || 0);
           if (declaredSize > 16 * 1024 * 1024) throw new Error("预测结果过大");
           const raw = await response.text();
+          if (disposed || epoch !== readEpoch) throw new Error("预测页面状态已更新");
           if (new TextEncoder().encode(raw).byteLength > 16 * 1024 * 1024) throw new Error("预测结果过大");
           let envelope;
           try { envelope = JSON.parse(raw); } catch (_error) { throw new Error("预测服务返回不正确"); }
@@ -1884,6 +2147,7 @@
         }
         if (["queued", "running"].includes(run.status)) {
           setCustomBusy(true, CUSTOM_RUN_LABELS[run.status]);
+          if (hasRenderedCustomResult) resultProgressOverlay.hidden = true;
           scheduleCustomPoll(stationKey, run.run_id);
           return;
         }
@@ -1897,25 +2161,33 @@
         stopCustomPolling();
         setCustomBusy(true, hasRenderedCustomResult ? "已显示上次预测 · 正在更新" : "正在读取预测结果");
         if (hasRenderedCustomResult) resultProgressOverlay.hidden = true;
+        const showingRun = hasRenderedCustomResult && customResults.get(stationKey)?.result.run.run_id === run.run_id;
         const result = validateCustomResult(await customRequest(
-          `${CUSTOM_RUN_PATH}/${encodeURIComponent(run.run_id)}/result`, { timeout: 60_000 },
+          `${CUSTOM_RUN_PATH}/${encodeURIComponent(run.run_id)}/result${showingRun ? "" : "?include_actuals=false"}`, { timeout: 60_000 },
         ));
-        if (lookupToken !== latestLookupToken || stationPicker.value !== stationKey || !runMatchesOutput(result.run) || customRunIds[stationKey] !== run.run_id) return;
-        const rendered = { stationKey, result };
+        if (lookupToken !== latestLookupToken || stationPicker.value !== stationKey || !runMatchesOutput(result.run) || customRunIds[stationKey] !== run.run_id || result.run.run_id !== run.run_id) return;
+        const rendered = { stationKey, result, actualsIncluded: showingRun };
+        rememberResultSnapshot(rendered);
         customResults.set(stationKey, rendered);
         if (stationPicker.value !== stationKey || !runMatchesOutput(result.run)) return;
         renderCustomResult(rendered);
-        setCustomBusy(false, CUSTOM_RUN_LABELS[run.status]);
+        setCustomBusy(false, showingRun ? CUSTOM_RUN_LABELS[run.status] : "预测已就绪 · 正在更新实测");
+        if (!showingRun) void refreshSelectedCustomResult();
       }
 
       async function refreshSelectedCustomResult() {
-        if (customRefreshInFlight !== null || customBusy) return customRefreshInFlight;
+        if (historicalDate !== null) return null;
+        if (customBusy) return null;
         if (authMode !== "server_token" && (!userTokenAuth || apiToken === null)) return null;
         const today = shanghaiDateValue(new Date());
         if (customDisplayDay !== today) {
           customDisplayDay = today;
           customResults.clear();
+          resultSnapshots.clear();
+          performanceSnapshots.clear();
+          saveViewSnapshots();
           selectStation(stationPicker.value);
+          prefetchStationViews();
           return null;
         }
         const stationKey = stationPicker.value;
@@ -1932,23 +2204,30 @@
         }
         const run = cached.result.run;
         const runId = run.run_id;
-        customRefreshInFlight = customRequest(
+        const key = JSON.stringify([stationKey, runId, refreshLookupToken]);
+        if (customRefreshInFlight?.key === key) return customRefreshInFlight.promise;
+        const request = customRequest(
           `${CUSTOM_RUN_PATH}/${encodeURIComponent(runId)}/result`, { timeout: 60_000 },
         ).then((resultValue) => {
           const result = validateCustomResult(resultValue);
           if (disposed || refreshLookupToken !== latestLookupToken || today !== shanghaiDateValue(new Date()) || customRunIds[stationKey] !== runId || result.run.run_id !== runId || !runMatchesOutput(result.run)) return;
-          const rendered = { stationKey, result };
+          const rendered = { stationKey, result, actualsIncluded: true };
+          rememberResultSnapshot(rendered);
           customResults.set(stationKey, rendered);
-          if (stationPicker.value === stationKey) renderCustomResult(rendered);
+          if (stationPicker.value === stationKey) {
+            renderCustomResult(rendered);
+            text(taskState, CUSTOM_RUN_LABELS[result.run.status]);
+          }
         }).catch(() => {
           if (!disposed && refreshLookupToken === latestLookupToken && stationPicker.value === stationKey) renderRefreshError("预测结果刷新失败");
-        }).finally(() => { customRefreshInFlight = null; });
-        return customRefreshInFlight;
+        }).finally(() => { if (customRefreshInFlight?.promise === request) customRefreshInFlight = null; });
+        customRefreshInFlight = { key, promise: request };
+        return request;
       }
 
       async function startCustomForecast() {
         const configuration = taskConfiguration();
-        if (configuration === null || customBusy || (authMode !== "server_token" && (!userTokenAuth || apiToken === null))) {
+        if (historicalDate !== null || configuration === null || customBusy || (authMode !== "server_token" && (!userTokenAuth || apiToken === null))) {
           updateRunAvailability(configuration);
           return;
         }
@@ -2251,9 +2530,13 @@
       function renderSelectedPerformance() {
         const configuration = performanceConfiguration();
         const key = JSON.stringify([stationPicker.value, configuration]);
+        if (selectedPerformance === null || selectedPerformance.key !== key) {
+          const saved = performanceSnapshots.get(performanceSnapshotKey(stationPicker.value, configuration));
+          if (saved && shanghaiDateValue(saved.value.calculated_at) === shanghaiDateValue(new Date())) selectedPerformance = { key, value: saved.value, cached: true };
+        }
         root.querySelectorAll(".mape-panel .desc").forEach((node) => text(node,
           configuration === null ? "请选择有效历史范围"
-            : `${intervalLabel(configuration.interval_seconds)} · 预测 ${configuration.forecast_days} 天 · 相同模型策略，训练天数变化沿用历史统计 · 按预测窗口结束日汇总`,
+            : `${intervalLabel(configuration.interval_seconds)} · 预测 ${configuration.forecast_days} 天 · 相同模型策略，训练天数变化沿用历史统计 · 按预测窗口结束日汇总${selectedPerformance?.key === key && selectedPerformance.cached ? ` · 上次统计 ${dateTime(selectedPerformance.value.calculated_at)}` : ""}`,
         ));
         if (selectedPerformance !== null && selectedPerformance.key === key) {
           renderCustomPerformance(selectedPerformance.value);
@@ -2293,11 +2576,13 @@
           }
           const value = await request;
           if (disposed || day !== shanghaiDateValue(new Date()) || token !== performanceLookupToken || key !== JSON.stringify([stationPicker.value, performanceConfiguration()])) return;
+          assert(performanceSnapshotKey(stationKey, value) === performanceSnapshotKey(stationKey, configuration), "statistics configuration mismatch");
+          rememberPerformanceSnapshot(stationKey, value);
           selectedPerformance = { key, value };
           renderSelectedPerformance();
         } catch (_error) {
           if (disposed || day !== shanghaiDateValue(new Date()) || token !== performanceLookupToken || key !== JSON.stringify([stationPicker.value, performanceConfiguration()])) return;
-          selectedPerformance = null;
+          if (selectedPerformance?.key === key) selectedPerformance.cached = true;
           performanceState = "统计加载失败";
           renderSelectedPerformance();
         }
@@ -2363,7 +2648,7 @@
         text(taskState, CUSTOM_RUN_LABELS[run.status]);
         const evidence = loadEvidenceFor(run);
         assert(evidence !== null, "custom run policy invalid");
-        synchronizeTaskConfiguration(stationKey, run);
+        if (historicalDate === null) synchronizeTaskConfiguration(stationKey, run);
         const loadResult = result.series.find((series) => series.unique_id === "station_total_load");
         const socResult = result.series.find((series) => series.unique_id === "storage_soc");
         const loadPresentation = realizedLoadPresentation(evidence, loadResult?.model_name ?? null);
@@ -2393,8 +2678,8 @@
         };
         renderStation(station, true);
         const firstDate = shanghaiDateValue(run.forecast_start);
-        const dateKind = runCoversToday(run) ? "覆盖今天" : firstDate > shanghaiDateValue(new Date()) ? "未来预测" : "历史预测";
-        text(root.querySelector("#result-date-note"), `${dateKind} · ${dateTime(run.forecast_start)} — ${dateTime(run.forecast_end)}（结束时刻不含）· 北京时间`);
+        const dateKind = historicalDate !== null ? "历史预测" : runCoversToday(run) ? "覆盖今天" : firstDate > shanghaiDateValue(new Date()) ? "未来预测" : "历史预测";
+        text(root.querySelector("#result-date-note"), `${dateKind} · ${dateTime(run.forecast_start)} — ${dateTime(run.forecast_end)}（结束时刻不含）· 生成于 ${dateTime(run.completed_at)} · 北京时间`);
         const section = root.querySelector(".station-section");
         const modelSummary = result.series.map((series) =>
           `${series.unique_id === "station_total_load" ? "负载" : "SOC"}：${displayModelName(series.unique_id, series.model_name)}`
@@ -2464,10 +2749,11 @@
           return;
         }
         if (inFlight) return inFlight;
+        const epoch = readEpoch;
         const requestToken = apiToken;
         const requestHeaders = { Accept: "application/json" };
         if (userTokenAuth) requestHeaders.Authorization = `Bearer ${requestToken}`;
-        inFlight = (async () => {
+        const request = (async () => {
           const controller = new AbortController();
           // Auth may take 10s, followed by the gateway's 30s dashboard read.
           const timeout = window.setTimeout(() => controller.abort(), 45_000);
@@ -2481,6 +2767,7 @@
               headers: requestHeaders,
               signal: controller.signal,
             });
+            if (disposed || epoch !== readEpoch) return;
             if (response.status === 401 && userTokenAuth) {
               requestAuthentication();
               const authError = new Error("current-user authentication expired");
@@ -2489,6 +2776,7 @@
             }
             if (!response.ok) throw new Error("dashboard request failed");
             const envelope = await response.json();
+            if (disposed || epoch !== readEpoch) return;
             scanShape(envelope);
             exactObject(envelope, ["status", "data"], "response envelope");
             assert(envelope.status === "ok", "response status invalid");
@@ -2496,14 +2784,15 @@
           } finally {
             window.clearTimeout(timeout);
           }
-        })().catch((error) => renderRefreshError(
+        })().catch((error) => { if (!disposed && epoch === readEpoch) renderRefreshError(
           error && error.name === "AbortError"
             ? "请求超时"
             : error && error.name === "M3AuthError"
               ? "登录状态已失效，请从 NocoBase 重新打开页面"
               : "预测数据加载失败",
-        )).finally(() => { inFlight = null; });
-        return inFlight;
+        ); }).finally(() => { if (inFlight === request) inFlight = null; });
+        inFlight = request;
+        return request;
       }
 
       function refreshIntervalMs() {
@@ -2544,13 +2833,19 @@
         if (slot === lastRefreshSlot || (userTokenAuth && apiToken === null)) return;
         lastRefreshSlot = slot;
         rollTaskDates();
+        if (historicalDate === null) resultDate.value = shanghaiDateValue(new Date());
+        resultDate.max = shanghaiDateValue(new Date());
         void loadDashboard();
         void refreshSelectedCustomResult();
         void refreshSelectedPerformance();
+        prefetchStationViews();
       }
 
-      function startPageReads() {
+      async function startPageReads() {
         if (disposed || (authMode !== "server_token" && (!userTokenAuth || apiToken === null))) return;
+        const epoch = readEpoch;
+        await prepareViewSnapshots();
+        if (disposed || epoch !== readEpoch || (userTokenAuth && apiToken === null)) return;
         startRefreshTimer();
         if (!currentViewStarted) {
           currentViewStarted = true;
@@ -2560,6 +2855,22 @@
       }
 
       function requestAuthentication() {
+        ++readEpoch;
+        if (snapshotScope !== null) {
+          try { sessionStorage.removeItem(snapshotScope); } catch (_) { /* Storage may be unavailable. */ }
+        }
+        snapshotScope = null;
+        snapshotPreparation = null;
+        prefetchInFlight = null;
+        inFlight = null;
+        readRequests.clear();
+        resultSnapshots.clear();
+        performanceSnapshots.clear();
+        hasRenderedCustomResult = false;
+        hasRenderedDashboard = false;
+        lastDashboard = null;
+        clearSection(resultSection);
+        historicalResult = null;
         currentViewStarted = false;
         ++latestLookupToken;
         ++performanceLookupToken;
@@ -2622,6 +2933,8 @@
         stationPicker.removeEventListener("change", changeStation);
         detailsToggle.removeEventListener("click", toggleDetails);
         runButton.removeEventListener("click", startCustomForecast);
+        resultQueryButton.removeEventListener("click", queryResultDate);
+        resultTodayButton.removeEventListener("click", returnToToday);
         [historyStart, historyEnd].forEach((control) => control.removeEventListener("change", changeHistoryConfiguration));
         [forecastDays, granularity].forEach((control) => control.removeEventListener("change", changeOutputConfiguration));
         window.removeEventListener("message", receiveAuthentication);

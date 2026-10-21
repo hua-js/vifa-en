@@ -1,6 +1,6 @@
 """FastAPI operations surface, lifecycle, and resource assembly tests."""
 
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 import importlib
 import asyncio
 import threading
@@ -10,6 +10,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import ANY, Mock, patch
 
+import httpx
 from fastapi.testclient import TestClient
 from pydantic import HttpUrl, SecretStr, TypeAdapter
 
@@ -133,6 +134,63 @@ def wait_recovery(client, app):
 
 
 class WorkerApiTests(unittest.TestCase):
+    def _saved_forecast_resources(self):
+        resources = FakeResources()
+        config = SimpleNamespace(
+            history_start=NOW - timedelta(days=28), history_end=NOW,
+            history_days=28, forecast_start=NOW, forecast_end=NOW + timedelta(days=1),
+            forecast_days=1, interval_seconds=3600, points_per_day=24,
+            expected_points_per_series=24, model_policy="full_selection",
+        )
+        run = SimpleNamespace(
+            run_id="saved-day", station_id=ES02, status="succeeded", config=config,
+            model_manifest={"selection_policy": "weekly_load_v2"}, source_manifest={},
+            record=SimpleNamespace(error_code=None), started_at=NOW, completed_at=NOW,
+            evaluated_at=None, created_at=NOW, updated_at=NOW,
+        )
+        points = [
+            {"unique_id": series, "target_time": NOW + timedelta(hours=i),
+             "horizon_step": i, "forecast_value": 50.0, "model_name": "WeeklyNaive",
+             "actual_value": 48.0, "actual_quality": "valid", "absolute_percentage_error": 4.0}
+            for series in ("station_total_load", "storage_soc") for i in range(1, 25)
+        ]
+        resources.custom_forecasts = Mock()
+        resources.custom_forecasts.result.return_value = (run, points)
+        resources.custom_evaluations = Mock()
+        resources.custom_evaluations.overlay_actuals.return_value = points
+        resources.custom_evaluations.current_score.return_value = None
+        return resources
+
+    def test_saved_forecast_view_never_waits_for_actual_source(self):
+        resources = self._saved_forecast_resources()
+        resources.custom_evaluations.overlay_actuals.side_effect = RuntimeError("slow source")
+        with TestClient(create_app(settings(), resources, start_scheduler=False)) as client:
+            response = client.get("/v1/custom-forecast-runs/saved-day/result?include_actuals=false", headers=AUTH)
+        self.assertEqual(response.status_code, 200)
+        series = response.json()["series"]
+        self.assertEqual([len(item["points"]) for item in series], [24, 24])
+        for item in series:
+            self.assertIsNone(item["current_score"])
+            for point in item["points"]:
+                self.assertEqual(point["forecast_value"], 50.0)
+                self.assertIsNone(point["actual_value"])
+                self.assertIsNone(point["actual_quality"])
+                self.assertIsNone(point["absolute_percentage_error"])
+        resources.custom_evaluations.overlay_actuals.assert_not_called()
+        resources.custom_evaluations.current_score.assert_not_called()
+        resources.custom_forecasts.submit.assert_not_called()
+
+    def test_saved_forecast_default_keeps_actuals_and_authentication(self):
+        resources = self._saved_forecast_resources()
+        with TestClient(create_app(settings(), resources, start_scheduler=False)) as client:
+            url = "/v1/custom-forecast-runs/saved-day/result"
+            self.assertEqual(client.get(url + "?include_actuals=false").status_code, 401)
+            self.assertEqual(client.get(url + "?include_actuals=invalid", headers=AUTH).status_code, 422)
+            response = client.get(url, headers=AUTH)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["series"][0]["points"][0]["actual_value"], 48.0)
+        resources.custom_evaluations.overlay_actuals.assert_called_once()
+
     def test_rolling_soc_get_is_authenticated_read_only(self):
         resources = FakeResources()
         resources.clock = lambda: NOW
@@ -199,6 +257,36 @@ class WorkerApiTests(unittest.TestCase):
         self.assertEqual(response.json()["run_id"], "latest-minute-run")
         self.assertEqual(response.json()["expected_points_per_series"], 1440)
         self.assertEqual(calls, [(ES02, 60, 1)])
+
+    def test_historical_custom_forecast_passes_date_to_read_service(self):
+        resources = FakeResources()
+        latest = Mock(return_value=None)
+        resources.custom_forecasts = SimpleNamespace(latest=latest)
+        app = create_app(settings(), resources, start_scheduler=False)
+        with TestClient(app) as client:
+            response = client.get(
+                f"/v1/stations/{ES02}/custom-forecast-runs/latest",
+                params={"interval_seconds": 900, "forecast_days": 1, "forecast_date": "2026-08-24"},
+                headers=AUTH,
+            )
+        self.assertEqual(response.status_code, 404)
+        latest.assert_called_once_with(
+            ES02, interval_seconds=900, forecast_days=1, forecast_date=date(2026, 8, 24)
+        )
+
+    def test_historical_custom_forecast_rejects_invalid_calendar_date(self):
+        resources = FakeResources()
+        latest = Mock(return_value=None)
+        resources.custom_forecasts = SimpleNamespace(latest=latest)
+        app = create_app(settings(), resources, start_scheduler=False)
+        with TestClient(app) as client:
+            response = client.get(
+                f"/v1/stations/{ES02}/custom-forecast-runs/latest",
+                params={"interval_seconds": 900, "forecast_days": 1, "forecast_date": "2026-02-30"},
+                headers=AUTH,
+            )
+        self.assertEqual(response.status_code, 422)
+        latest.assert_not_called()
 
     def test_worker_info_logging_uses_the_uvicorn_handler(self):
         m3_logger = Mock(handlers=[], propagate=True)
@@ -574,6 +662,84 @@ class RecoveryShutdownTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ResourceTests(unittest.TestCase):
+    def test_retry_exhaustion_remains_transient_after_real_bootstrap_wraps_it(self):
+        error = M3Error("http_retry_exhausted", "transport retry exhausted")
+        error.__cause__ = httpx.ReadTimeout("temporary")
+        forecast = SimpleNamespace(
+            _cache=lambda station: worker_main.StationCache(station),
+            _require_runtime=lambda cache: None,
+            _source=SimpleNamespace(list_observations=Mock(side_effect=error)),
+            _record_failure=lambda *args: None,
+        )
+        with self.assertRaises(M3Error) as raised:
+            worker_main.ForecastService.bootstrap(forecast, "station-1", NOW)
+        self.assertIsNone(raised.exception.__cause__)
+        self.assertTrue(worker_main._transient_recovery_error(raised.exception))
+
+    def test_startup_retries_transient_inputs_before_resuming_jobs(self):
+        events = []
+        attempts = 0
+
+        def bootstrap(station, at):
+            nonlocal attempts
+            events.append(("bootstrap", station))
+            attempts += 1
+            if attempts == 1:
+                raise M3Error("source_http_failed", "temporary", {"status_code": 503})
+
+        resources = WorkerResources(
+            settings=SimpleNamespace(station_ids=("station-1",), acceptance_enabled=False),
+            source_http=SimpleNamespace(close=lambda: None),
+            nocobase_http=SimpleNamespace(close=lambda: None),
+            forecast_service=SimpleNamespace(
+                bootstrap=bootstrap, restore_models=lambda station: True,
+                state=lambda station: SimpleNamespace(state="ready"),
+            ),
+            acceptance_service=SimpleNamespace(),
+            custom_forecasts=SimpleNamespace(recover=lambda: events.append(("jobs",))),
+            custom_evaluations=SimpleNamespace(),
+            daily_custom_forecasts=SimpleNamespace(run_station=lambda *args: events.append(("daily",))),
+            scheduler=SimpleNamespace(running=False), jobs=SimpleNamespace(),
+            clock=lambda: NOW, alert_sink=lambda *args: None, statsforecast_version="2.1.1",
+        )
+        with patch.object(worker_main, "verify_statsforecast_runtime", return_value="2.1.1"), patch.object(
+            resources.recovery_stop_event, "wait", return_value=False
+        ) as wait:
+            self.assertTrue(resources.recover())
+        wait.assert_called_once()
+        self.assertEqual(events, [("bootstrap", "station-1"), ("bootstrap", "station-1"), ("jobs",), ("daily",)])
+
+    def test_shutdown_interrupts_transient_input_retry_without_resuming_jobs(self):
+        acceptance = SimpleNamespace(reconcile_writing_batches=Mock(), reconcile_run_summary=Mock())
+        resources = WorkerResources(
+            settings=SimpleNamespace(station_ids=("station-1",), acceptance_enabled=True),
+            source_http=SimpleNamespace(), nocobase_http=SimpleNamespace(),
+            forecast_service=SimpleNamespace(bootstrap=Mock(side_effect=httpx.ReadTimeout("temporary"))),
+            acceptance_service=acceptance,
+            custom_forecasts=SimpleNamespace(recover=Mock()),
+            custom_evaluations=SimpleNamespace(), daily_custom_forecasts=SimpleNamespace(),
+            scheduler=SimpleNamespace(running=False), jobs=SimpleNamespace(),
+            clock=lambda: NOW, alert_sink=lambda *args: None, statsforecast_version="2.1.1",
+        )
+        with patch.object(worker_main, "verify_statsforecast_runtime", return_value="2.1.1"), patch.object(
+            resources.recovery_stop_event, "wait",
+            side_effect=lambda timeout: (resources.recovery_stop_event.set() or True),
+        ) as wait:
+            self.assertFalse(resources.recover())
+        wait.assert_called_once()
+        resources.custom_forecasts.recover.assert_not_called()
+        acceptance.reconcile_writing_batches.assert_not_called()
+        resources.recovery_stop_event.clear()
+
+        def cancelled_bootstrap(*args):
+            resources.recovery_stop_event.set()
+            raise M3Error("http_request_cancelled", "shutdown")
+
+        resources.forecast_service.bootstrap = cancelled_bootstrap
+        resources.alert_sink = Mock()
+        self.assertFalse(resources._recover_station_inputs("station-1", NOW))
+        resources.alert_sink.assert_not_called()
+
     def test_startup_recovery_prefers_persisted_models_without_reselection(self):
         events = []
 
@@ -1206,6 +1372,7 @@ class ResourceTests(unittest.TestCase):
             "raw-secret",
             created[0],
             allowed_station_ids=(ES01, ES02),
+            stop_event=resources.recovery_stop_event,
         )
         nocobase_constructor.assert_called_once_with(
             str(configured.nocobase_base_url),

@@ -23,6 +23,12 @@ def daily_payload(daily, configuration, now=None):
         raise ModelUpdateError('当天完整日计划尚未就绪。')
     request = deepcopy(daily['request'])
     full_request = deepcopy(request)
+    if comparison.get('recommended_source') == 'ems_fallback':
+        from .daily_fallback import POLICY as FALLBACK_POLICY
+        if (request.get('source_versions', {}).get('daily_fallback_policy') != FALLBACK_POLICY
+                or comparison.get('fallback_status') != 'ready'
+                or recommended.get('fallback_policy_version') != FALLBACK_POLICY):
+            raise ModelUpdateError('保守日计划版本无效，请重新生成。')
     if (not matches_current_daily_policy(configuration.station_id, request)
             or request['source_versions'].get('configuration') != configuration.version):
         raise ModelUpdateError('日计划配置已变化，请重新生成。')
@@ -51,7 +57,8 @@ def daily_payload(daily, configuration, now=None):
         effective_at=start.isoformat(), valid_until=(start+timedelta(minutes=15)).isoformat(),
         end_at=(midnight+timedelta(days=1)).isoformat(), finished_at=now.isoformat(),
         source=comparison.get('recommended_source'), request=request, full_request=full_request, plan=points[index:],
-        prediction_basis='daily_solver_advice',
+        prediction_basis=('conservative_ems_daily_advice' if comparison.get('recommended_source') == 'ems_fallback'
+            else 'daily_solver_advice'),
         ems_setpoints_kw=dict(charge=get_project().station(configuration.station_id).m4['ems_charge_kw'],
             discharge=dict(get_project().station(configuration.station_id).m4['ems_discharge_kw'])),
         device_execution_status='unverified')

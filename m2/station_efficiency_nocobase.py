@@ -212,6 +212,8 @@ def fetch_minute_points(
     end_time,
     config,
     request_json=None,
+    *,
+    fields=None,
 ):
     """读取一个场站在指定自然日内的分钟效率点。"""
     station_text = str(station_id).strip()
@@ -240,6 +242,8 @@ def fetch_minute_points(
         ("sort[]", "data_time"),
         ("pageSize", "1440"),
     ])
+    if fields:
+        query += "&" + urlencode({"fields": ",".join(fields)})
     request_json = request_json or _request_get_json
     payload = request_json(
         f"{_base_url(config)}/api/t_efficiency_points:list?{query}",

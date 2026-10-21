@@ -363,7 +363,7 @@ def build_latest_snapshot(
 
 
 class ForecastService:
-    def __init__(self, source, sink, caches, forecast_one, now, schedule_provider=None):
+    def __init__(self, source, sink, caches, forecast_one, now, schedule_provider=None, compute=None):
         if not isinstance(caches, dict) or any(
             not isinstance(key, str)
             or not isinstance(cache, StationCache)
@@ -376,6 +376,7 @@ class ForecastService:
         self._sink = sink
         self._caches: dict[str, StationCache] = dict(caches)
         self._forecast_one = forecast_one
+        self._compute = compute
         self._now = now
         self._statsforecast_version = verify_statsforecast_runtime()
         self._pending: dict[str, LatestSnapshot] = {}
@@ -405,6 +406,14 @@ class ForecastService:
 
     def state(self, station_id: str) -> StationState:
         return self._cache(station_id).state_snapshot()
+
+    def readiness_state(self, station_id: str) -> str:
+        return self._cache(station_id).readiness_state()
+
+    def _calculate(self, function, *args, **kwargs):
+        if self._compute is None:
+            return function(*args, **kwargs)
+        return self._compute.run(function, *args, **kwargs)
 
     @staticmethod
     def _record_failure(cache: StationCache, error: M3Error) -> None:
@@ -554,7 +563,7 @@ class ForecastService:
                 for unique_id in SERIES_IDS:
                     dataset = datasets[unique_id]
                     try:
-                        champions[unique_id] = select_champion(dataset)
+                        champions[unique_id] = self._calculate(select_champion, dataset)
                     except M3Error as cause:
                         if cause.code == "insufficient_history":
                             champions[unique_id] = None
@@ -694,14 +703,14 @@ class ForecastService:
                     load_dataset = datasets["station_total_load"]
                     load_champion = publication_champions["station_total_load"]
                     if load_dataset.post_holiday_reference is not None:
-                        publication_champions["station_total_load"] = select_champion(load_dataset)
+                        publication_champions["station_total_load"] = self._calculate(select_champion, load_dataset)
                     elif load_champion is not None and load_champion.model_name == POST_HOLIDAY_LOAD_MODEL:
                         publication_champions["station_total_load"] = (
                             None if load_dataset.mode == "insufficient"
                             else seasonal_naive_champion(load_dataset)
                         )
                     forecast_series = [
-                        self._forecast_one(
+                        self._calculate(self._forecast_one,
                             datasets[unique_id],
                             publication_champions[unique_id],
                             as_of,

@@ -1,6 +1,6 @@
 """The approved M3 Worker operations endpoints."""
 
-from datetime import timedelta
+from datetime import date, timedelta
 import math
 import re
 from typing import Annotated
@@ -345,6 +345,7 @@ def latest_custom_forecast(
     station_id: StationDep,
     interval_seconds: Annotated[int, Query()],
     forecast_days: Annotated[int, Query(ge=1, le=7)],
+    forecast_date: Annotated[date | None, Query()] = None,
 ) -> CustomRunResponse:
     if interval_seconds not in ALLOWED_INTERVAL_SECONDS:
         raise HTTPException(status_code=422, detail="request_invalid")
@@ -353,6 +354,7 @@ def latest_custom_forecast(
             station_id,
             interval_seconds=interval_seconds,
             forecast_days=forecast_days,
+            **({"forecast_date": forecast_date} if forecast_date is not None else {}),
         )
         if run is None:
             raise HTTPException(status_code=404, detail="not_found")
@@ -369,6 +371,7 @@ def latest_custom_forecast(
 def custom_forecast_result(
     request: Request,
     run_id: Annotated[str, Path(min_length=1, max_length=128, pattern=RUN_ID_PATTERN)],
+    include_actuals: Annotated[bool, Query()] = True,
 ) -> CustomRunResultResponse:
     try:
         result = request.app.state.resources.custom_forecasts.result(run_id)
@@ -377,10 +380,13 @@ def custom_forecast_result(
         run, points = result
         if run.station_id not in request.app.state.settings.station_ids:
             raise HTTPException(status_code=404, detail="not_found")
-        if points:
+        if points and include_actuals:
             points = request.app.state.resources.custom_evaluations.overlay_actuals(
                 run, points
             )
+        elif points:
+            points = [dict(point, actual_value=None, actual_quality=None,
+                           absolute_percentage_error=None) for point in points]
         grouped: dict[str, list[dict]] = {unique_id: [] for unique_id in SERIES_IDS}
         for point in points:
             unique_id = point.get("unique_id")
@@ -404,7 +410,7 @@ def custom_forecast_result(
                     model_name=next(iter(model_names)) if model_names else "none",
                     current_score=(
                         request.app.state.resources.custom_evaluations.current_score(run, rows)
-                        if unique_id == "station_total_load" and rows else None
+                        if include_actuals and unique_id == "station_total_load" and rows else None
                     ),
                     points=[
                         CustomResultPointResponse(

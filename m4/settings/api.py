@@ -89,6 +89,8 @@ def create_app(settings_path: Path | None = None, *, control_reader=None, input_
     from .billing import BillingService, MONTH_PATTERN
     from .upstream import NocoBaseClient
     billing = billing_service if billing_service is not None else BillingService(NocoBaseClient(token))
+    from .today_revenue import TodayRevenueService
+    today_revenue = TodayRevenueService(NocoBaseClient(token))
     from .decision_results import DecisionResultsReader
     decision_results = DecisionResultsReader(Path(os.environ.get(
         'M4_DECISION_RESULTS_DIR', str(ROOT / 'outputs/m4/solver-decisions'))))
@@ -138,6 +140,19 @@ def create_app(settings_path: Path | None = None, *, control_reader=None, input_
             return billing.fetch(station_id, month)
         except Exception:
             raise HTTPException(502, '账单统计读取失败，请稍后重试') from None
+
+    @app.get('/m4-api/stations/{station_id}/today-revenue')
+    def get_today_revenue(station_id: str) -> dict:
+        station_exists(station_id)
+        return today_revenue.fetch(station_id)
+
+    @app.get('/m4-api/stations/{station_id}/storage-log')
+    def get_storage_log(station_id: str) -> dict:
+        station_exists(station_id)
+        try:
+            return today_revenue.storage_log(station_id)
+        except Exception:
+            raise HTTPException(502, '实测充放电记录读取失败，请稍后重试。') from None
 
     @app.get('/m4-api/stations/{station_id}/settings')
     def get_settings(station_id: str) -> StationConfiguration:

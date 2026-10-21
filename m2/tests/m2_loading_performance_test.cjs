@@ -17,7 +17,7 @@ function deferred() {
 }
 function response(stationId, day = '2026-10-12') {
   return { ok: true, json: async () => ({ status: 'ok', data: {
-    operation: 'dashboard', range: { start_time: `${day}T00:00:00+08:00` },
+    operation: 'realtime', station_id: stationId, range: { start_time: `${day}T00:00:00+08:00` },
     realtime: { inputs: { bus_id: stationId, data_time: `${day}T10:00:00+08:00` }, result: { calculation_mode: 'measured' } },
   } }) };
 }
@@ -28,6 +28,7 @@ function fixture() {
   const sandbox = {
     activeStationId: 'ES02', supportedStationIds: new Set(['ES01', 'ES02']),
     dashboardSnapshots: new Map(), fetchInFlight: false, activeController: null,
+    curveSnapshots: new Map(), eventSnapshots: new Map(), range: null, detailDate: '2026-10-12',
     selectedCurveDate: '', eventHistoryMode: false, eventController: null,
     root: { dataset: {} }, statusNode: { dataset: {}, textContent: '' }, curveStatus: {},
     apiUrl: '/energy-efficiency-api', AbortController, URL,
@@ -36,7 +37,8 @@ function fixture() {
       clearTimeout(id) { timers.delete(id); } },
     todayDate: () => '2026-10-12', formatTime: value => value,
     fetch(url, options) { const read = deferred(); calls.push({ url: String(url), options, ...read }); return read.promise; },
-    renderRealtime(value) { renders.push(value); }, renderCurrentEfficiency() {},
+    renderRealtime(value) { renders.push(value); }, renderDailyEfficiency() {},
+    cancelDayReads() {}, loadDay() {}, renderDayEvents() {},
     renderCurve(value) { curves.push(value); },
     clearCurve(message) { queries.push(['clear', message]); },
     setQueryStatus() {}, setStationLoading(value) { loading.push(value); },
@@ -158,4 +160,91 @@ test('M2 discards snapshots on an authorization failure', async () => {
   await request;
   assert.equal(state.sandbox.dashboardSnapshots.size, 0);
   assert.equal(state.sandbox.statusNode.dataset.state, 'error');
+});
+
+test('M2 realtime becomes ready while independent detail reads remain pending', async () => {
+  const state = fixture();
+  state.sandbox.loadDay = () => new Promise(() => {});
+  await seed(state);
+  assert.match(state.calls[0].url, /operation=realtime/);
+  assert.equal(state.sandbox.statusNode.dataset.state, 'ready');
+  assert.equal(state.sandbox.fetchInFlight, false);
+});
+
+test('M2 realtime failure does not redraw independently failed detail partitions', async () => {
+  const state = fixture();
+  await seed(state);
+  state.sandbox.curveSnapshots.set('ES02', { date: '2026-10-12', data: { trend: [] } });
+  state.sandbox.eventSnapshots.set('ES02', { date: '2026-10-12', data: { events: [] } });
+  state.sandbox.renderDayEvents = () => { throw new Error('detail status must remain untouched'); };
+  const pending = state.sandbox.fetchData();
+  state.calls.at(-1).reject(new Error('live failed'));
+  await pending;
+  assert.equal(state.curves.length, 0);
+  assert.match(state.sandbox.statusNode.textContent, /显示上次数据/);
+  assert.equal(state.sandbox.dashboardSnapshots.has('ES02'), true);
+});
+
+function detailFixture() {
+  const reads = [], curves = [], events = [], clears = [];
+  const sandbox = {
+    activeStationId: 'ES02', dayReadGeneration: 0, detailDate: '',
+    curveController: null, dayEventController: null, range: null,
+    dayEvents: [], dayEventQueryState: {}, eventHistoryMode: false,
+    curveSnapshots: new Map(), eventSnapshots: new Map(),
+    curveStatus: {}, eventStatus: {}, AbortController,
+    todayDate: () => '2026-10-12',
+    readHistory(params, controller, stationId) {
+      const read = deferred();
+      reads.push({ params, controller, stationId, ...read });
+      return read.promise;
+    },
+    renderCurve(data) { curves.push(data); sandbox.range = data.range; },
+    renderDayEvents(data) { events.push(data); sandbox.dayEvents = data.events; },
+    setQueryStatus(node, state, text) { Object.assign(node, { state, text }); },
+    clearCurve(message, keepEvents) { clears.push({ message, keepEvents }); if (!keepEvents) sandbox.dayEvents = []; },
+    setEventMessage() {},
+  };
+  vm.createContext(sandbox);
+  for (const name of ['cancelDayReads', 'setDayEventStatus', 'loadDay']) vm.runInContext(source(name), sandbox);
+  return { sandbox, reads, curves, events, clears };
+}
+
+test('M2 curve failure preserves an independently successful event read', async () => {
+  const state = detailFixture();
+  const pending = state.sandbox.loadDay('2026-10-12');
+  state.reads.find(read => read.params.operation === 'events').resolve({ events: [{ id: 7 }] });
+  state.reads.find(read => read.params.operation === 'curve').reject(new Error('curve failed'));
+  await pending;
+  assert.equal(state.sandbox.dayEvents[0].id, 7);
+  assert.equal(state.sandbox.curveStatus.state, 'error');
+  assert.equal(state.clears[0].keepEvents, true);
+});
+
+test('M2 ignores stale curve and event responses after a date change', async () => {
+  const state = detailFixture();
+  const first = state.sandbox.loadDay('2026-10-11');
+  const second = state.sandbox.loadDay('2026-10-12');
+  for (const read of state.reads) {
+    read.resolve(read.params.operation === 'curve'
+      ? { range: { start_time: read.params.date + 'T00:00:00+08:00' } }
+      : { events: [{ date: read.params.start_date }] });
+  }
+  await Promise.all([first, second]);
+  assert.equal(state.curves.length, 1);
+  assert.match(state.curves[0].range.start_time, /^2026-10-12/);
+  assert.equal(state.events.length, 1);
+  assert.equal(state.events[0].events[0].date, '2026-10-12');
+  assert.equal(state.reads[0].controller.signal.aborted, true);
+});
+
+test('M2 retains current-event failure state while history mode is visible', async () => {
+  const state = detailFixture();
+  state.sandbox.eventHistoryMode = true;
+  const pending = state.sandbox.loadDay('2026-10-12');
+  state.reads.find(read => read.params.operation === 'curve').resolve({ range: { start_time: '2026-10-12T00:00:00+08:00' } });
+  state.reads.find(read => read.params.operation === 'events').reject(new Error('events failed'));
+  await pending;
+  assert.equal(state.sandbox.dayEventQueryState.state, 'error');
+  assert.match(state.sandbox.dayEventQueryState.text, /加载失败/);
 });

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>运营监控告警看板</title>
+<title>实时监控</title>
 <style>
 :root, [data-theme="dark"] {
   --surface-0: #0b0d14;
@@ -601,7 +601,7 @@ body {
 <div class="header">
   <div class="header-left">
     <div class="header-logo"><svg viewBox="0 0 24 24" fill="currentColor" stroke="none" style="width:18px;height:18px;color:#fff"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg></div>
-    <h1>运营监控告警看板</h1>
+    <h1>实时监控</h1>
   </div>
   <div class="header-right">
     <span class="refresh-info" id="refreshInfo">加载中...</span>
@@ -609,8 +609,6 @@ body {
     <button class="header-btn" id="fullscreenBtn" title="全屏"><span class="ico ico-md"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg></span></button>
   </div>
 </div>
-
-<div class="kpi-bar" id="kpiBar"></div>
 
 <div class="main">
   <div class="sites-panel" id="sitesPanel">
@@ -663,9 +661,8 @@ body {
 const QUERY_PARAMS = new URLSearchParams(window.location.search);
 const TOKEN = QUERY_PARAMS.get('token');
 const API_URL = 'https://aivifa.hlszh.com/dashboard_energy_api';
-const REFRESH_INTERVAL_MS = 20000;
+const REFRESH_INTERVAL_MS = 30000;
 const API_REQUEST_TIMEOUT_MS = 120000;
-const STALE_AFTER_MS = 60000;
 const ANOMALY_CATEGORIES = Object.freeze(['pv_efficiency', 'ess_self_loss', 'load_spike']);
 const ANOMALY_CATEGORY_META = Object.freeze({
   pv_efficiency: {label:'光伏转换效率下降', short:'光伏效率', cls:'pv'},
@@ -682,7 +679,6 @@ const TARGET_TOPOLOGY = Object.freeze({
 let allData = null;
 let lastSuccessfulData = null;
 let fetchInFlight = false;
-let currentFilter = 'all';
 let currentAlertTab = 'all';
 let selectedSiteId = null;
 let selectedEsId = null;
@@ -807,16 +803,11 @@ function statusLabel(s) {
   const key = String(s||'').toLowerCase();
   return STATUS_MAP[key] ? STATUS_MAP[key].label : (s||'离线');
 }
-function tsRecent(ts, min) {
-  if (!ts) return false; const d = new Date(ts);
-  return isNaN(d) ? false : (Date.now()-d.getTime()) < min*60*1000;
-}
 function nodeOnline(rt) {
-  if (!rt || rt.data_quality === 'missing' || rt.data_quality === 'stale') return false;
-  return tsRecent(rt.timestamp, STALE_AFTER_MS / 60000);
+  return Boolean(rt) && rt.data_quality !== 'missing';
 }
 
-// Site online: any node under site has fresh realtime data.
+// Site online: any node under site has available realtime data.
 function siteOnline(siteId, nodes, rtMap) {
   const siteNodes = nodes.filter(n => String(n.fk_site_id) === String(siteId));
   return siteNodes.some(n => nodeOnline(rtMap[n.id]));
@@ -924,10 +915,90 @@ function isolateCustomerData(data) {
 
 function renderDataUnavailable(title, detail) {
   const state = '<div class="empty-state"><div class="empty-state-title">'+esc(title)+'</div><div class="empty-state-copy">'+esc(detail)+'</div></div>';
-  document.getElementById('kpiBar').innerHTML = '';
   document.getElementById('sitesPanel').innerHTML = state;
   document.getElementById('alertList').innerHTML = state;
   document.getElementById('alertPanelSub').textContent = '数据暂不可用';
+}
+
+function retainAvailableSourceData(current, previous) {
+  if (!previous) return current;
+  const errors = current.source_errors || {};
+  const failed = (source, code) => Object.prototype.hasOwnProperty.call(errors, source) ||
+    Object.prototype.hasOwnProperty.call(errors, source + ':' + code);
+  const oldRealtime = new Map((previous.realtime||[]).map(row => [String(row.fk_en), row]));
+  const newRealtime = new Map((current.realtime||[]).map(row => [String(row.fk_en), row]));
+  const stationCodes = new Map((current.es_list||[]).map(station => [String(station.id), stationCode(station)]));
+  const retainedNodes = new Set();
+  const hasValue = value => value !== null && value !== undefined && value !== '';
+  const restoreMissing = (row, old, fields) => {
+    fields.forEach(field => {
+      if (!hasValue(row[field]) && hasValue(old[field])) row[field] = old[field];
+    });
+  };
+  const realtime = (current.nodes||[]).map(node => {
+    const id = String(node.id);
+    const old = oldRealtime.get(id);
+    const incoming = newRealtime.get(id);
+    if (!old) return incoming;
+    // A missing row must not clear a device already shown on this page.
+    if (!incoming || incoming.data_quality === 'missing') {
+      retainedNodes.add(id);
+      return {...old};
+    }
+    const row = {...incoming};
+    const code = stationCodes.get(String(node.fk_es));
+    const cabinetFailed = failed('storage_cabinets', code);
+    if (node.node_type === 'ess' && !node.is_aggregate && cabinetFailed) {
+      restoreMissing(row, old, ['temperature_c', 'cabinet_timestamp']);
+    }
+    if (node.is_aggregate && (node.node_type === 'ess' || node.node_type === 'load')) {
+      const sourceFailed = node.node_type === 'ess' ? cabinetFailed : failed('station_load', code);
+      if ((sourceFailed || row.power_source === 'unavailable') &&
+          !hasValue(row.power) && hasValue(old.power) && old.power_source !== 'unavailable') {
+        retainedNodes.add(id);
+        ['power', 'timestamp', 'power_source'].forEach(field => { row[field] = old[field]; });
+      }
+    }
+    if (cabinetFailed || failed('pv_meter', code)) {
+      restoreMissing(row, old, ['pv_meter_timestamp']);
+    }
+    return row;
+  }).filter(Boolean);
+
+  const oldInverters = new Map((previous.pv_inverters||[]).map(row => [String(row.sn), row]));
+  const newInverters = new Map((current.pv_inverters||[]).map(row => [String(row.sn), row]));
+  const retainedInverters = new Set();
+  const pvInverters = TARGET_TOPOLOGY.inverterSns.map(sn => {
+    const old = oldInverters.get(sn);
+    const incoming = newInverters.get(sn);
+    if (old && old.data_quality !== 'missing' &&
+        (failed('growatt') || !incoming || incoming.data_quality === 'missing')) {
+      retainedInverters.add(sn);
+      return {...old};
+    }
+    return incoming;
+  }).filter(Boolean);
+
+  // Keep alerts paired with the retained source, while healthy sources update normally.
+  const retainsAlert = alert => alert.category === 'pv_efficiency' ?
+    retainedInverters.has(String(alert.device_sn)) : retainedNodes.has(String(alert.fk_en_id));
+  const nodeIds = new Set((current.nodes||[]).map(node => String(node.id)));
+  const alerts = (current.alerts||[]).filter(alert => !retainsAlert(alert)).concat(
+    (previous.alerts||[]).filter(alert => retainsAlert(alert) && nodeIds.has(String(alert.fk_en_id)))
+  );
+  const history = current.alert_history;
+  const retainedHistory = previous.alert_history ? {
+    ...previous.alert_history,
+    records: (previous.alert_history.records||[]).filter(alert => nodeIds.has(String(alert.fk_en_id))),
+  } : null;
+  return {
+    ...current,
+    realtime,
+    pv_inverters: pvInverters,
+    alerts,
+    alert_history: (!history || history.status !== 'ok') && retainedHistory ? retainedHistory : history,
+    stats: {...current.stats, total_alerts: alerts.length},
+  };
 }
 
 // Fetch
@@ -943,15 +1014,22 @@ async function fetchData() {
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const data = await resp.json();
     if (data.status !== 'ok' || !data.data) throw new Error(data.message||'API 数据格式错误');
-    allData = isolateCustomerData(data.data);
+    const current = isolateCustomerData(data.data);
+    if (lastSuccessfulData && (!current.sites.length || !current.es_list.length || !current.nodes.length)) {
+      throw new Error('基础数据暂不可用');
+    }
+    allData = retainAvailableSourceData(current, lastSuccessfulData);
     lastSuccessfulData = allData;
     render();
-    document.getElementById('refreshInfo').textContent = '\u21BB ' + new Date().toLocaleTimeString('zh-CN') + ' · 20s';
+    document.getElementById('refreshInfo').textContent = '\u21BB ' + new Date().toLocaleTimeString('zh-CN') + ' · ' + REFRESH_INTERVAL_MS / 1000 + 's';
   } catch(e) {
-    if (lastSuccessfulData) allData = lastSuccessfulData;
-    else renderDataUnavailable('数据源未连接', DEMO_MODE ? '请通过看板服务地址访问，或提供可读取的 result.json 数据文件。' : '请更新 NocoBase 访问凭据后重试。');
-    console.error(e); showToast('\u2716 ' + (e.name === 'AbortError' ? '请求超时，请稍后重试' : e.message), true);
-    document.getElementById('refreshInfo').textContent = e.name === 'AbortError' ? '\u2716 刷新超时' : '\u2716 刷新失败';
+    console.error(e);
+    if (lastSuccessfulData) {
+      allData = lastSuccessfulData;
+    } else {
+      renderDataUnavailable('数据源未连接', DEMO_MODE ? '请通过看板服务地址访问，或提供可读取的 result.json 数据文件。' : '请更新 NocoBase 访问凭据后重试。');
+      document.getElementById('refreshInfo').textContent = e.name === 'AbortError' ? '\u2716 刷新超时' : '\u2716 刷新失败';
+    }
   } finally {
     clearTimeout(timeout);
     fetchInFlight = false;
@@ -963,58 +1041,13 @@ function render() {
   if (!allData) return;
   const sites = allData.sites || [];
   const nodes = allData.nodes || [];
-  const realtime = allData.realtime || [];
-  const stats = allData.stats || {};
   if (!sites.length && !nodes.length) {
     renderDataUnavailable('暂无基础数据', '当前响应中没有可展示的场站或设备，请检查 NocoBase 数据源连接。');
     document.getElementById('refreshInfo').textContent = '\u26A0 数据为空';
     return;
   }
-  const rtMap = {}; (realtime||[]).forEach(r => rtMap[r.fk_en] = r);
-  const anomalyCounts = anomalyCategoryCounts(allData.alerts || []);
-
-  // KPI bar
-  const kpiBar = document.getElementById('kpiBar');
-  const onlineSites = sites.filter(s => siteOnline(s.id, nodes, rtMap)).length;
-  const offlineSites = sites.length - onlineSites;
-  const items = [
-    {l:'场站', v:stats.total_sites, cls:'', icon:'site', filter:'all'},
-    {l:'电站', v:stats.total_es, cls:'', icon:'station', filter:'all'},
-    {l:'光伏效率', v:anomalyCounts.pv_efficiency, cls:'pv', icon:'alert', category:'pv_efficiency'},
-    {l:'储能自损耗', v:anomalyCounts.ess_self_loss, cls:'ess', icon:'alert', category:'ess_self_loss'},
-    {l:'负载突增', v:anomalyCounts.load_spike, cls:'load', icon:'alert', category:'load_spike'},
-    {l:'在线', v:onlineSites, cls:'online', icon:'online', filter:'online'},
-    {l:'离线', v:offlineSites, cls:'offline', icon:'offline', filter:'offline'},
-  ];
-  kpiBar.innerHTML = items.map(k => '<div class="kpi-card" data-filter="'+(k.filter||'')+'" data-category="'+(k.category||'')+'"><div class="kpi-icon">'+icon(k.icon,'ico-lg')+'</div><div><div class="kpi-label">'+k.l+'</div><div class="kpi-value '+k.cls+'">'+k.v+'</div></div></div>').join('');
-
-  kpiBar.querySelectorAll('.kpi-card').forEach(card => {
-    card.addEventListener('click', () => {
-      const category = card.dataset.category;
-      const filter = card.dataset.filter;
-      if (category) {
-        currentFilter = 'all';
-        setAlertTab(currentAlertTab === category ? 'all' : category);
-      } else {
-        currentFilter = currentFilter === filter ? 'all' : (filter || 'all');
-        setAlertTab('all');
-      }
-      updateFilterUI(); renderSites();
-      renderAlerts();
-    });
-  });
-
-  updateFilterUI();
   renderSites();
   renderAlerts();
-}
-
-function updateFilterUI() {
-  document.querySelectorAll('.kpi-card').forEach(card => {
-    const categorySelected = card.dataset.category && card.dataset.category === currentAlertTab;
-    const filterSelected = currentFilter !== 'all' && card.dataset.filter === currentFilter;
-    card.classList.toggle('selected', Boolean(categorySelected || filterSelected));
-  });
 }
 
 function renderSites() {
@@ -1034,11 +1067,6 @@ function renderSites() {
   const filtered = ordered.filter(site => {
     const sac = sa[site.id]||{pv_efficiency:0, ess_self_loss:0, load_spike:0};
     if (alertMode==='current' && currentAlertTab!=='all' && sac[currentAlertTab]===0) return false;
-    if (currentFilter==='online' || currentFilter==='offline') {
-      const isOnline = siteOnline(site.id, nodes, rtMap);
-      if (currentFilter==='online' && !isOnline) return false;
-      if (currentFilter==='offline' && isOnline) return false;
-    }
     return true;
   });
 
@@ -1098,11 +1126,6 @@ function renderSites() {
             '<div class="site-name-wrap"><span class="site-name">'+esc(site.name||site.site||'未命名')+'</span>'+(siteUrl?'<a class="site-ems-link" href="'+esc(siteUrl)+'" target="_blank" title="打开边缘端EMS" onclick="event.stopPropagation()">'+icon('link','ico-sm')+'</a>':'')+'</div>'+
             '<div class="site-status"><span class="site-status-dot '+(online?'online':'offline')+'"></span>'+(online?'在线':'离线')+'</div>'+
           '</div>'+
-        '</div>'+
-        '<div class="site-header-right">'+
-          '<span class="site-alert-pill pv '+(sac.pv_efficiency===0?'zero':'')+'" data-category="pv_efficiency">光伏 '+sac.pv_efficiency+'</span>'+
-          '<span class="site-alert-pill ess '+(sac.ess_self_loss===0?'zero':'')+'" data-category="ess_self_loss">储能 '+sac.ess_self_loss+'</span>'+
-          '<span class="site-alert-pill load '+(sac.load_spike===0?'zero':'')+'" data-category="load_spike">负载 '+sac.load_spike+'</span>'+
         '</div>'+
       '</div>'+
       '<div class="site-body">'+esHtml+'</div>'+
@@ -1265,9 +1288,8 @@ document.getElementById('sitesPanel').addEventListener('click', e => {
     e.stopPropagation();
     selectedSiteId = pill.closest('.site-card')?.dataset.siteId || null;
     selectedNodeId = null;
-    currentFilter = 'all';
     setAlertTab(pill.dataset.category);
-    updateFilterUI(); renderSites(); renderAlerts();
+    renderSites(); renderAlerts();
     return;
   }
 
@@ -1323,9 +1345,8 @@ document.getElementById('alertTabs').addEventListener('click', e => {
   const tab = e.target.closest('.alert-tab');
   if (!tab) return;
   historyPage = 1;
-  currentFilter = 'all';
   setAlertTab(tab.dataset.tab);
-  updateFilterUI(); renderSites(); renderAlerts();
+  renderSites(); renderAlerts();
 });
 
 document.getElementById('alertSearch').addEventListener('input', function() {
@@ -1347,10 +1368,10 @@ document.getElementById('historyPrev').addEventListener('click', () => { history
 document.getElementById('historyNext').addEventListener('click', () => { historyPage++; renderAlerts(); document.getElementById('alertList').scrollTop=0; });
 document.getElementById('resetAlertFilters').addEventListener('click', () => {
   selectedSiteId = null; selectedEsId = null; selectedNodeId = null;
-  currentFilter = 'all'; alertSearchText = ''; historyPage = 1;
+  alertSearchText = ''; historyPage = 1;
   document.getElementById('alertSearch').value = '';
   resetHistoryDates();
-  setAlertTab('all'); updateFilterUI(); renderSites(); renderAlerts();
+  setAlertTab('all'); renderSites(); renderAlerts();
 });
 
 // Auto refresh
