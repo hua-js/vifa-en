@@ -24,7 +24,7 @@ from m3.worker.domain.forecasting import (
     select_champion,
 )
 from m3.worker.domain.work_schedule import WORK_SCHEDULE_POLICY, schedule_policy, schedule_manifest
-from m3.worker.domain.load_history import POST_HOLIDAY_LOAD_MODEL
+from m3.worker.domain.load_history import LOAD_REFERENCE_MODELS, RECENT_SCHEDULE_LOAD_POLICY
 from m3.worker.domain.production_schedule import use_schedule
 from m3.worker.domain.training_data import (
     OPERATIONAL_HISTORY_DAYS,
@@ -338,7 +338,10 @@ def build_latest_snapshot(
     if readiness is not None:
         manifest["readiness"] = readiness
     if load_reference is not None:
-        manifest["post_holiday_load_reference"] = load_reference
+        key = ("recent_schedule_load_reference"
+               if load_reference.get("policy") == RECENT_SCHEDULE_LOAD_POLICY
+               else "post_holiday_load_reference")
+        manifest[key] = load_reference
     if (calendar_manifest := schedule_manifest()) is not None:
         manifest["production_schedule"] = calendar_manifest
     body = {
@@ -702,9 +705,9 @@ class ForecastService:
                     publication_champions = dict(cache.state.champions)
                     load_dataset = datasets["station_total_load"]
                     load_champion = publication_champions["station_total_load"]
-                    if load_dataset.post_holiday_reference is not None:
+                    if load_dataset.load_reference is not None:
                         publication_champions["station_total_load"] = self._calculate(select_champion, load_dataset)
-                    elif load_champion is not None and load_champion.model_name == POST_HOLIDAY_LOAD_MODEL:
+                    elif load_champion is not None and load_champion.model_name in LOAD_REFERENCE_MODELS:
                         publication_champions["station_total_load"] = (
                             None if load_dataset.mode == "insufficient"
                             else seasonal_naive_champion(load_dataset)
@@ -727,8 +730,8 @@ class ForecastService:
                         forecast_series,
                         publication_champions,
                         readiness=_readiness_manifest(datasets),
-                        load_reference=(load_dataset.post_holiday_reference.manifest()
-                                        if load_dataset.post_holiday_reference is not None else None),
+                        load_reference=(load_dataset.load_reference.manifest()
+                                        if load_dataset.load_reference is not None else None),
                     )
                 except Exception as cause:
                     error = _safe_error(

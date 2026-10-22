@@ -7,6 +7,7 @@ from m3.worker.contracts import ObservationPoint, SeriesId, is_load_series
 from m3.worker.domain.work_schedule import schedule_interpolate, schedule_slot
 from m3.worker.domain.load_history import (
     fill_load_schedule_gaps, PostHolidayLoadReference, post_holiday_load_reference,
+    LoadReference, RecentScheduleLoadReference, recent_schedule_load_reference,
 )
 
 
@@ -27,6 +28,11 @@ class TrainingDataset:
     end: datetime
     mode: str
     post_holiday_reference: PostHolidayLoadReference | None = None
+    recent_schedule_reference: RecentScheduleLoadReference | None = None
+
+    @property
+    def load_reference(self) -> LoadReference | None:
+        return self.post_holiday_reference or self.recent_schedule_reference
 
 
 def _history_mode(point_count: int) -> str:
@@ -149,14 +155,20 @@ def build_training_dataset(
 
     frame = frame.loc[frame["y"].notna()].reset_index()
     reference = None
+    recent_reference = None
     real_count = len(frame) - int(frame["ds"].isin(imputed_times).sum())
     if history_days is not None and is_load_series(unique_id) and _history_mode(real_count) == "insufficient":
         reference = post_holiday_load_reference(
             observed_load, history_end=selected[-1].ds + GRID,
             origin=selected[-1].ds + GRID, interval=GRID, periods=POINTS_PER_DAY,
         )
-    if frame.empty:
         if reference is None:
+            recent_reference = recent_schedule_load_reference(
+                observed_load, history_end=selected[-1].ds + GRID,
+                origin=selected[-1].ds + GRID, interval=GRID, periods=POINTS_PER_DAY,
+            )
+    if frame.empty:
+        if reference is None and recent_reference is None:
             raise ValueError(f"no continuous observations for {unique_id}")
         frame = observed_load.dropna().tail(1).rename("y").reset_index()
 
@@ -174,6 +186,7 @@ def build_training_dataset(
         start=frame["ds"].iloc[0].to_pydatetime(),
         end=frame["ds"].iloc[-1].to_pydatetime(),
         post_holiday_reference=reference,
+        recent_schedule_reference=recent_reference,
         mode=_history_mode(
             real_point_count if history_days is not None else len(frame)
         ),

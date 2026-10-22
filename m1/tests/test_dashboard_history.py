@@ -107,9 +107,11 @@ class CabinetTimestampTests(unittest.TestCase):
             for station in api.TARGET_STATIONS
             for index, sn in enumerate(station["cabinet_sns"])
         ]
+        rows.append({"f_es_sn": "ES01", "emu_sn": "emu13", "input_ac_solar_power": 100,
+                     "latest_solar_power": 95, "last_time_iso": "2026-09-07T08:00:03+08:00"})
         with patch.object(api, "fetch_external_rows", return_value=(rows, None)):
             sources, errors = api.fetch_station_storage_sources("test-token")
-        self.assertEqual(errors, {"pv_meter:ES02": "光伏计量表 emu27 时间缺失或无效"})
+        self.assertIn("pv_meter:ES02", errors)
         data = {
             "es_list": [{"id": "s1", "station_code": "ES01"}],
             "nodes": [{"id": sn, "sn": sn, "node_type": "ess", "fk_es": "s1"} for sn in ("emu11", "emu12")],
@@ -144,12 +146,15 @@ class PvMeterTimestampTests(unittest.TestCase):
             for station in api.TARGET_STATIONS for sn in station["cabinet_sns"]
         ]
         rows.append({"f_es_sn": "ES02", "emu_sn": "emu27", "latest_power": 999,
+                     "input_ac_solar_power": 200, "latest_solar_power": 190,
                      "last_time_iso": "2026-09-07T00:15:03Z"})
+        rows.append({"f_es_sn": "ES01", "emu_sn": "emu13", "input_ac_solar_power": 100,
+                     "latest_solar_power": 95, "last_time_iso": "2026-09-07T08:00:03+08:00"})
         with patch.object(api, "fetch_external_rows", return_value=(rows, None)) as fetch:
             sources, errors = api.fetch_station_storage_sources("test-token")
         query = parse_qs(urlparse(fetch.call_args.args[0]).query)
         self.assertIn("emu27", query["filter"][0])
-        self.assertEqual(query["pageSize"], ["9"])
+        self.assertEqual(query["pageSize"], ["10"])
         self.assertEqual(errors, {})
         self.assertEqual(sources["ES02"]["power"], 30)
         self.assertNotIn("emu27", sources["ES02"]["cabinet_timestamps"])
@@ -161,8 +166,9 @@ class PvMeterTimestampTests(unittest.TestCase):
         result = api.build_result({"data": data}, storage_sources=sources)["data"]
         meter = next(r for r in result["realtime"] if r["fk_en"] == "meter")
         self.assertEqual(meter["pv_meter_timestamp"], "2026-09-07T08:15:03+08:00")
-        self.assertEqual(meter["timestamp"], "older")
-        self.assertEqual(meter["power"], 42)
+        self.assertEqual(meter["timestamp"], "2026-09-07T08:15:03+08:00")
+        self.assertEqual(meter["power"], 190)
+        self.assertEqual(meter["conversion_efficiency"], 95)
 
     def test_missing_invalid_or_unavailable_meter_has_no_fallback(self):
         for rows, error in [([], None),

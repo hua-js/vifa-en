@@ -346,7 +346,7 @@ def process_station_minute(
     except StationEfficiencyDeviceDataError:
         warnings.append(_warning("battery_point_build"))
 
-    if get_station_config(station_id)["has_pv"]:
+    if get_station_config(station_id)["has_growall_inverters"]:
         try:
             growall_rows = fetch_growall_rows(
                 config, request_json=growall_request_json,

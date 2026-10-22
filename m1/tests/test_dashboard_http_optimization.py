@@ -171,7 +171,10 @@ class FixtureSourceHandler(BaseHTTPRequestHandler):
                 {"f_es_sn": station["code"], "emu_sn": sn, "latest_power": 5,
                  "max_temp": 30, "last_time_iso": "2026-10-12T12:00:00+08:00"}
                 for station in api.TARGET_STATIONS for sn in station["cabinet_sns"]
-            ] + [{"f_es_sn": "ES02", "emu_sn": "emu27", "last_time_iso": "2026-10-12T12:00:00+08:00"}]}
+            ] + [{"f_es_sn": "ES02", "emu_sn": "emu27", "input_ac_solar_power": 200,
+                  "latest_solar_power": 190, "last_time_iso": "2026-10-12T12:00:00+08:00"},
+                 {"f_es_sn": "ES01", "emu_sn": "emu13", "input_ac_solar_power": 100,
+                  "latest_solar_power": 95, "last_time_iso": "2026-10-12T12:00:00+08:00"}]}
         elif resource == "t_growall":
             rows = [{"sn": sn, "timestamp": "2026-10-12T12:00:00+08:00",
                      "a0": 1, "a1": 10, "a35": 9} for sn in api.GROWATT_INVERTER_SNS]
@@ -246,11 +249,11 @@ class ResidentTransportIntegrationTests(unittest.TestCase):
         self.assertEqual(first["status"], "ok")
         self.assertEqual(first["data"]["sites"][0]["name"], "Bearer user-a-fixture")
         connections = self.source.accepted
-        self.assertEqual(len(self.source.calls), 8)
-        self.assertLess(connections, 8, "resident source reads should reuse request-scoped HTTP connections")
+        self.assertEqual(len(self.source.calls), 7)
+        self.assertLess(connections, 7, "resident source reads should reuse request-scoped HTTP connections")
         second = self.read("user-b-fixture")
         self.assertEqual(second["data"]["sites"][0]["name"], "Bearer user-b-fixture")
-        self.assertEqual(len(self.source.calls), 16)
+        self.assertEqual(len(self.source.calls), 14)
         self.assertGreater(self.source.accepted, connections, "a new user request must get a fresh transport scope")
         for call in self.source.calls:
             self.assertIsNone(call["cookie"], "upstream session cookies must not be replayed")
@@ -270,9 +273,29 @@ class ResidentTransportIntegrationTests(unittest.TestCase):
 
         with patch.object(api, "datetime", FixedClock):
             result = self.read()
+        # Only the controller PV contract differs from the legacy business baseline.
+        baseline = expected["payload"]["data"]
+        baseline["pv_inverters"] = []
+        for index, (sn, input_kw, output_kw) in enumerate((("emu13", 100, 95), ("emu27", 200, 190))):
+            baseline["topology"]["stations"][index]["pv_meter"] = {
+                "name": "光伏计量表", "emu_sn": sn, "power_source": "t_emu",
+            }
+            for node in baseline["nodes"]:
+                if node["id"] in (1001 + index * 100, 1002 + index * 100):
+                    node["run_status"] = "generate"
+                    if node["node_type"] == "meter":
+                        node["name"] = "光伏计量表"
+            for row in baseline["realtime"]:
+                if row["fk_en"] in (1001 + index * 100, 1002 + index * 100):
+                    row.update(power=output_kw, soc=None, run_status="generate",
+                               pv_meter_timestamp="2026-10-12T12:00:00+08:00", pv_device_sn=sn,
+                               pv_input_power_kw=input_kw, pv_output_power_kw=output_kw,
+                               conversion_efficiency=95, power_source="t_emu.latest_solar_power",
+                               data_quality="good")
         self.assertEqual(result, expected["payload"])
         self.assertEqual(len(result["data"]["nodes"]), 17)
-        self.assertEqual(len(result["data"]["pv_inverters"]), 9)
+        self.assertEqual(result["data"]["pv_inverters"], [])
+        self.assertFalse(any(call["resource"] == "t_growall" for call in self.source.calls))
         self.assertEqual(result["data"]["alert_history"]["status"], "ok")
         self.assertTrue(self.server.settings.history_db.exists())
 
@@ -299,14 +322,14 @@ class ResidentTransportIntegrationTests(unittest.TestCase):
             output = [future.result(6) for future in futures]
         self.assertEqual([body["data"]["sites"][0]["name"] for body in output],
                          ["Bearer user-a-fixture", "Bearer user-b-fixture"])
-        self.assertEqual(len(self.source.calls), 16)
+        self.assertEqual(len(self.source.calls), 14)
         self.assertTrue(all(call["cookie"] is None for call in self.source.calls))
         auth_counts = {}
         for call in self.source.calls:
             auth = call["authorization"]
             auth_counts[auth] = auth_counts.get(auth, 0) + 1
         self.assertEqual(auth_counts, {"Bearer user-a-fixture": 4,
-                                       "Bearer user-b-fixture": 4, "Bearer energy-fixture": 8})
+                                       "Bearer user-b-fixture": 4, "Bearer energy-fixture": 6})
 
     def test_pool_is_closed_and_context_restored_after_success_or_denial(self):
         from m1 import http_reader

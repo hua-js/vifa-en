@@ -3,6 +3,25 @@ from m1.deploy import node_red_gateway as gateway
 
 
 class GatewayTests(unittest.TestCase):
+    def test_response_only_update_preserves_auth_route_templates_and_other_modules(self):
+        nodes = [
+            {"id": gateway.INPUT_ID, "url": "/dashboard_energy_api"},
+            {"id": gateway.REQUEST_ID, "url": "http://127.0.0.1:8811/dashboard_energy_api"},
+            {"id": gateway.WRAP_ID, "type": "function", "func": "old",
+             "libs": [{"var": "existing", "module": "path"}], "wires": [[gateway.RESPONSE_ID]]},
+            {"id": "other", "type": "template", "template": "existing template"},
+        ]
+        updated = gateway.update_response_compression(nodes)
+        self.assertEqual({a["id"] for a, b in zip(nodes, updated) if a != b}, {gateway.WRAP_ID})
+        self.assertEqual(updated[2]["libs"], [
+            {"var": "existing", "module": "path"}, {"var": "m1Zlib", "module": "zlib"},
+        ])
+        self.assertEqual(nodes[2]["func"], "old")
+        self.assertEqual(gateway.update_response_compression(updated), updated)
+        nodes[2]["libs"] = [{"var": "m1Zlib", "module": "unexpected"}]
+        with self.assertRaises(ValueError):
+            gateway.update_response_compression(nodes)
+
     def test_only_three_m1_nodes_change_and_old_exec_is_replaced(self):
         nodes = [
             {"id": gateway.INPUT_ID, "type": "http in", "url": "/dashboard_energy_api"},

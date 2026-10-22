@@ -18,6 +18,7 @@ from m2.station_efficiency_event_outbox import enqueue_event, pending_event_coun
 from m2.station_efficiency_history import evaluate_inverter_low_load
 from m2.station_energy_backend import calculate_bus as calculate_bus_real
 from m2.station_energy_data_adapter import StationEnergyDataError
+from m2.tests.test_station_energy_data_adapter import make_es01_rows
 
 
 TIMESTAMP = "2026-08-26T01:30:00Z"
@@ -213,6 +214,29 @@ class StationEfficiencyJobTests(unittest.TestCase):
             "input_kw": 0,
             "output_kw": 0,
         })
+
+    def test_es01_pv_minute_saves_two_batteries_without_growall(self):
+        rows = make_es01_rows(include_pv=True)
+        rows[-1].update(input_ac_solar_power=400, latest_solar_power=390)
+        config = {**CONFIG, "bottleneck_rule": {**RULE, "station_id": "ES01"}}
+        writes = []
+
+        def save(url, token, timeout, body):
+            writes.append(body)
+            return {"data": {"id": len(writes), **body}}
+
+        output = process_station_minute(
+            "ES01", config,
+            source_request_json=lambda *args: {"data": rows},
+            growall_request_json=lambda *args: self.fail("ES01 must not read Growall"),
+            query_request_json=self.make_query_request(minute_rows=[], device_rows=[]),
+            store_request_json=save,
+        )
+        self.assertEqual(output["status"], "ok")
+        self.assertEqual(output["device_points_saved"], 2)
+        self.assertEqual({p["device_id"] for p in writes if "device_id" in p}, {"emu11", "emu12"})
+        self.assertTrue(all(p["station_id"] == "ES01" for p in writes))
+        self.assertIsNotNone(output["minute_point"]["pv_load_efficiency"])
 
     def test_processes_single_emu_fetch_through_device_and_event_flow(self):
         emu_calls, growall_calls, store_calls = [], [], []

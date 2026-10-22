@@ -12,8 +12,9 @@ STATION_CONFIGS = {
     "ES01": {
         "master_emu_sn": "emu11",
         "cabinet_sns": ("emu11", "emu12"),
-        "pv_emu_sn": None,
-        "has_pv": False,
+        "pv_emu_sn": "emu13",
+        "has_pv": True,
+        "has_growall_inverters": False,
     },
     "ES02": {
         "master_emu_sn": "emu26",
@@ -27,6 +28,7 @@ STATION_CONFIGS = {
         ),
         "pv_emu_sn": "emu27",
         "has_pv": True,
+        "has_growall_inverters": True,
     },
 }
 

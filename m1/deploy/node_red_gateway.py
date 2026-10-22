@@ -31,10 +31,65 @@ var valid = value && ((value.status === 'ok' && value.data && typeof value.data 
     (value.status === 'error' && typeof value.message === 'string'));
 msg.payload = valid ? value : {status: 'error', message: '数据暂不可用，请稍后重试。'};
 if (!Number.isInteger(msg.statusCode) || msg.statusCode < 100 || msg.statusCode > 599) msg.statusCode = 502;
-msg.headers = {'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store'};
+msg.headers = {'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store',
+    Vary: 'Accept-Encoding'};
 node.log('m1_dashboard_completed status=' + msg.payload.status + ' source_failures=' +
     Object.keys((msg.payload.data || {}).source_errors || {}).length);
+// Compress the complete response only when the client accepts gzip.
+var accepted = String(((msg.req || {}).headers || {})['accept-encoding'] || '').toLowerCase();
+var qualities = {};
+accepted.split(',').forEach(function(entry) {
+    var parts = entry.trim().split(';');
+    var coding = parts.shift().trim();
+    if (coding !== 'gzip' && coding !== '*') return;
+    var quality = 1;
+    parts.forEach(function(parameter) {
+        var match = parameter.trim().match(/^q\s*=\s*(.*)$/);
+        if (match) quality = /^(?:0(?:\.\d{0,3})?|1(?:\.0{0,3})?)$/.test(match[1]) ? Number(match[1]) : 0;
+    });
+    qualities[coding] = quality;
+});
+var gzipQuality = Object.prototype.hasOwnProperty.call(qualities, 'gzip') ? qualities.gzip : qualities['*'];
+if (gzipQuality > 0) {
+    try {
+        var json = Buffer.from(JSON.stringify(msg.payload), 'utf8');
+        if (json.length >= 1024) {
+            var compressed = m1Zlib.gzipSync(json, {level: 1});
+            if (compressed.length < json.length) {
+                msg.payload = compressed;
+                msg.headers['Content-Encoding'] = 'gzip';
+            }
+        }
+    } catch (_compressionError) {
+        node.warn('m1_response_compression_failed');
+    }
+}
 return msg;"""
+
+
+def _configure_response(node: dict[str, Any]) -> None:
+    libs = node.get("libs") or []
+    if not isinstance(libs, list) or any(not isinstance(lib, dict) for lib in libs):
+        raise ValueError("M1 response module configuration is invalid")
+    existing = [lib for lib in libs if lib.get("var") == "m1Zlib"]
+    if len(existing) > 1 or any(lib.get("module") != "zlib" for lib in existing):
+        raise ValueError("M1 compression module alias is already in use")
+    node["libs"] = libs if existing else [*libs, {"var": "m1Zlib", "module": "zlib"}]
+    node["func"] = WRAP_JS
+
+
+def update_response_compression(nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Update the existing M1 response node; preserve every other node verbatim."""
+    output = deepcopy(nodes)
+    by_id = {node["id"]: node for node in output}
+    if (
+        by_id.get(INPUT_ID, {}).get("url") != "/dashboard_energy_api"
+        or by_id.get(REQUEST_ID, {}).get("url") != "http://127.0.0.1:8811/dashboard_energy_api"
+        or by_id.get(WRAP_ID, {}).get("type") != "function"
+    ):
+        raise ValueError("M1 resident gateway identity does not match")
+    _configure_response(by_id[WRAP_ID])
+    return output
 
 
 def update_gateway(nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -57,7 +112,7 @@ def update_gateway(nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
         "requestTimeout": "115000", "wires": [[WRAP_ID]],
     })
     output[output.index(original)] = request
-    by_id[WRAP_ID]["func"] = WRAP_JS
+    _configure_response(by_id[WRAP_ID])
     by_id[WRAP_ID]["name"] = "返回M1业务结果"
     allowed = {PREPARE_ID, REQUEST_ID, WRAP_ID}
     if {a["id"] for a, b in zip(nodes, output) if a != b} - allowed:

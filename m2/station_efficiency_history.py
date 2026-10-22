@@ -907,11 +907,12 @@ def time_in_zone(value, timezone_name, field="data_time"):
     return _parse_time(value, field).astimezone(zone).isoformat()
 
 
-def _summary_efficiency(points, input_column, output_column):
+def _summary_efficiency(points, efficiency_column, input_column, output_column):
     pairs = [
         (point.get(input_column), point.get(output_column))
         for point in points
-        if point.get(input_column) is not None and point.get(output_column) is not None
+        if point.get(efficiency_column) is not None
+        and point.get(input_column) is not None and point.get(output_column) is not None
     ]
     total_input = sum(pair[0] / 60.0 for pair in pairs)
     total_output = sum(pair[1] / 60.0 for pair in pairs)
@@ -920,9 +921,8 @@ def _summary_efficiency(points, input_column, output_column):
 
 def summarize_today(points):
     return {
-        "pv_storage_efficiency": _summary_efficiency(points, "pv_storage_input_kw", "pv_storage_output_kw"),
-        "storage_load_efficiency": _summary_efficiency(points, "storage_load_input_kw", "storage_load_output_kw"),
-        "pv_load_efficiency": _summary_efficiency(points, "pv_load_input_kw", "pv_load_output_kw"),
+        columns[0]: _summary_efficiency(points, *columns)
+        for columns in CHAIN_COLUMNS.values()
     }
 
 

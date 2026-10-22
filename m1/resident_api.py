@@ -16,7 +16,7 @@ from urllib.parse import urlsplit
 
 from m1 import dashboard_energy_api as api
 
-REVISION = "m1-resident-parallel-pool-v2"
+REVISION = "m1-pv-controller-summary-v2"
 LOGGER = logging.getLogger("vifa.m1")
 
 

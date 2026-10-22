@@ -3,6 +3,7 @@ from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from statistics import median
+from typing import ClassVar
 
 import pandas as pd
 
@@ -14,14 +15,22 @@ MAX_WEEK_IMPUTATION_RATIO = 0.05
 POST_HOLIDAY_LOAD_MODEL = "PostHolidayWorkdayReference"
 POST_HOLIDAY_LOAD_REASON = "post_holiday_workday_history"
 POST_HOLIDAY_LOAD_POLICY = "pre-holiday-complete-day-median-v1"
+RECENT_SCHEDULE_LOAD_MODEL = "RecentScheduleDayReference"
+RECENT_SCHEDULE_LOAD_REASON = "recent_schedule_day_reference"
+RECENT_SCHEDULE_LOAD_POLICY = "recent-schedule-real-slots-median-v1"
+RECENT_SCHEDULE_LOOKBACK_DAYS = 7
+LOAD_REFERENCE_MODELS = frozenset({POST_HOLIDAY_LOAD_MODEL, RECENT_SCHEDULE_LOAD_MODEL})
 
 
 @dataclass(frozen=True)
-class PostHolidayLoadReference:
+class LoadReference:
     origin: datetime
     interval: timedelta
     values: tuple[float, ...]
     donors: tuple[tuple[datetime, tuple[datetime, ...]], ...]
+    model_name: ClassVar[str]
+    reason: ClassVar[str]
+    policy: ClassVar[str]
 
     def manifest(self) -> dict:
         # Compact contiguous mappings so seven days at 30-second granularity do
@@ -42,10 +51,85 @@ class PostHolidayLoadReference:
                                  "source_starts": [source.isoformat() for source in sources]})
             previous_target, previous_sources = target, sources
         return {
-            "policy": POST_HOLIDAY_LOAD_POLICY,
+            "policy": self.policy,
             "interval_seconds": int(self.interval.total_seconds()),
             "segments": segments,
         }
+
+
+class PostHolidayLoadReference(LoadReference):
+    model_name = POST_HOLIDAY_LOAD_MODEL
+    reason = POST_HOLIDAY_LOAD_REASON
+    policy = POST_HOLIDAY_LOAD_POLICY
+
+
+class RecentScheduleLoadReference(LoadReference):
+    model_name = RECENT_SCHEDULE_LOAD_MODEL
+    reason = RECENT_SCHEDULE_LOAD_REASON
+    policy = RECENT_SCHEDULE_LOAD_POLICY
+
+
+def recent_schedule_load_reference(
+    observed: pd.Series, *, history_end: datetime, origin: datetime,
+    interval: timedelta, periods: int,
+) -> RecentScheduleLoadReference | None:
+    """Reference real schedule-matched slots for station 1, never fake history.
+
+    Every target day must have an explicit WORK/REST status and the same full
+    shift signature as its donors. Eligible days cover every requested bucket
+    (every five minutes at finer cadences); every forecast slot must still have
+    a real observation at that exact cadence and clock time. All donors precede
+    the forecast and come from the last seven days, before any interpolation.
+    """
+    calendar = ACTIVE_SCHEDULE.get()
+    if (calendar is None or calendar.station_key != "station_1"
+            or not calendar.station_id.endswith("ES01") or history_end != origin
+            or periods <= 0 or interval <= timedelta(0)
+            or timedelta(days=1) % interval or not observed.index.is_unique):
+        return None
+    valid = observed[observed.notna() & (observed >= 0) & (observed < float("inf"))]
+    valid = valid[(valid.index < history_end)
+                  & (valid.index >= history_end - timedelta(days=RECENT_SCHEDULE_LOOKBACK_DAYS))]
+    points_per_day = int(timedelta(days=1) / interval)
+
+    def day_signature(day):
+        if not calendar.start <= day <= calendar.end:
+            return None
+        status = calendar.statuses.get(day)
+        if status not in {"WORK", "REST"}:
+            return None
+        midnight = pd.Timestamp(origin).normalize() + timedelta(days=(day - origin.date()).days)
+        slots = pd.date_range(midnight, periods=points_per_day, freq=interval)
+        return status, tuple(schedule_slot(slot)[0] for slot in slots), slots
+
+    complete_days = []
+    for day in sorted(set(valid.index.date), reverse=True):
+        signature = day_signature(day)
+        if signature is None:
+            continue
+        present = signature[2].isin(valid.index)
+        if interval < timedelta(minutes=5):
+            present = present.reshape(-1, int(timedelta(minutes=5) / interval)).any(axis=1)
+        if present.all():
+            complete_days.append((day, signature[:2]))
+    matches = {}
+    values, evidence = [], []
+    for step in range(periods):
+        target = origin + step * interval
+        if target.date() not in matches:
+            signature = day_signature(target.date())
+            if signature is None:
+                return None
+            matches[target.date()] = [day for day, donor_signature in complete_days
+                                      if donor_signature == signature[:2]]
+        candidates = (target - timedelta(days=(target.date() - day).days)
+                      for day in matches[target.date()])
+        sources = tuple(source for source in candidates if source in valid.index)[:3]
+        if not sources:
+            return None
+        values.append(float(median(float(valid.loc[source]) for source in sources)))
+        evidence.append((target, sources))
+    return RecentScheduleLoadReference(origin, interval, tuple(values), tuple(evidence))
 
 
 def post_holiday_load_reference(

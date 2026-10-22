@@ -2,9 +2,9 @@
 """单客户运营监控看板 API。
 
 NocoBase 只返回目标客户的一个场站、ES01/ES02 两个电站及其能源节点；
-Growatt 只输出固定九台逆变器的汇总源数据。响应不包含其他客户或旧告警
-等级数据。光伏、储能、负载分别从固定逆变器、固定柜体和精确电站记录
-派生，缺少权威源数据时不回退到其他实时表。
+两站光伏分别读取 emu13、emu27 工控机汇总数据和各自设备时间。
+响应不包含其他客户或旧告警等级数据。储能和负载从固定柜体及精确电站
+记录派生，缺少权威源数据时不回退到其他实时表。
 """
 
 from __future__ import annotations
@@ -53,7 +53,10 @@ CABINET_POWER_URL = f"{ENERGY_SOURCE_BASE}/t_emu:list"
 # 目标客户与固定拓扑；服务端先隔离，前端只接收这一份数据。
 TARGET_SITE_ID = "363738052231168"
 TARGET_STATIONS = (
-    {"code": "ES01", "name": "电站1", "cabinet_sns": ("emu11", "emu12")},
+    {
+        "code": "ES01", "name": "电站1", "cabinet_sns": ("emu11", "emu12"),
+        "pv_meter": {"name": "光伏计量表", "emu_sn": "emu13", "power_source": "t_emu"},
+    },
     {
         "code": "ES02",
         "name": "电站2",
@@ -65,7 +68,7 @@ TARGET_STATIONS = (
             "emu25",
             "emu26",
         ),
-        "pv_meter": {"name": "光伏计量表", "emu_sn": "emu27", "inverter_count": 9},
+        "pv_meter": {"name": "光伏计量表", "emu_sn": "emu27", "power_source": "t_emu"},
     },
 )
 
@@ -502,7 +505,7 @@ def fetch_station_load_sources(
 def fetch_station_storage_sources(
     token: str,
 ) -> tuple[dict[str, dict[str, Any]], dict[str, str]]:
-    """读取目标柜体功率/时间及光伏表时间；光伏表不参与储能求和。"""
+    """读取柜体及光伏表数据；光伏表不参与储能求和。"""
     station_device_sns = {
         station["code"]: list(station["cabinet_sns"]) + (
             [station["pv_meter"]["emu_sn"]] if station.get("pv_meter") else []
@@ -526,7 +529,7 @@ def fetch_station_storage_sources(
     url = _external_list_url(
         CABINET_POWER_URL,
         page_size=len(allowed_pairs),
-        fields="emu_sn,f_es_sn,latest_power,max_temp,last_time_iso",
+        fields="emu_sn,f_es_sn,latest_power,max_temp,last_time_iso,input_ac_solar_power,latest_solar_power",
         filter_value={"$or": filters},
     )
     rows, error = fetch_external_rows(url, token)
@@ -577,6 +580,20 @@ def fetch_station_storage_sources(
             sources[code]["pv_meter_timestamp"] = normalize_timestamp(pv_row.get("last_time_iso"))
             if not sources[code]["pv_meter_timestamp"]:
                 errors[f"pv_meter:{code}"] = f"光伏计量表 {pv_sn} 时间缺失或无效"
+            if station["pv_meter"].get("power_source") == "t_emu":
+                # Same field contract as the existing station energy adapter.
+                pv_input = to_number(pv_row.get("input_ac_solar_power"))
+                pv_output = to_number(pv_row.get("latest_solar_power"))
+                valid_power = all(
+                    value is not None and math.isfinite(value) and value >= 0
+                    for value in (pv_input, pv_output)
+                )
+                sources[code]["pv_meter_power"] = {
+                    "input_power_kw": pv_input if valid_power else None,
+                    "output_power_kw": pv_output if valid_power else None,
+                }
+                if not valid_power:
+                    errors[f"pv_meter:{code}"] = f"光伏计量表 {pv_sn} 功率缺失或无效"
         if missing:
             errors[error_key] = "缺少目标柜体：" + "、".join(missing)
             continue
@@ -595,6 +612,76 @@ def fetch_station_storage_sources(
             "power_source": "t_emu.latest_power",
         })
     return sources, errors
+
+
+def apply_station_pv_meter(
+    data: dict[str, Any], storage_sources: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Use each station's PV controller for its meter, aggregate and alerts."""
+    nodes = data.setdefault("nodes", [])
+    realtime = data.setdefault("realtime", [])
+    alerts = []
+    for config in TARGET_STATIONS:
+        code = config["code"]
+        pv_sn = config["pv_meter"]["emu_sn"]
+        station = next(
+            (item for item in data.get("es_list", []) if station_code(item) == code), None,
+        )
+        if station is None:
+            continue
+        station_nodes = [node for node in nodes if str(node.get("fk_es")) == str(station["id"])]
+        aggregate = next((node for node in station_nodes
+                          if node.get("node_type") == "pv_grid_ac" and node.get("is_aggregate")), None)
+        # Reuse the existing PV meter identity so its history remains attached.
+        meter = next((node for node in station_nodes if aggregate is not None
+                      and node.get("node_type") == "meter"
+                      and str(node.get("parentId")) == str(aggregate["id"])), None)
+        if meter is None:
+            meter = next((node for node in station_nodes
+                          if str(node.get("sn") or "").strip() == pv_sn), None)
+        if meter is None:
+            continue
+        if aggregate is None:
+            aggregate = {
+                "id": f"m1:pv:{station['id']}", "sn": f"{code}-pv-agg", "name": "光伏",
+                "node_type": "pv_grid_ac", "is_aggregate": True,
+                "fk_es": station["id"], "fk_site_id": station.get("fk_site"), "parentId": None,
+            }
+            nodes.append(aggregate)
+        meter.update(node_type="meter", is_aggregate=False, parentId=aggregate["id"], name="光伏计量表")
+        source = storage_sources.get(code, {})
+        power = source.get("pv_meter_power", {})
+        timestamp = source.get("pv_meter_timestamp", "")
+        pv_input, pv_output = power.get("input_power_kw"), power.get("output_power_kw")
+        available = bool(timestamp) and pv_input is not None and pv_output is not None
+        status = ("generate" if pv_output > 0 else "standby") if available else "offline"
+        metrics = {
+            "power": pv_output if available else None, "soc": None, "run_status": status,
+            "timestamp": timestamp, "pv_meter_timestamp": timestamp, "pv_device_sn": pv_sn,
+            "pv_input_power_kw": pv_input if available else None,
+            "pv_output_power_kw": pv_output if available else None,
+            "conversion_efficiency": calculate_efficiency(pv_input, pv_output) if available else None,
+            "power_source": "t_emu.latest_solar_power" if available else "unavailable",
+            "data_quality": "good" if available else "missing",
+        }
+        for node in (aggregate, meter):
+            node["run_status"] = status
+            record = next((row for row in realtime if str(row.get("fk_en")) == str(node["id"])), None)
+            if record is None:
+                record = {"fk_en": node["id"]}
+                realtime.append(record)
+            record.pop("cabinet_timestamp", None)
+            record.pop("temperature_c", None)
+            record.update(metrics)
+        station_alerts = build_pv_efficiency_alerts([{
+            "sn": pv_sn, "timestamp": timestamp,
+            "conversion_efficiency": metrics["conversion_efficiency"],
+            "data_quality": metrics["data_quality"],
+        }])
+        for alert in station_alerts:
+            alert.update(fk_site_id=station.get("fk_site"), fk_en_id=meter["id"])
+        alerts.extend(station_alerts)
+    return alerts
 
 
 def apply_authoritative_power_sources(
@@ -881,59 +968,17 @@ def build_result(
     storage_sources: dict[str, dict[str, Any]] | None = None,
     source_errors: dict[str, str] | None = None,
 ) -> dict[str, Any]:
-    """追加九台逆变器汇总源，并生成三类无等级异常。"""
+    """追加两站光伏权威源，并生成三类无等级异常。"""
     # 深拷贝隔离旁路处理，保证调用方传入的原始看板数据不被原地修改。
     data = copy.deepcopy(raw.get("data", {}))
+    station_pv_alerts = apply_station_pv_meter(data, storage_sources or {})
     apply_authoritative_power_sources(
         data,
         load_sources or {},
         storage_sources or {},
     )
-    inverters = build_pv_inverters(growatt_rows)
-    pv_alerts = build_pv_efficiency_alerts(inverters)
-    target_site_id = next(
-        (site.get("id") for site in data.get("sites", []) if site.get("id") is not None),
-        TARGET_SITE_ID,
-    )
-    pv_station = next(
-        (item for item in data.get("es_list", []) if station_code(item) == "ES02"),
-        None,
-    )
-    pv_station_id = str(pv_station.get("id")) if pv_station else ""
-    pv_aggregate_ids = {
-        str(node.get("id"))
-        for node in data.get("nodes", [])
-        if str(node.get("fk_es")) == pv_station_id
-        and node.get("node_type") == "pv_grid_ac"
-        and node.get("is_aggregate")
-    }
-    pv_meter = next(
-        (
-            node
-            for node in data.get("nodes", [])
-            if str(node.get("fk_es")) == pv_station_id
-            and node.get("node_type") == "meter"
-            and str(node.get("parentId")) in pv_aggregate_ids
-        ),
-        None,
-    )
-    if pv_meter:
-        meter_realtime = next(
-            (item for item in data["realtime"] if str(item.get("fk_en")) == str(pv_meter["id"])),
-            None,
-        )
-        if meter_realtime is None:
-            meter_realtime = {"fk_en": pv_meter["id"]}
-            data["realtime"].append(meter_realtime)
-        # 表计自身时间独立于逆变器汇总数据，缺失时不以其他设备时间替代。
-        meter_realtime["pv_meter_timestamp"] = (storage_sources or {}).get("ES02", {}).get("pv_meter_timestamp", "")
-
-    for alert in pv_alerts:
-        alert["fk_site_id"] = target_site_id
-        alert["fk_en_id"] = pv_meter.get("id") if pv_meter else None
-
     derived_alerts = (
-        pv_alerts
+        station_pv_alerts
         + build_ess_self_loss_alerts(
             data.get("nodes", []),
             data.get("realtime", []),
@@ -944,8 +989,8 @@ def build_result(
         )
     )
 
-    # 只输出固定九台白名单设备；不再透传其他协同设备记录。
-    data["pv_inverters"] = inverters
+    # Keep the legacy response key; M1 PV no longer reads individual inverters.
+    data["pv_inverters"] = []
     data["alerts"] = [
         alert
         for alert in derived_alerts
@@ -966,6 +1011,7 @@ def build_result(
 
     stats = copy.deepcopy(data.get("stats", {}))
     if stats:
+        stats["total_nodes"] = len(data.get("nodes", []))
         stats["total_alerts"] = len(data["alerts"])
         stats["anomaly_categories"] = {
             category: sum(
@@ -1080,20 +1126,16 @@ def collect_dashboard(
     """校验客户权限后并行读独立源；不缓存或跨用户复用业务响应。"""
     with reader_scope(use_connection_pool):
         raw = fetch_raw_data(token)
-        with ThreadPoolExecutor(max_workers=3, thread_name_prefix="m1-source") as executor:
-            growatt = executor.submit(copy_context().run, fetch_growatt_rows, growatt_token or energy_token)
+        with ThreadPoolExecutor(max_workers=2, thread_name_prefix="m1-source") as executor:
             load = executor.submit(copy_context().run, fetch_station_load_sources, raw.get("data", {}).get("es_list", []), energy_token)
             storage = executor.submit(copy_context().run, fetch_station_storage_sources, energy_token)
-            growatt_rows, growatt_error = growatt.result()
             load_sources, load_errors = load.result()
             storage_sources, storage_errors = storage.result()
     source_errors: dict[str, str] = {}
-    if growatt_error:
-        source_errors["growatt"] = growatt_error
     source_errors.update(load_errors)
     source_errors.update(storage_errors)
     result = build_result(
-        raw, growatt_rows=growatt_rows, load_sources=load_sources,
+        raw, load_sources=load_sources,
         storage_sources=storage_sources, source_errors=source_errors,
     )
     attach_alert_history(result, history_db if history_db is not None else DEFAULT_HISTORY_DB)

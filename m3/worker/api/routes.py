@@ -27,9 +27,10 @@ from m3.worker.api.models import (
 from m3.worker.contracts import SERIES_IDS
 from m3.worker.custom_forecast_contracts import ALLOWED_INTERVAL_SECONDS, RUN_ID_PATTERN
 from m3.worker.errors import M3Error
+from m3.worker.domain.load_history import LOAD_REFERENCE_MODELS
 
 
-MODEL_NAMES = frozenset({"SeasonalNaive", "AutoETS", "AutoARIMA", "MSTL"})
+MODEL_NAMES = frozenset({"SeasonalNaive", "AutoETS", "AutoARIMA", "MSTL", "SOCScheduleDelta"}) | LOAD_REFERENCE_MODELS
 SAFE_CODE = re.compile(r"[a-z][a-z0-9_]{0,63}\Z")
 SAFE_VERSION = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+(?:[A-Za-z0-9.+-]*)?\Z")
 

@@ -8,8 +8,8 @@ ES02_SNS = ("emu21", "emu22", "emu23", "emu24", "emu25", "emu26")
 ES02_PV_SN = "emu27"
 
 
-def make_es01_rows():
-    return [
+def make_es01_rows(*, include_pv=False):
+    rows = [
         {
             "f_es_sn": "ES01",
             "emu_sn": "emu11",
@@ -39,6 +39,13 @@ def make_es01_rows():
             "acpv_rated_power": None,
         },
     ]
+    if include_pv:
+        rows.append({
+            "f_es_sn": "ES01", "emu_sn": "emu13",
+            "last_time_iso": "2026-08-25T14:35:58+08:00",
+            "input_ac_solar_power": 0, "latest_solar_power": 0,
+        })
+    return rows
 
 
 def make_es02_rows():
@@ -160,10 +167,10 @@ class StationEnergyDataAdapterTests(unittest.TestCase):
             6,
         )
 
-    def test_es01_ignores_nullable_pv_fields_and_maps_negative_grid_as_export(self):
+    def test_es01_uses_pv_controller_and_maps_negative_grid_as_export(self):
         record = self.adapter.build_station_source_record(
             station_id="ES01",
-            emu_rows=make_es01_rows() + make_es02_rows(),
+            emu_rows=make_es01_rows(include_pv=True) + make_es02_rows(),
         )
 
         self.assertEqual(record["pv_dc_power"], 0.0)
@@ -177,6 +184,42 @@ class StationEnergyDataAdapterTests(unittest.TestCase):
         self.assertEqual(record["pcs_discharge_power"], 27.0)
         self.assertEqual(record["bms_charge_power"], 18.0)
         self.assertEqual(record["bms_discharge_power"], 28.0)
+
+    def test_es01_pv_corrects_load_without_entering_storage_totals(self):
+        rows = make_es01_rows(include_pv=True)
+        rows[0]["latest_grid_power"] = -318668.63
+        rows[0]["latest_power"] = -0.45
+        rows[1]["latest_power"] = -0.5
+        rows[-1].update(input_ac_solar_power=410.368, latest_solar_power=402.2427136)
+        record = self.adapter.build_station_source_record(
+            station_id="ES01", emu_rows=rows + make_es02_rows(),
+        )
+        self.assertEqual(record["pv_dc_power"], 410.368)
+        self.assertEqual(record["pv_ac_power"], 402.2427136)
+        self.assertAlmostEqual(record["load_power"], 82.6240836)
+        self.assertAlmostEqual(record["cabinet_charge_power"], 0.95)
+        self.assertEqual(record["cabinet_discharge_power"], 0)
+        self.assertEqual(record["source_times"]["emu:emu13"], rows[-1]["last_time_iso"])
+
+    def test_es01_missing_or_wrong_station_pv_is_rejected(self):
+        for rows in (make_es01_rows(), make_es01_rows() + [{
+            "f_es_sn": "ES02", "emu_sn": "emu13",
+            "last_time_iso": TIMESTAMP,
+            "input_ac_solar_power": 400, "latest_solar_power": 390,
+        }]):
+            with self.subTest(rows=rows), self.assertRaisesRegex(
+                self.adapter.StationEnergyDataError, "缺少.*emu13",
+            ):
+                self.adapter.build_station_source_record(station_id="ES01", emu_rows=rows)
+
+    def test_es01_invalid_pv_is_rejected_instead_of_becoming_zero(self):
+        for field in ("input_ac_solar_power", "latest_solar_power", "last_time_iso"):
+            rows = make_es01_rows(include_pv=True)
+            rows[-1][field] = None
+            with self.subTest(field=field), self.assertRaisesRegex(
+                self.adapter.StationEnergyDataError, field,
+            ):
+                self.adapter.build_station_source_record(station_id="ES01", emu_rows=rows)
 
     def test_station_requires_exact_configured_cabinet_set(self):
         rows = [row for row in make_es02_rows() if row["emu_sn"] != "emu25"]
@@ -203,7 +246,7 @@ class StationEnergyDataAdapterTests(unittest.TestCase):
             )
 
     def test_non_positive_derived_load_is_rejected(self):
-        rows = make_es01_rows()
+        rows = make_es01_rows(include_pv=True)
         rows[0]["latest_grid_power"] = -10000
 
         with self.assertRaisesRegex(

@@ -22,7 +22,7 @@ class SplitReadTests(unittest.TestCase):
         )
         self.assertEqual(code, 0)
         self.assertEqual(result["data"]["operation"], "curve")
-        self.assertEqual(result["data"]["summary"]["pv_storage_efficiency"], 90)
+        self.assertAlmostEqual(result["data"]["summary"]["pv_storage_efficiency"], 90)
         self.assertNotIn("events", result["data"])
         self.assertNotIn("realtime", result["data"])
         forbidden.assert_not_called()

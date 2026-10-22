@@ -33,6 +33,7 @@ from m3.worker.domain.custom_load_profiles import (
 )
 from m3.worker.domain.work_schedule import schedule_policy, schedule_manifest
 from m3.worker.domain.production_schedule import use_schedule
+from m3.worker.domain.load_history import LOAD_REFERENCE_MODELS
 from m3.worker.domain.custom_training_data import (
     CustomWeekSummary,
     build_custom_training_dataset,
@@ -59,7 +60,7 @@ SAFE_LOAD_SKIP_REASONS = frozenset(
     {"no_scorable_points", "non_finite_prediction", "wape_unavailable"}
 )
 SAFE_REALIZED_FALLBACK_REASONS = SAFE_LOAD_SKIP_REASONS | {
-    "latest_week_high_imputation", "post_holiday_workday_history"
+    "latest_week_high_imputation", "post_holiday_workday_history", "recent_schedule_day_reference"
 }
 
 
@@ -541,7 +542,7 @@ class CustomForecastService:
                     datasets["station_total_load"],
                     (
                         selected_load_champion
-                        if selected_load_champion.model_name in {"WeeklyNaive", "PostHolidayWorkdayReference"}
+                        if selected_load_champion.model_name in {"WeeklyNaive", *LOAD_REFERENCE_MODELS}
                         else weekly_naive_champion(datasets["station_total_load"])
                     ),
                     run.config,
@@ -578,6 +579,8 @@ class CustomForecastService:
                         ]} if datasets[unique_id].load_fallback_donors else {}),
                         **({"post_holiday_reference": datasets[unique_id].post_holiday_reference.manifest()}
                            if datasets[unique_id].post_holiday_reference is not None else {}),
+                        **({"recent_schedule_reference": datasets[unique_id].recent_schedule_reference.manifest()}
+                           if datasets[unique_id].recent_schedule_reference is not None else {}),
                         "mode": datasets[unique_id].mode,
                         "usable_week_count": len(datasets[unique_id].usable_weeks),
                         "weeks": [

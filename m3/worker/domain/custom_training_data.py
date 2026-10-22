@@ -13,6 +13,9 @@ from m3.worker.domain.load_history import (
     fill_load_schedule_gaps,
     PostHolidayLoadReference,
     post_holiday_load_reference,
+    LoadReference,
+    RecentScheduleLoadReference,
+    recent_schedule_load_reference,
 )
 from m3.worker.custom_forecast_contracts import (
     CustomForecastConfig,
@@ -51,6 +54,11 @@ class CustomTrainingDataset:
     energy_capacity_kwh: float | None = None
     load_fallback_donors: tuple[tuple[datetime, datetime], ...] = ()
     post_holiday_reference: PostHolidayLoadReference | None = None
+    recent_schedule_reference: RecentScheduleLoadReference | None = None
+
+    @property
+    def load_reference(self) -> LoadReference | None:
+        return self.post_holiday_reference or self.recent_schedule_reference
 
 
 def _history_mode(real_point_count: int, points_per_day: int) -> str:
@@ -206,6 +214,7 @@ def build_custom_training_dataset(
 
     frame = frame.loc[frame["y"].notna()].reset_index()
     reference = None
+    recent_reference = None
     if is_load_series(unique_id):
         preliminary_keys = frozenset((unique_id, value) for value in imputed_times)
         weekly_schedule_mismatch = any(
@@ -219,8 +228,13 @@ def build_custom_training_dataset(
                 observed_load, history_end=config.history_end, origin=config.forecast_start,
                 interval=config.interval, periods=config.expected_points_per_series,
             )
+        if reference is None and not _usable_week_summaries(frame, preliminary_keys, unique_id, config):
+            recent_reference = recent_schedule_load_reference(
+                observed_load, history_end=config.history_end, origin=config.forecast_start,
+                interval=config.interval, periods=config.expected_points_per_series,
+            )
     if frame.empty:
-        if reference is None:
+        if reference is None and recent_reference is None:
             raise ValueError(f"no continuous observations for {unique_id}")
         # Keep a real anchor for identity/metadata, not invented holiday samples.
         frame = observed_load.dropna().tail(1).rename("y").reset_index()
@@ -247,6 +261,7 @@ def build_custom_training_dataset(
         points_per_day=config.points_per_day,
         usable_weeks=_usable_week_summaries(frame, imputed_keys, unique_id, config),
         post_holiday_reference=reference,
+        recent_schedule_reference=recent_reference,
         load_fallback_donors=tuple(
             (target, donor) for target, donor in load_fallback_donors
             if (unique_id, target) in imputed_keys

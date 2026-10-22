@@ -21,7 +21,7 @@ class ParallelDashboardTests(unittest.TestCase):
             def read(*args):
                 with lock:
                     started.add(name)
-                    if len(started) == 3:
+                    if len(started) == 2:
                         all_started.set()
                 if not release.wait(3):
                     raise AssertionError("source release timed out")
@@ -35,7 +35,7 @@ class ParallelDashboardTests(unittest.TestCase):
             ))
 
         with patch.object(api, "fetch_raw_data", return_value=raw) as topology, \
-             patch.object(api, "fetch_growatt_rows", side_effect=source("growatt", ([], None))), \
+             patch.object(api, "fetch_growatt_rows") as growatt, \
              patch.object(api, "fetch_station_load_sources", side_effect=source("load", ({}, {}))), \
              patch.object(api, "fetch_station_storage_sources", side_effect=source("storage", ({}, {}))), \
              patch.object(api, "build_result", return_value=result), \
@@ -50,6 +50,7 @@ class ParallelDashboardTests(unittest.TestCase):
             self.assertFalse(thread.is_alive())
             self.assertEqual(outcome, [result])
             topology.assert_called_once_with("user-fixture")
+            growatt.assert_not_called()
             history.assert_called_once_with(result, "history-fixture")
 
     def test_source_errors_and_authoritative_values_are_preserved(self):
@@ -63,7 +64,7 @@ class ParallelDashboardTests(unittest.TestCase):
              patch.object(api, "attach_alert_history"):
             self.assertIs(api.collect_dashboard("user-fixture", "energy-fixture"), result)
             self.assertEqual(build.call_args.kwargs["source_errors"], {
-                "growatt": "growatt error", "station_load:ES02": "load error",
+                "station_load:ES02": "load error",
                 "storage_cabinets:ES02": "storage error",
             })
             self.assertEqual(build.call_args.kwargs["load_sources"]["ES01"]["power"], 20)

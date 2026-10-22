@@ -980,8 +980,8 @@ function retainAvailableSourceData(current, previous) {
   }).filter(Boolean);
 
   // Keep alerts paired with the retained source, while healthy sources update normally.
-  const retainsAlert = alert => alert.category === 'pv_efficiency' ?
-    retainedInverters.has(String(alert.device_sn)) : retainedNodes.has(String(alert.fk_en_id));
+  const retainsAlert = alert => retainedNodes.has(String(alert.fk_en_id)) ||
+    (alert.category === 'pv_efficiency' && retainedInverters.has(String(alert.device_sn)));
   const nodeIds = new Set((current.nodes||[]).map(node => String(node.id)));
   const alerts = (current.alerts||[]).filter(alert => !retainsAlert(alert)).concat(
     (previous.alerts||[]).filter(alert => retainsAlert(alert) && nodeIds.has(String(alert.fk_en_id)))
@@ -1161,29 +1161,15 @@ function summarizePvInverters(inverters) {
   };
 }
 
-function stationCollectionTime(station) {
-  if (!allData || !station) return '';
-  const cabinetIds = new Set((allData.nodes||[])
-    .filter(node => String(node.fk_es)===String(station.id) && node.node_type==='ess' && !node.is_aggregate)
-    .map(node => String(node.id)));
-  return (allData.realtime||[])
-    .filter(row => cabinetIds.has(String(row.fk_en)))
-    .map(row => row.cabinet_timestamp || row.timestamp)
-    .filter(value => value && Number.isFinite(Date.parse(value)))
-    .sort((a,b) => Date.parse(b)-Date.parse(a))[0] || '';
-}
-
 function renderNodeCard(node, rt, parentType, station) {
   const soc = rt&&rt.soc!=null ? rt.soc : null;
-  const isPvSummaryMeter = node&&node.node_type==='meter' && parentType==='pv_grid_ac' &&
-    stationCode(station)==='ES02';
-  const pvSummary = isPvSummaryMeter ? summarizePvInverters((allData&&allData.pv_inverters)||[]) : null;
-  const pvInput = pvSummary ? pvSummary.inputPowerKw : (rt&&rt.pv_input_power_kw!=null ? rt.pv_input_power_kw : null);
-  const pvOutput = pvSummary ? pvSummary.outputPowerKw : (rt&&rt.pv_output_power_kw!=null ? rt.pv_output_power_kw : null);
-  const power = rt&&rt.power!=null ? rt.power : pvOutput;
+  const isPvMeter = node&&node.node_type==='meter' && parentType==='pv_grid_ac';
+  const pvInput = rt&&rt.pv_input_power_kw!=null ? rt.pv_input_power_kw : null;
+  const pvOutput = rt&&rt.pv_output_power_kw!=null ? rt.pv_output_power_kw : null;
+  const power = isPvMeter ? pvOutput : (rt&&rt.power!=null ? rt.power : null);
   const temperature = rt&&rt.temperature_c!=null ? rt.temperature_c : null;
-  const efficiency = pvSummary ? pvSummary.conversionEfficiency : (rt&&rt.conversion_efficiency!=null ? rt.conversion_efficiency : null);
-  const online = pvSummary ? pvSummary.validCount>0 : nodeOnline(rt);
+  const efficiency = rt&&rt.conversion_efficiency!=null ? rt.conversion_efficiency : null;
+  const online = nodeOnline(rt);
   const status = rt&&rt.run_status ? rt.run_status : node.run_status;
   const effectiveType = node.node_type==='meter'&&parentType==='pv_grid_ac' ? parentType : node.node_type;
   const isEss = effectiveType==='ess';
@@ -1193,22 +1179,21 @@ function renderNodeCard(node, rt, parentType, station) {
   const efficiencyAlert = isPv && dataQuality==='good' && efficiency!=null && efficiency<efficiencyThreshold;
   const statusCls = efficiencyAlert ? 'fault' : statusClass(status);
   const statusText = efficiencyAlert ? '效率低' : statusLabel(status);
-  const displayName = isPvSummaryMeter ? '光伏计量表' : (node.name||node.sn||'未命名');
-  const footerIdentity = isPvSummaryMeter ? '9 台逆变器汇总' : (node.sn||'');
-  const collectionTime = isPvSummaryMeter ? stationCollectionTime(station) : rt && (rt.cabinet_timestamp || rt.timestamp);
+  const displayName = isPvMeter ? '光伏计量表' : (node.name||node.sn||'未命名');
+  const footerIdentity = isPvMeter ? ((rt&&rt.pv_device_sn)||node.sn||'') : (node.sn||'');
+  const collectionTime = rt && (isPvMeter ? rt.pv_meter_timestamp : (rt.cabinet_timestamp || rt.timestamp));
   const showCollectionTime = (isEss&&!node.is_aggregate) || (node.node_type==='meter'&&parentType==='pv_grid_ac');
   return '<div class="node-card '+(String(selectedNodeId)===String(node.id)?'selected ':'')+(efficiencyAlert?'energy-alert':'')+'" data-node-id="'+node.id+'" data-site-id="'+node.fk_site_id+'" data-node-type="'+esc(effectiveType||'')+'" data-quality="'+esc(dataQuality)+'">'+
     '<div class="node-card-header"><span class="node-name">'+esc(displayName)+'</span><span class="node-status-pill '+statusCls+'">'+esc(statusText)+'</span></div>'+
-    (isPvSummaryMeter?'':
+    (isPvMeter?'':
       '<div class="node-metric"><span>SOC</span><span class="node-metric-value">'+(soc!=null?soc.toFixed(1)+'%':'--')+'</span></div>'+
       '<div class="soc-bar-bg"><div class="soc-bar-fill" style="width:'+(soc!=null?Math.max(0,Math.min(100,soc)):0)+'%"></div></div>')+
-    '<div class="node-metric" style="margin-top:8px"><span>'+(isPv?'交流输出':'功率')+'</span><span class="node-metric-value">'+((pvSummary?pvOutput:power)!=null?fmtNum(pvSummary?pvOutput:power)+' kW':'--')+'</span></div>'+
+    '<div class="node-metric" style="margin-top:8px"><span>'+(isPv?'交流输出':'功率')+'</span><span class="node-metric-value">'+(power!=null?fmtNum(power)+' kW':'--')+'</span></div>'+
     (isEss?optionalMetric('温度',temperature,' ℃',false):'')+
     (isPv?optionalMetric('直流输入',pvInput,' kW',false):'')+
     (isPv?optionalMetric('转换效率',efficiency,'%',efficiencyAlert):'')+
-    (pvSummary?'<div class="node-metric optional-metric"><span>有效设备</span><span class="node-metric-value">'+pvSummary.validCount+'/'+pvSummary.totalCount+'</span></div>':'')+
     '<div class="node-footer"><span>'+esc(footerIdentity)+'</span><span class="'+(online?'node-online':'node-offline')+'">'+(online?'\u25CF 在线':'\u25CB 离线')+'</span></div>'+
-    (showCollectionTime?'<div class="node-time" title="'+(isPvSummaryMeter?'电站2储能柜最新采集时间 · ':'')+'北京时间">采集时间<time datetime="'+esc(collectionTime||'')+'">'+(collectionTime?esc(fmtTime(collectionTime)):'暂无采集时间')+'</time></div>':'')+
+    (showCollectionTime?'<div class="node-time" title="北京时间">采集时间<time datetime="'+esc(collectionTime||'')+'">'+(collectionTime?esc(fmtTime(collectionTime)):'暂无采集时间')+'</time></div>':'')+
     '</div>';
 }
 

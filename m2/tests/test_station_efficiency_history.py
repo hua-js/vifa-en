@@ -10,10 +10,37 @@ from m2.station_efficiency_history import (
     evaluate_chain_low_efficiency,
     evaluate_inverter_low_load,
     normalize_rule,
+    summarize_today,
 )
 
 
 class StationEfficiencyHistoryTests(unittest.TestCase):
+    def test_summary_without_valid_efficiency_minutes_is_unavailable(self):
+        point = build_minute_point(
+            "ES01", "2026-10-22T12:44:00+08:00",
+            {chain: {"efficiency": None, "input_kw": 0.97, "output_kw": 0}
+             for chain in ("pv_storage", "storage_load", "pv_load")},
+            "energy-chain-v1", "2026-10-22T12:44:47+08:00",
+        )
+        self.assertTrue(all(value is None for value in summarize_today([point]).values()))
+
+    def test_summary_filters_each_chain_and_preserves_valid_zero_and_weighting(self):
+        rows = [
+            ((None, 1, 0), (90, 100, 90), (None, 100, 200)),
+            ((0, 100, 0), (None, 100, 200), (80, 100, 80)),
+            ((100, 300, 300), (95, 300, 285), (100, 100, 100)),
+        ]
+        points = [build_minute_point(
+            "ES01", f"2026-10-22T12:{44 + index}:00+08:00",
+            {chain: {"efficiency": values[0], "input_kw": values[1], "output_kw": values[2]}
+             for chain, values in zip(("pv_storage", "storage_load", "pv_load"), row)},
+            "energy-chain-v1", "2026-10-22T12:47:00+08:00",
+        ) for index, row in enumerate(rows)]
+        summary = summarize_today(points)
+        self.assertAlmostEqual(summary["pv_storage_efficiency"], 75)
+        self.assertAlmostEqual(summary["storage_load_efficiency"], 93.75)
+        self.assertAlmostEqual(summary["pv_load_efficiency"], 90)
+
     def inverter_rule(self):
         return normalize_rule({
             "station_id": "station-1",

@@ -620,6 +620,7 @@
       const MODEL_DISPLAY_NAMES = Object.freeze({
         WeeklyNaive: "周周期",
         PostHolidayWorkdayReference: "复工参考",
+        RecentScheduleDayReference: "近期同排班参考",
         WeeklyWeighted2: "双周加权",
         WeeklyRegimeAdjusted: "周期校准",
         WeeklyMedian3: "三周中位",
@@ -1776,7 +1777,7 @@
           text(card.querySelector(".actual-time"), timeOnly(latestActual?.data_time ?? null));
           text(card.querySelector(".forecast-value"), valueText(series.unique_id, series.forecast.length ? series.forecast[0].value : null));
           text(card.querySelector(".model-name"), displayModelName(series.unique_id, series.model_name));
-          text(card.querySelector(".fallback"), `回退：${series.fallback_reason === "post_holiday_workday_history" ? "采用节前同类工作日数据" : series.fallback_reason ?? "无"}`);
+          text(card.querySelector(".fallback"), `回退：${series.fallback_reason === "post_holiday_workday_history" ? "采用节前同类工作日数据" : series.fallback_reason === "recent_schedule_day_reference" ? "采用近期同排班实测参考" : series.fallback_reason ?? "无"}`);
           renderChart(section, series, chartRange);
         });
         synchronizeChartScroll(section);
@@ -2481,7 +2482,11 @@
           && evidence.load.model_name === "WeeklyNaive";
         const postHolidayReference = evidence.load.model_name === "PostHolidayWorkdayReference"
           && evidence.load.selection_reason === "post_holiday_workday_history";
-        const policyCopy = postHolidayReference
+        const recentScheduleReference = evidence.load.model_name === "RecentScheduleDayReference"
+          && evidence.load.selection_reason === "recent_schedule_day_reference";
+        const policyCopy = recentScheduleReference
+          ? "有效历史积累中；采用近期同排班实测参考，当前为降级预测"
+          : postHolidayReference
           ? "复工历史积累中；采用节前同类工作日数据，评分暂不可用"
           : degradedReconstructedWeek
           ? "最近一周缺失较多；使用插补后的周周期模型降级预测"
@@ -2495,6 +2500,11 @@
           text(root.querySelector(".selection-basis"), "模型选择依据：节前有效日参考");
           text(root.querySelector("#details-policy"), "复工参考");
           text(root.querySelector("#history-policy-hint"), "复工历史积累中");
+        }
+        if (recentScheduleReference) {
+          text(root.querySelector(".selection-basis"), "模型选择依据：近期同排班实测参考");
+          text(root.querySelector("#details-policy"), "近期同排班参考");
+          text(root.querySelector("#history-policy-hint"), "有效历史积累中");
         }
 
         root.querySelectorAll(".candidate").forEach((candidate) => {
@@ -2686,8 +2696,11 @@
         ).join(" · ");
         root.querySelectorAll(".current-model-name").forEach((node) => text(node, modelSummary));
         text(section.querySelector(".history-window"), `${dateTime(run.history_start)} — ${dateTime(run.history_end)}`);
-        text(section.querySelector(".station-status"), CUSTOM_RUN_LABELS[run.status]);
-        text(root.querySelector("#result-model-meta"), loadResult.model_name === "PostHolidayWorkdayReference"
+        text(section.querySelector(".station-status"), loadPresentation.status === "degraded"
+          ? `${CUSTOM_RUN_LABELS[run.status]} · 降级预测` : CUSTOM_RUN_LABELS[run.status]);
+        text(root.querySelector("#result-model-meta"), loadResult.model_name === "RecentScheduleDayReference"
+          ? `降级预测 · 近期同排班实测参考 · ${intervalLabel(run.interval_seconds)}粒度`
+          : loadResult.model_name === "PostHolidayWorkdayReference"
           ? `节前有效日参考 · ${intervalLabel(run.interval_seconds)}粒度`
           : evidence.usableWeeks !== null
           ? `${evidence.usableWeeks} 个连续有效周 · 负载周期 7 天 · ${intervalLabel(run.interval_seconds)}粒度`

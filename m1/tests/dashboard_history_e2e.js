@@ -19,7 +19,7 @@ for (const [station, sns] of [['ES01', ['emu11','emu12']], ['ES02', ['emu21','em
 for (const station of ['ES01','ES02']) {
   nodes.push({id:station+'pv',name:'光伏系统',node_type:'pv_grid_ac',is_aggregate:true,fk_es:station,fk_site_id:site});
   nodes.push({id:station+'meter',name:'光伏计量表',node_type:'meter',parentId:station+'pv',fk_es:station,fk_site_id:site});
-  realtime.push({fk_en:station+'meter',timestamp:'2026-09-07T08:10:06+08:00',run_status:'generate'});
+  realtime.push({fk_en:station+'meter',timestamp:'2026-09-07T08:10:06+08:00',pv_meter_timestamp:'2026-09-07T08:10:06+08:00',run_status:'generate'});
 }
 const records = Array.from({length:25}, (_, i) => ({
   id:'derived:load_spike:'+i, category:i%2?'ess_self_loss':'load_spike',
@@ -68,11 +68,14 @@ const server = http.createServer((req, res) => {
     assert.match(await page.locator('[data-node-id="emu12"] .node-time').textContent(), /08:12:01/);
     assert.match(await page.locator('[data-node-id="emu26"] .node-time').textContent(), /^采集时间/);
     assert.match(await page.locator('[data-node-id="ES01meter"] .node-time').textContent(), /采集时间.*08:10:06/);
-    assert.match(await page.locator('[data-node-id="ES02meter"] .node-time').textContent(), /采集时间.*08:12:05/);
+    assert.match(await page.locator('[data-node-id="ES02meter"] .node-time').textContent(), /采集时间.*08:10:06/);
     const station2Times = structuredClone(payload.data.realtime);
     payload.data.realtime.forEach(row => {
       if (/^emu2[1-6]$/.test(row.fk_en)) { row.cabinet_timestamp=''; row.timestamp=''; }
     });
+    await page.evaluate(() => fetchData());
+    assert.match(await page.locator('[data-node-id="ES02meter"] .node-time').textContent(), /采集时间.*08:10:06/);
+    payload.data.realtime.find(row=>row.fk_en==='ES02meter').pv_meter_timestamp='';
     await page.evaluate(() => fetchData());
     assert.match(await page.locator('[data-node-id="ES02meter"] .node-time').textContent(), /暂无采集时间/);
     payload.data.realtime = station2Times;

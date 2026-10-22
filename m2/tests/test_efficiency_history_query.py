@@ -27,6 +27,21 @@ def event(start, end=None, station="ES02", id=1):
 
 
 class HistoryQueryTests(unittest.TestCase):
+    def test_curve_and_history_exclude_invalid_minutes_only_from_summary(self):
+        points = [
+            point("2026-09-06T08:00:00+08:00", input_kw=100, output_kw=80),
+            point("2026-09-06T08:01:00+08:00", input_kw=100, output_kw=200),
+            point("2026-09-06T08:02:00+08:00", input_kw=300, output_kw=270),
+        ]
+        points[1]["pv_storage_efficiency"] = None
+        for operation in ("curve", "history"):
+            with self.subTest(operation=operation):
+                (payload, code), _, _ = self.query([operation, "ES02", "2026-09-06"], points=points)
+                self.assertEqual(code, 0)
+                self.assertAlmostEqual(payload["data"]["summary"]["pv_storage_efficiency"], 87.5)
+                self.assertEqual(len(payload["data"]["trend"]), 3)
+                self.assertIsNone(payload["data"]["trend"][1]["pvStorage"])
+
     def query(self, args, points=(), events=()):
         source = Mock(side_effect=AssertionError("history must not fetch live source"))
         calculate = Mock(side_effect=AssertionError("history must not calculate live efficiency"))

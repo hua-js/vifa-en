@@ -21,6 +21,7 @@ from m3.worker.custom_forecast_contracts import (
 )
 from m3.worker.contracts import validate_shanghai_timestamp
 from m3.worker.errors import M3Error
+from m3.worker.domain.load_history import LOAD_REFERENCE_MODELS
 from m3.worker.sinks.forecast_sink import canonical_hash
 
 
@@ -549,7 +550,7 @@ class CustomForecastRepository:
             )
         values: list[dict[str, object]] = []
         baseline_models_by_id = {
-            "station_total_load": {"WeeklyNaive", "PostHolidayWorkdayReference"},
+            "station_total_load": {"WeeklyNaive", *LOAD_REFERENCE_MODELS},
             "storage_soc": {"SeasonalNaive", "SeasonalNaive5mLinear",
                             "SOCScheduleDelta", "SOCScheduleDelta5mLinear"},
         }
