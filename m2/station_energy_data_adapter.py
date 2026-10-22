@@ -181,25 +181,35 @@ def build_station_source_record(*, station_id, emu_rows):
     cabinet_values = []
     battery_values = []
     pcs_values = []
+    standby_power = 0.0
     source_times = {}
     for cabinet_sn in cabinet_sns:
         row = rows_by_sn[cabinet_sn]
         source_times[f"emu:{cabinet_sn}"] = _timestamp(
             row, "last_time_iso", f"t_emu:{cabinet_sn}"
         )
-        cabinet_values.append(
-            _number(row.get("latest_power"), f"t_emu:{cabinet_sn}.latest_power")
+        cabinet_power = _number(row.get("latest_power"), f"t_emu:{cabinet_sn}.latest_power")
+        battery_power = (
+            _number(row.get("battery_power"), f"t_emu:{cabinet_sn}.battery_power") / 1000.0
         )
-        battery_values.append(
-            _number(row.get("battery_power"), f"t_emu:{cabinet_sn}.battery_power")
-            / 1000.0
-        )
-        pcs_values.extend((
+        cabinet_pcs_values = (
             _number(row.get("pcs1_power"), f"t_emu:{cabinet_sn}.pcs1_power"),
             _number(row.get("pcs2_power"), f"t_emu:{cabinet_sn}.pcs2_power"),
-        ))
+        )
+        cabinet_values.append(cabinet_power)
+        battery_values.append(battery_power)
+        pcs_values.extend(cabinet_pcs_values)
+        # A cabinet meter also measures auxiliary loads. Only classify these as
+        # standby when the battery AND each PCS report no energy conversion.
+        # In particular, PCS charging with zero battery input remains eligible
+        # for a low-efficiency event, even while the station exports to grid.
+        if cabinet_power < 0 and battery_power == 0 and all(
+            power == 0 for power in cabinet_pcs_values
+        ):
+            standby_power += -cabinet_power
 
     cabinet_charge, cabinet_discharge = _split_signed(cabinet_values)
+    cabinet_charge = max(cabinet_charge - standby_power, 0.0)
     bms_charge, bms_discharge = _split_signed(battery_values)
     pcs_charge, pcs_discharge = _split_signed(pcs_values)
 
@@ -249,7 +259,7 @@ def build_station_source_record(*, station_id, emu_rows):
         "bms_discharge_power": bms_discharge,
         "grid_import_power": grid_import,
         "grid_export_power": grid_export,
-        "storage_aux_power": 0.0,
+        "storage_aux_power": standby_power,
         "device_status": {},
         "source_times": source_times,
     }

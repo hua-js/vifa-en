@@ -140,6 +140,12 @@ button:disabled{cursor:not-allowed;opacity:.5}.decision-side[hidden]{display:non
 .schedule-tabs{display:flex;gap:22px;flex-wrap:wrap;border-bottom:1px solid var(--line);margin-bottom:18px}.schedule-tab{border:0;border-bottom:2px solid transparent;border-radius:0;background:transparent;color:var(--muted);padding:10px 0;min-height:44px;font-size:15px;font-weight:600}.schedule-tab[aria-selected="true"]{border-color:var(--blue);color:var(--ink)}.storage-log-head{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:16px}.storage-log-head p{font-size:12px;color:var(--muted)}.storage-log-table{max-height:520px;overflow:auto;border:1px solid var(--line);border-radius:8px}.storage-log-table table{min-width:430px;width:100%;table-layout:fixed}.storage-log-table th,.storage-log-table td{font-size:13px;padding:12px 16px}.storage-log-table th{background:var(--panel-raised);position:sticky;top:0}.storage-log-table th:first-child{width:50%}.storage-log-table th:last-child,.storage-log-table td:last-child{text-align:right}.storage-log-table .empty{text-align:center}
 
 .schedule-reference #schedule-plan-panel>.schedule-table{max-height:520px;overscroll-behavior:contain;scrollbar-gutter:stable;scrollbar-width:thin;scrollbar-color:var(--muted) transparent}
+/* AI effect comparison uses the verified natural-day baseline and recommendation. */
+.ai-comparison{grid-column:1/-1;min-width:0;display:grid;gap:14px}.ai-comparison>.section-head{margin:4px 2px 0}.ai-comparison h2{font-size:18px}.ai-comparison .section-head p{font-size:12px}.ai-effect-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));padding:22px 0}.ai-effect-metric{min-width:0;padding:0 24px;border-right:1px solid var(--line)}.ai-effect-metric:last-child{border:0}.ai-effect-label{font-size:13px;color:var(--muted)}.ai-effect-value{font-size:30px;font-weight:680;letter-spacing:-.025em;margin:10px 0 6px;line-height:1.3;overflow-wrap:anywhere}.ai-effect-metric p{font-size:12px;color:var(--muted)}.ai-effect-metric.positive .ai-effect-value{color:var(--green)}.ai-effect-metric.negative .ai-effect-value{color:var(--red)}.ai-rules-panel,.ai-chart-panel{padding:22px 24px}.ai-rules-grid{display:grid;grid-template-columns:100px minmax(0,1fr) minmax(0,1fr);gap:0 24px}.ai-rule-heading{padding:0 0 14px;font-weight:650;font-size:15px}.ai-rule-heading.ai-optimized-heading{color:var(--purple)}.ai-rule-label,.ai-rule-cell{padding:13px 0;border-top:1px solid var(--line)}.ai-rule-label{font-size:12px;color:var(--muted);padding-top:15px}.ai-rule-cell strong{display:block;font-size:14px;font-weight:550}.ai-rule-cell p{margin-top:3px;font-size:12px;color:var(--muted);overflow-wrap:anywhere}.ai-chart-layout{display:grid;grid-template-columns:minmax(0,1fr) 260px;gap:24px}.ai-chart-main{min-width:0}.ai-legend{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--muted)}.ai-legend span{display:inline-flex;align-items:center;gap:7px}.ai-line-key{width:20px;height:0;border-top:2.5px solid var(--green)}.ai-line-key.base{border-top-color:var(--blue);border-top-style:dashed}.ai-chart-unit{display:flex;justify-content:space-between;gap:12px;font-size:12px;color:var(--muted);margin-bottom:10px}.ai-chart-scroll{overflow-x:auto}.ai-chart-stage{min-width:620px}.ai-chart-svg{display:block;width:100%;height:310px;touch-action:pan-y}.ai-chart-svg text{font-family:inherit;font-size:12px;fill:var(--muted)}.ai-chart-svg path,.ai-chart-svg line{vector-effect:non-scaling-stroke}.ai-chart-svg .grid{stroke:var(--grid);stroke-dasharray:4 5}.ai-tariffs{display:flex;gap:3px;margin:4px 18px 0 58px;font-size:11px;color:var(--muted)}.ai-tariffs span{text-align:center;padding:4px 2px;border-radius:4px;background:var(--panel-soft);overflow:hidden;white-space:nowrap}.ai-tariffs .valley{color:var(--green);background:color-mix(in srgb,var(--green) 8%,var(--panel))}.ai-tariffs .peak{color:var(--orange);background:color-mix(in srgb,var(--orange) 8%,var(--panel))}.ai-range-row{display:flex;align-items:center;gap:14px;margin:18px 0 14px;font-size:12px}.ai-range-row label{white-space:nowrap;color:var(--muted)}.ai-range-row input{width:100%;min-height:32px;padding:0;border:0;accent-color:var(--green);margin:0}.ai-range-row output{white-space:nowrap;font-weight:550}.ai-inspector{display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:16px;border:1px solid var(--line);border-radius:10px;background:var(--panel-soft)}.ai-inspector span{font-size:12px;color:var(--muted)}.ai-inspector strong{display:block;font-size:17px;font-weight:600;margin-top:4px}.ai-inspector .ai-reading{color:var(--green)}.ai-selection-copy{font-size:12px;color:var(--muted);min-height:38px;padding-top:12px}.ai-change-aside{min-width:0;border-left:1px solid var(--line);padding-left:22px}.ai-change-aside h3{font-size:13px;margin-bottom:4px}.ai-change-aside>p{font-size:12px;color:var(--muted);margin-bottom:10px}.ai-change-button{display:block;width:100%;text-align:left;border:1px solid transparent;border-radius:10px;background:transparent;padding:13px 12px;margin-bottom:3px;min-height:64px}.ai-change-button:hover{background:var(--panel-soft);border-color:var(--line-hover)}.ai-change-button:active{background:var(--panel-raised)}.ai-change-button[aria-pressed="true"]{background:color-mix(in srgb,var(--green) 6%,var(--panel));border-color:color-mix(in srgb,var(--green) 26%,var(--line))}.ai-change-button span{display:block;font-size:12px;color:var(--muted);margin-bottom:4px}.ai-change-button strong{font-size:13px;font-weight:600}.ai-change-button p{font-size:12px;color:var(--muted);margin-top:3px}.ai-comparison-note{border-top:1px solid var(--line);padding-top:16px;margin-top:12px;font-size:12px;color:var(--muted)}.ai-difference-details{margin-top:16px}.ai-difference-details summary{min-height:40px}.ai-difference-table{max-height:400px;overflow:auto;margin-top:12px}.ai-difference-table table{min-width:680px}.ai-difference-table td:last-child{white-space:normal;min-width:200px}.ai-comparison-empty{padding:24px;color:var(--muted)}.ai-comparison-empty p{margin-top:5px;font-size:13px}.ai-comparison-status.good{color:var(--green)}.ai-comparison-status.warn{color:var(--orange)}
+@media(max-width:1120px){.ai-chart-layout{grid-template-columns:minmax(0,1fr)}.ai-change-aside{border-left:0;border-top:1px solid var(--line);padding:18px 0 0}.ai-change-list{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}.ai-change-button{padding:11px 10px}.ai-effect-metric{padding:0 18px}.ai-effect-value{font-size:27px}}
+@media(max-width:800px){.ai-effect-metrics{grid-template-columns:repeat(2,minmax(0,1fr));padding:0}.ai-effect-metric{padding:20px;border-bottom:1px solid var(--line)}.ai-effect-metric:nth-child(2){border-right:0}.ai-effect-metric:nth-child(3),.ai-effect-metric:last-child{border-bottom:0}.ai-rules-grid{grid-template-columns:72px minmax(0,1fr) minmax(0,1fr);gap:0 16px}.ai-change-list{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:540px){.ai-effect-metric{padding:17px 14px}.ai-effect-label{font-size:12px}.ai-effect-value{font-size:25px}.ai-rules-panel,.ai-chart-panel{padding:18px 16px}.ai-rules-grid{grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:0 16px}.ai-rules-grid>.ai-rule-blank{display:none}.ai-rule-heading{font-size:13px;padding-bottom:10px}.ai-rule-label{grid-column:1/-1;padding:12px 0 4px}.ai-rule-cell{border:0;padding:3px 0 13px}.ai-rule-cell strong{font-size:13px}.ai-range-row{flex-wrap:wrap;gap:4px 12px}.ai-range-row input{order:3;flex-basis:100%}.ai-range-row output{margin-left:auto}.ai-inspector{gap:10px;padding:12px}.ai-inspector strong{font-size:15px}.ai-chart-svg{height:280px}.ai-chart-unit{font-size:12px}.ai-chart-unit span:last-child{text-align:right}.ai-change-list{gap:4px}.ai-change-button{padding:10px 8px}}
+@media(max-width:360px){.ai-effect-value{font-size:21px;letter-spacing:-.04em}}
 </style>
 </head>
 <body><div id="loading-mask" class="loading-mask" role="status" aria-live="polite"><div class="loading-card"><span class="loading-spinner" aria-hidden="true"></span><strong>加载中</strong><p id="loading-message">正在读取电站数据，请稍候…</p></div></div><main class="shell reference-shell"><header class="reference-top"><div class="brand"><div class="mark">M4</div><div><strong>能源优化调度</strong></div></div><div class="top-actions"><div class="station-toggle"></div><input id="plan-date" disabled type="date" ><span class="badge" id="auto-plan-status">正在读取生成模式</span><button class="btn" id="recalculate" type="button" hidden disabled title="等待电站数据就绪">立即重算</button><button class="btn" id="preview-daily" type="button" hidden>查看新计划</button><button class="btn" id="dispatch-daily" type="button" hidden>下发日计划</button><label class="revenue-refresh-control"><span class="sr-only" style="position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)">刷新间隔</span><select id="revenue-refresh"><option value="60" selected>1 分钟刷新</option><option value="10">10 秒刷新</option><option value="5">5 秒刷新</option></select></label><button class="btn iconbtn" id="theme" aria-label="切换到深色模式" title="切换明暗模式"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 15.5A8.5 8.5 0 0 1 8.5 4 8.5 8.5 0 1 0 20 15.5Z"/></svg></button></div></header><div hidden><select id="station" disabled></select></div>
@@ -156,6 +162,39 @@ button:disabled{cursor:not-allowed;opacity:.5}.decision-side[hidden]{display:non
 <div id="scheduling-view">
 <div class="runtime-strip"><span id="runtime-station">电站</span><i aria-hidden="true"></i><span>调度粒度 15 分钟</span><i aria-hidden="true"></i><span>全天计划</span></div>
 <section id="panel-decision"><div class="reference-grid"><section class="panel reference-overview"><article class="panel decision"><div><span class="badge good">正在读取计划</span><h2>正在读取当天数据</h2><p id="decision-copy" role="status" aria-live="polite"></p><div class="row" id="plan-tags" hidden style="margin-top:17px"><span class="badge">全天 96 个时段</span><span class="badge">光储协同</span><span class="badge">电价策略</span></div></div></article><div class="overview-item"><span class="label" id="ref-price-label">当前电价</span><strong id="ref-price">—</strong><p class="note" id="ref-price-next"></p></div><div class="overview-item"><span class="label">当前 SOC</span><strong id="ref-actual-soc">—</strong><p class="note" id="ref-soc-time">暂无有效数据</p></div><div class="overview-item"><span class="label">当前实际功率</span><strong id="ref-actual-power">—</strong><p class="note" id="ref-power-time">暂无有效数据</p></div><div class="overview-item"><span class="label">日计划下一动作</span><strong id="ref-next">—</strong><p class="note" id="ref-next-action"></p></div></section>
+<section id="ai-comparison" class="ai-comparison" aria-labelledby="ai-comparison-title">
+ <div class="section-head"><div><h2 id="ai-comparison-title">AI 智能调度效果对比</h2><p id="ai-comparison-context">同一批预测与电价下，对比传统规则和当前日计划</p></div><div class="row"><span class="badge ai-comparison-status" id="ai-comparison-status" role="status">正在读取</span><span class="badge" id="ai-adoption-status">等待计划</span></div></div>
+ <div id="ai-comparison-empty" class="panel ai-comparison-empty" role="status"><strong id="ai-empty-title">正在读取对比数据</strong><p id="ai-empty-copy">等待已校验的全天计划。</p></div>
+ <div id="ai-comparison-content" class="ai-comparison" hidden>
+  <section class="panel ai-effect-metrics" aria-label="预计调度效果">
+   <article class="ai-effect-metric"><div class="ai-effect-label">传统规则预计费用</div><div class="ai-effect-value" id="ai-baseline-cost">—</div><p>原 EMS 规则模拟</p></article>
+   <article class="ai-effect-metric"><div class="ai-effect-label" id="ai-current-cost-label">AI 优化预计费用</div><div class="ai-effect-value" id="ai-current-cost">—</div><p id="ai-current-cost-note">等待当前方案</p></article>
+   <article class="ai-effect-metric" id="ai-saving-card"><div class="ai-effect-label" id="ai-saving-label">预计净节省</div><div class="ai-effect-value" id="ai-net-saving">—</div><p id="ai-saving-note">相较传统规则</p></article>
+   <article class="ai-effect-metric" id="ai-rate-card"><div class="ai-effect-label" id="ai-rate-label">预计降本比例</div><div class="ai-effect-value" id="ai-saving-percent">—</div><p>同一轮全天计划比较</p></article>
+  </section>
+  <section class="panel ai-rules-panel" aria-labelledby="ai-rules-title">
+   <div class="section-head"><div><h3 id="ai-rules-title">调度规则，发生了什么变化</h3><p>对照原设定时段与当前方案安排</p></div><span class="badge">预测 → 优化 → 安全校验</span></div>
+   <div class="ai-rules-grid">
+    <div class="ai-rule-blank"></div><div class="ai-rule-heading">传统调度规则</div><div class="ai-rule-heading ai-optimized-heading" id="ai-rule-current-title">AI 预测优化</div>
+    <div class="ai-rule-label">决策依据</div><div class="ai-rule-cell"><strong>按原 EMS 时段与规则运行</strong><p>保持原规则作为比较基准</p></div><div class="ai-rule-cell"><strong id="ai-rule-basis">先预测，再安排调度</strong><p id="ai-rule-inputs"></p></div>
+    <div class="ai-rule-label">充电安排</div><div class="ai-rule-cell"><strong>原设定充电窗口</strong><p id="ai-original-charge"></p></div><div class="ai-rule-cell"><strong id="ai-charge-title">按后续用电需求储备</strong><p id="ai-current-charge"></p></div>
+    <div class="ai-rule-label">放电安排</div><div class="ai-rule-cell"><strong>原设定放电窗口</strong><p id="ai-original-discharge"></p></div><div class="ai-rule-cell"><strong id="ai-discharge-title">结合负荷与电价分配</strong><p id="ai-current-discharge"></p></div>
+    <div class="ai-rule-label">采用情况</div><div class="ai-rule-cell"><strong>保留原时段与保护规则</strong><p>曲线按同一轮输入模拟</p></div><div class="ai-rule-cell"><strong id="ai-adoption-title"></strong><p id="ai-adoption-copy"></p></div>
+   </div>
+  </section>
+  <section class="panel ai-chart-panel" aria-labelledby="ai-chart-title">
+   <div class="section-head"><div><h3 id="ai-chart-title">24 小时充放电功率对比</h3><p>北京时间 · 15 分钟粒度 · 整日日计划</p></div><div class="ai-legend"><span><i class="ai-line-key base" aria-hidden="true"></i>传统规则模拟</span><span><i class="ai-line-key" aria-hidden="true"></i><span id="ai-chart-current-label">AI 优化</span></span></div></div>
+   <div class="ai-chart-layout"><div class="ai-chart-main">
+    <div class="ai-chart-unit"><span>储能功率 · kW</span><span>放电为正 · 充电为负</span></div>
+    <div class="ai-chart-scroll" tabindex="0" role="region" aria-label="全天功率对比图，可横向滚动"><div class="ai-chart-stage"><svg id="ai-power-chart" class="ai-chart-svg" viewBox="0 0 900 310" preserveAspectRatio="none" role="img" aria-label="当天传统规则与当前日计划的充放电功率对比"></svg><div class="ai-tariffs" id="ai-comparison-tariffs" aria-label="当日电价时段"></div></div></div>
+    <div class="ai-range-row"><label for="ai-time">查看时段</label><input id="ai-time" type="range" min="0" max="95" value="72" step="1" aria-controls="ai-selection-reading ai-selection-copy"><output id="ai-time-label" for="ai-time">—</output></div>
+    <div id="ai-selection-reading" class="ai-inspector" aria-live="polite"><div><span>传统规则模拟</span><strong id="ai-base-reading">—</strong></div><div><span id="ai-reading-label">AI 优化</span><strong id="ai-plan-reading" class="ai-reading">—</strong></div></div><p id="ai-selection-copy" class="ai-selection-copy" aria-live="polite"></p>
+   </div><aside class="ai-change-aside"><h3 id="ai-changes-title">AI 调整了哪些安排</h3><p id="ai-changes-context">点击时段查看曲线差异</p><div class="ai-change-list" id="ai-change-list"></div></aside></div>
+   <details class="ai-difference-details"><summary>查看全天调度差异</summary><div class="ai-difference-table" tabindex="0" role="region" aria-label="全天调度差异明细"><table><thead><tr><th>时间段</th><th>传统规则模拟</th><th id="ai-difference-column">AI 优化</th><th>变化</th></tr></thead><tbody id="ai-difference-rows"></tbody></table></div></details>
+   <p class="ai-comparison-note" id="ai-comparison-note">费用与曲线为同一轮输入下的预计结果，不代表实测收益或设备已执行。</p>
+  </section>
+ </div>
+</section>
 <section class="panel log-reference" aria-labelledby="rolling-title" hidden><div class="section-head"><div><h2 id="rolling-title">后续滚动建议</h2><p id="rolling-context">等待实测状态与当日日计划</p></div><span class="badge" id="rolling-status">等待计划</span></div><p class="note" id="rolling-anchor"></p><div class="table-wrap schedule-table"><table><thead><tr><th>时段</th><th>建议动作</th><th>储能功率（kW）</th><th>预计SOC（时段末）</th></tr></thead><tbody id="rolling-rows"><tr><td colspan="4" class="empty">暂无后续建议</td></tr></tbody></table></div></section><section class="panel compact-plan"><section class="forecast-reference" id="chart-panel" hidden><div class="section-head"><div><h2>24 小时调度安排</h2><p id="chart-context"></p><p id="daily-dispatch-status" role="status" aria-live="polite"></p></div><button class="text-btn" id="show-parameters">查看策略参数 →</button><div class="legend" hidden><span><i class="swatch" style="--swatch:var(--purple)"></i>负载预测(kW)</span><span><i class="swatch" style="--swatch:var(--orange)"></i>光伏预测(kW)</span><span><i class="swatch" style="--swatch:var(--green)"></i><span id="storage-power-label">储能计划(kW)</span></span><span><i class="swatch dashed" style="--swatch:var(--red)"></i>当前时刻</span></div></div><div class="chart-wrap" hidden><div class="chart-stage"><svg id="chart" class="chart" preserveAspectRatio="none" viewBox="0 0 1140 480" role="img" aria-label="当天负载预测、光伏预测与储能计划功率图"></svg><div class="chart-time-axis" aria-label="时间轴"><span style="left:5.26315789%">00:00</span><span style="left:20.17543860%">04:00</span><span style="left:35.08771930%">08:00</span><span style="left:50.00000000%">12:00</span><span style="left:64.91228070%">16:00</span><span style="left:79.82456140%">20:00</span><span style="left:94.73684211%">24:00</span></div></div></div><p class="note" id="daily-plan-summary"></p><div class="compact-plan-stats"><div class="overview-item cost-comparison"><span class="label">日计划费用对比</span><div class="cost-comparison-row"><span id="ref-baseline-label">原计划预计</span><strong id="ref-baseline-cost">—</strong></div><div class="cost-comparison-row"><span>当前计划预计</span><strong id="ref-plan-cost">—</strong></div><div class="cost-comparison-row cost-comparison-result"><span id="ref-saving-label">预计减少</span><strong id="ref-saving">—</strong></div></div><div class="overview-item forecast-summary"><div class="forecast-summary-row" id="compact-pv-metric"><span>预测光伏发电</span><div><strong id="compact-pv-energy">—</strong><span class="forecast-unit">kWh</span></div></div><div class="forecast-summary-row"><span>预测峰值负载</span><div><strong id="compact-load-peak">—</strong><span class="forecast-unit">kW</span></div></div></div></div><div class="time-select schedule-scrubber"><div class="schedule-scrubber-head"><label for="time">查看时段</label><span id="current-chart-time" class="chart-current-time" hidden></span><output id="time-label" for="time">18:00–18:15</output></div><div class="schedule-tracks"><div class="track-label">电价 · 元/kWh</div><div id="price-timeline" class="price-timeline"></div><div class="track-label" id="storage-track-label">储能计划</div><div id="action-timeline" class="action-timeline" aria-label="全天充放电安排"></div></div><div class="schedule-scrubber-axis"><input id="time" type="range" min="0" max="95" value="72" step="1" aria-controls="inspector period-reason" aria-label="拖动查看全天调度时段"><div class="schedule-scrubber-hours" aria-hidden="true"><span style="left:0%">00:00</span><span style="left:16.666667%">04:00</span><span style="left:33.333333%">08:00</span><span style="left:50%">12:00</span><span style="left:66.666667%">16:00</span><span style="left:83.333333%">20:00</span><span style="left:100%">24:00</span></div></div><p id="timeline-selection" class="note" aria-live="polite"></p></div><div class="inspector" id="inspector" aria-live="polite"></div><p class="period-explanation" id="period-reason"></p></section>
 
 
@@ -258,7 +297,7 @@ async function api(station,route,options={}){
  if(data.station_id!==station)throw Error('电站数据不匹配，请重新选择电站。');return data;
 }
 const header=document.querySelector('.decision h2'),badge=document.querySelector('.decision .badge');
-function clearPlan(title,message){document.querySelector('.reference-overview').classList.remove('summary-hidden');plan=null;clearReferenceOverview();$('price-timeline').replaceChildren();header.textContent=title;badge.textContent='日计划待就绪';$('decision-copy').textContent=message;for(const id of ['decision-side','metrics','chart-panel','plan-tags','period-hero','plan-layout'])$(id).hidden=true;$('chart').replaceChildren();}
+function clearPlan(title,message){document.querySelector('.reference-overview').classList.remove('summary-hidden');plan=null;clearAiComparison(title,message);clearReferenceOverview();$('price-timeline').replaceChildren();header.textContent=title;badge.textContent='日计划待就绪';$('decision-copy').textContent=message;for(const id of ['decision-side','metrics','chart-panel','plan-tags','period-hero','plan-layout'])$(id).hidden=true;$('chart').replaceChildren();}
 function planBlockReasons(inputs){
  const reasons=(inputs?.checks||[]).filter(c=>c&&c.status!=='ready'&&c.detail).map(c=>String(c.detail));
  const gate=inputs?.sources?.load?.accuracy_gate;
@@ -370,7 +409,7 @@ function mapPlan(record,request,station,date,settings,controls,emsBaseline){
  const points=chosen.plan.map((v,i)=>{const input=inputs[i];return {i,...storageDisplay(v),time:clock(i),price:input.buy_price_per_kwh,tariff:periods[input.tariff_period]||'电价',load:input.load_forecast_kw,pv:input.pv_forecast_kw,base:base.plan[i].grid_import_kw,grid:v.grid_import_kw,exportKw:v.grid_export_kw,soc:v.expected_soc_pct};});
  const tariffs=[];points.forEach((v,i)=>{const last=tariffs.at(-1);if(last&&last.name===v.tariff&&last.price===v.price)last.end=(i+1)/4;else tariffs.push({start:i/4,end:(i+1)/4,name:v.tariff,price:v.price,color:v.tariff==='谷'?'var(--green)':v.tariff==='峰'?'var(--orange)':v.tariff==='尖'?'var(--red)':'var(--muted)'});});
  const sum=fn=>points.reduce((v,p)=>v+fn(p)*.25,0),{peakBase,peakPlan,cut}=peakWindowStats(inputs,base.plan,chosen.plan);
- return {station,date,emsOriginal,emsFallback,points,tariffs,cap:cap.energy_capacity_kwh,maxPower:Math.max(cap.max_charge_kw,cap.max_discharge_kw,1),limit:bounds.demand_limit_kw,baseline:bm.energy_cost,cost:m.energy_cost,inventoryAdjustment,wear:m.cycle_cost,baseWear:bm.cycle_cost,saving:finite(m.cycle_cost)&&finite(bm.cycle_cost)?bm.energy_cost+bm.cycle_cost-m.energy_cost-m.cycle_cost-inventoryAdjustment:null,charged:sum(p=>Math.max(0,-p.simulatedPower)),discharged:sum(p=>Math.max(0,p.simulatedPower)),pvRate:sum(p=>p.pv)>0?m.pv_self_use_rate:null,pvExtra:finite(m.pv_self_use_kwh)&&finite(bm.pv_self_use_kwh)?m.pv_self_use_kwh-bm.pv_self_use_kwh:null,peakBase,peakPlan,cut,initialSoc:cap.initial_soc_pct,endSoc:points.at(-1).soc,minSoc:Math.min(...points.map(p=>p.soc)),maxSoc:Math.max(...points.map(p=>p.soc)),bounds,comparison:c,record,request};
+ return {station,date,emsOriginal,emsFallback,referenceSchedule:emsBaseline.schedule,points,tariffs,cap:cap.energy_capacity_kwh,maxPower:Math.max(cap.max_charge_kw,cap.max_discharge_kw,1),limit:bounds.demand_limit_kw,baseline:bm.energy_cost,cost:m.energy_cost,inventoryAdjustment,wear:m.cycle_cost,baseWear:bm.cycle_cost,saving:finite(m.cycle_cost)&&finite(bm.cycle_cost)?bm.energy_cost+bm.cycle_cost-m.energy_cost-m.cycle_cost-inventoryAdjustment:null,charged:sum(p=>Math.max(0,-p.simulatedPower)),discharged:sum(p=>Math.max(0,p.simulatedPower)),pvRate:sum(p=>p.pv)>0?m.pv_self_use_rate:null,pvExtra:finite(m.pv_self_use_kwh)&&finite(bm.pv_self_use_kwh)?m.pv_self_use_kwh-bm.pv_self_use_kwh:null,peakBase,peakPlan,cut,initialSoc:cap.initial_soc_pct,endSoc:points.at(-1).soc,minSoc:Math.min(...points.map(p=>p.soc)),maxSoc:Math.max(...points.map(p=>p.soc)),bounds,comparison:c,record,request};
 }
 function dailySnapshotNote(p){
  return '生成于 '+timeText(p.record.finished_at)+' · '+p.date+' 整日预测，非实际执行曲线；下发安排见下方记录。';
@@ -378,7 +417,7 @@ function dailySnapshotNote(p){
 function renderPlan(p){
  document.querySelector('.reference-overview').classList.toggle('summary-hidden',p.emsFallback===true);
  plan=p;for(const id of ['decision-side','metrics','chart-panel','plan-tags','period-hero','plan-layout'])$(id).hidden=false;
- header.textContent=p.pendingOptimizationReason?'暂览 EMS 原计划':p.emsFallback?'保守 EMS 日计划':p.comparison.status==='optimized'?'全天优化方案':'EMS 原计划';badge.textContent=p.pendingOptimizationReason?'优化计划待生成':p.emsFallback?'保守日计划':'全天计划';
+ header.textContent=p.pendingOptimizationReason?'暂览 EMS 原计划':p.emsFallback?'保守 EMS 日计划':p.comparison.status==='optimized'?'AI优化成功':'EMS 原计划';badge.textContent=p.pendingOptimizationReason?'优化计划待生成':p.emsFallback?'保守日计划':'全天计划';
  const optimizationNote=p.comparison.optimization_status==='not_adopted'?(finite(p.comparison.net_savings_yuan)?'优化预计净节省 '+money(p.comparison.net_savings_yuan)+'。':'')+p.comparison.optimization_reason+' ':'';
  $('decision-copy').textContent=stationName(p.station)+' · '+p.date+'。'+(p.pendingOptimizationReason?p.pendingOptimizationReason+' ':'')+optimizationNote+(p.emsOriginal?'展示原计划安排，购电量与费用为预计值。':p.emsFallback?p.comparison.fallback_reason:p.comparison.reason)+(requireStation(p.station).policy==='peak_reserve'&&p.request.peak_reserve_policy?.version==='peak-reserve-v1'?' 当前计划采用旧策略，需更新后重新生成。':'');
  const metric=(id,value)=>{$(id).textContent=value;};
@@ -396,8 +435,138 @@ function renderPlan(p){
  const pvWindowRows=requireStation(p.station).has_pv?[['余电入储 / 上网选择时段',pvWindows.map(w=>w.start_time+'–'+w.end_time).join('、')||'未设置']]:[];
  $('constraints').innerHTML=[['储能容量',fmt(p.cap)+' kWh'],['最大充 / 放电功率',fmt(p.request.capability.max_charge_kw)+' / '+fmt(p.request.capability.max_discharge_kw)+' kW'],['SOC 安全范围',fmt(p.bounds.soc_min_pct)+'%–'+fmt(p.bounds.soc_max_pct)+'%'],['初始 / 日终 SOC',fmt(p.initialSoc)+'% / '+fmt(p.endSoc)+'%'],['需量目标',fmt(p.limit)+' kW'],...pvWindowRows,['生成时间',timeText(p.record.finished_at)]].map(([k,v])=>'<div class="label">'+esc(k)+'<b style="color:var(--ink)">'+esc(v)+'</b></div>').join('');
  metric('basis-note','预计费用和节省按相同条件与原计划比较，不代表实际收益。'+(p.comparison.terminal_energy_rule==='not_less_than_baseline'?'日末电量不低于原计划。':p.comparison.terminal_energy_rule==='operating_floor_inventory_adjusted'?'日末电量按最低运行要求安排。':'日末电量与原计划一致。'));
- $('price-timeline').innerHTML=p.tariffs.map(t=>`<div class="price-segment" style="grid-column:${t.start*4+1} / span ${(t.end-t.start)*4};background:color-mix(in srgb,${t.color} 12%,var(--panel));color:${t.color}">${esc(t.name)} ${t.price.toFixed(2)}</div>`).join('');renderChart();renderInspector();
+ $('price-timeline').innerHTML=p.tariffs.map(t=>`<div class="price-segment" style="grid-column:${t.start*4+1} / span ${(t.end-t.start)*4};background:color-mix(in srgb,${t.color} 12%,var(--panel));color:${t.color}">${esc(t.name)} ${t.price.toFixed(2)}</div>`).join('');renderAiComparison(p);renderChart();renderInspector();
 }
+let aiComparisonView=null;
+const aiPower=point=>{const value=storageDisplay(point).simulatedPower;return Math.round(value*10)/10||0;};
+const aiAction=power=>power<0?'充电 · '+fmt(Math.abs(power),1)+' kW':power>0?'放电 · '+fmt(power,1)+' kW':'待机 · 0 kW';
+function clearAiComparison(title,message){
+ aiComparisonView=null;$('ai-comparison-content').hidden=true;$('ai-comparison-empty').hidden=false;
+ $('ai-empty-title').textContent=title;$('ai-empty-copy').textContent=message||'暂无可比较的全天计划。';
+ $('ai-comparison-status').textContent='暂无对比结果';$('ai-comparison-status').classList.remove('good','warn');
+ $('ai-adoption-status').textContent='等待计划';
+ $('ai-comparison-context').textContent='同一批预测与电价下，对比传统规则和当前日计划';
+}
+function aiComparisonResult(p){
+ const c=p.comparison,baseline=c.baseline,selection=p.record.selected;
+ const candidate=Array.isArray(p.record.candidates)?p.record.candidates.find(v=>v.profile_id===selection?.profile_id&&v.plan_version===selection?.plan_version):null;
+ const solved=!!candidate&&['optimal','feasible'].includes(candidate.status)&&validSeries(candidate.plan,Date.parse(p.date+'T00:00:00+08:00'))&&finite(candidate.metrics?.energy_cost);
+ const baseCost=finite(p.baseWear)?p.baseline+p.baseWear:null;
+ // A rejected candidate is still an AI result, but only show its finances when
+ // the backend's independent daily comparison confirms that same candidate.
+ if(solved&&c.status!=='optimized'&&candidate.plan_version===c.candidate_plan_version){
+  const m=candidate.metrics,inventory=c.terminal_energy_rule==='operating_floor_inventory_adjusted'?c.terminal_inventory_adjustment_yuan:0;
+  const net=finite(baseCost)&&finite(m.cycle_cost)&&finite(inventory)?baseCost-m.energy_cost-m.cycle_cost-inventory:null;
+  if(finite(net)&&inventory>=0&&finite(c.optimized_cost_yuan)&&finite(c.net_savings_yuan)
+    &&Math.abs(m.energy_cost-c.optimized_cost_yuan)<1e-5&&Math.abs(net-c.net_savings_yuan)<1e-5){
+   return {baseline:baseline.plan,result:candidate.plan,baseCost,cost:m.energy_cost+m.cycle_cost+inventory,saving:net,isAi:true,solved:true};
+  }
+ }
+ return {baseline:baseline.plan,result:c.recommended.plan,baseCost,
+  cost:finite(p.wear)?p.cost+p.wear+p.inventoryAdjustment:null,saving:p.pendingOptimizationReason?null:p.saving,
+  isAi:c.status==='optimized',solved:solved||c.status==='optimized'};
+}
+function aiModeWindows(points,mode){
+ const ranges=[];
+ points.forEach((v,i)=>{if(v.mode!==mode||!v.target_power_kw)return;const last=ranges.at(-1);if(last&&last.end===i)last.end=i+1;else ranges.push({start:i,end:i+1});});
+ return ranges.length?ranges.map(v=>clock(v.start)+'–'+clock(v.end)).join('、'):mode==='charge'?'无充电安排':'无放电安排';
+}
+function aiOriginalWindows(p,mode,fallback){
+ const schedule=p.referenceSchedule;
+ if(!Array.isArray(schedule)||!schedule.length)return aiModeWindows(fallback,mode);
+ const rows=schedule.filter(v=>v.mode===mode&&typeof v.start_time==='string'&&typeof v.end_time==='string'&&finite(v.power_kw));
+ return rows.length?rows.map(v=>v.start_time.slice(0,5)+'–'+v.end_time.slice(0,5)+' · '+fmt(v.power_kw,1)+' kW').join('；'):mode==='charge'?'无设定充电窗口':'无设定放电窗口';
+}
+function aiChangeLabel(base,power,tariff){
+ if(base===power)return '与传统规则一致';
+ if(!power)return base<0?'停止充电':'停止放电';
+ if(!base)return tariff+'段新增'+(power<0?'充电':'放电');
+ if(Math.sign(base)!==Math.sign(power))return '由'+(base<0?'充电':'放电')+'调整为'+(power<0?'充电':'放电');
+ return (Math.abs(power)>Math.abs(base)?'增加':'减少')+(power<0?'充电':'放电')+'功率';
+}
+function aiPowerRange(points,key,start,end){
+ const powers=points.slice(start,end).map(v=>v[key]),sign=Math.sign(powers[0]);
+ if(!sign)return '待机 · 0 kW';
+ const magnitudes=powers.map(Math.abs),lo=Math.min(...magnitudes),hi=Math.max(...magnitudes);
+ return (sign<0?'充电':'放电')+' · '+fmt(lo,1)+(hi!==lo?'–'+fmt(hi,1):'')+' kW';
+}
+function renderAiComparison(p){
+ const result=aiComparisonResult(p),pending=!!p.pendingOptimizationReason;
+ const name=result.isAi?'AI 优化':p.emsFallback?'保守 EMS 日计划':'EMS 原方案';
+ const adopted=p.comparison.status==='optimized';
+ const points=result.result.map((v,i)=>({base:aiPower(result.baseline[i]),power:aiPower(v),tariff:p.points[i].tariff}));
+ const groups=[];
+ points.forEach((point,i)=>{
+  if(point.base===point.power)return;
+  const label=aiChangeLabel(point.base,point.power,point.tariff),key=[Math.sign(point.base),Math.sign(point.power),point.tariff,label].join('|'),last=groups.at(-1);
+  if(last&&last.end===i&&last.key===key){last.end=i+1;last.delta=Math.max(last.delta,Math.abs(point.power-point.base));}
+  else groups.push({start:i,end:i+1,key,label,delta:Math.abs(point.power-point.base)});
+ });
+ aiComparisonView={...result,points,groups,name,station:p.station,date:p.date,run:p.record.run_id};
+ $('ai-comparison-empty').hidden=true;$('ai-comparison-content').hidden=false;
+ $('ai-comparison-context').textContent=stationName(p.station)+' · '+p.date+' · 生成于 '+timeText(p.record.finished_at);
+ $('ai-comparison-status').textContent=result.solved?'AI优化成功':pending?'AI 优化待生成':'暂无可用 AI 优化结果';
+ $('ai-comparison-status').classList.toggle('good',result.solved);$('ai-comparison-status').classList.toggle('warn',!result.solved);
+ $('ai-adoption-status').textContent=adopted?'已采用':pending?'暂览原规则':p.emsFallback?'未采用 · 保守计划':'未采用 · 沿用原规则';
+ $('ai-baseline-cost').textContent=money(result.baseCost);$('ai-current-cost').textContent=money(result.cost);
+ $('ai-current-cost-label').textContent=name+'预计费用';
+ $('ai-current-cost-note').textContent=result.isAi?(adopted?'本次日计划已采用':'已生成优化结果 · 本次未采用'):p.emsFallback?'本次采用保守安排':pending?'优化结果尚未生成':'本次沿用原 EMS 规则';
+ const saving=result.saving,increase=finite(saving)&&saving<0,rate=finite(saving)&&finite(result.baseCost)&&result.baseCost>0?Math.abs(saving)/result.baseCost*100:null;
+ $('ai-saving-label').textContent=increase?'预计净费用增加':'预计净节省';$('ai-net-saving').textContent=finite(saving)?money(Math.abs(saving)):'—';
+ $('ai-saving-note').textContent=result.isAi?'AI 优化相较传统规则':pending?'等待优化结果':'当前方案相较传统规则';
+ $('ai-rate-label').textContent=increase?'预计增费比例':'预计降本比例';$('ai-saving-percent').textContent=finite(rate)?fmt(rate,2)+'%':'—';
+ for(const id of ['ai-saving-card','ai-rate-card']){$(id).classList.toggle('positive',finite(saving)&&saving>0);$(id).classList.toggle('negative',increase);}
+ $('ai-rule-current-title').textContent=result.isAi?'AI 预测优化':name;
+ $('ai-rule-basis').textContent=result.isAi?'先预测，再安排调度':p.emsFallback?'按保守规则生成日计划':'沿用原 EMS 规则';
+ $('ai-rule-inputs').textContent=result.isAi?(requireStation(p.station).has_pv?'结合负荷、光伏、电价及可用电量':'结合负荷、电价及可用电量'):pending?'优化日计划尚未生成':'本次未采用 AI 优化方案';
+ const hasSchedule=Array.isArray(p.referenceSchedule)&&p.referenceSchedule.length>0;
+ $('ai-original-charge').previousElementSibling.textContent=hasSchedule?'原设定充电窗口':'原规则模拟充电安排';
+ $('ai-original-discharge').previousElementSibling.textContent=hasSchedule?'原设定放电窗口':'原规则模拟放电安排';
+ $('ai-original-charge').textContent=aiOriginalWindows(p,'charge',result.baseline);$('ai-original-discharge').textContent=aiOriginalWindows(p,'discharge',result.baseline);
+ $('ai-charge-title').textContent=result.isAi?'按后续用电需求储备':'当前方案充电安排';$('ai-discharge-title').textContent=result.isAi?'结合负荷与电价分配':'当前方案放电安排';
+ $('ai-current-charge').textContent=aiModeWindows(result.result,'charge');$('ai-current-discharge').textContent=aiModeWindows(result.result,'discharge');
+ $('ai-adoption-title').textContent=adopted?'AI 优化方案已采用':pending?'等待优化结果':p.emsFallback?'当前采用保守 EMS 日计划':'当前沿用 EMS 原规则';
+ $('ai-adoption-copy').textContent=p.pendingOptimizationReason||p.comparison.optimization_reason||p.comparison.reason||'暂无采用说明。';
+ for(const id of ['ai-chart-current-label','ai-reading-label','ai-difference-column'])$(id).textContent=name;
+ $('ai-changes-title').textContent=result.isAi?'AI 调整了哪些安排':'当前方案与原规则的差异';
+ $('ai-changes-context').textContent=groups.length?'点击时段查看曲线差异':pending?'等待优化日计划':'当前方案与原规则模拟功率一致';
+ const highlights=[...groups].sort((a,b)=>b.delta-a.delta||a.start-b.start).slice(0,4).sort((a,b)=>a.start-b.start);
+ $('ai-change-list').innerHTML=highlights.map(g=>'<button class="ai-change-button" type="button" data-ai-slot="'+g.start+'" data-ai-end="'+g.end+'" aria-pressed="false"><span>'+clock(g.start)+'–'+clock(g.end)+'</span><strong>'+esc(g.label)+'</strong><p>'+esc(aiPowerRange(points,'base',g.start,g.end))+' → '+esc(aiPowerRange(points,'power',g.start,g.end))+'</p></button>').join('');
+ $('ai-difference-rows').innerHTML=groups.map(g=>'<tr><td>'+clock(g.start)+'–'+clock(g.end)+'</td><td>'+esc(aiPowerRange(points,'base',g.start,g.end))+'</td><td>'+esc(aiPowerRange(points,'power',g.start,g.end))+'</td><td>'+esc(g.label)+'</td></tr>').join('')||'<tr><td colspan="4" class="empty">'+(pending?'等待优化日计划':'当前方案与原规则模拟功率一致')+'</td></tr>';
+ $('ai-comparison-note').textContent='费用与曲线来自同一轮全天预测与计划，保留现有费用比较口径，不代表实测收益或设备已执行。'+(result.isAi&&!adopted?'本次优化结果未采用，当前'+(p.emsFallback?'使用保守 EMS 日计划。':'沿用 EMS 原规则。'):'');
+ $('ai-comparison-tariffs').innerHTML=p.tariffs.map(t=>'<span class="'+(t.name==='谷'?'valley':['峰','尖'].includes(t.name)?'peak':'')+'" style="flex:'+((t.end-t.start)*4)+'" title="'+esc(t.name+'段 '+fmt(t.price,2)+' 元/kWh')+'">'+esc(t.name)+'</span>').join('');
+ renderAiComparisonChart();renderAiComparisonSelection();
+}
+function renderAiComparisonChart(){
+ const view=aiComparisonView;if(!view)return;
+ const extent=Math.max(1,...view.points.flatMap(v=>[Math.abs(v.base),Math.abs(v.power)])),rough=extent/2,unit=10**Math.floor(Math.log10(rough)),step=[1,2,5,10].find(v=>v*unit>=rough)*unit,limit=step*2;
+ view.x=slot=>58+slot/96*824;view.y=value=>142-value/limit*116;
+ const {x,y}=view,decimals=step<1?2:step<10?1:0;
+ let svg='<title>24 小时充放电功率对比</title><desc>传统规则模拟与'+esc(view.name)+'的同日计划，放电为正、充电为负。</desc>';
+ for(let i=-2;i<=2;i++){const v=i*step;svg+='<line class="grid" x1="58" x2="882" y1="'+y(v)+'" y2="'+y(v)+'"/><text x="46" y="'+(y(v)+4)+'" text-anchor="end">'+fmt(v,decimals)+'</text>';}
+ for(const slot of [0,12,24,36,48,60,72,84,96])svg+='<text x="'+x(slot)+'" y="294" text-anchor="'+(slot===0?'start':slot===96?'end':'middle')+'">'+clock(slot)+'</text>';
+ svg+='<line x1="58" x2="882" y1="142" y2="142" stroke="var(--line-hover)"/>';
+ const stepPath=key=>view.points.map((v,i)=>(i?'L':'M')+x(i)+','+y(v[key])+' H'+x(i+1)).join(' ');
+ svg+='<path d="'+stepPath('base')+'" fill="none" stroke="var(--blue)" stroke-width="2.5" stroke-dasharray="6 5"/><path d="'+stepPath('power')+'" fill="none" stroke="var(--green)" stroke-width="2.8"/>';
+ svg+='<line id="ai-selection-cursor" x1="58" x2="58" y1="20" y2="264" stroke="var(--muted)" stroke-dasharray="3 5"/><circle id="ai-base-dot" r="4.5" fill="var(--blue)" stroke="var(--panel)" stroke-width="2"/><circle id="ai-result-dot" r="4.5" fill="var(--green)" stroke="var(--panel)" stroke-width="2"/>';
+ $('ai-power-chart').innerHTML=svg;
+}
+function renderAiComparisonSelection(){
+ const view=aiComparisonView;
+ if(!view||!plan||view.station!==plan.station||view.date!==plan.date||view.run!==plan.record.run_id)return;
+ const point=view.points[selected];if(!point)return;
+ $('ai-time').value=selected;$('ai-time-label').textContent=clock(selected)+'–'+clock(selected+1);
+ $('ai-time').setAttribute('aria-valuetext',clock(selected)+'，传统规则'+aiAction(point.base)+'，'+view.name+aiAction(point.power));
+ $('ai-base-reading').textContent=aiAction(point.base);$('ai-plan-reading').textContent=aiAction(point.power);
+ $('ai-selection-copy').textContent=point.tariff+'段 · '+aiChangeLabel(point.base,point.power,point.tariff)+'。';
+ const at=view.x(selected+.5);$('ai-selection-cursor').setAttribute('x1',at);$('ai-selection-cursor').setAttribute('x2',at);
+ for(const [key,id] of [['base','ai-base-dot'],['power','ai-result-dot']]){$(id).setAttribute('cx',at);$(id).setAttribute('cy',view.y(point[key]));}
+ $('ai-change-list').querySelectorAll('[data-ai-slot]').forEach(button=>button.setAttribute('aria-pressed',String(selected>=Number(button.dataset.aiSlot)&&selected<Number(button.dataset.aiEnd))));
+}
+function selectAiComparisonSlot(slot){if(!plan||!aiComparisonView)return;selected=Math.max(0,Math.min(95,slot));renderInspector();}
+$('ai-time').oninput=()=>selectAiComparisonSlot(Number($('ai-time').value));
+$('ai-change-list').onclick=event=>{const button=event.target.closest('[data-ai-slot]');if(button)selectAiComparisonSlot(Number(button.dataset.aiSlot));};
+$('ai-power-chart').onclick=event=>{const view=aiComparisonView;if(!view)return;const chart=$('ai-power-chart'),point=chart.createSVGPoint();point.x=event.clientX;point.y=event.clientY;const local=point.matrixTransform(chart.getScreenCTM().inverse());selectAiComparisonSlot(Math.floor((local.x-58)/824*96));};
 function validateJob(job,station){assert(job?.station_id===station&&['empty','running','completed','failed'].includes(job.status),'全天任务格式不匹配');if(job.result)assert(job.result.schema_version==='m4-decision-results-v1'&&job.result.station_id===station&&job.result.dispatch_status==='not_dispatched','计划结果格式不匹配');}
 const viewCache=new Map(),pendingReads=new Map(),viewCacheTTL=5*60*1000;
 let viewCacheScope=null,loadingTimer=null;
@@ -407,7 +576,7 @@ function setLoading(visible){
  $('loading-message').textContent='正在读取电站数据，请稍候…';
  if(visible)loadingTimer=setTimeout(()=>{$('loading-message').textContent='数据读取较慢，仍在加载中…';},5000);
 }
-const viewKey=(station,date)=>'m4-view-v23:'+JSON.stringify([projectCacheKey(),viewCacheScope,date,station]);
+const viewKey=(station,date)=>'m4-view-v24:'+JSON.stringify([projectCacheKey(),viewCacheScope,date,station]);
 function rememberView(station,date){
  const snapshot={station,date,at:Date.now(),plan,title:header.textContent,message:$('decision-copy').textContent};
  viewCache.set(viewKey(station,date),snapshot);
@@ -639,7 +808,7 @@ function renderDailyLayout(){
 
 $('chart').onclick=event=>{if(!plan)return;const point=$('chart').createSVGPoint();point.x=event.clientX;point.y=event.clientY;const local=point.matrixTransform($('chart').getScreenCTM().inverse());selected=Math.max(0,Math.min(95,Math.floor((local.x-60)/1020*96)));$('time').value=selected;renderInspector();};
 function renderInspector(){rollingSelectedSlot=selected;renderDailyLayout();renderActualOverview();renderScheduleTable();const p=displayedPlanPoints()[selected];
-$('time').value=selected;$('time-label').textContent=p.time+'–'+clock(selected+1);$('time').setAttribute('aria-valuetext',p.time+' '+p.action);$('inspector').innerHTML=`<div><div class="label">${p.time}–${clock(selected+1)} · ${p.tariff}段 ${p.price.toFixed(2)} 元/kWh</div><strong>${p.action}</strong></div><div><span class="label">负荷 / 光伏</span><strong>${fmt(p.load)} / ${fmt(p.pv)} <small>kW</small></strong></div><div><span class="label">${p.rolling?'滚动建议功率':'日计划建议功率'}</span><strong>${fmt(Math.abs(p.power))} <small>kW</small></strong></div><div><span class="label">${p.rolling?'建议购电(kW)':plan.emsOriginal?'模拟购电(kW)':'计划购电(kW)'}</span><strong>${fmt(p.grid)} <small>kW</small></strong></div><div class="soc-reading"><span class="label">${p.historical?'历史建议 SOC':p.rolling?'滚动预计 SOC':'日计划预计 SOC'}</span><strong>${finite(p.soc)?fmt(p.soc,1)+'%':'—'}</strong><div class="label soc-timing">计划 ${esc(plan.date)} ${clock(selected+1)}（时段末）</div></div>`;const line=$('chart-cursor'),x=60+(selected+.5)*1020/96;line.setAttribute('x1',x);line.setAttribute('x2',x);}
+$('time').value=selected;$('time-label').textContent=p.time+'–'+clock(selected+1);$('time').setAttribute('aria-valuetext',p.time+' '+p.action);$('inspector').innerHTML=`<div><div class="label">${p.time}–${clock(selected+1)} · ${p.tariff}段 ${p.price.toFixed(2)} 元/kWh</div><strong>${p.action}</strong></div><div><span class="label">负荷 / 光伏</span><strong>${fmt(p.load)} / ${fmt(p.pv)} <small>kW</small></strong></div><div><span class="label">${p.rolling?'滚动建议功率':'日计划建议功率'}</span><strong>${fmt(Math.abs(p.power))} <small>kW</small></strong></div><div><span class="label">${p.rolling?'建议购电(kW)':plan.emsOriginal?'模拟购电(kW)':'计划购电(kW)'}</span><strong>${fmt(p.grid)} <small>kW</small></strong></div><div class="soc-reading"><span class="label">${p.historical?'历史建议 SOC':p.rolling?'滚动预计 SOC':'日计划预计 SOC'}</span><strong>${finite(p.soc)?fmt(p.soc,1)+'%':'—'}</strong><div class="label soc-timing">计划 ${esc(plan.date)} ${clock(selected+1)}（时段末）</div></div>`;const line=$('chart-cursor'),x=60+(selected+.5)*1020/96;line.setAttribute('x1',x);line.setAttribute('x2',x);renderAiComparisonSelection();}
 
 
 const advisoryStateText={daily_plan:'日计划',table_pending:'已下发 · 待生效',table_active:'执行中',table_ended:'已执行',table_unconfirmed:'下发待确认',pending:'未开始',active_unverified:'时段进行中 · 未核实执行',ended_unverified:'时段已结束 · 未核实执行',superseded:'已替代',expired:'已失效'};

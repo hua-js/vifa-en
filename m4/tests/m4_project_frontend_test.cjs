@@ -8,9 +8,9 @@ const html = fs.readFileSync(path.join(__dirname, '../web/M4优化调度控制�
 const script = html.match(/<script>\s*('use strict';[\s\S]*?)<\/script>/)[1];
 function fixture(search = '', full = false) {
   const elements = new Map(), calls = [], storage = new Map();
-  function element() { return {children: [], value: '', dataset: {}, style: {}, classList: {toggle(){}}, addEventListener(){}, disabled: true, textContent: '', append(...nodes) { this.children.push(...nodes); }, replaceChildren(...nodes) {this.children = nodes;}, setAttribute() {}}; }
+  function element() { return {children: [], value: '', dataset: {}, style: {}, classList: {toggle(){},remove(){},add(){}}, addEventListener(){}, disabled: true, textContent: '', append(...nodes) { this.children.push(...nodes); }, replaceChildren(...nodes) {this.children = nodes;}, setAttribute() {}}; }
   const document = {getElementById(id) {if (!elements.has(id)) elements.set(id, element()); return elements.get(id);}, documentElement: element(), addEventListener(){}, createElement: element, querySelector() {return document.getElementById('toggle');}, querySelectorAll() {return [];}};
-  const sandbox = {document, location: {search, protocol: 'http:', origin: 'http://localhost', hostname: 'localhost'}, URL, URLSearchParams, Headers, AbortSignal, console, setTimeout:()=>0, clearTimeout(){}, setInterval:()=>0, localStorage: {getItem(){},setItem(){}}, sessionStorage: {getItem: k => storage.get(k), setItem: (k,v) => storage.set(k,v)}, fetch: async (url, options) => {calls.push({url: String(url), options});return {ok:true, status:200, json:async()=>sandbox.response};}};
+  const sandbox = {document, window:{addEventListener(){}}, location: {search, protocol: 'http:', origin: 'http://localhost', hostname: 'localhost'}, URL, URLSearchParams, Headers, AbortSignal, AbortController, console, setTimeout:()=>0, clearTimeout(){}, setInterval:()=>0, clearInterval(){}, localStorage: {getItem(){},setItem(){}}, sessionStorage: {getItem: k => storage.get(k), setItem: (k,v) => storage.set(k,v)}, fetch: async (url, options) => {calls.push({url: String(url), options});return {ok:true, status:200, json:async()=>sandbox.response};}};
   const ctx = vm.createContext(sandbox);
   vm.runInContext(full ? script.slice(0,script.lastIndexOf('initializeCurrent().then(')) : script.slice(0, script.indexOf('const header=')) + '\nfunction assert(c,m){if(!c)throw Error(m)}',ctx);
   return {ctx, calls, elements, storage, run: code => vm.runInContext(code, ctx)};
@@ -25,7 +25,7 @@ test('full script startup waits for metadata before any business reads', async (
  await f.run('loadCurrent()');await f.run('loadRecords()');await f.run('loadRecentLogs()');await f.run('recalculatePlan()');
  assert.deepEqual(f.calls,['http://localhost/m4-api/project']);
  release();await startup;
- assert.equal(f.calls.length,5);
+ assert.equal(f.calls.length,6,'metadata precedes revenue and four plan reads');
  assert.ok(f.calls.slice(1).every(url=>url.includes('/stations/station-3/')));
 });
 test('history reads every configured station, including a third station', async () => {

@@ -16,13 +16,13 @@ const {snapshot} = require('./m4_loading_test_fixture.cjs');
 function fixture() {
   const elements = new Map(), calls = [], rendered = [];
   function element() { return {children:[], value:'', dataset:{}, style:{}, hidden:false, disabled:true,
-    textContent:'', innerHTML:'', classList:{toggle(){}}, addEventListener(){}, setAttribute(){},
+    textContent:'', innerHTML:'', classList:{toggle(){},remove(){},add(){}}, addEventListener(){}, setAttribute(){},
     append(...nodes){this.children.push(...nodes);}, replaceChildren(...nodes){this.children=nodes;}}; }
   const document = {getElementById(id){if(!elements.has(id))elements.set(id,element());return elements.get(id);},
     documentElement:element(), addEventListener(){}, createElement:element,
     querySelector(selector){return document.getElementById(selector);}, querySelectorAll(){return [];}, hidden:false};
-  const sandbox = {document, location:{search:'', protocol:'http:', origin:'http://localhost', hostname:'localhost'},
-    URL, URLSearchParams, Headers, AbortSignal, console, setTimeout:()=>0, clearTimeout(){}, setInterval:()=>0,
+  const sandbox = {document, window:{addEventListener(){}}, location:{search:'', protocol:'http:', origin:'http://localhost', hostname:'localhost'},
+    URL, URLSearchParams, Headers, AbortSignal, AbortController, console, setTimeout:()=>0, clearTimeout(){}, setInterval:()=>0,
     localStorage:{getItem(){},setItem(){}}, sessionStorage:{getItem(){},setItem(){}}, rendered,
     fetch:async(url,options)=>{
       const endpoint=new URL(url).pathname.split('/').at(-1);calls.push({endpoint, method:options.method||'GET'});
@@ -102,13 +102,13 @@ test('sidebar can finish while inputs are pending and shares the in-flight plan 
     for(const endpoint of ['daily-inputs','daily-plan','settings','control-sources'])assert.equal(f.calls.filter(c=>c.endpoint===endpoint).length,1);
   } finally {slow.resolve(await read('daily-inputs','station-2'));await loading;}
 });
-test('unconfirmed or failed plans keep the loading gate until inputs finish', async () => {
+test('unconfirmed or failed plans keep write actions disabled until inputs finish', async () => {
   const f=fixture(), slow=deferred(), read=f.sandbox.read;
   delete f.job.active_daily;f.job.status='failed';f.job.result=null;
   await f.run('loadProject()');
   f.sandbox.read=(endpoint,station)=>endpoint==='daily-inputs'?slow.promise:read(endpoint,station);
   const loading=f.run('loadCurrent()');
-  try {await settle();assert.equal(f.rendered.length,0);assert.equal(f.elements.get('loading-mask').hidden,false);}
+  try {await settle();assert.equal(f.rendered.length,0);assert.equal(f.elements.get('loading-mask').hidden,true,'revenue cards remain visible');assert.equal(f.elements.get('recalculate').disabled,true);}
   finally {slow.resolve(await read('daily-inputs','station-2'));await loading;}
 });
 test('an invalid saved date is never shown by the fast path', async () => {
@@ -117,7 +117,7 @@ test('an invalid saved date is never shown by the fast path', async () => {
   await f.run('loadProject()');
   f.sandbox.read=(endpoint,station)=>endpoint==='daily-inputs'?slow.promise:read(endpoint,station);
   const loading=f.run('loadCurrent()');
-  try {await settle();assert.equal(f.rendered.length,0);assert.equal(f.elements.get('loading-mask').hidden,false);}
+  try {await settle();assert.equal(f.rendered.length,0);assert.equal(f.elements.get('loading-mask').hidden,true,'revenue cards remain visible');assert.equal(f.elements.get('recalculate').disabled,true);}
   finally {slow.resolve(await read('daily-inputs','station-2'));await loading;}
   assert.equal(f.rendered.length,0);assert.equal(f.run('plan'),null);
   assert.equal(f.run('header.textContent'),'数据暂不可用');

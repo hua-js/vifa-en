@@ -41,7 +41,7 @@ from m2.station_energy_data_adapter import (
 )
 
 
-FORMULA_VERSION = "energy-chain-v1"
+FORMULA_VERSION = "energy-chain-v2"
 _RULE_WINDOW_FIELDS = (
     "inverter_trigger_minutes",
     "inverter_recovery_minutes",
